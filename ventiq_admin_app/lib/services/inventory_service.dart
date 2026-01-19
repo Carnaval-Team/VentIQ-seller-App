@@ -2036,6 +2036,66 @@ class InventoryService {
     }
   }
 
+ /// Obtiene inventario simple para exportación
+  static Future<List<Map<String, dynamic>>> getIPVReport({
+    int? idAlmacen,
+    int? idTienda,
+    DateTime? fechaHasta,
+    DateTime? fechaDesde,
+    bool includeZero = false,
+  }) async {
+    try {
+      print('🔍 Calling obtener_reporte_inventario_completo_con_ceros with params:');
+      print('  - idAlmacen: $idAlmacen');
+      print('  - idTienda: $idTienda');
+      print('  - fechaDesde: ${fechaDesde?.toIso8601String().split('T')[0]}');
+      print('  - fechaHasta: ${fechaHasta != null ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59' : null}');
+      print('  - includeZero: $includeZero');
+
+      final response = await _supabase.rpc(
+        'obtener_ipv',
+        params: {
+          'p_id_tienda': idTienda,
+          'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
+          'p_fecha_hasta': fechaHasta != null 
+              ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59'
+              : null,
+          'p_id_almacen': idAlmacen,
+          'p_include_zero': includeZero,
+        },
+      );
+
+      print('📦 Response received: ${response?.length ?? 0} items');
+      print(response);
+      print('Respuesta completa: $response');
+      print('Tipo: ${response.runtimeType}');
+      print('Es lista: ${response is List}');
+      print('Es mapa: ${response is Map}');
+      if (response == null) {
+        print('❌ Response is null');
+        return [];
+      }
+
+      if (response is! List) {
+        print('❌ Response is not a List, got: ${response.runtimeType}');
+        return [];
+      }
+
+      final List<Map<String, dynamic>> inventoryList = [];
+      for (final item in response) {
+        if (item is Map<String, dynamic>) {
+          inventoryList.add(item);
+        }
+      }
+
+      print('✅ Processed ${inventoryList.length} inventory items');
+      return inventoryList;
+    } catch (e) {
+      print('❌ Error in getInventarioSimple: $e');
+      rethrow;
+    }
+  }
+
   static String _safeSubstring(String text, int start, int end) {
     if (text.isEmpty) {
       return '';
