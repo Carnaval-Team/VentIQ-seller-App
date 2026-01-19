@@ -54,6 +54,10 @@ class Product {
   final List<ProductIngredient> ingredientes;
   final double? costoProduccion;
 
+  // Campo de proveedor
+  final int? idProveedor;
+  final String? nombreProveedor;
+
   Product({
     required this.id,
     required this.name,
@@ -107,6 +111,9 @@ class Product {
     this.esElaborado = false,
     this.ingredientes = const [],
     this.costoProduccion,
+    // Campo de proveedor
+    this.idProveedor,
+    this.nombreProveedor,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -165,6 +172,9 @@ class Product {
       esElaborado: json['es_elaborado'] ?? false,
       ingredientes: (json['ingredientes'] as List<dynamic>?)?.map((i) => ProductIngredient.fromJson(i)).toList() ?? [],
       costoProduccion: json['costoProduccion'],
+      // Campo de proveedor
+      idProveedor: json['id_proveedor'],
+      nombreProveedor: json['nombre_proveedor'] ?? json['proveedor_nombre'],
     );
   }
 
@@ -207,6 +217,8 @@ class Product {
       'esElaborado': esElaborado,
       'ingredientes': ingredientes.map((i) => i.toJson()).toList(),
       'costoProduccion': costoProduccion,
+      'id_proveedor': idProveedor,
+      'nombre_proveedor': nombreProveedor,
     };
   }
 
@@ -297,6 +309,8 @@ class Product {
     bool? esElaborado,
     List<ProductIngredient>? ingredientes,
     double? costoProduccion,
+    int? idProveedor,
+    String? nombreProveedor,
   }) {
     return Product(
       id: id ?? this.id,
@@ -348,6 +362,8 @@ class Product {
       esElaborado: esElaborado ?? this.esElaborado,
       ingredientes: ingredientes ?? this.ingredientes,
       costoProduccion: costoProduccion ?? this.costoProduccion,
+      idProveedor: idProveedor ?? this.idProveedor,
+      nombreProveedor: nombreProveedor ?? this.nombreProveedor,
     );
   }
 }
