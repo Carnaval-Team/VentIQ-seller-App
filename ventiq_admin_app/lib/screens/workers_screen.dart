@@ -897,6 +897,14 @@ class _WorkersScreenState extends State<WorkersScreen>
                                 color: AppColors.textSecondary,
                               ),
                             ),
+                            if (worker.email != null)
+                              Text(
+                                worker.email!,
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
                             if (worker.usuarioUuid != null)
                               Text(
                                 'ID: ${worker.usuarioUuid!.substring(0, 8)}...',

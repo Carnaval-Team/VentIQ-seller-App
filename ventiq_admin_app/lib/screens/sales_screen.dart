@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:excel/excel.dart' as excel;
+import 'dart:typed_data';
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
@@ -32,11 +37,14 @@ class _SalesScreenState extends State<SalesScreen>
   bool _isLoadingMetrics = false;
   List<ProductAnalysis> _productAnalysis = [];
   bool _isLoadingAnalysis = false;
+  List<SupplierSalesReport> _supplierReports = [];
+  bool _isLoadingSuppliers = false;
+  bool _isExportingPDF = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_onTabChanged);
     _initializeDateRange();
     _loadSalesData();
@@ -49,9 +57,15 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   void _onTabChanged() {
-    // Si el usuario cambió al tab de análisis (índice 2), cargar los datos
-    if (_tabController.index == 2) {
-      _loadProductAnalysis();
+    if (_tabController.indexIsChanging || !_tabController.indexIsChanging) {
+       switch (_tabController.index) {
+        case 2: // Suppliers
+          _loadSupplierReports();
+          break;
+        case 3: // Analysis
+          _loadProductAnalysis();
+          break;
+      }
     }
   }
 
@@ -170,10 +184,81 @@ class _SalesScreenState extends State<SalesScreen>
         _isLoadingAnalysis = false;
       });
     } catch (e) {
-      setState(() {
-        _isLoadingAnalysis = false;
-      });
-      print('Error loading product analysis: $e');
+      setState(() => _isLoadingAnalysis = false);
+      print('Error loading analysis: $e');
+    }
+  }
+
+  Future<void> _loadSupplierReports() async {
+    if (!mounted) return;
+    setState(() => _isLoadingSuppliers = true);
+    try {
+      final detailedSales = await SalesService.getProductSalesWithSupplier(
+        fechaDesde: _startDate,
+        fechaHasta: _endDate,
+      );
+
+      // Agrupación local por proveedor
+      final Map<int, SupplierSalesReport> groupedReports = {};
+
+      for (var sale in detailedSales) {
+        if (groupedReports.containsKey(sale.idProveedor)) {
+          final current = groupedReports[sale.idProveedor]!;
+          groupedReports[sale.idProveedor] = SupplierSalesReport(
+            idProveedor: current.idProveedor,
+            nombreProveedor: current.nombreProveedor,
+            totalVentas: current.totalVentas + sale.ingresosTotales,
+            totalCosto: current.totalCosto + sale.costoTotalVendido,
+            totalGanancia: current.totalGanancia + sale.gananciaTotal,
+            cantidadProductos: current.cantidadProductos + sale.totalVendido,
+            margenPorcentaje: 0,
+          );
+        } else {
+          groupedReports[sale.idProveedor] = SupplierSalesReport(
+            idProveedor: sale.idProveedor,
+            nombreProveedor: sale.nombreProveedor,
+            totalVentas: sale.ingresosTotales,
+            totalCosto: sale.costoTotalVendido,
+            totalGanancia: sale.gananciaTotal,
+            cantidadProductos: sale.totalVendido,
+            margenPorcentaje: 0,
+          );
+        }
+      }
+
+      // Calcular márgenes finales y convertir a lista
+      final List<SupplierSalesReport> reports = groupedReports.values.map((item) {
+        double margen = 0;
+        if (item.totalVentas > 0) {
+          margen = (item.totalGanancia / item.totalVentas) * 100;
+        }
+        return SupplierSalesReport(
+          idProveedor: item.idProveedor,
+          nombreProveedor: item.nombreProveedor,
+          totalVentas: item.totalVentas,
+          totalCosto: item.totalCosto,
+          totalGanancia: item.totalGanancia,
+          cantidadProductos: item.cantidadProductos,
+          margenPorcentaje: margen,
+        );
+      }).toList();
+
+      // Ordenar por total ventas descendente
+      reports.sort((a, b) => b.totalVentas.compareTo(a.totalVentas));
+
+      if (mounted) {
+        setState(() {
+          _supplierReports = reports;
+          _isLoadingSuppliers = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingSuppliers = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar reporte de proveedores: $e')),
+        );
+      }
     }
   }
 
@@ -217,6 +302,7 @@ class _SalesScreenState extends State<SalesScreen>
           tabs: const [
             Tab(text: 'Tiempo Real', icon: Icon(Icons.timeline, size: 18)),
             Tab(text: 'TPVs', icon: Icon(Icons.point_of_sale, size: 18)),
+            Tab(text: 'Proveedores', icon: Icon(Icons.inventory, size: 18)),
             Tab(text: 'Análisis', icon: Icon(Icons.analytics, size: 18)),
           ],
         ),
@@ -229,9 +315,26 @@ class _SalesScreenState extends State<SalesScreen>
                 children: [
                   _buildRealTimeTab(),
                   _buildTPVsTab(),
+                  _buildSuppliersTab(),
                   _buildAnalyticsTab(),
                 ],
               ),
+      floatingActionButton: _tabController.index == 2 && _supplierReports.isNotEmpty
+          ? FloatingActionButton(
+              onPressed: _isExportingPDF ? null : _showExportMenu,
+              backgroundColor: _isExportingPDF ? Colors.grey : AppColors.primary,
+              child: _isExportingPDF
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Icon(Icons.file_download),
+            )
+          : null,
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
         currentIndex: 1,
@@ -348,6 +451,102 @@ class _SalesScreenState extends State<SalesScreen>
     );
   }
 
+  Widget _buildSuppliersTab() {
+     // Calcular totales generales
+    double totalVentas = 0;
+    double totalCosto = 0;
+    double totalGanancia = 0;
+    
+    for(var report in _supplierReports) {
+      totalVentas += report.totalVentas;
+      totalCosto += report.totalCosto;
+      totalGanancia += report.totalGanancia;
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPeriodSelector(),
+          const SizedBox(height: 16),
+          
+          // Resumen General Card
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                Expanded(child: _buildSummaryColumn('Ventas Totales', totalVentas, AppColors.success)),
+                Expanded(child: _buildSummaryColumn('Costo Total', totalCosto, AppColors.warning)),
+                Expanded(child: _buildSummaryColumn('Ganancia Total', totalGanancia, AppColors.primary)),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 16),
+          
+          _isLoadingSuppliers
+              ? const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Center(
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  ),
+                )
+              : _supplierReports.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(
+                        child: Text(
+                          'No hay datos de proveedores para el período',
+                          style: TextStyle(color: AppColors.textSecondary),
+                        ),
+                      ),
+                    )
+                  : Card(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: DataTable(
+                          columns: const [
+                            DataColumn(label: Text('Proveedor', style: TextStyle(fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text('Ventas', style: TextStyle(fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text('Costo', style: TextStyle(fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text('Ganancia', style: TextStyle(fontWeight: FontWeight.bold))),
+                          ],
+                          rows: [
+                            ..._supplierReports.map((report) {
+                              return DataRow(cells: [
+                                DataCell(Text(report.nombreProveedor)),
+                                DataCell(Text('\$${report.totalVentas.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.success))),
+                                DataCell(Text('\$${report.totalCosto.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.warning))),
+                                DataCell(Text('\$${report.totalGanancia.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold))),
+                              ]);
+                            }).toList(),
+                            // Fila de TOTALES
+                            DataRow(
+                              color: MaterialStateProperty.all(Colors.grey.shade100),
+                              cells: [
+                                const DataCell(Text('TOTAL', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+                                DataCell(Text('\$${totalVentas.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.success))),
+                                DataCell(Text('\$${totalCosto.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.warning))),
+                                DataCell(Text('\$${totalGanancia.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.primary))),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+        ],
+      ),
+    );
+  }
+
+
   Widget _buildAnalyticsTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -361,6 +560,30 @@ class _SalesScreenState extends State<SalesScreen>
       ),
     );
   }
+
+  Widget _buildSummaryColumn(String label, double value, Color color) {
+    return Column(
+      children: [
+        Text(
+          '\$${value.toStringAsFixed(2)}',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+
 
   String _formatDateRangeLabel() {
     final startFormatted =
@@ -3911,6 +4134,387 @@ class _SalesScreenState extends State<SalesScreen>
         ),
       );
     }).toList();
+  }
+
+  void _showExportMenu() {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
+                title: const Text('Exportar PDF'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _exportSupplierReportToPDF();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.table_chart, color: Colors.green),
+                title: const Text('Exportar Excel'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _exportSupplierReportToExcel();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _exportSupplierReportToPDF() async {
+    if (!mounted) return;
+    
+    setState(() => _isExportingPDF = true);
+    
+    try {
+      final pdf = pw.Document();
+      
+      // Calcular totales
+      double totalVentas = 0;
+      double totalCosto = 0;
+      double totalGanancia = 0;
+      
+      for (var report in _supplierReports) {
+        totalVentas += report.totalVentas;
+        totalCosto += report.totalCosto;
+        totalGanancia += report.totalGanancia;
+      }
+      
+      // Crear página del PDF
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4.landscape,
+          margin: pw.EdgeInsets.zero,
+          header: (pw.Context context) {
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  'Reporte de Ventas por Proveedor',
+                  style: pw.TextStyle(
+                    fontSize: 24,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 5),
+                pw.Text(
+                  'Período: ${_startDate.day}/${_startDate.month}/${_startDate.year} - ${_endDate.day}/${_endDate.month}/${_endDate.year}',
+                  style: const pw.TextStyle(fontSize: 12),
+                ),
+                pw.SizedBox(height: 20),
+              ],
+            );
+          },
+          footer: (pw.Context context) {
+            return pw.Container(
+              alignment: pw.Alignment.centerRight,
+              margin: const pw.EdgeInsets.only(top: 10),
+              padding: const pw.EdgeInsets.only(top: 10),
+              decoration: const pw.BoxDecoration(
+                border: pw.Border(
+                  top: pw.BorderSide(),
+                ),
+              ),
+              child: pw.Text(
+                'Página ${context.pageNumber} de ${context.pagesCount}',
+                style: const pw.TextStyle(fontSize: 10),
+              ),
+            );
+          },
+          build: (pw.Context context) {
+            return [
+              // Tabla de datos
+              pw.Table(
+                border: pw.TableBorder.all(),
+                columnWidths: {
+                  0: const pw.FlexColumnWidth(3),
+                  1: const pw.FlexColumnWidth(2),
+                  2: const pw.FlexColumnWidth(2),
+                  3: const pw.FlexColumnWidth(2),
+                },
+                children: [
+                  // Encabezado
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(
+                      color: PdfColors.grey300,
+                    ),
+                    children: [
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'Proveedor',
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'Ventas',
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                          textAlign: pw.TextAlign.right,
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'Costo',
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                          textAlign: pw.TextAlign.right,
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'Ganancia',
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                          textAlign: pw.TextAlign.right,
+                        ),
+                      ),
+                    ],
+                  ),
+                  // Filas de datos
+                  ..._supplierReports.map((report) {
+                    return pw.TableRow(
+                      children: [
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            report.nombreProveedor,
+                            style: const pw.TextStyle(fontSize: 10),
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            '\$${report.totalVentas.toStringAsFixed(2)}',
+                            style: const pw.TextStyle(fontSize: 10),
+                            textAlign: pw.TextAlign.right,
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            '\$${report.totalCosto.toStringAsFixed(2)}',
+                            style: const pw.TextStyle(fontSize: 10),
+                            textAlign: pw.TextAlign.right,
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            '\$${report.totalGanancia.toStringAsFixed(2)}',
+                            style: const pw.TextStyle(fontSize: 10),
+                            textAlign: pw.TextAlign.right,
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                  // Fila de TOTALES
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(
+                      color: PdfColors.grey200,
+                    ),
+                    children: [
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'TOTAL',
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          '\$${totalVentas.toStringAsFixed(2)}',
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                          textAlign: pw.TextAlign.right,
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          '\$${totalCosto.toStringAsFixed(2)}',
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                          textAlign: pw.TextAlign.right,
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          '\$${totalGanancia.toStringAsFixed(2)}',
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                          textAlign: pw.TextAlign.right,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ];
+          },
+        ),
+      );
+      
+      // Generar nombre del archivo
+      final fileName = 'Reporte_Proveedores_${DateTime.now().toString().split(' ')[0]}.pdf';
+      
+      // Mostrar diálogo de impresión/guardado
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => pdf.save(),
+        name: fileName,
+      );
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Reporte exportado correctamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error al exportar PDF: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al exportar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isExportingPDF = false);
+      }
+    }
+  }
+
+  Future<void> _exportSupplierReportToExcel() async {
+    if (!mounted) return;
+    
+    setState(() => _isExportingPDF = true);
+    
+    try {
+      // Crear un nuevo Excel
+      var excelSheet = excel.Excel.createExcel();
+      var sheet = excelSheet['Sheet1'];
+      
+      // Calcular totales
+      double totalVentas = 0;
+      double totalCosto = 0;
+      double totalGanancia = 0;
+      
+      for (var report in _supplierReports) {
+        totalVentas += report.totalVentas;
+        totalCosto += report.totalCosto;
+        totalGanancia += report.totalGanancia;
+      }
+      
+      // Agregar encabezado
+      sheet.appendRow([
+        excel.TextCellValue('Reporte de Ventas por Proveedor'),
+      ]);
+      sheet.appendRow([
+        excel.TextCellValue('Período: ${_startDate.day}/${_startDate.month}/${_startDate.year} - ${_endDate.day}/${_endDate.month}/${_endDate.year}'),
+      ]);
+      sheet.appendRow([]); // Fila vacía
+      
+      // Agregar encabezados de columnas
+      sheet.appendRow([
+        excel.TextCellValue('Proveedor'),
+        excel.TextCellValue('Ventas'),
+        excel.TextCellValue('Costo'),
+        excel.TextCellValue('Ganancia'),
+      ]);
+      
+      // Agregar datos de proveedores
+      for (var report in _supplierReports) {
+        sheet.appendRow([
+          excel.TextCellValue(report.nombreProveedor),
+          excel.DoubleCellValue(report.totalVentas),
+          excel.DoubleCellValue(report.totalCosto),
+          excel.DoubleCellValue(report.totalGanancia),
+        ]);
+      }
+      
+      // Agregar fila de totales
+      sheet.appendRow([
+        excel.TextCellValue('TOTAL'),
+        excel.DoubleCellValue(totalVentas),
+        excel.DoubleCellValue(totalCosto),
+        excel.DoubleCellValue(totalGanancia),
+      ]);
+      
+      // Guardar archivo
+      final fileName = 'Reporte_Proveedores_${DateTime.now().toString().split(' ')[0]}.xlsx';
+      final bytes = excelSheet.encode();
+      
+      if (bytes != null) {
+        // Convertir a Uint8List
+        final uint8bytes = Uint8List.fromList(bytes);
+        
+        // Mostrar diálogo de guardado
+        await Printing.sharePdf(
+          bytes: uint8bytes,
+          filename: fileName,
+        );
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Reporte exportado a Excel correctamente'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error al exportar Excel: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al exportar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isExportingPDF = false);
+      }
+    }
   }
 
   void _onBottomNavTap(int index) {

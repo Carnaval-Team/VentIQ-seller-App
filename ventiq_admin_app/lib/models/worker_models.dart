@@ -40,6 +40,7 @@ class WorkerData {
   final String tipoRol;
   final Map<String, dynamic> datosEspecificos;
   final String? usuarioUuid;
+  final String? email; // 📧 Email del trabajador desde auth.users
   final double salarioHoras; // 💰 Salario por hora del trabajador
   final bool? manejaAperturaControl; // 📋 Control de inventario en turnos
 
@@ -60,6 +61,7 @@ class WorkerData {
     required this.tipoRol,
     required this.datosEspecificos,
     this.usuarioUuid,
+    this.email, // 📧 Email opcional
     this.salarioHoras = 0.0, // Valor por defecto 0
     this.manejaAperturaControl, // 📋 Puede ser null
     this.tieneUsuario = false,
@@ -81,6 +83,7 @@ class WorkerData {
       datosEspecificos:
           json['datos_especificos'] as Map<String, dynamic>? ?? {},
       usuarioUuid: json['usuario_uuid'] as String?,
+      email: json['email'] as String?, // 📧 Parsear email
       salarioHoras:
           (json['salario_horas'] as num?)?.toDouble() ??
           0.0, // 💰 Parsear salario
@@ -136,6 +139,7 @@ class WorkerData {
       'tipo_rol': tipoRol,
       'datos_especificos': datosEspecificos,
       'usuario_uuid': usuarioUuid,
+      'email': email, // 📧 Incluir email en JSON
       'salario_horas': salarioHoras, // 💰 Incluir salario en JSON
       'maneja_apertura_control':
           manejaAperturaControl, // 📋 Incluir control inventario en JSON

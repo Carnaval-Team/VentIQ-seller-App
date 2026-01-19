@@ -13,6 +13,9 @@ import '../widgets/marketing_menu_widget.dart';
 import '../screens/add_product_screen.dart';
 import '../widgets/reception_edit_dialog.dart';
 import '../screens/product_movements_screen.dart';
+import '../services/supplier_service.dart';
+import '../models/supplier.dart';
+import '../screens/suppliers/add_edit_supplier_screen.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final Product product;
@@ -1561,6 +1564,26 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         _buildInfoRow(
           'Actualizado',
           DateFormat('dd/MM/yyyy HH:mm').format(_product.updatedAt),
+        ),
+        const SizedBox(height: 8),
+        const Divider(),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: _buildInfoRow(
+                'Proveedor',
+                _product.nombreProveedor ?? 'No asignado',
+              ),
+            ),
+            if (_canEditProduct)
+              IconButton(
+                icon: const Icon(Icons.edit, size: 18),
+                onPressed: _showSupplierSelectionDialog,
+                tooltip: 'Cambiar proveedor',
+              ),
+          ],
         ),
       ],
     );
@@ -3474,6 +3497,127 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         );
       },
     );
+  }
+
+  Future<void> _showSupplierSelectionDialog() async {
+    setState(() => _isLoading = true);
+    try {
+      List<Supplier> suppliers = await SupplierService.getAllSuppliers();
+      setState(() => _isLoading = false);
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                title: const Text('Seleccionar Proveedor'),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  child: suppliers.isEmpty
+                      ? const Text('No hay proveedores registrados para esta tienda.')
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: suppliers.length,
+                          itemBuilder: (context, index) {
+                            final supplier = suppliers[index];
+                            return ListTile(
+                              title: Text(supplier.denominacion),
+                              subtitle: Text(supplier.skuCodigo),
+                              selected: _product.idProveedor == supplier.id,
+                              onTap: () {
+                                Navigator.pop(context);
+                                _updateProductSupplier(supplier);
+                              },
+                            );
+                          },
+                        ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const AddEditSupplierScreen(),
+                        ),
+                      );
+                      if (result == true) {
+                        setDialogState(() => _isLoading = true);
+                        final updatedSuppliers = await SupplierService.getAllSuppliers();
+                        setDialogState(() {
+                          suppliers = updatedSuppliers;
+                          _isLoading = false;
+                        });
+                      }
+                    },
+                    child: const Text('Nuevo'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancelar'),
+                  ),
+                  if (_product.idProveedor != null)
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _updateProductSupplier(null);
+                      },
+                      child: const Text('Quitar Proveedor', style: TextStyle(color: Colors.red)),
+                    ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar proveedores: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateProductSupplier(Supplier? supplier) async {
+    setState(() => _isLoading = true);
+    try {
+      final success = await ProductService.updateProductSupplier(
+        int.parse(_product.id),
+        supplier?.id,
+      );
+
+      if (success) {
+        // Recargar datos para ver el nombre actualizado
+        final updatedProduct = await ProductService.getProductoCompletoById(int.parse(_product.id));
+        if (updatedProduct != null) {
+          setState(() {
+            _product = updatedProduct;
+          });
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Proveedor actualizado correctamente')),
+          );
+        }
+      } else {
+        throw Exception('No se pudo actualizar el proveedor');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al actualizar proveedor: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override

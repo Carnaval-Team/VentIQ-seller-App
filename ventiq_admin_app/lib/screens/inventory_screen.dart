@@ -13,6 +13,7 @@ import 'elaborated_products_extraction_screen.dart'; // Nueva pantalla
 import 'inventory_extractionbysale_screen.dart'; // Venta por Acuerdo
 import 'inventory_dashboard.dart';
 import 'consignacion_screen.dart'; // Consignación
+import 'inventory_ipv_report_screen.dart'; // Reporte IPV
 import '../widgets/notification_widget.dart';
 import '../services/permissions_service.dart';
 
@@ -244,6 +245,17 @@ class _InventoryScreenState extends State<InventoryScreen>
                           ),
 
                         _buildMenuOption(
+                          icon: Icons.assessment,
+                          title: 'Consultar IPV',
+                          subtitle: 'Ver reporte de inventario, precios y ventas',
+                          color: const Color(0xFF06B6D4),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _navigateToIPVReport();
+                          },
+                        ),
+
+                        _buildMenuOption(
                           icon: Icons.filter_list,
                           title: 'Filtro de Búsqueda',
                           subtitle: 'Filtrar y buscar productos',
@@ -310,6 +322,13 @@ class _InventoryScreenState extends State<InventoryScreen>
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const ConsignacionScreen()),
+    );
+  }
+
+  void _navigateToIPVReport() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const InventoryIPVReportScreen()),
     );
   }
 

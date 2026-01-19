@@ -164,6 +164,91 @@ class ProductAnalysis {
   }
 }
 
+class SupplierSalesReport {
+  final int idProveedor;
+  final String nombreProveedor;
+  final double totalVentas;
+  final double totalCosto;
+  final double totalGanancia;
+  final double cantidadProductos;
+  final double margenPorcentaje;
+
+  SupplierSalesReport({
+    required this.idProveedor,
+    required this.nombreProveedor,
+    required this.totalVentas,
+    required this.totalCosto,
+    required this.totalGanancia,
+    required this.cantidadProductos,
+    required this.margenPorcentaje,
+  });
+
+  factory SupplierSalesReport.fromJson(Map<String, dynamic> json) {
+    return SupplierSalesReport(
+      idProveedor: json['id_proveedor'] ?? 0,
+      nombreProveedor: json['nombre_proveedor'] ?? 'Sin Proveedor',
+      totalVentas: (json['total_ventas'] ?? 0).toDouble(),
+      totalCosto: (json['total_costo'] ?? 0).toDouble(),
+      totalGanancia: (json['total_ganancia'] ?? 0).toDouble(),
+      cantidadProductos: (json['cantidad_productos'] ?? 0).toDouble(),
+      margenPorcentaje: (json['margen_porcentaje'] ?? 0).toDouble(),
+    );
+  }
+}
+
+class ProductSalesWithSupplier {
+  final int idTienda;
+  final int idProducto;
+  final String nombreProducto;
+  final int idProveedor;
+  final String nombreProveedor;
+  final double precioVentaCup;
+  final double precioCosto;
+  final double valorUsd;
+  final double precioCostoCup;
+  final double totalVendido;
+  final double ingresosTotales;
+  final double costoTotalVendido;
+  final double gananciaUnitaria;
+  final double gananciaTotal;
+
+  ProductSalesWithSupplier({
+    required this.idTienda,
+    required this.idProducto,
+    required this.nombreProducto,
+    required this.idProveedor,
+    required this.nombreProveedor,
+    required this.precioVentaCup,
+    required this.precioCosto,
+    required this.valorUsd,
+    required this.precioCostoCup,
+    required this.totalVendido,
+    required this.ingresosTotales,
+    required this.costoTotalVendido,
+    required this.gananciaUnitaria,
+    required this.gananciaTotal,
+  });
+
+  factory ProductSalesWithSupplier.fromJson(Map<String, dynamic> json) {
+    return ProductSalesWithSupplier(
+      idTienda: json['id_tienda'] ?? 0,
+      idProducto: json['id_producto'] ?? 0,
+      nombreProducto: json['nombre_producto'] ?? '',
+      idProveedor: json['id_proveedor'] ?? 0,
+      nombreProveedor: json['nombre_proveedor'] ?? 'Sin Proveedor',
+      precioVentaCup: (json['precio_venta_cup'] ?? 0).toDouble(),
+      precioCosto: (json['precio_costo'] ?? 0).toDouble(),
+      valorUsd: (json['valor_usd'] ?? 1).toDouble(),
+      precioCostoCup: (json['precio_costo_cup'] ?? 0).toDouble(),
+      totalVendido: (json['total_vendido'] ?? 0).toDouble(),
+      ingresosTotales: (json['ingresos_totales'] ?? 0).toDouble(),
+      costoTotalVendido: (json['costo_total_vendido'] ?? 0).toDouble(),
+      gananciaUnitaria: (json['ganancia_unitaria'] ?? 0).toDouble(),
+      gananciaTotal: (json['ganancia_total'] ?? 0).toDouble(),
+    );
+  }
+}
+
 class SalesService {
   static final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -680,5 +765,74 @@ class SalesService {
     }
   }
 
+  static Future<List<SupplierSalesReport>> getSupplierSalesReport({
+    DateTime? fechaDesde,
+    DateTime? fechaHasta,
+  }) async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      if (idTienda == null) return [];
 
+      final Map<String, dynamic> params = {'p_id_tienda': idTienda};
+
+      if (fechaDesde != null) {
+        params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
+      }
+      if (fechaHasta != null) {
+        params['p_fecha_hasta'] = fechaHasta.toIso8601String().split('T')[0];
+      }
+
+      final response = await _supabase.rpc(
+        'fn_reporte_ventas_proveedor',
+        params: params,
+      );
+
+      print('DEBUG - Supplier Report Response: $response');
+
+      if (response == null) return [];
+
+      return (response as List)
+          .map((item) => SupplierSalesReport.fromJson(item))
+          .toList();
+    } catch (e) {
+      print('Error in getSupplierSalesReport: $e');
+      return [];
+    }
+  }
+  static Future<List<ProductSalesWithSupplier>> getProductSalesWithSupplier({
+    DateTime? fechaDesde,
+    DateTime? fechaHasta,
+  }) async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      if (idTienda == null) return [];
+
+      final Map<String, dynamic> params = {'p_id_tienda': idTienda};
+
+      if (fechaDesde != null) {
+        params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
+      }
+      if (fechaHasta != null) {
+        params['p_fecha_hasta'] = fechaHasta.toIso8601String().split('T')[0];
+      }
+
+      final response = await _supabase.rpc(
+        'fn_reporte_ventas_con_proveedor',
+        params: params,
+      );
+
+      print('DEBUG - Detailed Supplier Report Response: $response');
+
+      if (response == null) return [];
+
+      return (response as List)
+          .map((item) => ProductSalesWithSupplier.fromJson(item))
+          .toList();
+    } catch (e) {
+      print('Error in getProductSalesWithSupplier: $e');
+      return [];
+    }
+  }
 }

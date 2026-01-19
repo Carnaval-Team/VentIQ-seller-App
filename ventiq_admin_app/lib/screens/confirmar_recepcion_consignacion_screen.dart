@@ -1432,27 +1432,35 @@ class _ConfirmarRecepcionConsignacionScreenState
         
         final idEnvio = (idEnvioNum as num).toInt();
 
-        final success = await ConsignacionEnvioService.rechazarProductoEnvio(
+        final result = await ConsignacionEnvioService.rechazarProductoEnvio(
           idEnvio: idEnvio,
           idEnvioProducto: idEnvioProducto,
           idUsuario: userId,
           motivoRechazo: motivo,
         );
 
+        final success = result['success'] as bool? ?? false;
+        final mensaje = result['mensaje'] as String? ?? '';
+
         if (!success) {
-          throw Exception('Error al procesar el rechazo en el servidor');
+          throw Exception(mensaje.isNotEmpty ? mensaje : 'Error al procesar el rechazo en el servidor');
         }
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Producto rechazado exitosamente'),
+            SnackBar(
+              content: Text('✅ $mensaje'),
               backgroundColor: Colors.green,
             ),
           );
           
-          // Recargar la lista de productos
-          _loadProductosPendientes();
+          // Si el mensaje indica que se rechazó todo el envío, volvemos atrás
+          if (mensaje.contains('RECHAZADO globalmente')) {
+            Navigator.of(context).pop(true);
+          } else {
+            // Recargar la lista de productos
+            _loadProductosPendientes();
+          }
         }
       } catch (e) {
         debugPrint('❌ Error al rechazar producto: $e');

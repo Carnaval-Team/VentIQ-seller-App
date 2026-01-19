@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/reception_total_widget.dart';
 import '../config/app_colors.dart';
 import '../models/product.dart';
@@ -48,12 +49,16 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   bool _isLoadingMotivos = true;
   String _searchQuery = '';
   Supplier? _selectedSupplier;
+  List<Map<String, dynamic>> _proveedores = [];
+  Map<String, dynamic>? _selectedProveedor;
+  bool _isLoadingProveedores = false;
 
   @override
   void initState() {
     super.initState();
     _loadMotivoOptions();
     _loadExchangeRate();
+    _loadProveedores();
     _searchController.addListener(_onSearchChanged);
     _montoTotalController.addListener(_updateTotalAmountInCUP);
 
@@ -148,6 +153,44 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error al cargar motivos: $e')));
+      }
+    }
+  }
+
+  Future<void> _loadProveedores() async {
+    try {
+      setState(() => _isLoadingProveedores = true);
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      
+      if (idTienda == null) {
+        throw Exception('No se encontró ID de tienda');
+      }
+
+      // Obtener proveedores de la tienda del usuario
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('app_dat_proveedor')
+          .select('id, denominacion, sku_codigo')
+          .eq('idtienda', idTienda)
+          .order('denominacion', ascending: true);
+      
+      final proveedores = List<Map<String, dynamic>>.from(response);
+      
+      setState(() {
+        _proveedores = proveedores;
+        _selectedProveedor = null; // Sin filtro por defecto
+        _isLoadingProveedores = false;
+      });
+      
+      print('✅ Proveedores cargados de tienda $idTienda: ${_proveedores.length}');
+    } catch (e) {
+      setState(() => _isLoadingProveedores = false);
+      print('❌ Error al cargar proveedores: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar proveedores: $e')),
+        );
       }
     }
   }
@@ -516,11 +559,14 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
+            // Sección de filtro por proveedor
+            _buildProveedorFilterSection(),
+            const SizedBox(height: 16),
             SizedBox(
               height: 300,
               child: ProductSelectorWidget(
                 searchType: ProductSearchType.all,
-                requireInventory: false, // ✅ Permite productos sin inventario
+                requireInventory: false,
                 searchHint: 'Buscar productos para recibir...',
                 onProductSelected: (productData) {                  
                   // Convertir Map a Product para mantener compatibilidad
@@ -839,6 +885,80 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildProveedorFilterSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Filtrar por Proveedor',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            if (_selectedProveedor != null)
+              TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _selectedProveedor = null;
+                  });
+                },
+                icon: const Icon(Icons.clear, size: 18),
+                label: const Text('Limpiar'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _isLoadingProveedores
+            ? const Padding(
+                padding: EdgeInsets.all(8.0),
+                child: SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            : DropdownButtonFormField<Map<String, dynamic>>(
+                value: _selectedProveedor,
+                decoration: InputDecoration(
+                  labelText: 'Seleccionar proveedor',
+                  border: const OutlineInputBorder(),
+                  hintText: _proveedores.isEmpty
+                      ? 'No hay proveedores disponibles'
+                      : 'Todos los proveedores',
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                ),
+                items: [
+                  DropdownMenuItem<Map<String, dynamic>>(
+                    value: null,
+                    child: const Text('Todos los proveedores'),
+                  ),
+                  ..._proveedores.map((proveedor) {
+                    return DropdownMenuItem<Map<String, dynamic>>(
+                      value: proveedor,
+                      child: Text(
+                        proveedor['denominacion'] ?? 'Sin nombre',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }).toList(),
+                ],
+                onChanged: (proveedor) {
+                  setState(() {
+                    _selectedProveedor = proveedor;
+                  });
+                  print(
+                    '✅ Proveedor seleccionado: ${proveedor?['denominacion'] ?? "Todos"}',
+                  );
+                },
+              ),
+      ],
     );
   }
 
