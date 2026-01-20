@@ -107,32 +107,95 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Widget _buildGeneratePdfFab() {
+    // Un solo botón con opciones según el tab activo
+    bool isLoading = false;
+    String label = 'Opciones';
+    IconData icon = Icons.more_vert;
+    VoidCallback? onPressed;
+
+    debugPrint('🔍 FAB: Tab ${_tabController.index}, SupplierReports: ${_supplierReports.length}');
+
+    switch (_tabController.index) {
+      case 0: // Tiempo Real
+        isLoading = _isGeneratingPdf;
+        label = _isGeneratingPdf ? 'Generando...' : 'Facturas PDF';
+        icon = Icons.picture_as_pdf_outlined;
+        onPressed = _isGeneratingPdf
+            ? null
+            : () async {
+              await _pickPdfDateRange(context);
+              if (_pdfStartDate != null && _pdfEndDate != null) {
+                await _generateInvoicesPdf(
+                  start: _pdfStartDate!,
+                  end: _pdfEndDate!,
+                );
+              }
+            };
+        break;
+
+      case 1: // TPVs
+        isLoading = _isGeneratingPdf;
+        label = _isGeneratingPdf ? 'Generando...' : 'Facturas PDF';
+        icon = Icons.picture_as_pdf_outlined;
+        onPressed = _isGeneratingPdf
+            ? null
+            : () async {
+              await _pickPdfDateRange(context);
+              if (_pdfStartDate != null && _pdfEndDate != null) {
+                await _generateInvoicesPdf(
+                  start: _pdfStartDate!,
+                  end: _pdfEndDate!,
+                );
+              }
+            };
+        break;
+
+      case 2: // Proveedores
+        debugPrint('🔍 FAB: En tab Proveedores, _supplierReports.isNotEmpty: ${_supplierReports.isNotEmpty}');
+        isLoading = _isExportingPDF;
+        label = _isExportingPDF ? 'Exportando...' : 'Exportar Resumen';
+        icon = Icons.download_outlined;
+        onPressed = _supplierReports.isNotEmpty && !_isExportingPDF
+            ? () => _showExportMenu()
+            : null;
+        break;
+
+      case 3: // Análisis
+        isLoading = _isGeneratingPdf;
+        label = _isGeneratingPdf ? 'Generando...' : 'Facturas PDF';
+        icon = Icons.picture_as_pdf_outlined;
+        onPressed = _isGeneratingPdf
+            ? null
+            : () async {
+              await _pickPdfDateRange(context);
+              if (_pdfStartDate != null && _pdfEndDate != null) {
+                await _generateInvoicesPdf(
+                  start: _pdfStartDate!,
+                  end: _pdfEndDate!,
+                );
+              }
+            };
+        break;
+    }
+
+    debugPrint('🔍 FAB: onPressed=$onPressed, isLoading=$isLoading, label=$label');
+
+    // Mostrar el botón siempre (deshabilitado si no hay acción)
     return FloatingActionButton.extended(
-      backgroundColor: AppColors.primary,
-      icon:
-          _isGeneratingPdf
-              ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-              : const Icon(Icons.picture_as_pdf_outlined),
-      label: Text(_isGeneratingPdf ? 'Generando...' : 'Facturas PDF'),
-      onPressed:
-          _isGeneratingPdf
-              ? null
-              : () async {
-                await _pickPdfDateRange(context);
-                if (_pdfStartDate != null && _pdfEndDate != null) {
-                  await _generateInvoicesPdf(
-                    start: _pdfStartDate!,
-                    end: _pdfEndDate!,
-                  );
-                }
-              },
+      backgroundColor: onPressed == null && !isLoading ? Colors.grey : AppColors.primary,
+      foregroundColor: Colors.white,
+      icon: isLoading
+          ? const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white,
+            ),
+          )
+          : Icon(icon),
+      label: Text(label),
+      onPressed: onPressed,
     );
   }
 
@@ -894,7 +957,10 @@ class _SalesScreenState extends State<SalesScreen>
 
   void _onTabChanged() {
     if (_tabController.indexIsChanging || !_tabController.indexIsChanging) {
-       switch (_tabController.index) {
+      // Forzar reconstrucción del FAB cuando cambias de tab
+      setState(() {});
+      
+      switch (_tabController.index) {
         case 2: // Suppliers
           _loadSupplierReports();
           break;
@@ -1155,24 +1221,8 @@ class _SalesScreenState extends State<SalesScreen>
                   _buildAnalyticsTab(),
                 ],
               ),
-      floatingActionButton: _tabController.index == 2 && _supplierReports.isNotEmpty
-          ? FloatingActionButton(
-              onPressed: _isExportingPDF ? null : _showExportMenu,
-              backgroundColor: _isExportingPDF ? Colors.grey : AppColors.primary,
-              child: _isExportingPDF
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : const Icon(Icons.file_download),
-            )
-          : null,
-      endDrawer: const AdminDrawer(),
       floatingActionButton: _buildGeneratePdfFab(),
+      endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
         currentIndex: 1,
         onTap: _onBottomNavTap,
