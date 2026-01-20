@@ -1026,11 +1026,14 @@ class UserPreferencesService {
   // ==================== ACTUALIZACIÓN DE CACHE DE PRODUCTOS ====================
 
   /// Actualizar inventario de productos en cache (descontar cantidades)
+  /// Soporta productos con y sin variantes usando ids de inventario/ubicación
   Future<void> updateProductInventoryInCache(
     int productId,
-    int variantId,
-    int quantityToSubtract,
-  ) async {
+    int? variantId,
+    int quantityToSubtract, {
+    int? inventoryId,
+    int? locationId,
+  }) async {
     final offlineData = await getOfflineData();
     if (offlineData == null || offlineData['products'] == null) return;
 
@@ -1059,22 +1062,57 @@ class UserPreferencesService {
               detalles['inventario'],
             );
 
-            // Buscar y actualizar la variante específica
-            for (int j = 0; j < inventarioList.length; j++) {
-              final inv = inventarioList[j];
+            bool inventoryUpdated = false;
+
+            bool matchesInventoryItem(Map<String, dynamic> inv) {
               final varianteData = inv['variante'] as Map<String, dynamic>?;
 
-              if (varianteData != null && varianteData['id'] == variantId) {
+              if (variantId != null) {
+                return varianteData != null && varianteData['id'] == variantId;
+              }
+
+              if (inventoryId != null && inv['id_inventario'] == inventoryId) {
+                return true;
+              }
+
+              if (locationId != null) {
+                final ubicacion = inv['ubicacion'] as Map<String, dynamic>?;
+                return ubicacion?['id'] == locationId;
+              }
+
+              return varianteData == null;
+            }
+
+            // Buscar y actualizar la variante o inventario específico
+            for (int j = 0; j < inventarioList.length; j++) {
+              final inv = inventarioList[j];
+
+              if (matchesInventoryItem(inv)) {
                 final currentInvQty = inv['cantidad_disponible'] as num;
                 inv['cantidad_disponible'] = (currentInvQty -
                         quantityToSubtract)
                     .clamp(0, double.infinity);
                 inventarioList[j] = inv;
+                inventoryUpdated = true;
                 print(
-                  '📦 Inventario actualizado - Producto: $productId, Variante: $variantId, Descontado: $quantityToSubtract',
+                  '📦 Inventario actualizado - Producto: $productId, Variante: ${variantId ?? "sin variante"}, Descontado: $quantityToSubtract',
                 );
                 break;
               }
+            }
+
+            // Fallback para productos sin variantes si no hubo match
+            if (!inventoryUpdated &&
+                variantId == null &&
+                inventarioList.isNotEmpty) {
+              final inv = inventarioList.first;
+              final currentInvQty = inv['cantidad_disponible'] as num;
+              inv['cantidad_disponible'] = (currentInvQty - quantityToSubtract)
+                  .clamp(0, double.infinity);
+              inventarioList[0] = inv;
+              print(
+                '📦 Inventario actualizado (fallback) - Producto: $productId, Descontado: $quantityToSubtract',
+              );
             }
 
             detalles['inventario'] = inventarioList;

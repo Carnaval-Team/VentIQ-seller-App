@@ -8,6 +8,7 @@ import 'turno_service.dart';
 import 'reauthentication_service.dart';
 import 'store_config_service.dart';
 import 'shift_workers_service.dart';
+import 'promotion_service.dart';
 
 /// Servicio para sincronización automática periódica de datos
 /// Se ejecuta cuando el modo offline NO está activado para mantener datos actualizados
@@ -19,6 +20,7 @@ class AutoSyncService {
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
   final ReauthenticationService _reauthService = ReauthenticationService();
+  final PromotionService _promotionService = PromotionService();
 
   Timer? _syncTimer;
   bool _isRunning = false;
@@ -278,6 +280,23 @@ class AutoSyncService {
           syncedData['products'] = await _syncProducts();
           syncedItems.add('productos');
           print('  ✅ Productos sincronizados');
+
+          final productsData = syncedData['products'];
+          if (productsData is Map<String, dynamic> && productsData.isNotEmpty) {
+            try {
+              final promotionsSynced = await _syncProductPromotions(
+                productsData,
+              );
+              syncedItems.add('promociones producto ($promotionsSynced)');
+              print(
+                '  ✅ Promociones de productos sincronizadas: $promotionsSynced',
+              );
+            } catch (e) {
+              print('  ❌ Error sincronizando promociones de producto: $e');
+            }
+          } else {
+            print('  ⚠️ Sin productos para sincronizar promociones');
+          }
         } catch (e) {
           print('  ❌ Error sincronizando productos: $e');
         }
@@ -435,8 +454,35 @@ class AutoSyncService {
 
   /// Sincronizar promociones globales
   Future<Map<String, dynamic>> _syncPromotions() async {
-    final promotionData = await _userPreferencesService.getPromotionData();
-    return promotionData ?? {};
+    final idTienda = await _userPreferencesService.getIdTienda();
+    if (idTienda == null) {
+      print('  ⚠️ No se pudo obtener ID de tienda para promociones');
+      return {};
+    }
+
+    final globalPromotion = await _promotionService.getGlobalPromotion(
+      idTienda,
+    );
+
+    if (globalPromotion != null) {
+      await _promotionService.saveGlobalPromotion(
+        idPromocion: globalPromotion['id_promocion'],
+        codigoPromocion: globalPromotion['codigo_promocion'],
+        valorDescuento: globalPromotion['valor_descuento'],
+        tipoDescuento: globalPromotion['tipo_descuento'],
+      );
+      print('  🎯 Promoción global actualizada');
+    } else {
+      await _promotionService.saveGlobalPromotion(
+        idPromocion: null,
+        codigoPromocion: null,
+        valorDescuento: null,
+        tipoDescuento: null,
+      );
+      print('  ℹ️ No hay promoción global activa');
+    }
+
+    return globalPromotion ?? {};
   }
 
   /// Sincronizar métodos de pago
@@ -575,6 +621,78 @@ class AutoSyncService {
     );
     print('🎉 AutoSync: Total de productos sincronizados: $totalProducts');
     return productsByCategory;
+  }
+
+  /// Sincronizar promociones específicas por producto
+  Future<int> _syncProductPromotions(Map<String, dynamic> productsData) async {
+    final productIds = _extractProductIdsFromProductsData(productsData);
+
+    if (productIds.isEmpty) {
+      return 0;
+    }
+
+    print(
+      '  🎯 Sincronizando promociones de ${productIds.length} productos...',
+    );
+
+    int productsWithPromotions = 0;
+    const batchSize = 5;
+
+    for (var i = 0; i < productIds.length; i += batchSize) {
+      final endIndex =
+          (i + batchSize < productIds.length)
+              ? i + batchSize
+              : productIds.length;
+      final batch = productIds.sublist(i, endIndex);
+
+      final batchResults = await Future.wait(
+        batch.map((productId) async {
+          try {
+            final promotions = await _promotionService.getProductPromotions(
+              productId,
+            );
+            await _userPreferencesService.saveProductPromotions(
+              productId,
+              promotions,
+            );
+            return promotions.isNotEmpty;
+          } catch (e) {
+            print(
+              '  ❌ Error sincronizando promociones del producto $productId: $e',
+            );
+            return false;
+          }
+        }),
+      );
+
+      productsWithPromotions +=
+          batchResults.where((result) => result == true).length;
+    }
+
+    return productsWithPromotions;
+  }
+
+  List<int> _extractProductIdsFromProductsData(
+    Map<String, dynamic> productsData,
+  ) {
+    final ids = <int>{};
+
+    for (final categoryProducts in productsData.values) {
+      if (categoryProducts is List) {
+        for (final product in categoryProducts) {
+          if (product is Map<String, dynamic>) {
+            final rawId = product['id'] ?? product['id_producto'];
+            if (rawId is int) {
+              ids.add(rawId);
+            } else if (rawId is num) {
+              ids.add(rawId.toInt());
+            }
+          }
+        }
+      }
+    }
+
+    return ids.toList();
   }
 
   /// Sincronizar turno actual
@@ -958,6 +1076,39 @@ class AutoSyncService {
           await _registerPaymentBreakdownFromOfflineData(
             operationId,
             paymentBreakdown,
+          );
+        }
+        print('order_data $orderData');
+        if (orderData['estado'] == 'completada') {
+        print('order_status 1');
+
+          await Supabase.instance.client.rpc(
+            'fn_registrar_cambio_estado_operacion',
+            params: {
+              'p_id_operacion': operationId,
+              'p_nuevo_estado': 2,
+              'p_uuid_usuario': userId,
+            },
+          );
+        }
+        if (orderData['estado'] == 'cancelada') {
+          await Supabase.instance.client.rpc(
+            'fn_registrar_cambio_estado_operacion',
+            params: {
+              'p_id_operacion': operationId,
+              'p_nuevo_estado': 4,
+              'p_uuid_usuario': userId,
+            },
+          );
+        }
+        if (orderData['estado'] == 'devuelta') {
+          await Supabase.instance.client.rpc(
+            'fn_registrar_cambio_estado_operacion',
+            params: {
+              'p_id_operacion': operationId,
+              'p_nuevo_estado': 3,
+              'p_uuid_usuario': userId,
+            },
           );
         }
       }

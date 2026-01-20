@@ -203,8 +203,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
         errorMessage = null;
       });
 
-      // Verificar caché si no es refresh forzado
-      if (!forceRefresh && _isCacheValid(widget.categoryId)) {
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled =
+          await _userPreferencesService.isOfflineModeEnabled();
+
+      // Verificar caché si no es refresh forzado y estamos online
+      if (!forceRefresh &&
+          !isOfflineModeEnabled &&
+          _isCacheValid(widget.categoryId)) {
         final cachedProducts = _productsCache[widget.categoryId]!;
         setState(() {
           productsBySubcategory = cachedProducts;
@@ -214,10 +220,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
         _filterProducts(); // Aplicar filtro actual si existe
         return;
       }
-
-      // Verificar si el modo offline está activado
-      final isOfflineModeEnabled =
-          await _userPreferencesService.isOfflineModeEnabled();
 
       Map<String, List<Product>> products;
 

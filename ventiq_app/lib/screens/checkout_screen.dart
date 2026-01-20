@@ -1011,11 +1011,25 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // Actualizar inventario en cache
       for (final item in widget.order.items) {
         final inventoryMetadata = item.inventoryData;
-        if (inventoryMetadata != null &&
-            inventoryMetadata['id_variante'] != null) {
+
+        if (inventoryMetadata != null) {
+          final variantId = (inventoryMetadata['id_variante'] as num?)?.toInt();
+          final inventoryId =
+              (inventoryMetadata['id_inventario'] as num?)?.toInt();
+          final locationId =
+              (inventoryMetadata['id_ubicacion'] as num?)?.toInt();
+
           await _userPreferencesService.updateProductInventoryInCache(
             item.producto.id,
-            inventoryMetadata['id_variante'] as int,
+            variantId,
+            item.cantidad.toInt(),
+            inventoryId: inventoryId,
+            locationId: locationId,
+          );
+        } else {
+          await _userPreferencesService.updateProductInventoryInCache(
+            item.producto.id,
+            null,
             item.cantidad.toInt(),
           );
         }
