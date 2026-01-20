@@ -414,14 +414,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                     _buildProductSelectionSection(),
                     const SizedBox(height: 24),
                     _buildSelectedProductsSection(),
-                    const SizedBox(height: 24),
-                    SupplierReceptionIntegration(
-                      selectedSupplier: _selectedSupplier,
-                      onSupplierSelected: (supplier) {
-                        setState(() => _selectedSupplier = supplier);
-                      },
-                      isRequired: false,
-                    ),
+                    
                   ],
                 ),
               ),

@@ -2377,6 +2377,7 @@ class _SalesScreenState extends State<SalesScreen>
       // Reload data with new date range
       _loadProductSalesData();
       _loadVendorReports();
+      _loadSupplierReports();
       _loadProductAnalysis();
     }
   }
