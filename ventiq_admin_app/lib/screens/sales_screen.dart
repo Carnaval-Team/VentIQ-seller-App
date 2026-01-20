@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:pdf/pdf.dart';
@@ -113,87 +114,99 @@ class _SalesScreenState extends State<SalesScreen>
     IconData icon = Icons.more_vert;
     VoidCallback? onPressed;
 
-    debugPrint('🔍 FAB: Tab ${_tabController.index}, SupplierReports: ${_supplierReports.length}');
+    debugPrint(
+      '🔍 FAB: Tab ${_tabController.index}, SupplierReports: ${_supplierReports.length}',
+    );
 
     switch (_tabController.index) {
       case 0: // Tiempo Real
         isLoading = _isGeneratingPdf;
         label = _isGeneratingPdf ? 'Generando...' : 'Facturas PDF';
         icon = Icons.picture_as_pdf_outlined;
-        onPressed = _isGeneratingPdf
-            ? null
-            : () async {
-              await _pickPdfDateRange(context);
-              if (_pdfStartDate != null && _pdfEndDate != null) {
-                await _generateInvoicesPdf(
-                  start: _pdfStartDate!,
-                  end: _pdfEndDate!,
-                );
-              }
-            };
+        onPressed =
+            _isGeneratingPdf
+                ? null
+                : () async {
+                  await _pickPdfDateRange(context);
+                  if (_pdfStartDate != null && _pdfEndDate != null) {
+                    await _generateInvoicesPdf(
+                      start: _pdfStartDate!,
+                      end: _pdfEndDate!,
+                    );
+                  }
+                };
         break;
 
       case 1: // TPVs
         isLoading = _isGeneratingPdf;
         label = _isGeneratingPdf ? 'Generando...' : 'Facturas PDF';
         icon = Icons.picture_as_pdf_outlined;
-        onPressed = _isGeneratingPdf
-            ? null
-            : () async {
-              await _pickPdfDateRange(context);
-              if (_pdfStartDate != null && _pdfEndDate != null) {
-                await _generateInvoicesPdf(
-                  start: _pdfStartDate!,
-                  end: _pdfEndDate!,
-                );
-              }
-            };
+        onPressed =
+            _isGeneratingPdf
+                ? null
+                : () async {
+                  await _pickPdfDateRange(context);
+                  if (_pdfStartDate != null && _pdfEndDate != null) {
+                    await _generateInvoicesPdf(
+                      start: _pdfStartDate!,
+                      end: _pdfEndDate!,
+                    );
+                  }
+                };
         break;
 
       case 2: // Proveedores
-        debugPrint('🔍 FAB: En tab Proveedores, _supplierReports.isNotEmpty: ${_supplierReports.isNotEmpty}');
+        debugPrint(
+          '🔍 FAB: En tab Proveedores, _supplierReports.isNotEmpty: ${_supplierReports.isNotEmpty}',
+        );
         isLoading = _isExportingPDF;
         label = _isExportingPDF ? 'Exportando...' : 'Exportar Resumen';
         icon = Icons.download_outlined;
-        onPressed = _supplierReports.isNotEmpty && !_isExportingPDF
-            ? () => _showExportMenu()
-            : null;
+        onPressed =
+            _supplierReports.isNotEmpty && !_isExportingPDF
+                ? () => _showExportMenu()
+                : null;
         break;
 
       case 3: // Análisis
         isLoading = _isGeneratingPdf;
         label = _isGeneratingPdf ? 'Generando...' : 'Facturas PDF';
         icon = Icons.picture_as_pdf_outlined;
-        onPressed = _isGeneratingPdf
-            ? null
-            : () async {
-              await _pickPdfDateRange(context);
-              if (_pdfStartDate != null && _pdfEndDate != null) {
-                await _generateInvoicesPdf(
-                  start: _pdfStartDate!,
-                  end: _pdfEndDate!,
-                );
-              }
-            };
+        onPressed =
+            _isGeneratingPdf
+                ? null
+                : () async {
+                  await _pickPdfDateRange(context);
+                  if (_pdfStartDate != null && _pdfEndDate != null) {
+                    await _generateInvoicesPdf(
+                      start: _pdfStartDate!,
+                      end: _pdfEndDate!,
+                    );
+                  }
+                };
         break;
     }
 
-    debugPrint('🔍 FAB: onPressed=$onPressed, isLoading=$isLoading, label=$label');
+    debugPrint(
+      '🔍 FAB: onPressed=$onPressed, isLoading=$isLoading, label=$label',
+    );
 
     // Mostrar el botón siempre (deshabilitado si no hay acción)
     return FloatingActionButton.extended(
-      backgroundColor: onPressed == null && !isLoading ? Colors.grey : AppColors.primary,
+      backgroundColor:
+          onPressed == null && !isLoading ? Colors.grey : AppColors.primary,
       foregroundColor: Colors.white,
-      icon: isLoading
-          ? const SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white,
-            ),
-          )
-          : Icon(icon),
+      icon:
+          isLoading
+              ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+              : Icon(icon),
       label: Text(label),
       onPressed: onPressed,
     );
@@ -322,13 +335,21 @@ class _SalesScreenState extends State<SalesScreen>
         ),
       );
 
-      final output = await getTemporaryDirectory();
-      final file = File('${output.path}/reporte_facturas.pdf');
-      await file.writeAsBytes(await pdf.save());
+      final pdfBytes = await pdf.save();
+      final fileName =
+          'reporte_facturas_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.pdf';
 
-      await Share.shareXFiles([
-        XFile(file.path, mimeType: 'application/pdf'),
-      ], text: 'Reporte de facturas $dateLabel');
+      if (kIsWeb) {
+        await Printing.sharePdf(bytes: pdfBytes, filename: fileName);
+      } else {
+        final output = await getTemporaryDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(pdfBytes);
+
+        await Share.shareXFiles([
+          XFile(file.path, mimeType: 'application/pdf'),
+        ], text: 'Reporte de facturas $dateLabel');
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -936,6 +957,7 @@ class _SalesScreenState extends State<SalesScreen>
   String _formatDateForPdf(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
+
   List<SupplierSalesReport> _supplierReports = [];
   bool _isLoadingSuppliers = false;
   bool _isExportingPDF = false;
@@ -959,7 +981,7 @@ class _SalesScreenState extends State<SalesScreen>
     if (_tabController.indexIsChanging || !_tabController.indexIsChanging) {
       // Forzar reconstrucción del FAB cuando cambias de tab
       setState(() {});
-      
+
       switch (_tabController.index) {
         case 2: // Suppliers
           _loadSupplierReports();
@@ -1129,21 +1151,22 @@ class _SalesScreenState extends State<SalesScreen>
       }
 
       // Calcular márgenes finales y convertir a lista
-      final List<SupplierSalesReport> reports = groupedReports.values.map((item) {
-        double margen = 0;
-        if (item.totalVentas > 0) {
-          margen = (item.totalGanancia / item.totalVentas) * 100;
-        }
-        return SupplierSalesReport(
-          idProveedor: item.idProveedor,
-          nombreProveedor: item.nombreProveedor,
-          totalVentas: item.totalVentas,
-          totalCosto: item.totalCosto,
-          totalGanancia: item.totalGanancia,
-          cantidadProductos: item.cantidadProductos,
-          margenPorcentaje: margen,
-        );
-      }).toList();
+      final List<SupplierSalesReport> reports =
+          groupedReports.values.map((item) {
+            double margen = 0;
+            if (item.totalVentas > 0) {
+              margen = (item.totalGanancia / item.totalVentas) * 100;
+            }
+            return SupplierSalesReport(
+              idProveedor: item.idProveedor,
+              nombreProveedor: item.nombreProveedor,
+              totalVentas: item.totalVentas,
+              totalCosto: item.totalCosto,
+              totalGanancia: item.totalGanancia,
+              cantidadProductos: item.cantidadProductos,
+              margenPorcentaje: margen,
+            );
+          }).toList();
 
       // Ordenar por total ventas descendente
       reports.sort((a, b) => b.totalVentas.compareTo(a.totalVentas));
@@ -1339,12 +1362,12 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Widget _buildSuppliersTab() {
-     // Calcular totales generales
+    // Calcular totales generales
     double totalVentas = 0;
     double totalCosto = 0;
     double totalGanancia = 0;
-    
-    for(var report in _supplierReports) {
+
+    for (var report in _supplierReports) {
       totalVentas += report.totalVentas;
       totalCosto += report.totalCosto;
       totalGanancia += report.totalGanancia;
@@ -1357,7 +1380,7 @@ class _SalesScreenState extends State<SalesScreen>
         children: [
           _buildPeriodSelector(),
           const SizedBox(height: 16),
-          
+
           // Resumen General Card
           Container(
             padding: const EdgeInsets.all(16),
@@ -1369,70 +1392,166 @@ class _SalesScreenState extends State<SalesScreen>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                Expanded(child: _buildSummaryColumn('Ventas Totales', totalVentas, AppColors.success)),
-                Expanded(child: _buildSummaryColumn('Costo Total', totalCosto, AppColors.warning)),
-                Expanded(child: _buildSummaryColumn('Ganancia Total', totalGanancia, AppColors.primary)),
+                Expanded(
+                  child: _buildSummaryColumn(
+                    'Ventas Totales',
+                    totalVentas,
+                    AppColors.success,
+                  ),
+                ),
+                Expanded(
+                  child: _buildSummaryColumn(
+                    'Costo Total',
+                    totalCosto,
+                    AppColors.warning,
+                  ),
+                ),
+                Expanded(
+                  child: _buildSummaryColumn(
+                    'Ganancia Total',
+                    totalGanancia,
+                    AppColors.primary,
+                  ),
+                ),
               ],
             ),
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           _isLoadingSuppliers
               ? const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Center(
-                    child: CircularProgressIndicator(color: AppColors.primary),
-                  ),
-                )
+                padding: EdgeInsets.all(32),
+                child: Center(
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                ),
+              )
               : _supplierReports.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Center(
-                        child: Text(
-                          'No hay datos de proveedores para el período',
-                          style: TextStyle(color: AppColors.textSecondary),
+              ? const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(
+                  child: Text(
+                    'No hay datos de proveedores para el período',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                ),
+              )
+              : Card(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    columns: const [
+                      DataColumn(
+                        label: Text(
+                          'Proveedor',
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
-                    )
-                  : Card(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: DataTable(
-                          columns: const [
-                            DataColumn(label: Text('Proveedor', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Ventas', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Costo', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Ganancia', style: TextStyle(fontWeight: FontWeight.bold))),
-                          ],
-                          rows: [
-                            ..._supplierReports.map((report) {
-                              return DataRow(cells: [
-                                DataCell(Text(report.nombreProveedor)),
-                                DataCell(Text('\$${report.totalVentas.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.success))),
-                                DataCell(Text('\$${report.totalCosto.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.warning))),
-                                DataCell(Text('\$${report.totalGanancia.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold))),
-                              ]);
-                            }).toList(),
-                            // Fila de TOTALES
-                            DataRow(
-                              color: MaterialStateProperty.all(Colors.grey.shade100),
-                              cells: [
-                                const DataCell(Text('TOTAL', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
-                                DataCell(Text('\$${totalVentas.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.success))),
-                                DataCell(Text('\$${totalCosto.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.warning))),
-                                DataCell(Text('\$${totalGanancia.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.primary))),
-                              ],
+                      DataColumn(
+                        label: Text(
+                          'Ventas',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      DataColumn(
+                        label: Text(
+                          'Costo',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      DataColumn(
+                        label: Text(
+                          'Ganancia',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                    rows: [
+                      ..._supplierReports.map((report) {
+                        return DataRow(
+                          cells: [
+                            DataCell(Text(report.nombreProveedor)),
+                            DataCell(
+                              Text(
+                                '\$${report.totalVentas.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  color: AppColors.success,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                '\$${report.totalCosto.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  color: AppColors.warning,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                '\$${report.totalGanancia.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           ],
-                        ),
+                        );
+                      }).toList(),
+                      // Fila de TOTALES
+                      DataRow(
+                        color: MaterialStateProperty.all(Colors.grey.shade100),
+                        cells: [
+                          const DataCell(
+                            Text(
+                              'TOTAL',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '\$${totalVentas.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: AppColors.success,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '\$${totalCosto.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: AppColors.warning,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '\$${totalGanancia.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
+                    ],
+                  ),
+                ),
+              ),
         ],
       ),
     );
   }
-
 
   Widget _buildAnalyticsTab() {
     return SingleChildScrollView(
@@ -1462,15 +1581,11 @@ class _SalesScreenState extends State<SalesScreen>
         const SizedBox(height: 4),
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppColors.textSecondary,
-          ),
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
       ],
     );
   }
-
 
   String _formatDateRangeLabel() {
     final startFormatted =
@@ -5212,23 +5327,23 @@ class _SalesScreenState extends State<SalesScreen>
 
   Future<void> _exportSupplierReportToPDF() async {
     if (!mounted) return;
-    
+
     setState(() => _isExportingPDF = true);
-    
+
     try {
       final pdf = pw.Document();
-      
+
       // Calcular totales
       double totalVentas = 0;
       double totalCosto = 0;
       double totalGanancia = 0;
-      
+
       for (var report in _supplierReports) {
         totalVentas += report.totalVentas;
         totalCosto += report.totalCosto;
         totalGanancia += report.totalGanancia;
       }
-      
+
       // Crear página del PDF
       pdf.addPage(
         pw.MultiPage(
@@ -5260,9 +5375,7 @@ class _SalesScreenState extends State<SalesScreen>
               margin: const pw.EdgeInsets.only(top: 10),
               padding: const pw.EdgeInsets.only(top: 10),
               decoration: const pw.BoxDecoration(
-                border: pw.Border(
-                  top: pw.BorderSide(),
-                ),
+                border: pw.Border(top: pw.BorderSide()),
               ),
               child: pw.Text(
                 'Página ${context.pageNumber} de ${context.pagesCount}',
@@ -5428,16 +5541,17 @@ class _SalesScreenState extends State<SalesScreen>
           },
         ),
       );
-      
+
       // Generar nombre del archivo
-      final fileName = 'Reporte_Proveedores_${DateTime.now().toString().split(' ')[0]}.pdf';
-      
+      final fileName =
+          'Reporte_Proveedores_${DateTime.now().toString().split(' ')[0]}.pdf';
+
       // Mostrar diálogo de impresión/guardado
       await Printing.layoutPdf(
         onLayout: (PdfPageFormat format) async => pdf.save(),
         name: fileName,
       );
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -5465,34 +5579,34 @@ class _SalesScreenState extends State<SalesScreen>
 
   Future<void> _exportSupplierReportToExcel() async {
     if (!mounted) return;
-    
+
     setState(() => _isExportingPDF = true);
-    
+
     try {
       // Crear un nuevo Excel
       var excelSheet = excel.Excel.createExcel();
       var sheet = excelSheet['Sheet1'];
-      
+
       // Calcular totales
       double totalVentas = 0;
       double totalCosto = 0;
       double totalGanancia = 0;
-      
+
       for (var report in _supplierReports) {
         totalVentas += report.totalVentas;
         totalCosto += report.totalCosto;
         totalGanancia += report.totalGanancia;
       }
-      
+
       // Agregar encabezado
+      sheet.appendRow([excel.TextCellValue('Reporte de Ventas por Proveedor')]);
       sheet.appendRow([
-        excel.TextCellValue('Reporte de Ventas por Proveedor'),
-      ]);
-      sheet.appendRow([
-        excel.TextCellValue('Período: ${_startDate.day}/${_startDate.month}/${_startDate.year} - ${_endDate.day}/${_endDate.month}/${_endDate.year}'),
+        excel.TextCellValue(
+          'Período: ${_startDate.day}/${_startDate.month}/${_startDate.year} - ${_endDate.day}/${_endDate.month}/${_endDate.year}',
+        ),
       ]);
       sheet.appendRow([]); // Fila vacía
-      
+
       // Agregar encabezados de columnas
       sheet.appendRow([
         excel.TextCellValue('Proveedor'),
@@ -5500,7 +5614,7 @@ class _SalesScreenState extends State<SalesScreen>
         excel.TextCellValue('Costo'),
         excel.TextCellValue('Ganancia'),
       ]);
-      
+
       // Agregar datos de proveedores
       for (var report in _supplierReports) {
         sheet.appendRow([
@@ -5510,7 +5624,7 @@ class _SalesScreenState extends State<SalesScreen>
           excel.DoubleCellValue(report.totalGanancia),
         ]);
       }
-      
+
       // Agregar fila de totales
       sheet.appendRow([
         excel.TextCellValue('TOTAL'),
@@ -5518,21 +5632,19 @@ class _SalesScreenState extends State<SalesScreen>
         excel.DoubleCellValue(totalCosto),
         excel.DoubleCellValue(totalGanancia),
       ]);
-      
+
       // Guardar archivo
-      final fileName = 'Reporte_Proveedores_${DateTime.now().toString().split(' ')[0]}.xlsx';
+      final fileName =
+          'Reporte_Proveedores_${DateTime.now().toString().split(' ')[0]}.xlsx';
       final bytes = excelSheet.encode();
-      
+
       if (bytes != null) {
         // Convertir a Uint8List
         final uint8bytes = Uint8List.fromList(bytes);
-        
+
         // Mostrar diálogo de guardado
-        await Printing.sharePdf(
-          bytes: uint8bytes,
-          filename: fileName,
-        );
-        
+        await Printing.sharePdf(bytes: uint8bytes, filename: fileName);
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
