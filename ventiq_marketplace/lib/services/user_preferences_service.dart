@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum NotificationConsentStatus {
@@ -34,6 +36,10 @@ class UserPreferencesService {
   static const String _notificationConsentPromptLastShownAtKey =
       'notification_consent_prompt_last_shown_at_marketplace';
   static const int _notificationRemindLaterIntervalHours = 24;
+
+  // WhatsApp favoritos (destinos rápidos)
+  static const String _waFavoritesKey = 'wa_favorites_marketplace';
+  static const String _waGroupsByStoreKey = 'wa_groups_by_store_marketplace';
 
   Future<void> saveAppVersion(String version) async {
     final prefs = await SharedPreferences.getInstance();
@@ -201,6 +207,110 @@ class UserPreferencesService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_migrationDialogShownKey, true);
+    } catch (_) {}
+  }
+
+  /// Devuelve la lista de favoritos de WhatsApp guardados localmente.
+  /// Cada elemento: {'name': String, 'value': String, 'type': 'phone' | 'link'}
+  Future<List<Map<String, String>>> getWhatsappFavorites() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_waFavoritesKey) ?? [];
+      return list
+          .map((e) {
+            try {
+              final decoded = e.split('|');
+              if (decoded.length == 2) {
+                // Compatibilidad con formato antiguo (name|phone)
+                return {
+                  'name': decoded[0],
+                  'value': decoded[1],
+                  'type': 'phone',
+                };
+              }
+              if (decoded.length >= 3) {
+                return {
+                  'name': decoded[0],
+                  'value': decoded[1],
+                  'type': decoded[2].isNotEmpty ? decoded[2] : 'phone',
+                };
+              }
+              return null;
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<Map<String, String>>()
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Guarda la lista completa de favoritos de WhatsApp.
+  Future<void> saveWhatsappFavorites(
+    List<Map<String, String>> favorites,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = favorites
+          .map(
+            (f) =>
+                '${f['name'] ?? ''}|${f['value'] ?? ''}|${f['type'] ?? 'phone'}',
+          )
+          .toList();
+      await prefs.setStringList(_waFavoritesKey, encoded);
+    } catch (_) {}
+  }
+
+  /// Obtiene el grupo de WhatsApp guardado para una tienda específica.
+  /// Retorna: {'group_id': String, 'name': String, 'invite_code': String?}
+  Future<Map<String, String>?> getWhatsappGroupForStore(int storeId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_waGroupsByStoreKey);
+      if (raw == null || raw.isEmpty) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final entry = decoded[storeId.toString()];
+      if (entry is! Map) return null;
+      final groupId = entry['group_id']?.toString();
+      if (groupId == null || groupId.isEmpty) return null;
+      return {
+        'group_id': groupId,
+        'name': entry['name']?.toString() ?? 'Grupo WhatsApp',
+        if (entry['invite_code'] != null)
+          'invite_code': entry['invite_code'].toString(),
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Guarda/actualiza el grupo de WhatsApp para una tienda específica.
+  Future<void> saveWhatsappGroupForStore({
+    required int storeId,
+    required String groupId,
+    required String name,
+    String? inviteCode,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_waGroupsByStoreKey);
+      Map<String, dynamic> decoded = {};
+      if (raw != null && raw.isNotEmpty) {
+        final parsed = jsonDecode(raw);
+        if (parsed is Map) {
+          decoded = Map<String, dynamic>.from(parsed);
+        }
+      }
+      decoded[storeId.toString()] = {
+        'group_id': groupId,
+        'name': name,
+        if (inviteCode != null && inviteCode.trim().isNotEmpty)
+          'invite_code': inviteCode.trim(),
+      };
+      await prefs.setString(_waGroupsByStoreKey, jsonEncode(decoded));
     } catch (_) {}
   }
 }

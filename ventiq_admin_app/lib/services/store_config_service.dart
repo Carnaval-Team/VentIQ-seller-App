@@ -60,6 +60,7 @@ class StoreConfigService {
     bool? permiteVenderAunSinDisponibilidad,
     bool? noSolicitarCliente,
     bool? allowDiscountOnVendedor,
+    bool? permitirImprimirPendientes,
     Map<String, dynamic>? tpvTrabajadorEncargadoCarnaval,
   }) async {
     try {
@@ -112,6 +113,11 @@ class StoreConfigService {
       if (allowDiscountOnVendedor != null) {
         updateData['allow_discount_on_vendedor'] = allowDiscountOnVendedor;
         print('  - allow_discount_on_vendedor: $allowDiscountOnVendedor');
+      }
+
+      if (permitirImprimirPendientes != null) {
+        updateData['permitir_imprimir_pendientes'] = permitirImprimirPendientes;
+        print('  - permitir_imprimir_pendientes: $permitirImprimirPendientes');
       }
 
       if (tpvTrabajadorEncargadoCarnaval != null) {
@@ -273,6 +279,22 @@ class StoreConfigService {
     bool value,
   ) async {
     await updateStoreConfig(storeId, allowDiscountOnVendedor: value);
+  }
+
+  /// Obtiene solo el valor de permitir_imprimir_pendientes
+  static Future<bool> getAllowPrintPending(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['permitir_imprimir_pendientes'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener permitir_imprimir_pendientes: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza permitir_imprimir_pendientes
+  static Future<void> updateAllowPrintPending(int storeId, bool value) async {
+    await updateStoreConfig(storeId, permitirImprimirPendientes: value);
   }
 
   /// Obtiene solo el valor de tpv_trabajador_encargado_carnaval

@@ -49,7 +49,7 @@ class TurnoService {
 
         final resumenCierre = await _supabase.rpc(
           'fn_resumen_diario_cierre',
-          params: {'id_tpv_param': idTpv,'id_usuario_param':userID},
+          params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
         );
 
         print('📈 Resumen Cierre Response: $resumenCierre');
@@ -92,7 +92,6 @@ class TurnoService {
     try {
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
-      
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline - Obteniendo turno offline...');
         final turnoOffline = await _userPrefs.getOfflineTurno();
@@ -144,9 +143,25 @@ class TurnoService {
       }
 
       print('⚠️ No open shift found for TPV: $idTpv, Seller: $idSeller');
+      // Fallback: intentar turno offline guardado
+      final turnoOffline = await _userPrefs.getOfflineTurno();
+      if (turnoOffline != null) {
+        print('📱 Usando turno offline como fallback: ${turnoOffline['id']}');
+        return turnoOffline;
+      }
       return null;
     } catch (e) {
       print('❌ Error getting open shift: $e');
+      // Fallback adicional en caso de error: consultar cache offline
+      try {
+        final turnoOffline = await _userPrefs.getOfflineTurno();
+        if (turnoOffline != null) {
+          print(
+            '📱 Turno offline encontrado tras error: ${turnoOffline['id']}',
+          );
+          return turnoOffline;
+        }
+      } catch (_) {}
       return null;
     }
   }
@@ -374,7 +389,7 @@ class TurnoService {
           'p_id_tpv': idTpv,
           'p_id_vendedor': idVendedor,
           'p_usuario': usuario,
-          'p_maneja_inventario': false,
+          'p_maneja_inventario': manejaInventario,
           'p_productos': productos,
           'p_observaciones': observaciones,
         },
@@ -410,7 +425,7 @@ class TurnoService {
     try {
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
-      
+
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline - Verificando turno offline...');
         final hasOfflineTurno = await _userPrefs.hasOfflineTurnoAbierto();

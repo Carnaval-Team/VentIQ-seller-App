@@ -1,11 +1,16 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:excel/excel.dart' as excel;
-import 'dart:typed_data';
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
@@ -31,12 +36,843 @@ class _SalesScreenState extends State<SalesScreen>
   bool _isLoadingVendors = true;
   DateTime _startDate = DateTime.now();
   DateTime _endDate = DateTime.now();
+  DateTime? _pdfStartDate;
+  DateTime? _pdfEndDate;
+  bool _isGeneratingPdf = false;
   String _selectedTPV = 'Todos';
   double _totalSales = 0.0;
   int _totalProductsSold = 0;
   bool _isLoadingMetrics = false;
   List<ProductAnalysis> _productAnalysis = [];
   bool _isLoadingAnalysis = false;
+
+  // Generación de PDF
+  Future<void> _pickPdfDateRange(BuildContext context) async {
+    final DateTime? start = await showDatePicker(
+      context: context,
+      initialDate: _pdfStartDate ?? _startDate,
+      firstDate: DateTime(2023),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      helpText: 'Selecciona fecha de inicio',
+    );
+    if (start == null) return;
+
+    final DateTime? end = await showDatePicker(
+      context: context,
+      initialDate: _pdfEndDate ?? _endDate,
+      firstDate: start,
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      helpText: 'Selecciona fecha fin',
+    );
+    if (end == null) return;
+
+    setState(() {
+      _pdfStartDate = DateTime(start.year, start.month, start.day, 0, 0, 0);
+      _pdfEndDate = DateTime(end.year, end.month, end.day, 23, 59, 59);
+    });
+  }
+
+  double _calculateOrderCost(List<dynamic> items) {
+    double totalCost = 0.0;
+    for (final item in items) {
+      final qty = _toDoubleSafe(item['cantidad']);
+      final unitCost = _getItemUnitCost(item);
+      totalCost += qty * unitCost;
+    }
+    return totalCost;
+  }
+
+  double _getItemUnitCost(Map<String, dynamic> item) {
+    final costo =
+        item['precio_costo'] ??
+        item['costo_unitario'] ??
+        item['costo'] ??
+        item['precio_costo_unitario'] ??
+        0.0;
+    return _toDoubleSafe(costo);
+  }
+
+  String _getAddonName(Map<String, dynamic> ad, String parentName) {
+    final raw =
+        (ad['nombre_ingrediente'] ??
+                ad['nombre'] ??
+                ad['descripcion'] ??
+                ad['item'] ??
+                '')
+            .toString()
+            .trim();
+    if (raw.isEmpty) return 'Aditamento';
+    if (raw.toLowerCase() == parentName.toLowerCase()) return 'Aditamento';
+    return raw;
+  }
+
+  Widget _buildGeneratePdfFab() {
+    return FloatingActionButton.extended(
+      backgroundColor: AppColors.primary,
+      icon:
+          _isGeneratingPdf
+              ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+              : const Icon(Icons.picture_as_pdf_outlined),
+      label: Text(_isGeneratingPdf ? 'Generando...' : 'Facturas PDF'),
+      onPressed:
+          _isGeneratingPdf
+              ? null
+              : () async {
+                await _pickPdfDateRange(context);
+                if (_pdfStartDate != null && _pdfEndDate != null) {
+                  await _generateInvoicesPdf(
+                    start: _pdfStartDate!,
+                    end: _pdfEndDate!,
+                  );
+                }
+              },
+    );
+  }
+
+  Future<void> _generateInvoicesPdf({
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    setState(() => _isGeneratingPdf = true);
+
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      Map<String, dynamic>? storeData;
+      if (storeId != null) {
+        storeData =
+            await Supabase.instance.client
+                .from('app_dat_tienda')
+                .select('denominacion, direccion, ubicacion, phone, imagen_url')
+                .eq('id', storeId)
+                .maybeSingle();
+      }
+
+      final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+      final storeAddress = storeData?['direccion'] as String? ?? '';
+      final storeLocation = storeData?['ubicacion'] as String? ?? '';
+      final storePhone = storeData?['phone'] as String? ?? '';
+      final storeLogoUrl = storeData?['imagen_url'] as String?;
+      final logoBytes = await _downloadImageBytes(storeLogoUrl);
+
+      final orders = await _fetchOrdersForPdf(start: start, end: end);
+      final productReports = await SalesService.getProductSalesReport(
+        fechaDesde: start,
+        fechaHasta: end,
+      );
+
+      double ventaTotal = 0.0;
+      double descuentoTotal = 0.0;
+      double pagoTotal = 0.0;
+
+      for (final order in orders) {
+        final summary = _calculateDiscountSummary(order);
+        ventaTotal += summary['cobrado'] ?? 0.0;
+        descuentoTotal += summary['descuento'] ?? 0.0;
+
+        final pagos = (order.detalles['pagos'] as List?) ?? [];
+        for (final pago in pagos) {
+          pagoTotal += _toDoubleSafe(pago['total']);
+        }
+      }
+
+      final costoTotal = productReports.fold<double>(
+        0.0,
+        (sum, p) => sum + p.costoTotalVendido,
+      );
+      final gananciaTotal = productReports.fold<double>(
+        0.0,
+        (sum, p) => sum + p.gananciaTotal,
+      );
+      final gananciasReales = (ventaTotal - descuentoTotal) - costoTotal;
+
+      final pdf = pw.Document();
+      final dateLabel =
+          '${_formatDateForPdf(start)} - ${_formatDateForPdf(end)}';
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          build:
+              (context) => [
+                _buildPdfHeader(
+                  logoBytes: logoBytes,
+                  storeName: storeName,
+                  storeAddress: storeAddress,
+                  storeLocation: storeLocation,
+                  storePhone: storePhone,
+                  dateLabel: dateLabel,
+                ),
+                pw.SizedBox(height: 16),
+                pw.Text(
+                  'Facturas',
+                  style: pw.TextStyle(
+                    fontSize: 16,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('#0F172A'),
+                  ),
+                ),
+                pw.SizedBox(height: 8),
+                ...orders.map(
+                  (order) => pw.Container(
+                    margin: const pw.EdgeInsets.only(bottom: 12),
+                    padding: const pw.EdgeInsets.all(12),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColor.fromHex('#F8FAFC'),
+                      borderRadius: pw.BorderRadius.circular(10),
+                      border: pw.Border.all(
+                        color: PdfColors.grey300,
+                        width: 0.8,
+                      ),
+                    ),
+                    child: _buildOrderPdfSection(order),
+                  ),
+                ),
+                pw.SizedBox(height: 12),
+                pw.Text(
+                  'Costos y Ganancias (por producto)',
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('#0F172A'),
+                  ),
+                ),
+                pw.SizedBox(height: 6),
+                _buildProductCostsTable(productReports),
+                pw.SizedBox(height: 16),
+                _buildPdfSummaryTotals(
+                  ventaTotal: ventaTotal,
+                  descuentoTotal: descuentoTotal,
+                  costoTotal: costoTotal,
+                  gananciaTotal: gananciaTotal,
+                  gananciasReales: gananciasReales,
+                  pagoTotal: pagoTotal,
+                ),
+              ],
+        ),
+      );
+
+      final output = await getTemporaryDirectory();
+      final file = File('${output.path}/reporte_facturas.pdf');
+      await file.writeAsBytes(await pdf.save());
+
+      await Share.shareXFiles([
+        XFile(file.path, mimeType: 'application/pdf'),
+      ], text: 'Reporte de facturas $dateLabel');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isGeneratingPdf = false);
+      }
+    }
+  }
+
+  Future<List<VendorOrder>> _fetchOrdersForPdf({
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      if (storeId == null) return [];
+
+      debugPrint(
+        '[PDF] Preparando listar_ordenes | tienda=$storeId | '
+        'desde=${start.toIso8601String()} | hasta=${end.toIso8601String()}',
+      );
+
+      // obtener lista de vendedores/TPVs (uuid_usuario) como en la vista de órdenes
+      final vendorReports = await SalesService.getSalesVendorReport(
+        fechaDesde: start,
+        fechaHasta: end,
+      );
+      final vendorUuids = vendorReports.map((v) => v.uuidUsuario).toSet();
+
+      debugPrint('[PDF] UUIDs de vendedores/TPVs: $vendorUuids');
+
+      final List<VendorOrder> orders = [];
+      final Set<int> uniqueOrderIds = {};
+
+      Future<void> fetchForUser(String? uuidUsuario) async {
+        final response = await Supabase.instance.client.rpc(
+          'listar_ordenes',
+          params: {
+            'con_inventario_param': false,
+            'fecha_desde_param': start.toIso8601String().split('T')[0],
+            'fecha_hasta_param': end.toIso8601String().split('T')[0],
+            'id_estado_param': null,
+            'id_tienda_param': storeId,
+            'id_tipo_operacion_param': null,
+            'id_tpv_param': null,
+            'id_usuario_param': uuidUsuario,
+            'limite_param': null,
+            'pagina_param': null,
+            'solo_pendientes_param': false,
+          },
+        );
+
+        final label = uuidUsuario ?? 'ALL';
+        if (response == null) {
+          debugPrint('[PDF] listar_ordenes user=$label -> respuesta null');
+          return;
+        }
+        debugPrint(
+          '[PDF] listar_ordenes user=$label -> ${response.length} registros',
+        );
+
+        for (final item in response) {
+          try {
+            final order = VendorOrder.fromJson(item);
+            final tipoOperacion = item['tipo_operacion']?.toString() ?? '';
+            if (tipoOperacion.toLowerCase().contains('venta')) {
+              if (uniqueOrderIds.add(order.idOperacion)) {
+                orders.add(order);
+              }
+              debugPrint(
+                '[PDF] user=$label Orden #${order.idOperacion} tipo=$tipoOperacion total=${order.totalOperacion} items=${order.cantidadItems}',
+              );
+            }
+          } catch (e) {
+            debugPrint('[PDF] Error parseando orden user=$label: $e');
+          }
+        }
+      }
+
+      if (vendorUuids.isNotEmpty) {
+        for (final uuid in vendorUuids) {
+          await fetchForUser(uuid);
+        }
+      } else {
+        // fallback sin filtro de usuario
+        await fetchForUser(null);
+      }
+
+      debugPrint('[PDF] Órdenes Venta después de filtrar: ${orders.length}');
+      return orders;
+    } catch (e) {
+      debugPrint('Error fetching orders for PDF: $e');
+      return [];
+    }
+  }
+
+  Future<Uint8List?> _downloadImageBytes(String? url) async {
+    if (url == null || url.isEmpty) return null;
+
+    const objectPrefix =
+        'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/images_back/';
+    const renderPrefix =
+        'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/render/image/public/images_back/';
+
+    // Construir URL de render con dimensiones fijas para supabase
+    final renderUrl =
+        url.contains(objectPrefix)
+            ? '${url.replaceFirst(objectPrefix, renderPrefix)}?width=500&height=600'
+            : url;
+
+    try {
+      final response = await http.get(Uri.parse(renderUrl));
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      }
+      return null;
+    } catch (e) {
+      print('⚠️ No se pudo descargar imagen de tienda: $e');
+      return null;
+    }
+  }
+
+  pw.Widget _buildPdfHeader({
+    required Uint8List? logoBytes,
+    required String storeName,
+    required String storeAddress,
+    required String storeLocation,
+    required String storePhone,
+    required String dateLabel,
+  }) {
+    return pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        if (logoBytes != null)
+          pw.Container(
+            width: 64,
+            height: 64,
+            decoration: pw.BoxDecoration(
+              borderRadius: pw.BorderRadius.circular(12),
+              border: pw.Border.all(color: PdfColors.grey300, width: 1),
+            ),
+            child: pw.ClipRRect(
+              horizontalRadius: 12,
+              verticalRadius: 12,
+              child: pw.Image(pw.MemoryImage(logoBytes), fit: pw.BoxFit.cover),
+            ),
+          ),
+        if (logoBytes != null) pw.SizedBox(width: 12),
+        pw.Expanded(
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                storeName,
+                style: pw.TextStyle(
+                  fontSize: 18,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromHex('#0F172A'),
+                ),
+              ),
+              if (storeAddress.isNotEmpty || storeLocation.isNotEmpty)
+                pw.Text(
+                  [
+                    if (storeAddress.isNotEmpty) storeAddress,
+                    if (storeLocation.isNotEmpty) storeLocation,
+                  ].join(' · '),
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    color: PdfColor.fromHex('#475569'),
+                  ),
+                ),
+              if (storePhone.isNotEmpty)
+                pw.Text(
+                  'Tel: $storePhone',
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    color: PdfColor.fromHex('#475569'),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          children: [
+            pw.Text(
+              'Reporte de Facturas',
+              style: pw.TextStyle(
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#0F172A'),
+              ),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              dateLabel,
+              style: pw.TextStyle(
+                fontSize: 11,
+                color: PdfColor.fromHex('#475569'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _buildOrderPdfSection(VendorOrder order) {
+    final summary = _calculateDiscountSummary(order);
+    final double original = summary['original'] ?? order.totalOperacion;
+    final double cobrado = summary['cobrado'] ?? order.totalOperacion;
+    final double descuento = summary['descuento'] ?? 0.0;
+
+    final cliente = order.detalles['cliente'] as Map<String, dynamic>?;
+    final clienteNombre =
+        cliente != null ? (cliente['nombre_completo'] ?? 'Cliente') : 'Cliente';
+    final pagos = (order.detalles['pagos'] as List?) ?? [];
+
+    final items = (order.detalles['items'] as List?) ?? [];
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              'Orden #${order.idOperacion}',
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#0F172A'),
+              ),
+            ),
+            pw.Text(
+              _formatDateTime(order.fechaOperacion),
+              style: pw.TextStyle(
+                fontSize: 10,
+                color: PdfColor.fromHex('#475569'),
+              ),
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 4),
+        pw.Text(
+          'Cliente: $clienteNombre',
+          style: pw.TextStyle(fontSize: 10, color: PdfColor.fromHex('#334155')),
+        ),
+        pw.SizedBox(height: 8),
+        _buildItemsTable(items),
+        pw.SizedBox(height: 8),
+        _buildPaymentsTable(pagos),
+        pw.SizedBox(height: 6),
+        _buildOrderTotals(
+          original: original,
+          descuento: descuento,
+          total: cobrado,
+          costo: _calculateOrderCost(items),
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _buildItemsTable(List<dynamic> items) {
+    return pw.Table(
+      border: pw.TableBorder(
+        horizontalInside: pw.BorderSide(color: PdfColors.grey300, width: 0.3),
+        bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5),
+      ),
+      columnWidths: {
+        0: const pw.FlexColumnWidth(4),
+        1: const pw.FlexColumnWidth(1),
+        2: const pw.FlexColumnWidth(1.2),
+        3: const pw.FlexColumnWidth(1.2),
+        4: const pw.FlexColumnWidth(1.4),
+        5: const pw.FlexColumnWidth(1.4),
+      },
+      children: [
+        pw.TableRow(
+          children: [
+            _pdfHeaderCell('Producto'),
+            _pdfHeaderCell('Cant.'),
+            _pdfHeaderCell('Precio'),
+            _pdfHeaderCell('Costo'),
+            _pdfHeaderCell('Subtotal'),
+            _pdfHeaderCell('Ganancia'),
+          ],
+        ),
+        ...items
+            .map((item) {
+              final nombre = item['producto_nombre']?.toString() ?? 'Producto';
+              final cantidad = _toDoubleSafe(
+                item['cantidad'],
+              ).toStringAsFixed(0);
+              final precio = _toDoubleSafe(
+                item['precio_unitario'],
+              ).toStringAsFixed(2);
+              final costoUnitario = _toDoubleSafe(_getItemUnitCost(item));
+              final costoTotal = (costoUnitario *
+                      _toDoubleSafe(item['cantidad']))
+                  .toStringAsFixed(2);
+              final subtotal = _toDoubleSafe(
+                item['importe'],
+              ).toStringAsFixed(2);
+              final ganancia = (_toDoubleSafe(item['importe']) -
+                      (costoUnitario * _toDoubleSafe(item['cantidad'])))
+                  .toStringAsFixed(2);
+
+              final aditamentos =
+                  (item['aditamentos'] as List?) ??
+                  (item['ingredientes'] as List?);
+
+              final rows = <pw.TableRow>[
+                pw.TableRow(
+                  children: [
+                    _pdfBodyCell(nombre),
+                    _pdfBodyCell(cantidad),
+                    _pdfBodyCell('\$$precio'),
+                    _pdfBodyCell('\$$costoTotal'),
+                    _pdfBodyCell('\$$subtotal'),
+                    _pdfBodyCell('\$$ganancia', isBold: true),
+                  ],
+                ),
+              ];
+
+              if (aditamentos != null && aditamentos.isNotEmpty) {
+                rows.add(
+                  pw.TableRow(
+                    children: [
+                      _pdfBodyCell(
+                        '   Aditamentos',
+                        isBold: true,
+                        isIngredient: true,
+                      ),
+                      _pdfBodyCell('', isIngredient: true),
+                      _pdfBodyCell('', isIngredient: true),
+                      _pdfBodyCell('', isIngredient: true),
+                    ],
+                  ),
+                );
+                rows.addAll(
+                  aditamentos.map<pw.TableRow>((ad) {
+                    final nombreAd = _getAddonName(ad, nombre);
+                    final cantidadAd = _toDoubleSafe(
+                      ad['cantidad'] ??
+                          ad['cantidad_vendida'] ??
+                          ad['cantidad_necesaria'],
+                    ).toStringAsFixed(2);
+                    final unidad = (ad['unidad_medida'] ?? '').toString();
+                    return pw.TableRow(
+                      children: [
+                        _pdfBodyCell('   $nombreAd', isIngredient: true),
+                        _pdfBodyCell(
+                          unidad.isNotEmpty
+                              ? '$cantidadAd $unidad'
+                              : cantidadAd,
+                          isIngredient: true,
+                        ),
+                        _pdfBodyCell('', isIngredient: true),
+                        _pdfBodyCell('', isIngredient: true),
+                      ],
+                    );
+                  }),
+                );
+              }
+
+              return rows;
+            })
+            .expand((e) => e),
+      ],
+    );
+  }
+
+  pw.Widget _buildPaymentsTable(List<dynamic> pagos) {
+    if (pagos.isEmpty) return pw.SizedBox.shrink();
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Pagos',
+          style: pw.TextStyle(
+            fontSize: 11,
+            fontWeight: pw.FontWeight.bold,
+            color: PdfColor.fromHex('#0F172A'),
+          ),
+        ),
+        pw.SizedBox(height: 4),
+        pw.Table(
+          border: pw.TableBorder(
+            horizontalInside: pw.BorderSide(
+              color: PdfColors.grey300,
+              width: 0.3,
+            ),
+            bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5),
+          ),
+          columnWidths: {
+            0: const pw.FlexColumnWidth(4),
+            1: const pw.FlexColumnWidth(2),
+          },
+          children: [
+            pw.TableRow(
+              children: [_pdfHeaderCell('Medio'), _pdfHeaderCell('Monto')],
+            ),
+            ...pagos.map((p) {
+              final medio = p['medio_pago']?.toString() ?? 'N/A';
+              final total = _toDoubleSafe(p['total']).toStringAsFixed(2);
+              return pw.TableRow(
+                children: [
+                  _pdfBodyCell(medio),
+                  _pdfBodyCell('\$$total', isBold: true),
+                ],
+              );
+            }),
+          ],
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _buildOrderTotals({
+    required double original,
+    required double descuento,
+    required double total,
+    required double costo,
+  }) {
+    final ganancia = total - costo;
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(10),
+      decoration: pw.BoxDecoration(
+        color: PdfColor.fromHex('#EEF2FF'),
+        borderRadius: pw.BorderRadius.circular(8),
+        border: pw.Border.all(color: PdfColor.fromHex('#CBD5E1'), width: 0.8),
+      ),
+      child: pw.Column(
+        children: [
+          _pdfSummaryRow('Subtotal', original),
+          if (descuento > 0) _pdfSummaryRow('Descuento', -descuento),
+          _pdfSummaryRow('Costo', -costo),
+          pw.Divider(height: 8, color: PdfColors.grey500, thickness: 0.5),
+          _pdfSummaryRow('Total', total, isBold: true, fontSize: 12),
+          _pdfSummaryRow('Ganancia orden', ganancia, isBold: true),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _buildProductCostsTable(List<ProductSalesReport> reports) {
+    if (reports.isEmpty) {
+      return pw.Text(
+        'No hay datos de productos en el rango seleccionado.',
+        style: pw.TextStyle(fontSize: 10, color: PdfColor.fromHex('#6B7280')),
+      );
+    }
+    return pw.Table(
+      border: pw.TableBorder(
+        horizontalInside: pw.BorderSide(color: PdfColors.grey300, width: 0.3),
+        bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5),
+      ),
+      columnWidths: {
+        0: const pw.FlexColumnWidth(4),
+        1: const pw.FlexColumnWidth(1.5),
+        2: const pw.FlexColumnWidth(1.5),
+        3: const pw.FlexColumnWidth(1.5),
+      },
+      children: [
+        pw.TableRow(
+          children: [
+            _pdfHeaderCell('Producto'),
+            _pdfHeaderCell('Precio'),
+            _pdfHeaderCell('Costo'),
+            _pdfHeaderCell('Ganancia'),
+          ],
+        ),
+        ...reports.map(
+          (p) => pw.TableRow(
+            children: [
+              _pdfBodyCell(p.nombreProducto),
+              _pdfBodyCell('\$${p.precioVentaCup.toStringAsFixed(2)}'),
+              _pdfBodyCell('\$${p.precioCostoCup.toStringAsFixed(2)}'),
+              _pdfBodyCell('\$${p.gananciaUnitaria.toStringAsFixed(2)}'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _buildPdfSummaryTotals({
+    required double ventaTotal,
+    required double descuentoTotal,
+    required double costoTotal,
+    required double gananciaTotal,
+    required double gananciasReales,
+    required double pagoTotal,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        color: PdfColor.fromHex('#F1F5F9'),
+        borderRadius: pw.BorderRadius.circular(12),
+        border: pw.Border.all(color: PdfColors.grey300, width: 1),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Resumen',
+            style: pw.TextStyle(
+              fontSize: 13,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColor.fromHex('#0F172A'),
+            ),
+          ),
+          pw.SizedBox(height: 8),
+          _pdfSummaryRow('Venta total', ventaTotal),
+          _pdfSummaryRow('Descuento total', -descuentoTotal),
+          _pdfSummaryRow('Costo total', -costoTotal),
+          _pdfSummaryRow('Ganancia total', gananciaTotal),
+          _pdfSummaryRow('Ganancias reales', gananciasReales, isBold: true),
+          _pdfSummaryRow('Pago total (pagos)', pagoTotal),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pdfHeaderCell(String text) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(vertical: 6),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(
+          fontSize: 10,
+          fontWeight: pw.FontWeight.bold,
+          color: PdfColor.fromHex('#1F2937'),
+        ),
+      ),
+    );
+  }
+
+  pw.Widget _pdfBodyCell(
+    String text, {
+    bool isBold = false,
+    bool isIngredient = false,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(vertical: 4),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(
+          fontSize: isIngredient ? 9 : 10,
+          fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          color:
+              isIngredient
+                  ? PdfColor.fromHex('#6B7280')
+                  : PdfColor.fromHex('#334155'),
+        ),
+      ),
+    );
+  }
+
+  pw.Widget _pdfSummaryRow(
+    String label,
+    double value, {
+    bool isBold = false,
+    double fontSize = 11,
+  }) {
+    final isNegative = value < 0;
+    final display =
+        isNegative
+            ? '- \$${value.abs().toStringAsFixed(2)}'
+            : '\$${value.toStringAsFixed(2)}';
+    return pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [
+        pw.Text(
+          label,
+          style: pw.TextStyle(
+            fontSize: fontSize,
+            fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            color: PdfColor.fromHex('#475569'),
+          ),
+        ),
+        pw.Text(
+          display,
+          style: pw.TextStyle(
+            fontSize: fontSize,
+            fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            color:
+                isNegative
+                    ? PdfColor.fromHex('#DC2626')
+                    : PdfColor.fromHex('#0F172A'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatDateForPdf(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
   List<SupplierSalesReport> _supplierReports = [];
   bool _isLoadingSuppliers = false;
   bool _isExportingPDF = false;
@@ -336,6 +1172,7 @@ class _SalesScreenState extends State<SalesScreen>
             )
           : null,
       endDrawer: const AdminDrawer(),
+      floatingActionButton: _buildGeneratePdfFab(),
       bottomNavigationBar: AdminBottomNavigation(
         currentIndex: 1,
         onTap: _onBottomNavTap,
@@ -1311,23 +2148,8 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   String _formatDateTime(DateTime dateTime) {
-    // Convert to local timezone
     final localDateTime = dateTime.toLocal();
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final dateToCheck = DateTime(
-      localDateTime.year,
-      localDateTime.month,
-      localDateTime.day,
-    );
-
-    if (dateToCheck == today) {
-      return 'Hoy ${localDateTime.hour.toString().padLeft(2, '0')}:${localDateTime.minute.toString().padLeft(2, '0')}';
-    } else if (dateToCheck == today.subtract(const Duration(days: 1))) {
-      return 'Ayer ${localDateTime.hour.toString().padLeft(2, '0')}:${localDateTime.minute.toString().padLeft(2, '0')}';
-    } else {
-      return '${localDateTime.day.toString().padLeft(2, '0')}/${localDateTime.month.toString().padLeft(2, '0')}/${localDateTime.year} ${localDateTime.hour.toString().padLeft(2, '0')}:${localDateTime.minute.toString().padLeft(2, '0')}';
-    }
+    return DateFormat('dd/MM/yyyy HH:mm').format(localDateTime);
   }
 
   Widget _buildSalesChart() {
@@ -1963,6 +2785,7 @@ class _SalesScreenState extends State<SalesScreen>
                                               crossAxisAlignment:
                                                   CrossAxisAlignment.start,
                                               children: [
+                                                _buildDiscountRow(order),
                                                 Row(
                                                   children: [
                                                     Expanded(
@@ -2673,6 +3496,174 @@ class _SalesScreenState extends State<SalesScreen>
       default:
         return Icons.payment;
     }
+  }
+
+  /// Construye una fila resumen de descuentos por orden.
+  /// Muestra total original, total cobrado, total descontado y tipo de descuento.
+  Widget _buildDiscountRow(VendorOrder order) {
+    final summary = _calculateDiscountSummary(order);
+    if (summary['visible'] != true) return const SizedBox.shrink();
+
+    final double original = summary['original'] ?? 0.0;
+    final double cobrado = summary['cobrado'] ?? 0.0;
+    final double descuento = summary['descuento'] ?? 0.0;
+    final String tipo = summary['tipo'] ?? 'N/A';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        children: [
+          _buildDiscountChip(
+            label: 'Cobrado',
+            value: cobrado,
+            color: AppColors.success,
+          ),
+          _buildDiscountChip(
+            label: 'Descuento',
+            value: descuento,
+            color: AppColors.warning,
+          ),
+          _buildDiscountChip(
+            label: 'Original',
+            value: original,
+            color: AppColors.info,
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.sell, size: 14, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text(
+                  'Tipo: $tipo',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF4B5563),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Map<String, dynamic> _calculateDiscountSummary(VendorOrder order) {
+    final detalles = order.detalles;
+    final pagos = (detalles['pagos'] as List?) ?? [];
+    // Nuevo campo plural "descuentos" o fallback al campo anterior "descuento"
+    Map<String, dynamic>? descuentoDetalle;
+    final dynamic descuentos = detalles['descuentos'] ?? detalles['descuento'];
+    if (descuentos is Map<String, dynamic>) {
+      descuentoDetalle = descuentos;
+    } else if (descuentos is List && descuentos.isNotEmpty) {
+      // Tomar el primero de la lista si viene como arreglo
+      final first = descuentos.first;
+      if (first is Map<String, dynamic>) {
+        descuentoDetalle = first;
+      }
+    }
+
+    double cobrado = 0.0;
+    double originalPagos = 0.0;
+    bool hasTotalSinDescuento = false;
+
+    for (final pago in pagos) {
+      cobrado += _toDoubleSafe(pago['total']);
+      final tsd = _toDoubleSafe(pago['total_sin_descuento']);
+      originalPagos += tsd;
+      if (tsd > 0) hasTotalSinDescuento = true;
+    }
+
+    double original = 0.0;
+    if (hasTotalSinDescuento) {
+      original = originalPagos;
+    } else if (descuentoDetalle != null) {
+      original = _toDoubleSafe(descuentoDetalle['monto_real']);
+    }
+
+    double descuento = 0.0;
+    if (original > 0) {
+      descuento = original - cobrado;
+    }
+    if (descuento <= 0 && descuentoDetalle != null) {
+      descuento = _toDoubleSafe(descuentoDetalle['monto_descontado']);
+    }
+    if (descuento < 0) descuento = 0.0;
+
+    String tipo = 'N/A';
+    final tipoDescuento = descuentoDetalle?['tipo_descuento'];
+    if (tipoDescuento != null) {
+      switch (tipoDescuento) {
+        case 1:
+          tipo = 'Porcentaje';
+          break;
+        case 2:
+          tipo = 'Monto fijo';
+          break;
+        default:
+          tipo = 'Personalizado';
+      }
+    }
+
+    final bool shouldShow =
+        hasTotalSinDescuento || descuentoDetalle != null || descuento > 0;
+
+    return {
+      'original': original,
+      'cobrado': cobrado == 0 ? order.totalOperacion : cobrado,
+      'descuento': descuento,
+      'tipo': tipo,
+      'visible': shouldShow && (original > 0 || descuento > 0),
+    };
+  }
+
+  Widget _buildDiscountChip({
+    required String label,
+    required double value,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.price_check, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            '$label: \$${value.toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _toDoubleSafe(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      return double.tryParse(value) ?? 0.0;
+    }
+    return 0.0;
   }
 
   void _showVendorOrdenesPendientesDetail(SalesVendorReport vendor) async {

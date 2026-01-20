@@ -261,12 +261,13 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
       for (final expense in expenses) {
         total += expense.montoEntrega;
-        // Si esDigital es false explícitamente, es efectivo
-        // Si esDigital es true o null, considerarlo como transferencia/digital
-        if (expense.esDigital == false) {
-          efectivo += expense.montoEntrega;
-        } else {
+
+        // ✅ Solo es transferencia si esDigital == true. null cuenta como efectivo.
+        final isDigital = expense.esDigital == true;
+        if (isDigital) {
           transferencias += expense.montoEntrega;
+        } else {
+          efectivo += expense.montoEntrega;
         }
       }
 
@@ -940,7 +941,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           print('📦 Procesando ingrediente: $keyIngrediente');
           print('   - Cantidad vendida: $cantidadVendida');
           print('   - Cantidad final: $cantidadFinal');
-          print('   - Cantidad inicial (calculada): $cantidadInicial = $cantidadFinal + $cantidadVendida');
+          print(
+            '   - Cantidad inicial (calculada): $cantidadInicial = $cantidadFinal + $cantidadVendida',
+          );
           print('   - Precio unitario: $precioUnitario');
           print('   - Importe: $importe');
 
@@ -950,14 +953,17 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             productosAgrupados[keyIngrediente]!['subtotal'] += importe;
             // Recalcular cantidad inicial como: final + total vendido para ingredientes
             if (productosAgrupados[keyIngrediente]!['cantidadFinal'] != null) {
-              productosAgrupados[keyIngrediente]!['cantidadInicial'] = 
-                  productosAgrupados[keyIngrediente]!['cantidadFinal'] + productosAgrupados[keyIngrediente]!['cantidad'];
+              productosAgrupados[keyIngrediente]!['cantidadInicial'] =
+                  productosAgrupados[keyIngrediente]!['cantidadFinal'] +
+                  productosAgrupados[keyIngrediente]!['cantidad'];
             }
             if (productosAgrupados[keyIngrediente]!['cantidadFinal'] == null) {
-              productosAgrupados[keyIngrediente]!['cantidadFinal'] = cantidadFinal;
+              productosAgrupados[keyIngrediente]!['cantidadFinal'] =
+                  cantidadFinal;
               // Recalcular inicial después de asignar final
-              productosAgrupados[keyIngrediente]!['cantidadInicial'] = 
-                  cantidadFinal + productosAgrupados[keyIngrediente]!['cantidad'];
+              productosAgrupados[keyIngrediente]!['cantidadInicial'] =
+                  cantidadFinal +
+                  productosAgrupados[keyIngrediente]!['cantidad'];
             }
           } else {
             // Crear entrada para el ingrediente
@@ -978,7 +984,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               'subtotal': importe, // Importe del ingrediente
               'cantidadInicial': cantidadInicial,
               'cantidadFinal': cantidadFinal,
-              'entradasProducto': (ingrediente['entradas_producto'] as num?)?.toDouble() ?? 0.0,
+              'entradasProducto':
+                  (ingrediente['entradas_producto'] as num?)?.toDouble() ?? 0.0,
               'esIngrediente': true,
             };
           }
@@ -987,7 +994,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         // Producto (elaborado o normal)
         final key = item.nombre;
         final esElaborado = item.producto.esElaborado;
-        
+
         if (esElaborado) {
           print('🍽️ Producto elaborado: $key');
         } else {
@@ -997,20 +1004,22 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         if (productosAgrupados.containsKey(key)) {
           productosAgrupados[key]!['cantidad'] += item.cantidad;
           productosAgrupados[key]!['subtotal'] += item.subtotal;
-          
+
           // Solo calcular cantidades iniciales y finales para productos NO elaborados
           if (!esElaborado) {
             // Recalcular cantidad inicial como: final + total vendido
             if (productosAgrupados[key]!['cantidadFinal'] != null) {
-              productosAgrupados[key]!['cantidadInicial'] = 
-                  productosAgrupados[key]!['cantidadFinal'] + productosAgrupados[key]!['cantidad'];
+              productosAgrupados[key]!['cantidadInicial'] =
+                  productosAgrupados[key]!['cantidadFinal'] +
+                  productosAgrupados[key]!['cantidad'];
             }
             if (productosAgrupados[key]!['cantidadFinal'] == null &&
                 item.cantidadFinal != null) {
               productosAgrupados[key]!['cantidadFinal'] = item.cantidadFinal;
               // Recalcular inicial después de asignar final
-              productosAgrupados[key]!['cantidadInicial'] = 
-                  (item.cantidadFinal ?? 0.0) + productosAgrupados[key]!['cantidad'];
+              productosAgrupados[key]!['cantidadInicial'] =
+                  (item.cantidadFinal ?? 0.0) +
+                  productosAgrupados[key]!['cantidad'];
             }
           }
         } else {
@@ -1022,15 +1031,16 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               'cantidad': item.cantidad,
               'subtotal': item.subtotal,
               'cantidadInicial': null, // Se mostrará como "-"
-              'cantidadFinal': null,   // Se mostrará como "-"
+              'cantidadFinal': null, // Se mostrará como "-"
               'entradasProducto': item.entradasProducto ?? 0.0,
               'esIngrediente': false,
               'esElaborado': true,
             };
           } else {
             // Calcular cantidad inicial como: final + vendido para productos normales
-            final cantidadInicialCalculada = (item.cantidadFinal ?? 0.0) + item.cantidad;
-            
+            final cantidadInicialCalculada =
+                (item.cantidadFinal ?? 0.0) + item.cantidad;
+
             productosAgrupados[key] = {
               'item': item,
               'nombre': item.nombre,
@@ -1151,17 +1161,20 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     // Para ingredientes, usar las cantidades reales del ingrediente
     final cantidadMostrar =
         esIngrediente ? cantidad.toDouble() : cantidad.toDouble();
-    
+
     // Para productos elaborados, mostrar "-" en cantidades inicial, entradas y final
-    final cantidadInicialTexto = (esElaborado && cantidadInicial == null) 
-        ? "-" 
-        : (cantidadInicial ?? 0.0).toStringAsFixed(esIngrediente ? 1 : 0);
-    final entradasTexto = esElaborado 
-        ? "-" 
-        : entradasProducto.toStringAsFixed(esIngrediente ? 1 : 0);
-    final cantidadFinalTexto = (esElaborado && cantidadFinal == null) 
-        ? "-" 
-        : (cantidadFinal ?? 0.0).toStringAsFixed(esIngrediente ? 1 : 0);
+    final cantidadInicialTexto =
+        (esElaborado && cantidadInicial == null)
+            ? "-"
+            : (cantidadInicial ?? 0.0).toStringAsFixed(esIngrediente ? 1 : 0);
+    final entradasTexto =
+        esElaborado
+            ? "-"
+            : entradasProducto.toStringAsFixed(esIngrediente ? 1 : 0);
+    final cantidadFinalTexto =
+        (esElaborado && cantidadFinal == null)
+            ? "-"
+            : (cantidadFinal ?? 0.0).toStringAsFixed(esIngrediente ? 1 : 0);
 
     return Container(
       padding: const EdgeInsets.all(12),

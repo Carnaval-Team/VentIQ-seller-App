@@ -5,6 +5,8 @@ import '../services/turno_service.dart';
 import '../models/inventory_product.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/connection_status_widget.dart';
+import '../services/notification_service.dart';
+import '../models/notification_model.dart';
 
 class AperturaScreen extends StatefulWidget {
   const AperturaScreen({Key? key}) : super(key: key);
@@ -18,6 +20,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
   final _montoInicialController = TextEditingController();
   final _observacionesController = TextEditingController();
   final UserPreferencesService _userPrefs = UserPreferencesService();
+  final NotificationService _notificationService = NotificationService();
 
   bool _isProcessing = false;
   bool _isLoadingPreviousShift = true;
@@ -53,12 +56,176 @@ class _AperturaScreenState extends State<AperturaScreen> {
     _loadWorkerConfig(); // Load worker inventory control settings
   }
 
+  /// Preguntar y recibir órdenes Carnaval creadas antes del turno
+  Future<void> _promptReceiveCarnavalOrders() async {
+    try {
+      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      if (isOffline) {
+        print('🔌 Modo offline: no se pueden recibir órdenes Carnaval');
+        return;
+      }
+
+      // Asegurar notificaciones cargadas
+      await _notificationService.loadNotifications();
+      final turnoAbierto = await TurnoService.getTurnoAbierto();
+      if (turnoAbierto == null) return;
+
+      final fechaTurno = DateTime.parse(
+        turnoAbierto['fecha_apertura'] as String,
+      );
+
+      // Filtrar notificaciones de venta con data válida y no leídas
+      final candidates =
+          _notificationService.notifications.where((n) {
+            if (n.tipo != NotificationType.venta || n.leida) return false;
+            final data = n.data;
+            if (data == null) return false;
+            return data['operacion_id'] != null && data['orden_id'] != null;
+          }).toList();
+
+      if (candidates.isEmpty) {
+        print('ℹ️ No hay notificaciones de venta pendientes');
+        return;
+      }
+
+      final supabase = Supabase.instance.client;
+      final List<NotificationModel> prevTurnNotifications = [];
+
+      for (final notification in candidates) {
+        final opId = notification.data!['operacion_id'];
+        try {
+          final opResponse =
+              await supabase
+                  .from('app_dat_operaciones')
+                  .select('created_at')
+                  .eq('id', opId)
+                  .maybeSingle();
+
+          final createdAtRaw = opResponse?['created_at'] as String?;
+          if (createdAtRaw == null) continue;
+          final fechaOperacion = DateTime.parse(createdAtRaw);
+          if (fechaOperacion.isBefore(fechaTurno)) {
+            prevTurnNotifications.add(notification);
+          }
+        } catch (e) {
+          print('⚠️ No se pudo validar operación $opId: $e');
+        }
+      }
+
+      if (prevTurnNotifications.isEmpty) {
+        print('ℹ️ No hay operaciones anteriores al turno actual');
+        return;
+      }
+
+      if (!mounted) return;
+      final shouldReceive = await showDialog<bool>(
+        context: context,
+        builder:
+            (ctx) => AlertDialog(
+              title: const Text('Órdenes Carnaval pendientes'),
+              content: Text(
+                'Hay ${prevTurnNotifications.length} órdenes de Carnaval creadas antes de abrir el turno. ¿Quieres recibirlas ahora?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Luego'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4CAF50),
+                  ),
+                  child: const Text('Recibir'),
+                ),
+              ],
+            ),
+      );
+
+      if (shouldReceive != true) return;
+
+      int processed = 0;
+      for (final notification in prevTurnNotifications) {
+        final ok = await _receiveCarnavalOperation(notification);
+        if (ok) processed++;
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Órdenes recibidas: $processed'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      print('❌ Error en prompt de órdenes Carnaval: $e');
+    }
+  }
+
+  /// Recibir una operación Carnaval previa al turno (misma lógica que NotificationWidget)
+  Future<bool> _receiveCarnavalOperation(NotificationModel notification) async {
+    try {
+      final data = notification.data;
+      if (data == null) return false;
+      final operacionId = data['operacion_id'];
+      if (operacionId == null) return false;
+
+      final turnoAbierto = await TurnoService.getTurnoAbierto();
+      if (turnoAbierto == null) return false;
+      final fechaTurno = DateTime.parse(
+        turnoAbierto['fecha_apertura'] as String,
+      );
+
+      final supabase = Supabase.instance.client;
+      final operacionResponse =
+          await supabase
+              .from('app_dat_operaciones')
+              .select('created_at')
+              .eq('id', operacionId)
+              .maybeSingle();
+
+      final fechaOperacionRaw = operacionResponse?['created_at'] as String?;
+      if (fechaOperacionRaw == null) return false;
+      final fechaOperacion = DateTime.parse(fechaOperacionRaw);
+
+      if (!fechaOperacion.isBefore(fechaTurno)) {
+        print('⏭️ Operación $operacionId es posterior al turno, se omite');
+        return false;
+      }
+
+      await supabase
+          .from('app_dat_operaciones')
+          .update({'created_at': DateTime.now().toIso8601String()})
+          .eq('id', operacionId);
+
+      await _notificationService.markAsRead(notification.id);
+      return true;
+    } catch (e) {
+      print('❌ Error recibiendo operación Carnaval: $e');
+      return false;
+    }
+  }
+
   /// Check if inventory has already been done for the current warehouse in an active shift
   Future<void> _checkWarehouseInventoryStatus() async {
     try {
       setState(() {
         _checkingInventoryStatus = true;
       });
+
+      // Si estamos offline, no podemos verificar en servidor; marcar como requerido por seguridad
+      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      if (isOffline) {
+        print(
+          '🔌 Modo offline - Omitiendo verificación de inventario en servidor',
+        );
+        setState(() {
+          _inventoryAlreadyDone = false;
+          _checkingInventoryStatus = false;
+        });
+        return;
+      }
 
       final idAlmacen = await _userPrefs.getIdAlmacen();
       if (idAlmacen == null) {
@@ -203,6 +370,159 @@ class _AperturaScreenState extends State<AperturaScreen> {
     }
   }
 
+  /// Cargar productos de inventario desde cache offline (sin categorías)
+  Future<void> _loadInventoryProductsOffline() async {
+    try {
+      setState(() {
+        _isLoadingInventory = true;
+      });
+
+      final offlineData = await _userPrefs.getOfflineData();
+
+      if (offlineData == null || offlineData['products'] == null) {
+        print('⚠️ No hay productos cacheados para inventario offline');
+        setState(() {
+          _inventoryProducts = [];
+          _isLoadingInventory = false;
+        });
+        return;
+      }
+
+      final productsData = Map<String, dynamic>.from(
+        offlineData['products'] as Map,
+      );
+      final Map<int, InventoryProduct> productsByIdMap = {};
+
+      for (final categoryProducts in productsData.values) {
+        final productList = List<dynamic>.from(categoryProducts as List);
+
+        for (final prodDataRaw in productList) {
+          final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
+          final detalles =
+              prodData['detalles_completos'] as Map<String, dynamic>?;
+          if (detalles == null) continue;
+
+          final productoInfo = detalles['producto'] as Map<String, dynamic>?;
+          final inventarioList = detalles['inventario'] as List<dynamic>? ?? [];
+          if (productoInfo == null || inventarioList.isEmpty) continue;
+
+          // Saltar productos elaborados o servicios
+          final esElaborado = productoInfo['es_elaborado'] == true;
+          final esServicio = productoInfo['es_servicio'] == true;
+          if (esElaborado || esServicio) continue;
+
+          final productId = (productoInfo['id'] ?? prodData['id']) as int;
+          if (productsByIdMap.containsKey(productId)) continue;
+
+          final firstInventory = Map<String, dynamic>.from(
+            inventarioList.first as Map,
+          );
+          final ubicacion = Map<String, dynamic>.from(
+            firstInventory['ubicacion'] ?? {},
+          );
+          final almacen = Map<String, dynamic>.from(ubicacion['almacen'] ?? {});
+          final variante =
+              firstInventory['variante'] != null &&
+                      firstInventory['variante'] is Map
+                  ? Map<String, dynamic>.from(firstInventory['variante'])
+                  : null;
+          final presentacion =
+              firstInventory['presentacion'] != null &&
+                      firstInventory['presentacion'] is Map
+                  ? Map<String, dynamic>.from(firstInventory['presentacion'])
+                  : null;
+
+          String varianteNombre = 'Variante';
+          if (variante != null &&
+              variante['atributo'] != null &&
+              variante['opcion'] != null) {
+            final atributo = variante['atributo'] as Map<String, dynamic>?;
+            final opcion = variante['opcion'] as Map<String, dynamic>?;
+            if (atributo != null && opcion != null) {
+              varianteNombre =
+                  '${atributo['label'] ?? 'Atributo'}: ${opcion['valor'] ?? ''}';
+            }
+          }
+
+          final cantidadDisponible =
+              (firstInventory['cantidad_disponible'] as num?)?.toDouble() ??
+              0.0;
+
+          productsByIdMap[productId] = InventoryProduct(
+            id: productId,
+            skuProducto: firstInventory['sku_producto']?.toString() ?? '',
+            nombreProducto:
+                productoInfo['denominacion'] ??
+                prodData['denominacion'] ??
+                'Producto',
+            idCategoria: (productoInfo['id_categoria'] ?? 0) as int,
+            categoria:
+                productoInfo['categoria']?['denominacion'] ??
+                prodData['categoria'] ??
+                'Sin categoría',
+            idSubcategoria: (productoInfo['id_subcategoria'] ?? 0) as int,
+            subcategoria: prodData['subcategoria'] ?? 'General',
+            idTienda:
+                (productoInfo['id_tienda'] ?? prodData['id_tienda'] ?? 0)
+                    as int,
+            tienda: '',
+            idAlmacen: (almacen['id'] ?? 0) as int,
+            almacen: almacen['denominacion']?.toString() ?? 'Almacén',
+            idUbicacion: (ubicacion['id'] ?? 0) as int,
+            ubicacion: ubicacion['denominacion']?.toString() ?? 'Ubicación',
+            idVariante: variante?['id'] as int?,
+            variante: varianteNombre,
+            idOpcionVariante: variante?['opcion']?['id'] as int?,
+            opcionVariante:
+                (variante?['opcion']?['valor'] as String?) ?? varianteNombre,
+            idPresentacion: presentacion?['id'] as int?,
+            presentacion: presentacion?['denominacion']?.toString() ?? 'Unidad',
+            cantidadInicial: cantidadDisponible,
+            cantidadFinal: cantidadDisponible,
+            stockDisponible: cantidadDisponible,
+            stockReservado: 0,
+            stockDisponibleAjustado: cantidadDisponible,
+            esVendible: true,
+            esInventariable: true,
+            precioVenta:
+                (productoInfo['precio_actual'] ?? prodData['precio'] ?? 0)
+                    .toDouble(),
+            costoPromedio: null,
+            margenActual: null,
+            clasificacionAbc: 3,
+            abcDescripcion: '',
+            fechaUltimaActualizacion: DateTime.now(),
+            totalCount: 0,
+            resumenInventario: null,
+            infoPaginacion: null,
+          );
+        }
+      }
+
+      // Crear lista consolidada y controllers
+      final products = productsByIdMap.values.toList();
+      for (var product in products) {
+        if (!_inventoryControllers.containsKey(product.id)) {
+          _inventoryControllers[product.id] = TextEditingController();
+        }
+      }
+
+      setState(() {
+        _inventoryProducts = products;
+        _isLoadingInventory = false;
+      });
+
+      print('✅ ${products.length} productos offline cargados para inventario');
+    } catch (e, stack) {
+      print('❌ Error cargando productos offline: $e');
+      print(stack);
+      setState(() {
+        _inventoryProducts = [];
+        _isLoadingInventory = false;
+      });
+    }
+  }
+
   // Inventory loading removed since inventory management is disabled
 
   Future<void> _loadPreviousShiftSummary() async {
@@ -280,18 +600,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
         _isLoadingStoreConfig = true;
       });
 
-      // Verificar si está en modo offline
       final isOffline = await _userPrefs.isOfflineModeEnabled();
-
-      if (isOffline) {
-        print('🔌 Modo offline activado - Inventario deshabilitado');
-        setState(() {
-          _manejaInventario = false;
-          _isLoadingStoreConfig = false;
-        });
-        return;
-      }
-
       final storeConfig = await _userPrefs.getStoreConfig();
 
       if (storeConfig != null) {
@@ -306,10 +615,17 @@ class _AperturaScreenState extends State<AperturaScreen> {
             _isLoadingStoreConfig = false;
           });
 
-          // If inventory is managed, load products immediately and check warehouse status
+          // If inventory is managed, load products immediately y verificar estado
           if (_manejaInventario) {
-            _loadInventoryProducts();
-            _checkWarehouseInventoryStatus();
+            if (isOffline) {
+              _loadInventoryProductsOffline();
+              setState(() {
+                _checkingInventoryStatus = false;
+              });
+            } else {
+              _loadInventoryProducts();
+              _checkWarehouseInventoryStatus();
+            }
           } else {
             setState(() {
               _checkingInventoryStatus = false;
@@ -455,6 +771,54 @@ class _AperturaScreenState extends State<AperturaScreen> {
   /// Obtener todas las ubicaciones de un producto con sus cantidades
   Future<List<Map<String, dynamic>>> _getProductLocations(int productId) async {
     try {
+      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      if (isOffline) {
+        final offlineData = await _userPrefs.getOfflineData();
+        if (offlineData == null || offlineData['products'] == null) return [];
+        final productsData = Map<String, dynamic>.from(
+          offlineData['products'] as Map,
+        );
+
+        final Map<String, Map<String, dynamic>> locationsMap = {};
+
+        for (final categoryProducts in productsData.values) {
+          final productList = List<dynamic>.from(categoryProducts as List);
+          for (final prodDataRaw in productList) {
+            final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
+            final detalles =
+                prodData['detalles_completos'] as Map<String, dynamic>?;
+            if (detalles == null) continue;
+            final productoInfo = detalles['producto'] as Map<String, dynamic>?;
+            if (productoInfo == null) continue;
+            final pid = (productoInfo['id'] ?? prodData['id']) as int;
+            if (pid != productId) continue;
+
+            final inventarioList =
+                detalles['inventario'] as List<dynamic>? ?? [];
+            for (final invRaw in inventarioList) {
+              final inv = Map<String, dynamic>.from(invRaw as Map);
+              final ubicacion = Map<String, dynamic>.from(
+                inv['ubicacion'] ?? {},
+              );
+              final almacen = Map<String, dynamic>.from(
+                ubicacion['almacen'] ?? {},
+              );
+              final locationKey =
+                  '${almacen['id'] ?? 0}_${ubicacion['id'] ?? 0}';
+              final cantidad =
+                  (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+              locationsMap[locationKey] = {
+                'ubicacion': ubicacion['denominacion'] ?? 'Ubicación',
+                'almacen': almacen['denominacion'] ?? 'Almacén',
+                'cantidad': cantidad,
+              };
+            }
+          }
+        }
+
+        return locationsMap.values.toList();
+      }
+
       final userData = await _userPrefs.getUserData();
       final idAlmacen = await _userPrefs.getIdAlmacen();
       final idTiendaRaw = userData['idTienda'];
@@ -518,7 +882,12 @@ class _AperturaScreenState extends State<AperturaScreen> {
     // Cargar productos ANTES de mostrar el modal
     if (_inventoryProducts.isEmpty && !_isLoadingInventory) {
       print('📦 Cargando productos antes de mostrar modal...');
-      await _loadInventoryProducts();
+      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      if (isOffline) {
+        await _loadInventoryProductsOffline();
+      } else {
+        await _loadInventoryProducts();
+      }
     }
 
     if (!mounted) return;
@@ -1017,7 +1386,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
   // Inventory list method removed since inventory management is disabled
 
-  void _crearApertura() async {
+  Future<void> _crearApertura() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -1208,6 +1577,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
           idVendedor: sellerId,
           usuario: userUuid,
           observaciones: observacionesFinales,
+          productos: productCounts,
         );
       } else {
         print('🌐 Modo online - Creando apertura en Supabase...');
@@ -1224,6 +1594,20 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
         if (mounted) {
           if (result['success'] == true) {
+            // Guardar turno abierto en cache offline para uso en modo sin conexión
+            try {
+              final turnoAbierto = await TurnoService.getTurnoAbierto();
+              if (turnoAbierto != null) {
+                await _userPrefs.saveOfflineTurno(turnoAbierto);
+                print('💾 Turno online guardado en cache offline');
+              }
+            } catch (e) {
+              print('⚠️ No se pudo cachear el turno online: $e');
+            }
+
+            // Preguntar si desea recibir órdenes Carnaval anteriores al turno
+            await _promptReceiveCarnavalOrders();
+
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
@@ -1852,6 +2236,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
     required int idVendedor,
     required String usuario,
     String? observaciones,
+    List<Map<String, dynamic>>? productos,
   }) async {
     try {
       // Generar ID único para la apertura offline
@@ -1868,8 +2253,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
         'fecha_apertura': DateTime.now().toIso8601String(),
         'observaciones': observaciones ?? '',
         'maneja_inventario': _manejaInventario,
-        'productos':
-            [], // Siempre vacío ya que el inventario está deshabilitado
+        'productos': productos ?? [],
         'created_offline_at': DateTime.now().toIso8601String(),
       };
 

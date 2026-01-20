@@ -1,10 +1,20 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:crypto/crypto.dart';
-import 'dart:convert';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:share_plus/share_plus.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
 import '../services/printer_manager.dart';
 import '../services/user_preferences_service.dart';
+import '../services/store_config_service.dart';
 import '../utils/platform_utils.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
@@ -29,6 +39,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
   List<Order> _filteredOrders = [];
   String _searchQuery = '';
   bool _isLoading = true;
+  bool _allowDiscountOnVendedor = false;
+  bool _isGeneratingCustomerInvoice = false;
+  bool _allowPrintPendingOrders = false;
 
   @override
   void initState() {
@@ -38,7 +51,463 @@ class _OrdersScreenState extends State<OrdersScreen> {
     // Cargar órdenes desde Supabase y órdenes pendientes offline
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadOrdersFromSupabase();
+      _loadDiscountPermission();
+      _loadPrintPendingPermission();
     });
+  }
+
+  Future<void> _loadDiscountPermission() async {
+    try {
+      final storeId = await _userPreferencesService.getIdTienda();
+      if (storeId == null) {
+        print('⚠️ No se pudo obtener id_tienda para verificar descuentos');
+        return;
+      }
+      final allow = await StoreConfigService.getAllowDiscountOnVendedor(
+        storeId,
+      );
+      if (mounted) {
+        setState(() {
+          _allowDiscountOnVendedor = allow;
+        });
+      }
+    } catch (e) {
+      print('❌ Error cargando permiso de descuento: $e');
+    }
+  }
+
+  Future<void> _loadPrintPendingPermission() async {
+    try {
+      final storeId = await _userPreferencesService.getIdTienda();
+      if (storeId == null) {
+        print(
+          '⚠️ No se pudo obtener id_tienda para permitir impresión de pendientes',
+        );
+        return;
+      }
+      final allow = await StoreConfigService.getAllowPrintPending(storeId);
+      if (mounted) {
+        setState(() {
+          _allowPrintPendingOrders = allow;
+        });
+      }
+    } catch (e) {
+      print('❌ Error cargando permiso de impresión de pendientes: $e');
+    }
+  }
+
+  bool _isPendingForDiscount(Order order) {
+    return order.status == OrderStatus.enviada ||
+        order.status == OrderStatus.procesando ||
+        order.status == OrderStatus.pagoConfirmado ||
+        order.status == OrderStatus.pendienteDeSincronizacion;
+  }
+
+  void _showDiscountSheet(Order order) {
+    final baseTotal = order.total;
+    final TextEditingController valueController = TextEditingController();
+    int selectedType = 1; // 1 = %
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        bool isSaving = false;
+        String? error; // mensaje puntual (ej. supabase)
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            double parsedValue = double.tryParse(valueController.text) ?? 0;
+            if (parsedValue < 0) parsedValue = 0;
+
+            final bool percentInvalid =
+                selectedType == 1 && (parsedValue <= 0 || parsedValue > 100);
+            final bool fixedInvalid =
+                selectedType == 2 &&
+                (parsedValue <= 0 || parsedValue > baseTotal);
+            final bool hasValidationError = percentInvalid || fixedInvalid;
+
+            final double effectiveValue =
+                selectedType == 1
+                    ? parsedValue.clamp(0, 100)
+                    : parsedValue.clamp(0, baseTotal);
+
+            double discountAmount =
+                selectedType == 1
+                    ? baseTotal * (effectiveValue / 100)
+                    : effectiveValue;
+            if (discountAmount > baseTotal) discountAmount = baseTotal;
+            final double finalTotal = (baseTotal - discountAmount).clamp(
+              0,
+              double.maxFinite,
+            );
+
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.65,
+              minChildSize: 0.5,
+              maxChildSize: 0.9,
+              builder: (context, scrollController) {
+                return Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 12,
+                        offset: Offset(0, -4),
+                      ),
+                    ],
+                  ),
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    padding: EdgeInsets.only(
+                      left: 20,
+                      right: 20,
+                      top: 16,
+                      bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 42,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Aplicar descuento',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Total actual: \$${baseTotal.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF5F3FF),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE0D9FF)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.security_outlined,
+                                color: const Color(0xFF6B4EFF),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Solo para órdenes pendientes. El descuento queda registrado junto a la operación.',
+                                  style: TextStyle(
+                                    color: Colors.grey[800],
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Text(
+                          'Tipo de descuento',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ChoiceChip(
+                                label: const Text('Porcentaje'),
+                                selected: selectedType == 1,
+                                onSelected: (_) {
+                                  setModalState(() {
+                                    selectedType = 1;
+                                  });
+                                },
+                                selectedColor: const Color(
+                                  0xFF6B4EFF,
+                                ).withOpacity(0.15),
+                                labelStyle: TextStyle(
+                                  color:
+                                      selectedType == 1
+                                          ? const Color(0xFF6B4EFF)
+                                          : Colors.grey[700],
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: ChoiceChip(
+                                label: const Text('Monto fijo'),
+                                selected: selectedType == 2,
+                                onSelected: (_) {
+                                  setModalState(() {
+                                    selectedType = 2;
+                                  });
+                                },
+                                selectedColor: const Color(
+                                  0xFF6B4EFF,
+                                ).withOpacity(0.15),
+                                labelStyle: TextStyle(
+                                  color:
+                                      selectedType == 2
+                                          ? const Color(0xFF6B4EFF)
+                                          : Colors.grey[700],
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          selectedType == 1
+                              ? 'Porcentaje (0 - 100)'
+                              : 'Monto a descontar',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: valueController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'^\d+\.?\d{0,4}'),
+                            ),
+                          ],
+                          decoration: InputDecoration(
+                            prefixIcon: Icon(
+                              selectedType == 1
+                                  ? Icons.percent
+                                  : Icons.attach_money,
+                              color: const Color(0xFF6B4EFF),
+                            ),
+                            hintText:
+                                selectedType == 1
+                                    ? 'Ej: 10 para 10%'
+                                    : 'Ej: 50.00',
+                            filled: true,
+                            fillColor: Colors.grey[100],
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          onChanged: (_) {
+                            setModalState(() {
+                              error = null;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey[200]!),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Descuento',
+                                    style: TextStyle(
+                                      color: Colors.grey[700],
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  Text(
+                                    '-\$${discountAmount.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      color: Color(0xFFEF4444),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Total con descuento',
+                                    style: TextStyle(
+                                      color: Colors.grey[900],
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  Text(
+                                    '\$${finalTotal.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      color: Color(0xFF10B981),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (error != null) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            error!,
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                        if (hasValidationError) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            percentInvalid
+                                ? 'El porcentaje debe ser mayor que 0 y menor o igual a 100.'
+                                : 'El monto debe ser mayor que 0 y no superar \$${baseTotal.toStringAsFixed(2)}.',
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 18),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed:
+                                    isSaving
+                                        ? null
+                                        : () => Navigator.of(context).pop(),
+                                child: const Text('Cancelar'),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed:
+                                    isSaving || hasValidationError
+                                        ? null
+                                        : () async {
+                                          final value =
+                                              double.tryParse(
+                                                valueController.text,
+                                              ) ??
+                                              0;
+                                          setModalState(() {
+                                            isSaving = true;
+                                            error = null;
+                                          });
+                                          final result = await _orderService
+                                              .applyManualDiscount(
+                                                order: order,
+                                                discountType: selectedType,
+                                                discountValue: value,
+                                              );
+                                          setModalState(() {
+                                            isSaving = false;
+                                          });
+                                          if (!mounted) return;
+                                          if (result['success'] == true) {
+                                            Navigator.of(context).pop();
+                                            setState(() {
+                                              _filteredOrders =
+                                                  _orderService.orders;
+                                            });
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  'Descuento aplicado. Total ahora: \$${(result['precioFinal'] as double).toStringAsFixed(2)}',
+                                                ),
+                                                backgroundColor: const Color(
+                                                  0xFF10B981,
+                                                ),
+                                              ),
+                                            );
+                                          } else {
+                                            setModalState(() {
+                                              error =
+                                                  result['error']?.toString() ??
+                                                  'No se pudo aplicar el descuento';
+                                            });
+                                          }
+                                        },
+                                icon:
+                                    isSaving
+                                        ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                        : const Icon(Icons.check),
+                                label: Text(
+                                  isSaving ? 'Guardando...' : 'Aplicar',
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF6B4EFF),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _loadOrdersFromSupabase() async {
@@ -625,26 +1094,58 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ),
               const SizedBox(height: 12),
               // Información de productos y total
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '${order.totalItems} producto${order.totalItems == 1 ? '' : 's'}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF1F2937),
-                    ),
-                  ),
-                  Text(
-                    '\$${order.total.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF4A90E2),
-                    ),
-                  ),
-                ],
+              Builder(
+                builder: (_) {
+                  final discountData = _getDiscountData(order);
+                  final hasDiscount = discountData['hasDiscount'] as bool;
+                  final displayTotal =
+                      discountData['finalTotal'] as double? ?? order.total;
+                  final originalTotal =
+                      discountData['originalTotal'] as double? ?? displayTotal;
+                  final saved = discountData['saved'] as double? ?? 0;
+                  final label = discountData['label'] as String?;
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${order.totalItems} producto${order.totalItems == 1 ? '' : 's'}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF1F2937),
+                            ),
+                          ),
+                          Text(
+                            '\$${displayTotal.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color:
+                                  hasDiscount
+                                      ? const Color(0xFF10B981)
+                                      : const Color(0xFF4A90E2),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (hasDiscount) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          '$label · Ahorras \$${saved.toStringAsFixed(2)} (Antes \$${originalTotal.toStringAsFixed(2)})',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF10B981),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 8),
               // Preview de productos y botón de impresión
@@ -727,11 +1228,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
         order.status == OrderStatus.completada) {
       return true;
     }
-
+    if (_allowPrintPendingOrders && order.status == OrderStatus.enviada) {
+      return true;
+    }
     final isCarnavalOrder = _getCarnavalOrderId(order.notas) != null;
     if (isCarnavalOrder &&
         (order.status == OrderStatus.enviada ||
-            order.status == OrderStatus.procesando || 
+            order.status == OrderStatus.procesando ||
             order.status == OrderStatus.pendienteDeSincronizacion)) {
       return true;
     }
@@ -829,9 +1332,44 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               'Total productos:',
                               '${order.totalItems}',
                             ),
-                            _buildDetailRow(
-                              'Total:',
-                              '\$${order.total.toStringAsFixed(2)}',
+                            Builder(
+                              builder: (_) {
+                                final discountData = _getDiscountData(order);
+                                final hasDiscount =
+                                    discountData['hasDiscount'] as bool;
+                                final displayTotal =
+                                    discountData['finalTotal'] as double? ??
+                                    order.total;
+                                final originalTotal =
+                                    discountData['originalTotal'] as double? ??
+                                    displayTotal;
+                                final saved =
+                                    discountData['saved'] as double? ?? 0;
+                                final label =
+                                    discountData['label'] as String? ?? '';
+
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildDetailRow(
+                                      'Total:',
+                                      '\$${displayTotal.toStringAsFixed(2)}',
+                                    ),
+                                    if (hasDiscount) ...[
+                                      const SizedBox(height: 4),
+                                      _buildDetailRow(
+                                        'Antes:',
+                                        '\$${originalTotal.toStringAsFixed(2)}',
+                                      ),
+                                      const SizedBox(height: 2),
+                                      _buildDetailRow(
+                                        'Descuento:',
+                                        '$label · -\$${saved.toStringAsFixed(2)}',
+                                      ),
+                                    ],
+                                  ],
+                                );
+                              },
                             ),
 
                             // Desglose de pagos
@@ -1098,10 +1636,66 @@ class _OrdersScreenState extends State<OrdersScreen> {
           const SizedBox(height: 8),
         ],
 
+        // Botón para generar factura de cliente en PDF (solo orden completada)
+        if (order.status == OrderStatus.completada) ...[
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed:
+                  _isGeneratingCustomerInvoice
+                      ? null
+                      : () {
+                        Navigator.pop(context);
+                        Future.microtask(() => _generateCustomerInvoice(order));
+                      },
+              icon:
+                  _isGeneratingCustomerInvoice
+                      ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
+                        ),
+                      )
+                      : const Icon(Icons.picture_as_pdf_outlined),
+              label: Text(
+                _isGeneratingCustomerInvoice
+                    ? 'Generando factura...'
+                    : 'Generar factura cliente',
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF10B981),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+
         // Botones de gestión solo para órdenes que no estén en estado final
         if (order.status != OrderStatus.cancelada &&
             order.status != OrderStatus.devuelta &&
             order.status != OrderStatus.completada) ...[
+          if (_allowDiscountOnVendedor && _isPendingForDiscount(order)) ...[
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _showDiscountSheet(order),
+                icon: const Icon(Icons.percent),
+                label: const Text('Realizar descuento'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6B4EFF),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           Row(
             children: [
               // Botón Cancelar
@@ -1517,14 +2111,33 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ],
                       ),
                     ),
-                    // Monto
-                    Text(
-                      '\$${(payment['monto'] ?? 0.0).toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF4A90E2),
-                      ),
+                    // Monto y, si aplica, importe sin descuento
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '\$${(payment['monto'] ?? 0.0).toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF4A90E2),
+                          ),
+                        ),
+                        if (payment['importe_sin_descuento'] != null &&
+                            (payment['importe_sin_descuento'] as num)
+                                    .toDouble() !=
+                                (payment['monto'] ?? 0.0).toDouble()) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'Antes: \$${(payment['importe_sin_descuento'] as num).toDouble().toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
@@ -1577,19 +2190,734 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
+  /// Calcula información de descuento para mostrar totales e info
+  Map<String, dynamic> _getDiscountData(Order order) {
+    final descuento = order.descuento;
+    if (descuento == null) {
+      return {
+        'hasDiscount': false,
+        'originalTotal': order.total,
+        'finalTotal': order.total,
+        'saved': 0.0,
+        'label': null,
+      };
+    }
+
+    final double montoReal =
+        (descuento['monto_real'] as num?)?.toDouble() ?? order.total;
+    final double montoDescontado =
+        (descuento['monto_descontado'] as num?)?.toDouble() ?? 0.0;
+    final int tipo = (descuento['tipo_descuento'] as num?)?.toInt() ?? 1;
+    final double valor =
+        (descuento['valor_descuento'] as num?)?.toDouble() ?? 0.0;
+
+    final double finalTotal = (montoReal - montoDescontado).clamp(
+      0,
+      double.maxFinite,
+    );
+    final bool isPercent = tipo == 1;
+    final String label =
+        isPercent
+            ? 'Descuento ${valor.toStringAsFixed(0)}%'
+            : 'Descuento fijo \$${valor.toStringAsFixed(2)}';
+
+    return {
+      'hasDiscount': true,
+      'originalTotal': montoReal,
+      'finalTotal': finalTotal,
+      'saved': montoDescontado,
+      'label': label,
+    };
+  }
+
+  Future<void> _generateCustomerInvoice(Order order) async {
+    print('📄 Generar factura cliente (PDF) - Orden: ${order.id}');
+
+    // Web aún no soporta shareXFiles con filesystem temporal
+    if (PlatformUtils.isWeb) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'La generación/compartir de factura en PDF no está disponible en Web en esta versión.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    bool didShowDialog = false;
+    if (mounted) {
+      didShowDialog = true;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          return AlertDialog(
+            content: Row(
+              children: const [
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 12),
+                Expanded(child: Text('Generando factura en PDF...')),
+              ],
+            ),
+          );
+        },
+      );
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Generando factura PDF...'),
+          backgroundColor: Colors.blueAccent,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+
+    setState(() {
+      _isGeneratingCustomerInvoice = true;
+    });
+
+    try {
+      final storeId = await _userPreferencesService.getIdTienda();
+      print('🏪 StoreId para factura: $storeId');
+      Map<String, dynamic>? storeData;
+
+      if (storeId != null) {
+        storeData =
+            await Supabase.instance.client
+                .from('app_dat_tienda')
+                .select('denominacion, direccion, ubicacion, imagen_url, phone')
+                .eq('id', storeId)
+                .maybeSingle();
+      }
+
+      final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+      final storeAddress = storeData?['direccion'] as String? ?? '';
+      final storeLocation = storeData?['ubicacion'] as String? ?? '';
+      final storePhone = storeData?['phone'] as String? ?? '';
+      final storeLogoUrl = storeData?['imagen_url'] as String?;
+      print('🏪 Tienda: $storeName');
+      final logoBytes = await _downloadImageBytes(storeLogoUrl);
+
+      final discountData = _getDiscountData(order);
+      final hasDiscount = discountData['hasDiscount'] as bool;
+      final double originalTotal =
+          (discountData['originalTotal'] as num?)?.toDouble() ?? order.total;
+      final double finalTotal =
+          (discountData['finalTotal'] as num?)?.toDouble() ?? order.total;
+      final double saved = (discountData['saved'] as num?)?.toDouble() ?? 0.0;
+      final String discountLabel = discountData['label'] as String? ?? '';
+      final items = order.items.where((item) => item.subtotal > 0).toList();
+      final ingredientsByProduct = await _loadIngredientsForProducts(
+        items.map((i) => i.producto.id).toSet(),
+      );
+      final pdf = pw.Document();
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          build:
+              (context) => [
+                pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    if (logoBytes != null)
+                      pw.Container(
+                        width: 72,
+                        height: 72,
+                        decoration: pw.BoxDecoration(
+                          borderRadius: pw.BorderRadius.circular(12),
+                          border: pw.Border.all(
+                            color: PdfColors.grey300,
+                            width: 1,
+                          ),
+                        ),
+                        child: pw.ClipRRect(
+                          horizontalRadius: 12,
+                          verticalRadius: 12,
+                          child: pw.Image(
+                            pw.MemoryImage(logoBytes),
+                            fit: pw.BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                    if (logoBytes != null) pw.SizedBox(width: 16),
+                    pw.Expanded(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            storeName,
+                            style: pw.TextStyle(
+                              fontSize: 20,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                          ),
+                          if (storeAddress.isNotEmpty ||
+                              storeLocation.isNotEmpty)
+                            pw.Text(
+                              [
+                                if (storeAddress.isNotEmpty) storeAddress,
+                                if (storeLocation.isNotEmpty) storeLocation,
+                              ].join(' · '),
+                              style: const pw.TextStyle(
+                                fontSize: 10,
+                                color: PdfColors.grey600,
+                              ),
+                            ),
+                          if (storePhone.isNotEmpty)
+                            pw.Text(
+                              'Tel: $storePhone',
+                              style: const pw.TextStyle(
+                                fontSize: 10,
+                                color: PdfColors.grey600,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      children: [
+                        pw.Text(
+                          'Factura Cliente',
+                          style: pw.TextStyle(
+                            fontSize: 16,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColor.fromHex('#0F172A'),
+                          ),
+                        ),
+                        pw.SizedBox(height: 4),
+                        pw.Text(
+                          'Orden: ${order.id}',
+                          style: const pw.TextStyle(
+                            fontSize: 11,
+                            color: PdfColors.grey700,
+                          ),
+                        ),
+                        pw.Text(
+                          _formatInvoiceDate(order.fechaCreacion),
+                          style: const pw.TextStyle(
+                            fontSize: 11,
+                            color: PdfColors.grey700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 24),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(12),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromHex('#F8FAFC'),
+                    borderRadius: pw.BorderRadius.circular(12),
+                    border: pw.Border.all(color: PdfColors.grey300, width: 1),
+                  ),
+                  child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Cliente',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromHex('#334155'),
+                            ),
+                          ),
+                          pw.Text(
+                            order.buyerName?.isNotEmpty == true
+                                ? order.buyerName!
+                                : 'Cliente Final',
+                            style: const pw.TextStyle(
+                              fontSize: 11,
+                              color: PdfColors.grey700,
+                            ),
+                          ),
+                          if (order.buyerPhone != null &&
+                              order.buyerPhone!.isNotEmpty)
+                            pw.Text(
+                              order.buyerPhone!,
+                              style: const pw.TextStyle(
+                                fontSize: 10,
+                                color: PdfColors.grey600,
+                              ),
+                            ),
+                        ],
+                      ),
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.end,
+                        children: [
+                          pw.Text(
+                            'Estado',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromHex('#334155'),
+                            ),
+                          ),
+                          pw.Container(
+                            padding: const pw.EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: pw.BoxDecoration(
+                              color: PdfColor.fromHex('#DCFCE7'),
+                              borderRadius: pw.BorderRadius.circular(8),
+                            ),
+                            child: pw.Text(
+                              'Completada',
+                              style: pw.TextStyle(
+                                fontSize: 11,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColor.fromHex('#15803D'),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 20),
+                pw.Text(
+                  'Productos',
+                  style: pw.TextStyle(
+                    fontSize: 13,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('#0F172A'),
+                  ),
+                ),
+                pw.SizedBox(height: 8),
+                pw.Table(
+                  border: pw.TableBorder(
+                    horizontalInside: pw.BorderSide(
+                      color: PdfColors.grey300,
+                      width: 0.4,
+                    ),
+                    bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.6),
+                  ),
+                  columnWidths: {
+                    0: const pw.FlexColumnWidth(4),
+                    1: const pw.FlexColumnWidth(1.3),
+                    2: const pw.FlexColumnWidth(1.5),
+                    3: const pw.FlexColumnWidth(1.7),
+                  },
+                  children: [
+                    pw.TableRow(
+                      children: [
+                        _pdfHeaderCell('Producto'),
+                        _pdfHeaderCell('Cant.'),
+                        _pdfHeaderCell('Precio'),
+                        _pdfHeaderCell('Subtotal'),
+                      ],
+                    ),
+                    ...items.expand((item) {
+                      final List<pw.TableRow> rows = [
+                        pw.TableRow(
+                          children: [
+                            _pdfBodyCell(item.nombre),
+                            _pdfBodyCell('${item.cantidad}'),
+                            _pdfBodyCell(
+                              '\$${item.displayPrice.toStringAsFixed(2)}',
+                            ),
+                            _pdfBodyCell(
+                              '\$${item.subtotal.toStringAsFixed(2)}',
+                              isBold: true,
+                            ),
+                          ],
+                        ),
+                      ];
+
+                      final ingredientes =
+                          ingredientsByProduct[item.producto.id] ??
+                          item.ingredientes;
+                      if (ingredientes != null && ingredientes.isNotEmpty) {
+                        rows.add(
+                          pw.TableRow(
+                            children: [
+                              _pdfBodyCell(
+                                '    Aditamentos',
+                                isBold: true,
+                                isIngredient: true,
+                              ),
+                              _pdfBodyCell('', isIngredient: true),
+                              _pdfBodyCell('', isIngredient: true),
+                              _pdfBodyCell('', isIngredient: true),
+                            ],
+                          ),
+                        );
+
+                        rows.addAll(
+                          ingredientes.map<pw.TableRow>((ingrediente) {
+                            final nombreIngrediente =
+                                (ingrediente['nombre_ingrediente'] ??
+                                        'Ingrediente')
+                                    .toString();
+                            final double cantidadBase =
+                                (ingrediente['cantidad_necesaria'] ??
+                                            ingrediente['cantidad_vendida'] ??
+                                            0)
+                                        is num
+                                    ? (ingrediente['cantidad_necesaria'] ??
+                                            ingrediente['cantidad_vendida'])
+                                        .toDouble()
+                                    : 0;
+                            final unidad =
+                                (ingrediente['unidad_medida'] ?? 'unid')
+                                    .toString();
+                            final double cantidadTotal =
+                                (ingrediente['cantidad_vendida'] is num)
+                                    ? (ingrediente['cantidad_vendida'] as num)
+                                        .toDouble()
+                                    : (cantidadBase * item.cantidad);
+                            final cantidad = cantidadTotal.toStringAsFixed(2);
+
+                            return pw.TableRow(
+                              children: [
+                                _pdfBodyCell(
+                                  '    $nombreIngrediente',
+                                  isIngredient: true,
+                                ),
+                                _pdfBodyCell(
+                                  '$cantidad $unidad',
+                                  isIngredient: true,
+                                ),
+                                _pdfBodyCell('', isIngredient: true),
+                                _pdfBodyCell('', isIngredient: true),
+                              ],
+                            );
+                          }),
+                        );
+                      }
+
+                      return rows;
+                    }),
+                  ],
+                ),
+                pw.SizedBox(height: 18),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(12),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromHex('#F1F5F9'),
+                    borderRadius: pw.BorderRadius.circular(12),
+                    border: pw.Border.all(color: PdfColors.grey300, width: 1),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          _pdfSummaryLabel('Total sin descuento'),
+                          _pdfSummaryValue(
+                            '\$${originalTotal.toStringAsFixed(2)}',
+                          ),
+                        ],
+                      ),
+                      if (hasDiscount) ...[
+                        pw.SizedBox(height: 4),
+                        pw.Row(
+                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          children: [
+                            _pdfSummaryLabel(
+                              discountLabel.isNotEmpty
+                                  ? discountLabel
+                                  : 'Descuento aplicado',
+                            ),
+                            _pdfSummaryValue(
+                              '- \$${saved.toStringAsFixed(2)}',
+                              color: PdfColor.fromHex('#DC2626'),
+                            ),
+                          ],
+                        ),
+                      ],
+                      pw.Divider(
+                        color: PdfColors.grey400,
+                        height: 14,
+                        thickness: 0.6,
+                      ),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          _pdfSummaryLabel(
+                            'Total a pagar',
+                            fontSize: 13,
+                            isBold: true,
+                          ),
+                          _pdfSummaryValue(
+                            '\$${finalTotal.toStringAsFixed(2)}',
+                            fontSize: 14,
+                            isBold: true,
+                            color: PdfColor.fromHex('#0F172A'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 16),
+                pw.Text(
+                  'Gracias por su compra.',
+                  style: const pw.TextStyle(
+                    fontSize: 11,
+                    color: PdfColors.grey700,
+                  ),
+                ),
+              ],
+        ),
+      );
+
+      final output = await getTemporaryDirectory();
+      final file = File('${output.path}/factura_${order.id}.pdf');
+      await file.writeAsBytes(await pdf.save());
+
+      print('✅ PDF generado: ${file.path}');
+
+      if (didShowDialog && mounted) {
+        try {
+          Navigator.of(context, rootNavigator: true).pop();
+        } catch (_) {}
+        didShowDialog = false;
+      }
+
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/pdf')],
+        text:
+            'Factura de $storeName - Orden ${order.id}. Comparte por WhatsApp u otra app.',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Factura generada. Selecciona WhatsApp u otra app.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error generando factura cliente: $e');
+
+      if (didShowDialog && mounted) {
+        try {
+          Navigator.of(context, rootNavigator: true).pop();
+        } catch (_) {}
+        didShowDialog = false;
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar factura: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (didShowDialog && mounted) {
+        try {
+          Navigator.of(context, rootNavigator: true).pop();
+        } catch (_) {}
+      }
+      if (mounted) {
+        setState(() {
+          _isGeneratingCustomerInvoice = false;
+        });
+      }
+    }
+  }
+
+  pw.Widget _pdfHeaderCell(String text) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(vertical: 6),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(
+          fontSize: 11,
+          fontWeight: pw.FontWeight.bold,
+          color: PdfColor.fromHex('#1F2937'),
+        ),
+      ),
+    );
+  }
+
+  pw.Widget _pdfBodyCell(
+    String text, {
+    bool isBold = false,
+    bool isIngredient = false,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(vertical: 4),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(
+          fontSize: isIngredient ? 9 : 10,
+          fontWeight:
+              isBold
+                  ? pw.FontWeight.bold
+                  : (isIngredient
+                      ? pw.FontWeight.normal
+                      : pw.FontWeight.normal),
+          color:
+              isIngredient
+                  ? PdfColor.fromHex('#6B7280')
+                  : PdfColor.fromHex('#334155'),
+        ),
+      ),
+    );
+  }
+
+  pw.Widget _pdfSummaryLabel(
+    String text, {
+    double fontSize = 12,
+    bool isBold = false,
+  }) {
+    return pw.Text(
+      text,
+      style: pw.TextStyle(
+        fontSize: fontSize,
+        fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+        color: PdfColor.fromHex('#475569'),
+      ),
+    );
+  }
+
+  /// Carga ingredientes de múltiples productos elaborados en una sola consulta
+  Future<Map<int, List<Map<String, dynamic>>>> _loadIngredientsForProducts(
+    Set<int> productIds,
+  ) async {
+    if (productIds.isEmpty) return {};
+
+    try {
+      final response = await Supabase.instance.client
+          .from('app_dat_producto_ingredientes')
+          .select('''
+            id_producto_elaborado,
+            id_ingrediente,
+            cantidad_necesaria,
+            unidad_medida,
+            app_dat_producto!app_dat_producto_ingredientes_ingrediente_fkey(
+              id,
+              denominacion,
+              sku
+            )
+          ''')
+          .filter('id_producto_elaborado', 'in', '(${productIds.join(',')})');
+
+      final Map<int, List<Map<String, dynamic>>> grouped = {};
+
+      for (final item in response) {
+        final int elaboradoId = item['id_producto_elaborado'] as int? ?? -1;
+        if (elaboradoId == -1) continue;
+
+        final producto =
+            item['app_dat_producto'] as Map<String, dynamic>? ?? {};
+
+        final mapped = {
+          'nombre_ingrediente':
+              producto['denominacion'] ?? 'Ingrediente desconocido',
+          'cantidad_necesaria': item['cantidad_necesaria'] ?? 0,
+          'unidad_medida': item['unidad_medida'] ?? 'unid',
+          'sku': producto['sku'],
+          'id_ingrediente': item['id_ingrediente'],
+        };
+
+        grouped.putIfAbsent(elaboradoId, () => []).add(mapped);
+      }
+
+      return grouped;
+    } catch (e) {
+      debugPrint('❌ Error cargando ingredientes para productos: $e');
+      return {};
+    }
+  }
+
+  pw.Widget _pdfSummaryValue(
+    String text, {
+    double fontSize = 12,
+    bool isBold = false,
+    PdfColor color = PdfColors.black,
+  }) {
+    return pw.Text(
+      text,
+      style: pw.TextStyle(
+        fontSize: fontSize,
+        fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+        color: color,
+      ),
+    );
+  }
+
+  String _formatInvoiceDate(DateTime date) {
+    final local = date.toLocal();
+    final two = (int v) => v.toString().padLeft(2, '0');
+    return '${two(local.day)}/${two(local.month)}/${local.year} ${two(local.hour)}:${two(local.minute)}';
+  }
+
+  Future<Uint8List?> _downloadImageBytes(String? url) async {
+    if (url == null || url.isEmpty) return null;
+
+    const objectPrefix =
+        'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/images_back/';
+    const renderPrefix =
+        'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/render/image/public/images_back/';
+
+    // Construir URL de render con dimensiones fijas para supabase
+    final renderUrl =
+        url.contains(objectPrefix)
+            ? '${url.replaceFirst(objectPrefix, renderPrefix)}?width=500&height=600'
+            : url;
+
+    try {
+      final response = await http.get(Uri.parse(renderUrl));
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      }
+      return null;
+    } catch (e) {
+      print('⚠️ No se pudo descargar imagen de tienda: $e');
+      return null;
+    }
+  }
+
   Widget _buildDetailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
           Text(
-            value,
+            label,
             style: const TextStyle(
               fontSize: 14,
+              color: Colors.black54,
               fontWeight: FontWeight.w500,
-              color: Color(0xFF1F2937),
+            ),
+          ),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.black87,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],

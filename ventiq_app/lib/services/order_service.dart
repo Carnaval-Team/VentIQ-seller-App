@@ -107,6 +107,136 @@ class OrderService {
     }
   }
 
+  /// Aplica un descuento manual para vendedores y actualiza la operación
+  /// [discountType]: 1 = porcentaje, 2 = monto fijo
+  Future<Map<String, dynamic>> applyManualDiscount({
+    required Order order,
+    required int discountType,
+    required double discountValue,
+  }) async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final isOfflineModeEnabled = await userPrefs.isOfflineModeEnabled();
+
+      if (isOfflineModeEnabled) {
+        return {
+          'success': false,
+          'error':
+              'No es posible aplicar descuentos en modo offline. Conéctate para continuar.',
+        };
+      }
+
+      final operationId = order.operationId;
+      if (operationId == null) {
+        return {
+          'success': false,
+          'error': 'La orden no tiene operación válida',
+        };
+      }
+
+      final idSeller = await userPrefs.getIdSeller();
+      final userId = await userPrefs.getUserId();
+
+      if (idSeller == null || userId == null) {
+        return {
+          'success': false,
+          'error':
+              'Faltan datos del vendedor o usuario para registrar el descuento',
+        };
+      }
+
+      // Obtener datos de la operación para conocer cliente e importe original
+      final operation =
+          await Supabase.instance.client
+              .from('app_dat_operacion_venta')
+              .select('id_cliente, importe_total, precio_con_descuento_total')
+              .eq('id_operacion', operationId)
+              .maybeSingle();
+
+      final double montoBase =
+          (() {
+            final precioDescuento = operation?['precio_con_descuento_total'];
+            final importeTotal = operation?['importe_total'];
+            if (precioDescuento != null)
+              return (precioDescuento as num).toDouble();
+            if (importeTotal != null) return (importeTotal as num).toDouble();
+            return order.total;
+          })();
+
+      double montoDescontado =
+          discountType == 1 ? montoBase * (discountValue / 100) : discountValue;
+      if (montoDescontado < 0) montoDescontado = 0;
+
+      final double precioFinal = (montoBase - montoDescontado).clamp(
+        0,
+        double.maxFinite,
+      );
+
+      // Registrar descuento en tabla app_dat_descuentos_vendedor
+      await Supabase.instance.client
+          .from('app_dat_descuentos_vendedor')
+          .insert({
+            'id_vendedor': idSeller,
+            'uuid_usuario': userId,
+            'id_operacion': operationId,
+            'monto_real': montoBase,
+            'monto_descontado': montoDescontado,
+            'tipo_descuento': discountType,
+            'valor_descuento': discountValue,
+            'id_cliente': operation?['id_cliente'],
+            'id_producto': null,
+          });
+
+      // Actualizar precio_con_descuento_total en app_dat_operacion_venta
+      await Supabase.instance.client
+          .from('app_dat_operacion_venta')
+          .update({'precio_con_descuento_total': precioFinal})
+          .eq('id_operacion', operationId);
+
+      // Ajustar pago más alto en app_dat_pago_venta
+      final List<dynamic>? pagosResponse = await Supabase.instance.client
+          .from('app_dat_pago_venta')
+          .select('id, monto')
+          .eq('id_operacion_venta', operationId);
+
+      if (pagosResponse != null && pagosResponse.isNotEmpty) {
+        final pagos = List<Map<String, dynamic>>.from(pagosResponse);
+        pagos.sort((a, b) {
+          final double montoA = (a['monto'] as num).toDouble();
+          final double montoB = (b['monto'] as num).toDouble();
+          return montoB.compareTo(montoA); // Mayor primero
+        });
+
+        final pagoMayor = pagos.first;
+        final pagoId = pagoMayor['id'] as int;
+
+        await Supabase.instance.client
+            .from('app_dat_pago_venta')
+            .update({'monto': precioFinal, 'importe_sin_descuento': montoBase})
+            .eq('id', pagoId);
+      }
+
+      // Actualizar cache local de la orden
+      final idx = _orders.indexWhere((o) => o.id == order.id);
+      if (idx != -1) {
+        _orders[idx] = _orders[idx].copyWith(total: precioFinal);
+      }
+
+      return {
+        'success': true,
+        'montoBase': montoBase,
+        'montoDescontado': montoDescontado,
+        'precioFinal': precioFinal,
+      };
+    } catch (e) {
+      print('❌ Error al aplicar descuento manual: $e');
+      return {
+        'success': false,
+        'error': 'Error al aplicar el descuento: ${e.toString()}',
+      };
+    }
+  }
+
   // Actualizar método de pago de un item
   void updateItemPaymentMethod(String itemId, PaymentMethod? paymentMethod) {
     if (_currentOrder == null) return;
@@ -352,11 +482,11 @@ class OrderService {
       print('operationId: $operationId');
 
       final response = await Supabase.instance.client.rpc(
-        'get_sale_payments',
+        'get_sale_payments2',
         params: {'p_operacion_venta_id': operationId},
       );
 
-      print('Respuesta get_sale_payments: $response');
+      print('Respuesta get_sale_payments2: $response');
 
       if (response is List) {
         return List<Map<String, dynamic>>.from(response);
@@ -922,12 +1052,25 @@ class OrderService {
           '🔍 Datos de pagos para orden ${supabaseOrder['id_operacion']}: ${supabaseOrder['detalles']['pagos']}',
         );
 
+        final descuento =
+            supabaseOrder['detalles']?['descuento'] as Map<String, dynamic>?;
+        double baseTotal = (supabaseOrder['total_operacion'] ?? 0.0).toDouble();
+        double finalTotal = baseTotal;
+        if (descuento != null) {
+          final double montoReal =
+              ((descuento['monto_real'] ?? baseTotal) as num).toDouble();
+          final double montoDescontado =
+              ((descuento['monto_descontado'] ?? 0) as num).toDouble();
+          baseTotal = montoReal;
+          finalTotal = (montoReal - montoDescontado).clamp(0, double.maxFinite);
+        }
+
         // Crear orden desde los datos de Supabase
         final order = Order(
           id: 'ORD-${supabaseOrder['id_operacion']}',
           fechaCreacion: DateTime.parse(supabaseOrder['fecha_operacion']),
           status: _mapSupabaseStatusToOrderStatus(supabaseOrder['estado']),
-          total: (supabaseOrder['total_operacion'] ?? 0.0).toDouble(),
+          total: finalTotal,
           items: orderItems,
           buyerName: clienteNombre,
           buyerPhone: clienteTelefono,
@@ -938,6 +1081,7 @@ class OrderService {
           pagos:
               supabaseOrder['detalles']['pagos']
                   as List<dynamic>?, // ✅ Agregar campo pagos
+          descuento: descuento,
         );
 
         _orders.add(order);
@@ -1036,15 +1180,22 @@ class OrderService {
               );
             }).toList();
 
-        // Crear orden con status pendiente de sincronización
+        // Determinar estado almacenado (si existe) para no sobreescribirlo
+        final storedStatusString =
+            orderData['estado'] ?? orderData['status'] as String?;
+        final storedStatus =
+            storedStatusString != null
+                ? _stringToOrderStatus(storedStatusString) ??
+                    OrderStatus.pendienteDeSincronizacion
+                : OrderStatus.pendienteDeSincronizacion;
+
+        // Crear orden respetando el estado guardado
         final order = Order(
           id: orderData['id'] as String,
           fechaCreacion: DateTime.parse(orderData['fecha_creacion'] as String),
           items: items,
           total: (orderData['total'] as num).toDouble(),
-          status:
-              OrderStatus
-                  .pendienteDeSincronizacion, // Estado pendiente de sincronización para órdenes offline pendientes
+          status: storedStatus,
           pagos:
               orderData['pagos']
                   as List<
@@ -1155,6 +1306,32 @@ class OrderService {
         return 'devuelta';
       case OrderStatus.pendienteDeSincronizacion:
         return 'pendiente_sincronizacion';
+    }
+  }
+
+  /// Convertir string a OrderStatus (para restaurar estado offline)
+  OrderStatus? _stringToOrderStatus(String? status) {
+    switch (status) {
+      case 'borrador':
+        return OrderStatus.borrador;
+      case 'enviada':
+      case 'pendiente':
+        return OrderStatus.enviada;
+      case 'procesando':
+        return OrderStatus.procesando;
+      case 'pago_confirmado':
+        return OrderStatus.pagoConfirmado;
+      case 'completada':
+        return OrderStatus.completada;
+      case 'cancelada':
+        return OrderStatus.cancelada;
+      case 'devuelta':
+        return OrderStatus.devuelta;
+      case 'pendiente_sincronizacion':
+      case 'pendiente_sinc':
+        return OrderStatus.pendienteDeSincronizacion;
+      default:
+        return null;
     }
   }
 

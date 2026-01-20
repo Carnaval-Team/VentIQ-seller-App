@@ -19,6 +19,9 @@ import '../utils/connection_error_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/smart_offline_manager.dart';
 import '../services/connectivity_service.dart';
+import '../services/product_service.dart';
+import '../models/product.dart';
+import 'product_details_screen.dart';
 import 'dart:async';
 
 class CategoriesScreen extends StatefulWidget {
@@ -35,6 +38,8 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   final ChangelogService _changelogService = ChangelogService();
   final NotificationService _notificationService = NotificationService();
   final SmartOfflineManager _smartOfflineManager = SmartOfflineManager();
+  final ProductService _productService = ProductService();
+  final FocusNode _searchFocusNode = FocusNode();
   StreamSubscription<SmartOfflineEvent>? _smartOfflineSubscription;
   List<Category> _categories = [];
   bool _isLoading = true;
@@ -46,6 +51,11 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   bool _isOfflineModeEnabled = false; // Para el estado del modo offline
   bool _isConnectionError = false; // Para detectar errores de conexión
   bool _showRetryWidget = false; // Para mostrar el widget de reconexión
+  bool _isSearchOpen = false; // Estado del buscador global
+  bool _isSearchingProducts = false;
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
+  List<Product> _searchResults = [];
 
   // USD rate data
   double _usdRate = 0.0;
@@ -61,6 +71,9 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     _loadDataUsageSettings();
     _loadFluidModeSettings();
     _loadOfflineModeSettings();
+    _searchController.addListener(() {
+      _onSearchChanged(_searchController.text);
+    });
     // Inicializar servicio de notificaciones
     _notificationService.initialize();
     // Escuchar eventos del SmartOfflineManager
@@ -198,6 +211,9 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     WidgetsBinding.instance.removeObserver(this);
     _notificationService.dispose();
     _smartOfflineSubscription?.cancel();
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -470,6 +486,334 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     );
   }
 
+  // ---------- Global search ----------
+  void _toggleSearch() {
+    setState(() {
+      _isSearchOpen = !_isSearchOpen;
+      _searchResults = [];
+      _searchController.clear();
+    });
+
+    if (_isSearchOpen) {
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) _searchFocusNode.requestFocus();
+      });
+    } else {
+      _searchDebounce?.cancel();
+      _isSearchingProducts = false;
+      FocusScope.of(context).unfocus();
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 320), () {
+      _performProductSearch(value);
+    });
+  }
+
+  Future<void> _performProductSearch(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _isSearchingProducts = false;
+      });
+      return;
+    }
+
+    // Si está en modo offline, evitamos buscar
+    if (_isOfflineModeEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '🔌 Modo offline activo: la búsqueda global requiere conexión',
+            ),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _isSearchingProducts = true;
+    });
+
+    try {
+      final results = await _productService.searchProducts(
+        query: trimmed,
+        categoryId: null,
+        soloDisponibles: false,
+      );
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results;
+        _isSearchingProducts = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSearchingProducts = false;
+        _searchResults = [];
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error al buscar productos: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        focusNode: _searchFocusNode,
+        style: const TextStyle(color: Colors.black87),
+        cursorColor: const Color(0xFF4A90E2),
+        decoration: InputDecoration(
+          hintText: 'Buscar productos...',
+          hintStyle: TextStyle(color: Colors.grey[500]),
+          border: InputBorder.none,
+          prefixIcon: const Icon(Icons.search, color: Color(0xFF4A90E2)),
+          suffixIcon:
+              _searchController.text.isNotEmpty
+                  ? IconButton(
+                    icon: const Icon(Icons.close, color: Colors.grey),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {
+                        _searchResults = [];
+                      });
+                    },
+                  )
+                  : null,
+        ),
+        textInputAction: TextInputAction.search,
+        onSubmitted: _performProductSearch,
+      ),
+    );
+  }
+
+  Widget _buildSearchResultsOverlay() {
+    final media = MediaQuery.of(context);
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: IgnorePointer(
+        ignoring: false,
+        child: Container(
+          color: Colors.black.withOpacity(0.25),
+          child: SafeArea(
+            top: false,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Container(
+                width: media.size.width,
+                margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                padding: const EdgeInsets.only(top: 4, bottom: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.12),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const SizedBox(width: 12),
+                        const Icon(Icons.explore, color: Color(0xFF4A90E2)),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Búsqueda global',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              color: Color(0xFF2C3E50),
+                            ),
+                          ),
+                        ),
+                        if (_isSearchingProducts)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 12),
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF4A90E2),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (_searchController.text.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: Text(
+                          'Escribe para buscar productos por nombre o descripción.',
+                          style: TextStyle(color: Colors.grey, fontSize: 13),
+                        ),
+                      )
+                    else if (_searchResults.isEmpty && !_isSearchingProducts)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: Text(
+                          'Sin resultados. Prueba con otro término.',
+                          style: TextStyle(color: Colors.grey, fontSize: 13),
+                        ),
+                      )
+                    else
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: media.size.height * 0.55,
+                        ),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: _searchResults.length,
+                          itemBuilder: (context, index) {
+                            final product = _searchResults[index];
+                            return ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: const Color(
+                                  0xFF4A90E2,
+                                ).withOpacity(0.12),
+                                child: Icon(
+                                  product.esServicio
+                                      ? Icons.room_service
+                                      : (product.esElaborado
+                                          ? Icons.restaurant_menu
+                                          : Icons.shopping_bag),
+                                  color: const Color(0xFF4A90E2),
+                                ),
+                              ),
+                              title: Text(
+                                product.denominacion,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF2C3E50),
+                                ),
+                              ),
+                              subtitle: Text(
+                                product.descripcion ?? 'Sin descripción',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              trailing: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '\$${product.precio.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF4A90E2),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          (product.cantidad > 0
+                                              ? Colors.green[50]
+                                              : Colors.red[50]) ??
+                                          Colors.grey[100],
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color:
+                                            (product.cantidad > 0
+                                                ? Colors.green[300]
+                                                : Colors.red[300]) ??
+                                            Colors.grey,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      product.cantidad > 0
+                                          ? 'Stock: ${product.cantidad}'
+                                          : 'Sin stock',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color:
+                                            product.cantidad > 0
+                                                ? Colors.green[700]
+                                                : Colors.red[700],
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              onTap: () {
+                                _toggleSearch();
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder:
+                                        (_) => ProductDetailsScreen(
+                                          product: product,
+                                          categoryColor: const Color(
+                                            0xFF4A90E2,
+                                          ),
+                                        ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildUsdRateChip() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -533,7 +877,26 @@ class _CategoriesScreenState extends State<CategoriesScreen>
         backgroundColor: const Color(0xFF4A90E2),
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
+        bottom:
+            _isSearchOpen
+                ? PreferredSize(
+                  preferredSize: const Size.fromHeight(72),
+                  child: Container(
+                    color: const Color(0xFF4A90E2),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: _buildSearchBar(),
+                  ),
+                )
+                : null,
         actions: [
+          IconButton(
+            icon: Icon(
+              _isSearchOpen ? Icons.close : Icons.search,
+              color: Colors.white,
+            ),
+            tooltip: 'Buscar productos',
+            onPressed: _toggleSearch,
+          ),
           if (_isLimitDataUsageEnabled)
             IconButton(
               icon: const Icon(
@@ -581,6 +944,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       body: Stack(
         children: [
           _buildBody(),
+          if (_isSearchOpen) _buildSearchResultsOverlay(),
           // USD Rate Chip positioned at bottom left
           Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
           // Sync Status Chip positioned at bottom left, above USD chip
