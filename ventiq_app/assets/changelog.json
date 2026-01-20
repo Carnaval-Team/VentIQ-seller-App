@@ -1,9 +1,31 @@
 {
-  "current_version": "1.9.1",
-  "build": 801,
+  "current_version": "1.9.2",
+  "build": 802,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.9.2",
+      "date": "2026-01-20",
+      "title": "Offline más preciso y promociones disponibles",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Stock actualizado en ventas sin internet",
+          "description": "Cuando haces una venta sin conexión, las cantidades de productos se actualizan al instante para evitar confusiones."
+        },
+        {
+          "type": "improvement",
+          "title": "Promociones disponibles sin conexión",
+          "description": "Tus promociones globales y por producto se guardan para que sigan aplicando aunque estés offline."
+        },
+        {
+          "type": "improvement",
+          "title": "Catálogo offline siempre al día",
+          "description": "El listado de productos muestra las cantidades reales guardadas en el modo offline."
+        }
+      ]
+    },
     {
       "version": "1.9.1",
       "date": "2026-01-18",
