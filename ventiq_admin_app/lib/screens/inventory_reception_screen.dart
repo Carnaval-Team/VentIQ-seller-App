@@ -565,9 +565,11 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
             SizedBox(
               height: 300,
               child: ProductSelectorWidget(
+                key: ValueKey(_selectedProveedor?['id']),
                 searchType: ProductSearchType.all,
                 requireInventory: false,
                 searchHint: 'Buscar productos para recibir...',
+                supplierId: _selectedProveedor?['id'] as int?,
                 onProductSelected: (productData) {                  
                   // Convertir Map a Product para mantener compatibilidad
                   final product = Product(

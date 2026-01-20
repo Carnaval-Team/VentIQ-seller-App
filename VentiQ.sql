@@ -340,6 +340,7 @@ CREATE TABLE public.app_dat_configuracion_tienda (
   no_solicitar_cliente boolean NOT NULL DEFAULT false,
   tpv_trabajador_encargado_carnaval jsonb,
   allow_discount_on_vendedor boolean NOT NULL DEFAULT false,
+  permitir_imprimir_pendientes boolean,
   CONSTRAINT app_dat_configuracion_tienda_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_configuracion_tienda_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
 );
@@ -537,6 +538,7 @@ CREATE TABLE public.app_dat_entregas_parciales_caja (
   fecha_entrega timestamp with time zone NOT NULL DEFAULT now(),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   id_medio_pago smallint,
+  uuid_vendedor uuid,
   CONSTRAINT app_dat_entregas_parciales_caja_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_entregas_parciales_caja_id_turno_fkey FOREIGN KEY (id_turno) REFERENCES public.app_dat_caja_turno(id),
   CONSTRAINT app_dat_entregas_parciales_caja_id_medio_pago_fkey FOREIGN KEY (id_medio_pago) REFERENCES public.app_nom_medio_pago(id)

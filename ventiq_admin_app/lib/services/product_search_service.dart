@@ -14,16 +14,17 @@ class ProductSearchService {
     ProductSearchType searchType = ProductSearchType.all,
     bool requireInventory = false, // Nuevo parámetro para distinguir operaciones
     int? locationId, // Nuevo parámetro para filtrar por ubicación
+    int? supplierId, // Nuevo parámetro para filtrar por proveedor
   }) async {
     try {
-      print('🔍 Buscando productos: query="$searchQuery", page=$page, type=$searchType, requireInventory=$requireInventory, locationId=$locationId');
+      print('🔍 Buscando productos: query="$searchQuery", page=$page, type=$searchType, requireInventory=$requireInventory, locationId=$locationId, supplierId=$supplierId');
       
       if (requireInventory) {
         // Para operaciones que requieren inventario existente (extracciones, transferencias)
-        return await _searchProductsWithInventory(searchQuery, page, pageSize, searchType, locationId);
+        return await _searchProductsWithInventory(searchQuery, page, pageSize, searchType, locationId, supplierId);
       } else {
         // Para operaciones que no requieren inventario (recepciones, productos generales)
-        return await _searchAllProducts(searchQuery, page, pageSize, searchType);
+        return await _searchAllProducts(searchQuery, page, pageSize, searchType, supplierId);
       }
       
     } catch (e) {
@@ -38,8 +39,17 @@ class ProductSearchService {
     int pageSize,
     ProductSearchType searchType,
     int? locationId,
+    int? supplierId,
   ) async {
-    // Usar función RPC existente fn_listar_inventario_productos_paged2
+    print('\n📦 USANDO RPC: fn_listar_inventario_productos_paged2_with_supplier');
+    print('   ├─ Razón: requireInventory=true (operación requiere inventario existente)');
+    print('   ├─ searchQuery: $searchQuery');
+    print('   ├─ page: $page, pageSize: $pageSize');
+    print('   ├─ locationId: $locationId');
+    print('   ├─ supplierId: $supplierId');
+    print('   └─ Casos de uso: Extracciones, Transferencias, Operaciones con inventario');
+    
+    // Usar función RPC con soporte para filtrado por proveedor
     final response = await _supabase.rpc('fn_listar_inventario_productos_paged2', params: {
       'p_pagina': page,
       'p_limite': pageSize,
@@ -52,7 +62,6 @@ class ProductSearchService {
       'p_id_presentacion': null,
       'p_id_categoria': null,
       'p_id_subcategoria': null,
-      'p_id_proveedor': null,
       'p_origen_cambio': null,
       'p_es_vendible': true,
       'p_es_inventariable': null,
@@ -62,8 +71,8 @@ class ProductSearchService {
       'p_busqueda': searchQuery,
     });
     
-    print('🔍 Respuesta RPC tipo: ${response.runtimeType}');
-    print('🔍 Respuesta RPC: $response');
+    print('   📡 Respuesta RPC tipo: ${response.runtimeType}');
+    print('   📡 Respuesta RPC: $response');
     
     // La función retorna una lista de registros
     List<Map<String, dynamic>> products = [];
@@ -107,17 +116,30 @@ class ProductSearchService {
     int page,
     int pageSize,
     ProductSearchType searchType,
+    int? supplierId,
   ) async {
     // Para búsqueda con texto, necesitamos cargar todo y filtrar (limitación de la función RPC)
     if (searchQuery != null && searchQuery.isNotEmpty) {
-      return await _searchAllProductsWithTextFilter(searchQuery, page, pageSize, searchType);
+      print('\n📦 USANDO RPC: get_productos_completos_by_tienda_with_supplier (CON FILTRO DE TEXTO)');
+      print('   ├─ Razón: requireInventory=false + searchQuery no vacío');
+      print('   ├─ searchQuery: "$searchQuery"');
+      print('   ├─ supplierId: $supplierId');
+      print('   └─ Casos de uso: Búsqueda de productos por nombre/SKU/descripción');
+      return await _searchAllProductsWithTextFilter(searchQuery, page, pageSize, searchType, supplierId);
     }
     
+    print('\n📦 USANDO RPC: get_productos_completos_by_tienda_with_supplier (SIN FILTRO DE TEXTO)');
+    print('   ├─ Razón: requireInventory=false + searchQuery vacío');
+    print('   ├─ page: $page, pageSize: $pageSize');
+    print('   ├─ supplierId: $supplierId');
+    print('   └─ Casos de uso: Recepciones, Búsqueda general de productos');
+    
     // Para búsqueda sin texto, podemos simular paginación más eficiente
-    final response = await _supabase.rpc('get_productos_completos_by_tienda_optimized', params: {
+    final response = await _supabase.rpc('get_productos_completos_by_tienda_optimized_provider', params: {
       'id_tienda_param': await _getUserStoreId(),
       'id_categoria_param': null,
       'solo_disponibles_param': false,
+      'id_proveedor_param': supplierId,
     });
     
     if (response == null) {
@@ -135,7 +157,7 @@ class ProductSearchService {
     final endIndex = startIndex + pageSize;
     final paginatedProducts = filteredProducts.skip(startIndex).take(pageSize).toList();
     
-    print('✅ Productos encontrados3: ${paginatedProducts.length}/${filteredProducts.length}');
+    print('   ✅ Productos encontrados (sin filtro de texto): ${paginatedProducts.length}/${filteredProducts.length}');
     
     return ProductSearchResult(
       products: paginatedProducts,
@@ -152,12 +174,16 @@ class ProductSearchService {
     int page,
     int pageSize,
     ProductSearchType searchType,
+    int? supplierId,
   ) async {
+    print('   📡 Ejecutando búsqueda con filtro de texto: "$searchQuery"');
+    
     // Para búsqueda con texto, cargamos todo y filtramos (limitación actual)
-    final response = await _supabase.rpc('get_productos_completos_by_tienda_optimized', params: {
+    final response = await _supabase.rpc('get_productos_completos_by_tienda_with_supplier', params: {
       'id_tienda_param': await _getUserStoreId(),
       'id_categoria_param': null,
       'solo_disponibles_param': false,
+      'id_proveedor_param': supplierId,
     });
     
     if (response == null) {
@@ -168,6 +194,7 @@ class ProductSearchService {
     List<Map<String, dynamic>> products = List<Map<String, dynamic>>.from(productosData);
     
     // Aplicar filtro de búsqueda por texto
+    final productosAntesDelFiltro = products.length;
     products = products.where((product) {
       final denominacion = (product['denominacion'] ?? '').toString().toLowerCase();
       final sku = (product['sku'] ?? '').toString().toLowerCase();
@@ -181,6 +208,8 @@ class ProductSearchService {
              descripcion.contains(query);
     }).toList();
     
+    print('   🔎 Filtro de texto aplicado: $productosAntesDelFiltro → ${products.length} productos');
+    
     // Filtrar por tipo de producto
     final filteredProducts = _filterByProductType(products, searchType);
     
@@ -189,7 +218,7 @@ class ProductSearchService {
     final endIndex = startIndex + pageSize;
     final paginatedProducts = filteredProducts.skip(startIndex).take(pageSize).toList();
     
-    print('✅ Productos encontrados1: ${paginatedProducts.length}/${filteredProducts.length}');
+    print('   ✅ Productos encontrados (con filtro de texto): ${paginatedProducts.length}/${filteredProducts.length}');
     
     return ProductSearchResult(
       products: paginatedProducts,
