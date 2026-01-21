@@ -49,48 +49,96 @@ class _SalesScreenState extends State<SalesScreen>
 
   // Generación de PDF
   Future<void> _pickPdfDateRange(BuildContext context) async {
-    final DateTime? start = await showDatePicker(
+    final startBase = _pdfStartDate ?? _startDate;
+    final endBase = _pdfEndDate ?? _endDate;
+    final initialRange = DateTimeRange(
+      start: startBase.isBefore(endBase) ? startBase : endBase,
+      end: endBase.isAfter(startBase) ? endBase : startBase,
+    );
+
+    final DateTimeRange? range = await showDateRangePicker(
       context: context,
-      initialDate: _pdfStartDate ?? _startDate,
       firstDate: DateTime(2023),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      helpText: 'Selecciona fecha de inicio',
+      initialDateRange: initialRange,
+      helpText: 'Selecciona rango de fechas',
+      saveText: 'Aplicar',
     );
-    if (start == null) return;
-
-    final DateTime? end = await showDatePicker(
-      context: context,
-      initialDate: _pdfEndDate ?? _endDate,
-      firstDate: start,
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-      helpText: 'Selecciona fecha fin',
-    );
-    if (end == null) return;
+    if (range == null) return;
 
     setState(() {
-      _pdfStartDate = DateTime(start.year, start.month, start.day, 0, 0, 0);
-      _pdfEndDate = DateTime(end.year, end.month, end.day, 23, 59, 59);
+      _pdfStartDate = DateTime(
+        range.start.year,
+        range.start.month,
+        range.start.day,
+        0,
+        0,
+        0,
+      );
+      _pdfEndDate = DateTime(
+        range.end.year,
+        range.end.month,
+        range.end.day,
+        23,
+        59,
+        59,
+      );
     });
   }
 
-  double _calculateOrderCost(List<dynamic> items) {
+  double _calculateOrderCost(
+    List<dynamic> items, {
+    Map<int, double>? costById,
+    Map<String, double>? costByName,
+  }) {
     double totalCost = 0.0;
     for (final item in items) {
       final qty = _toDoubleSafe(item['cantidad']);
-      final unitCost = _getItemUnitCost(item);
+      final unitCost = _getItemUnitCost(
+        item,
+        costById: costById,
+        costByName: costByName,
+      );
       totalCost += qty * unitCost;
     }
     return totalCost;
   }
 
-  double _getItemUnitCost(Map<String, dynamic> item) {
+  double _getItemUnitCost(
+    Map<String, dynamic> item, {
+    Map<int, double>? costById,
+    Map<String, double>? costByName,
+  }) {
     final costo =
         item['precio_costo'] ??
         item['costo_unitario'] ??
         item['costo'] ??
         item['precio_costo_unitario'] ??
         0.0;
-    return _toDoubleSafe(costo);
+    final directCost = _toDoubleSafe(costo);
+    if (directCost > 0) return directCost;
+
+    final productId = _toIntSafe(
+      item['id_producto'] ?? item['producto_id'] ?? item['id'],
+    );
+    if (productId != null) {
+      final mappedCost = costById?[productId];
+      if (mappedCost != null && mappedCost > 0) return mappedCost;
+    }
+
+    final rawName =
+        item['producto_nombre'] ?? item['nombre'] ?? item['producto'] ?? '';
+    final normalizedName = _normalizeProductName(rawName.toString());
+    if (normalizedName.isNotEmpty) {
+      final mappedCost = costByName?[normalizedName];
+      if (mappedCost != null && mappedCost > 0) return mappedCost;
+    }
+
+    return directCost;
+  }
+
+  String _normalizeProductName(String name) {
+    return name.trim().toLowerCase();
   }
 
   String _getAddonName(Map<String, dynamic> ad, String parentName) {
@@ -242,6 +290,62 @@ class _SalesScreenState extends State<SalesScreen>
         fechaDesde: start,
         fechaHasta: end,
       );
+      final productAnalysis = await SalesService.getProductAnalysis(
+        fechaDesde: start,
+        fechaHasta: end,
+      );
+
+      final Map<int, double> costById = {};
+      final Map<String, double> costByName = {};
+
+      void addCostEntry({
+        required int? productId,
+        required String? productName,
+        required double costCup,
+      }) {
+        if (costCup <= 0) return;
+        if (productId != null && productId > 0) {
+          costById[productId] = costCup;
+        }
+        final normalizedName = _normalizeProductName(
+          productName?.toString() ?? '',
+        );
+        if (normalizedName.isNotEmpty) {
+          costByName[normalizedName] = costCup;
+        }
+      }
+
+      double resolveReportCost(ProductSalesReport report) {
+        if (report.precioCostoCup > 0) return report.precioCostoCup;
+        if (report.precioCosto > 0 && report.valorUsd > 0) {
+          return report.precioCosto * report.valorUsd;
+        }
+        return report.precioCosto;
+      }
+
+      double resolveAnalysisCost(ProductAnalysis analysis) {
+        if (analysis.precioCostoCup > 0) return analysis.precioCostoCup;
+        if (analysis.precioCosto > 0 && analysis.valorUsd > 0) {
+          return analysis.precioCosto * analysis.valorUsd;
+        }
+        return analysis.precioCosto;
+      }
+
+      for (final analysis in productAnalysis) {
+        addCostEntry(
+          productId: analysis.idProducto,
+          productName: analysis.nombreProducto,
+          costCup: resolveAnalysisCost(analysis),
+        );
+      }
+
+      for (final report in productReports) {
+        addCostEntry(
+          productId: report.idProducto,
+          productName: report.nombreProducto,
+          costCup: resolveReportCost(report),
+        );
+      }
 
       double ventaTotal = 0.0;
       double descuentoTotal = 0.0;
@@ -308,7 +412,11 @@ class _SalesScreenState extends State<SalesScreen>
                         width: 0.8,
                       ),
                     ),
-                    child: _buildOrderPdfSection(order),
+                    child: _buildOrderPdfSection(
+                      order,
+                      costById: costById,
+                      costByName: costByName,
+                    ),
                   ),
                 ),
                 pw.SizedBox(height: 12),
@@ -564,7 +672,11 @@ class _SalesScreenState extends State<SalesScreen>
     );
   }
 
-  pw.Widget _buildOrderPdfSection(VendorOrder order) {
+  pw.Widget _buildOrderPdfSection(
+    VendorOrder order, {
+    Map<int, double>? costById,
+    Map<String, double>? costByName,
+  }) {
     final summary = _calculateDiscountSummary(order);
     final double original = summary['original'] ?? order.totalOperacion;
     final double cobrado = summary['cobrado'] ?? order.totalOperacion;
@@ -606,7 +718,7 @@ class _SalesScreenState extends State<SalesScreen>
           style: pw.TextStyle(fontSize: 10, color: PdfColor.fromHex('#334155')),
         ),
         pw.SizedBox(height: 8),
-        _buildItemsTable(items),
+        _buildItemsTable(items, costById: costById, costByName: costByName),
         pw.SizedBox(height: 8),
         _buildPaymentsTable(pagos),
         pw.SizedBox(height: 6),
@@ -614,13 +726,21 @@ class _SalesScreenState extends State<SalesScreen>
           original: original,
           descuento: descuento,
           total: cobrado,
-          costo: _calculateOrderCost(items),
+          costo: _calculateOrderCost(
+            items,
+            costById: costById,
+            costByName: costByName,
+          ),
         ),
       ],
     );
   }
 
-  pw.Widget _buildItemsTable(List<dynamic> items) {
+  pw.Widget _buildItemsTable(
+    List<dynamic> items, {
+    Map<int, double>? costById,
+    Map<String, double>? costByName,
+  }) {
     return pw.Table(
       border: pw.TableBorder(
         horizontalInside: pw.BorderSide(color: PdfColors.grey300, width: 0.3),
@@ -630,9 +750,10 @@ class _SalesScreenState extends State<SalesScreen>
         0: const pw.FlexColumnWidth(4),
         1: const pw.FlexColumnWidth(1),
         2: const pw.FlexColumnWidth(1.2),
-        3: const pw.FlexColumnWidth(1.2),
-        4: const pw.FlexColumnWidth(1.4),
-        5: const pw.FlexColumnWidth(1.4),
+        3: const pw.FlexColumnWidth(1.1),
+        4: const pw.FlexColumnWidth(1.2),
+        5: const pw.FlexColumnWidth(1.3),
+        6: const pw.FlexColumnWidth(1.3),
       },
       children: [
         pw.TableRow(
@@ -641,6 +762,7 @@ class _SalesScreenState extends State<SalesScreen>
             _pdfHeaderCell('Cant.'),
             _pdfHeaderCell('Precio'),
             _pdfHeaderCell('Costo'),
+            _pdfHeaderCell('Costo total'),
             _pdfHeaderCell('Subtotal'),
             _pdfHeaderCell('Ganancia'),
           ],
@@ -654,16 +776,27 @@ class _SalesScreenState extends State<SalesScreen>
               final precio = _toDoubleSafe(
                 item['precio_unitario'],
               ).toStringAsFixed(2);
-              final costoUnitario = _toDoubleSafe(_getItemUnitCost(item));
+              final costoUnitario = _getItemUnitCost(
+                item,
+                costById: costById,
+                costByName: costByName,
+              );
               final costoTotal = (costoUnitario *
                       _toDoubleSafe(item['cantidad']))
                   .toStringAsFixed(2);
               final subtotal = _toDoubleSafe(
                 item['importe'],
               ).toStringAsFixed(2);
-              final ganancia = (_toDoubleSafe(item['importe']) -
-                      (costoUnitario * _toDoubleSafe(item['cantidad'])))
-                  .toStringAsFixed(2);
+              final gananciaValue =
+                  _toDoubleSafe(item['importe']) -
+                  (costoUnitario * _toDoubleSafe(item['cantidad']));
+              final ganancia = gananciaValue.toStringAsFixed(2);
+              final gananciaColor =
+                  gananciaValue < 0
+                      ? PdfColor.fromHex('#DC2626')
+                      : gananciaValue > 0
+                      ? PdfColor.fromHex('#15803D')
+                      : PdfColor.fromHex('#334155');
 
               final aditamentos =
                   (item['aditamentos'] as List?) ??
@@ -675,9 +808,14 @@ class _SalesScreenState extends State<SalesScreen>
                     _pdfBodyCell(nombre),
                     _pdfBodyCell(cantidad),
                     _pdfBodyCell('\$$precio'),
+                    _pdfBodyCell('\$${costoUnitario.toStringAsFixed(2)}'),
                     _pdfBodyCell('\$$costoTotal'),
                     _pdfBodyCell('\$$subtotal'),
-                    _pdfBodyCell('\$$ganancia', isBold: true),
+                    _pdfBodyCell(
+                      '\$$ganancia',
+                      isBold: true,
+                      color: gananciaColor,
+                    ),
                   ],
                 ),
               ];
@@ -691,6 +829,9 @@ class _SalesScreenState extends State<SalesScreen>
                         isBold: true,
                         isIngredient: true,
                       ),
+                      _pdfBodyCell('', isIngredient: true),
+                      _pdfBodyCell('', isIngredient: true),
+                      _pdfBodyCell('', isIngredient: true),
                       _pdfBodyCell('', isIngredient: true),
                       _pdfBodyCell('', isIngredient: true),
                       _pdfBodyCell('', isIngredient: true),
@@ -715,6 +856,9 @@ class _SalesScreenState extends State<SalesScreen>
                               : cantidadAd,
                           isIngredient: true,
                         ),
+                        _pdfBodyCell('', isIngredient: true),
+                        _pdfBodyCell('', isIngredient: true),
+                        _pdfBodyCell('', isIngredient: true),
                         _pdfBodyCell('', isIngredient: true),
                         _pdfBodyCell('', isIngredient: true),
                       ],
@@ -797,7 +941,13 @@ class _SalesScreenState extends State<SalesScreen>
           _pdfSummaryRow('Costo', -costo),
           pw.Divider(height: 8, color: PdfColors.grey500, thickness: 0.5),
           _pdfSummaryRow('Total', total, isBold: true, fontSize: 12),
-          _pdfSummaryRow('Ganancia orden', ganancia, isBold: true),
+          _pdfSummaryRow(
+            'Ganancia orden',
+            ganancia,
+            isBold: true,
+            positiveColor: PdfColor.fromHex('#15803D'),
+            negativeColor: PdfColor.fromHex('#DC2626'),
+          ),
         ],
       ),
     );
@@ -830,16 +980,25 @@ class _SalesScreenState extends State<SalesScreen>
             _pdfHeaderCell('Ganancia'),
           ],
         ),
-        ...reports.map(
-          (p) => pw.TableRow(
+        ...reports.map((p) {
+          final gananciaColor =
+              p.gananciaUnitaria < 0
+                  ? PdfColor.fromHex('#DC2626')
+                  : p.gananciaUnitaria > 0
+                  ? PdfColor.fromHex('#15803D')
+                  : PdfColor.fromHex('#334155');
+          return pw.TableRow(
             children: [
               _pdfBodyCell(p.nombreProducto),
               _pdfBodyCell('\$${p.precioVentaCup.toStringAsFixed(2)}'),
               _pdfBodyCell('\$${p.precioCostoCup.toStringAsFixed(2)}'),
-              _pdfBodyCell('\$${p.gananciaUnitaria.toStringAsFixed(2)}'),
+              _pdfBodyCell(
+                '\$${p.gananciaUnitaria.toStringAsFixed(2)}',
+                color: gananciaColor,
+              ),
             ],
-          ),
-        ),
+          );
+        }),
       ],
     );
   }
@@ -874,8 +1033,19 @@ class _SalesScreenState extends State<SalesScreen>
           _pdfSummaryRow('Venta total', ventaTotal),
           _pdfSummaryRow('Descuento total', -descuentoTotal),
           _pdfSummaryRow('Costo total', -costoTotal),
-          _pdfSummaryRow('Ganancia total', gananciaTotal),
-          _pdfSummaryRow('Ganancias reales', gananciasReales, isBold: true),
+          _pdfSummaryRow(
+            'Ganancia total',
+            gananciaTotal,
+            positiveColor: PdfColor.fromHex('#15803D'),
+            negativeColor: PdfColor.fromHex('#DC2626'),
+          ),
+          _pdfSummaryRow(
+            'Ganancias reales',
+            gananciasReales,
+            isBold: true,
+            positiveColor: PdfColor.fromHex('#15803D'),
+            negativeColor: PdfColor.fromHex('#DC2626'),
+          ),
           _pdfSummaryRow('Pago total (pagos)', pagoTotal),
         ],
       ),
@@ -900,6 +1070,7 @@ class _SalesScreenState extends State<SalesScreen>
     String text, {
     bool isBold = false,
     bool isIngredient = false,
+    PdfColor? color,
   }) {
     return pw.Container(
       padding: const pw.EdgeInsets.symmetric(vertical: 4),
@@ -909,9 +1080,10 @@ class _SalesScreenState extends State<SalesScreen>
           fontSize: isIngredient ? 9 : 10,
           fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
           color:
-              isIngredient
+              color ??
+              (isIngredient
                   ? PdfColor.fromHex('#6B7280')
-                  : PdfColor.fromHex('#334155'),
+                  : PdfColor.fromHex('#334155')),
         ),
       ),
     );
@@ -922,12 +1094,20 @@ class _SalesScreenState extends State<SalesScreen>
     double value, {
     bool isBold = false,
     double fontSize = 11,
+    PdfColor? positiveColor,
+    PdfColor? negativeColor,
   }) {
     final isNegative = value < 0;
     final display =
         isNegative
             ? '- \$${value.abs().toStringAsFixed(2)}'
             : '\$${value.toStringAsFixed(2)}';
+    final defaultPositive = PdfColor.fromHex('#0F172A');
+    final defaultNegative = PdfColor.fromHex('#DC2626');
+    final valueColor =
+        isNegative
+            ? (negativeColor ?? defaultNegative)
+            : (positiveColor ?? defaultPositive);
     return pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
       children: [
@@ -944,10 +1124,7 @@ class _SalesScreenState extends State<SalesScreen>
           style: pw.TextStyle(
             fontSize: fontSize,
             fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
-            color:
-                isNegative
-                    ? PdfColor.fromHex('#DC2626')
-                    : PdfColor.fromHex('#0F172A'),
+            color: valueColor,
           ),
         ),
       ],
@@ -3830,6 +4007,14 @@ class _SalesScreenState extends State<SalesScreen>
       return double.tryParse(value) ?? 0.0;
     }
     return 0.0;
+  }
+
+  int? _toIntSafe(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
   }
 
   void _showVendorOrdenesPendientesDetail(SalesVendorReport vendor) async {
