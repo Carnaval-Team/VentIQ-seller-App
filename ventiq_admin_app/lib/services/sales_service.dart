@@ -835,4 +835,30 @@ class SalesService {
       return [];
     }
   }
+
+  static Future<List<ProductSalesWithSupplier>> getSupplierProductReport({
+    required int idProveedor,
+    DateTime? fechaDesde,
+    DateTime? fechaHasta,
+  }) async {
+    try {
+      // Obtener el reporte general de productos con proveedor
+      final allProducts = await getProductSalesWithSupplier(
+        fechaDesde: fechaDesde,
+        fechaHasta: fechaHasta,
+      );
+
+      // Filtrar por proveedor
+      final supplierProducts = allProducts
+          .where((product) => product.idProveedor == idProveedor)
+          .toList();
+
+      print('DEBUG - Supplier Product Report: ${supplierProducts.length} productos para proveedor $idProveedor');
+
+      return supplierProducts;
+    } catch (e) {
+      print('Error in getSupplierProductReport: $e');
+      return [];
+    }
+  }
 }
