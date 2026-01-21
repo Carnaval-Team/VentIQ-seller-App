@@ -63,6 +63,7 @@ class SubscriptionRecord {
     required this.endAt,
     required this.autoRenews,
     required this.status,
+    required this.statusId,
     required this.daysLeft,
     required this.rawStatus,
   });
@@ -75,6 +76,7 @@ class SubscriptionRecord {
   final DateTime? endAt;
   final bool autoRenews;
   final LicenseStatus status;
+  final int? statusId;
   final int daysLeft;
   final String? rawStatus;
 }
@@ -126,6 +128,9 @@ class StatsData {
     required this.projectedRenewalRevenue,
     required this.paidThisMonth,
     required this.paidAmount,
+    required this.revenueLastMonth,
+    required this.renewalTotal,
+    required this.renewalSummaries,
     required this.dueTodayLicenses,
     required this.revenueTrend,
     required this.totalSubscriptions,
@@ -134,7 +139,36 @@ class StatsData {
   final double projectedRenewalRevenue;
   final int paidThisMonth;
   final double paidAmount;
+  final double revenueLastMonth;
+  final double renewalTotal;
+  final List<RenewalMonthlySummary> renewalSummaries;
   final List<LicenseInfo> dueTodayLicenses;
   final List<RevenuePoint> revenueTrend;
   final int totalSubscriptions;
+}
+
+class RenewalSummaryDetail {
+  const RenewalSummaryDetail({
+    required this.storeName,
+    required this.planName,
+    required this.totalPaid,
+  });
+
+  final String storeName;
+  final String planName;
+  final double totalPaid;
+}
+
+class RenewalMonthlySummary {
+  const RenewalMonthlySummary({
+    required this.year,
+    required this.month,
+    required this.totalPaid,
+    required this.details,
+  });
+
+  final int year;
+  final int month;
+  final double totalPaid;
+  final List<RenewalSummaryDetail> details;
 }

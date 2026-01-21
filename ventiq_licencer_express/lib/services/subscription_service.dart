@@ -9,6 +9,8 @@ class SubscriptionService {
     : _client = client ?? Supabase.instance.client;
 
   final SupabaseClient _client;
+  static const String _renewalSummaryTable =
+      'app_suscripciones_renovaciones_resumen';
 
   void _log(String message) {
     debugPrint('🧭 [SubscriptionService] $message');
@@ -65,6 +67,12 @@ class SubscriptionService {
     final now = DateTime.now();
 
     final revenueThisMonth = _sumHistories(histories, now.year, now.month);
+    final previousMonth = DateTime(now.year, now.month - 1, 1);
+    final revenueLastMonth = _sumHistories(
+      histories,
+      previousMonth.year,
+      previousMonth.month,
+    );
     final renewalRevenue = _sumUpcomingRenewals(subscriptions);
     final paidThisMonth = histories
         .where((history) => _isSameMonth(history.paidAt, now))
@@ -75,6 +83,7 @@ class SubscriptionService {
         .map(_licenseFromRecord)
         .toList();
     final revenueTrend = _buildRevenueTrend(histories);
+    final renewalSummary = await _fetchRenewalSummaries();
 
     _log(
       'Stats listas: suscripciones=${subscriptions.length}, '
@@ -85,6 +94,9 @@ class SubscriptionService {
       projectedRenewalRevenue: renewalRevenue,
       paidThisMonth: paidThisMonth,
       paidAmount: paidAmount,
+      revenueLastMonth: revenueLastMonth,
+      renewalTotal: renewalSummary.total,
+      renewalSummaries: renewalSummary.summaries,
       dueTodayLicenses: dueTodayLicenses,
       revenueTrend: revenueTrend,
       totalSubscriptions: subscriptions.length,
@@ -103,6 +115,68 @@ class SubscriptionService {
 
     _log('Tiendas cargadas: ${stores.length}');
     return stores;
+  }
+
+  Future<List<SubscriptionPlan>> fetchActivePlans() async {
+    _log('Cargando planes activos...');
+    final rawPlans = await _client
+        .from('app_suscripciones_plan')
+        .select(
+          'id, denominacion, precio_mensual, duracion_trial_dias, periodo, moneda',
+        )
+        .eq('es_activo', true)
+        .order('id', ascending: true);
+
+    return (rawPlans as List<dynamic>)
+        .whereType<Map<String, dynamic>>()
+        .map(_mapPlanOption)
+        .toList();
+  }
+
+  Future<void> renewSubscription({
+    required int subscriptionId,
+    required int storeId,
+    required int? previousPlanId,
+    required int newPlanId,
+    required int? previousStatusId,
+    required DateTime newEndDate,
+    required double planAmount,
+  }) async {
+    _log('Renovando suscripcion $subscriptionId...');
+    final currentUser = _client.auth.currentUser;
+    if (currentUser == null) {
+      throw Exception('Usuario no autenticado');
+    }
+
+    final now = DateTime.now();
+
+    await _client.from('app_suscripciones_historial').insert({
+      'id_suscripcion': subscriptionId,
+      'id_plan_anterior': previousPlanId ?? newPlanId,
+      'id_plan_nuevo': newPlanId,
+      'estado_anterior': previousStatusId ?? 1,
+      'estado_nuevo': 1,
+      'motivo': 'Renovación de licencia',
+      'cambiado_por': currentUser.id,
+    });
+
+    await _client
+        .from('app_suscripciones')
+        .update({
+          'id_plan': newPlanId,
+          'fecha_fin': newEndDate.toIso8601String(),
+          'estado': 1,
+          'updated_at': now.toIso8601String(),
+        })
+        .eq('id', subscriptionId);
+
+    await _upsertRenewalSummary(
+      month: now.month,
+      year: now.year,
+      storeId: storeId,
+      planId: newPlanId,
+      amount: planAmount,
+    );
   }
 
   Future<LicensesSnapshot> fetchSubscriptionsSnapshot() async {
@@ -216,6 +290,7 @@ class SubscriptionService {
     final amount = _doubleFrom(data, ['monto'], fallback: plan.price);
     final autoRenews = _boolFrom(data, ['renovacion_automatica']);
     final rawStatus = _stringFrom(data, ['estado', 'status'], fallback: '');
+    final statusId = _intFrom(data, ['estado', 'status']);
 
     late final int daysLeft;
     late final LicenseStatus status;
@@ -236,6 +311,7 @@ class SubscriptionService {
       endAt: endAt,
       autoRenews: autoRenews,
       status: status,
+      statusId: statusId,
       daysLeft: daysLeft,
       rawStatus: rawStatus.isEmpty ? null : rawStatus,
     );
@@ -257,6 +333,8 @@ class SubscriptionService {
     return LicenseInfo(
       subscriptionId: record.id,
       storeId: record.store.id,
+      planId: record.plan.id,
+      statusId: record.statusId,
       storeName: record.store.name,
       plan: record.plan.name,
       owner: record.store.owner,
@@ -276,6 +354,8 @@ class SubscriptionService {
     return StoreInfo(
       subscriptionId: record.id,
       storeId: record.store.id,
+      planId: record.plan.id,
+      statusId: record.statusId,
       storeName: record.store.name,
       plan: record.plan.name,
       owner: record.store.owner,
@@ -610,4 +690,149 @@ class SubscriptionService {
     ];
     return months[month - 1];
   }
+
+  SubscriptionPlan _mapPlanOption(Map<String, dynamic> data) {
+    final planPeriod = _intFrom(data, ['periodo']) ?? 1;
+    final trialDays = _intFrom(data, ['duracion_trial_dias']) ?? 0;
+    final planDays = planPeriod * 30;
+
+    return SubscriptionPlan(
+      id: _intFrom(data, ['id']),
+      name: _stringFrom(data, ['denominacion'], fallback: 'Plan'),
+      price: _doubleFrom(data, ['precio_mensual'], fallback: 0),
+      durationDays: planDays,
+      periodMonths: planPeriod,
+      trialDays: trialDays,
+      currency: _stringFrom(data, ['moneda'], fallback: 'USD'),
+    );
+  }
+
+  Future<void> _upsertRenewalSummary({
+    required int month,
+    required int year,
+    required int storeId,
+    required int planId,
+    required double amount,
+  }) async {
+    final existing = await _client
+        .from(_renewalSummaryTable)
+        .select('id, total_pagado')
+        .eq('id_mes', month)
+        .eq('id_anno', year)
+        .eq('id_tienda', storeId)
+        .eq('id_plan', planId)
+        .maybeSingle();
+
+    if (existing != null && existing['id'] != null) {
+      final currentTotal = (existing['total_pagado'] as num?)?.toDouble() ?? 0;
+      await _client
+          .from(_renewalSummaryTable)
+          .update({'total_pagado': currentTotal + amount})
+          .eq('id', existing['id']);
+    } else {
+      await _client.from(_renewalSummaryTable).insert({
+        'id_mes': month,
+        'id_anno': year,
+        'id_tienda': storeId,
+        'id_plan': planId,
+        'total_pagado': amount,
+      });
+    }
+  }
+
+  Future<_RenewalSummaryResult> _fetchRenewalSummaries() async {
+    try {
+      final rawRows = await _client
+          .from(_renewalSummaryTable)
+          .select(
+            'id_mes, id_anno, total_pagado, '
+            'app_dat_tienda(denominacion), '
+            'app_suscripciones_plan(denominacion)',
+          )
+          .order('id_anno', ascending: false)
+          .order('id_mes', ascending: false);
+
+      final grouped = <String, _MutableRenewalSummary>{};
+      double total = 0;
+
+      for (final row in (rawRows as List<dynamic>)) {
+        if (row is! Map<String, dynamic>) {
+          continue;
+        }
+        final year = (row['id_anno'] as num?)?.toInt() ?? 0;
+        final month = (row['id_mes'] as num?)?.toInt() ?? 0;
+        if (year == 0 || month == 0) {
+          continue;
+        }
+        final paid = (row['total_pagado'] as num?)?.toDouble() ?? 0;
+        total += paid;
+
+        final key = '$year-$month';
+        final summary = grouped.putIfAbsent(
+          key,
+          () => _MutableRenewalSummary(year: year, month: month),
+        );
+        summary.totalPaid += paid;
+
+        final storeName =
+            (row['app_dat_tienda'] as Map<String, dynamic>?)?['denominacion']
+                ?.toString() ??
+            'Tienda';
+        final planName =
+            (row['app_suscripciones_plan']
+                    as Map<String, dynamic>?)?['denominacion']
+                ?.toString() ??
+            'Plan';
+
+        summary.details.add(
+          RenewalSummaryDetail(
+            storeName: storeName,
+            planName: planName,
+            totalPaid: paid,
+          ),
+        );
+      }
+
+      final summaries = grouped.values.toList()
+        ..sort((a, b) {
+          if (a.year != b.year) {
+            return b.year.compareTo(a.year);
+          }
+          return b.month.compareTo(a.month);
+        });
+
+      final normalized = summaries
+          .map(
+            (summary) => RenewalMonthlySummary(
+              year: summary.year,
+              month: summary.month,
+              totalPaid: summary.totalPaid,
+              details: summary.details
+                ..sort((a, b) => b.totalPaid.compareTo(a.totalPaid)),
+            ),
+          )
+          .toList();
+
+      return _RenewalSummaryResult(total: total, summaries: normalized);
+    } catch (error) {
+      _log('Error cargando resumen de renovaciones: $error');
+      return const _RenewalSummaryResult(total: 0, summaries: []);
+    }
+  }
+}
+
+class _RenewalSummaryResult {
+  const _RenewalSummaryResult({required this.total, required this.summaries});
+
+  final double total;
+  final List<RenewalMonthlySummary> summaries;
+}
+
+class _MutableRenewalSummary {
+  _MutableRenewalSummary({required this.year, required this.month});
+
+  final int year;
+  final int month;
+  double totalPaid = 0;
+  final List<RenewalSummaryDetail> details = [];
 }

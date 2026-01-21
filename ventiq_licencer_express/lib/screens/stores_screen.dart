@@ -4,6 +4,7 @@ import '../models/license_models.dart';
 import '../services/subscription_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
+import '../widgets/renew_license_dialog.dart';
 
 class StoresScreen extends StatefulWidget {
   const StoresScreen({super.key});
@@ -15,11 +16,29 @@ class StoresScreen extends StatefulWidget {
 class _StoresScreenState extends State<StoresScreen> {
   final SubscriptionService _subscriptionService = SubscriptionService();
   late Future<List<StoreInfo>> _storesFuture;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  bool _showOnlyOverdue = false;
+  bool _showOnlyActive = false;
+  bool _hideFreePlans = true;
+  bool _showFilters = true;
 
   @override
   void initState() {
     super.initState();
     _storesFuture = _subscriptionService.fetchStores();
+  }
+
+  void _refreshStores() {
+    setState(() {
+      _storesFuture = _subscriptionService.fetchStores();
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -44,6 +63,7 @@ class _StoresScreenState extends State<StoresScreen> {
 
   Widget _buildContent(BuildContext context, List<StoreInfo> stores) {
     final textTheme = Theme.of(context).textTheme;
+    final filteredStores = _applyFilters(stores);
 
     return AppBackground(
       child: SafeArea(
@@ -67,27 +87,45 @@ class _StoresScreenState extends State<StoresScreen> {
                   ),
                   const Spacer(),
                   IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.search_rounded),
+                    onPressed: () {
+                      setState(() {
+                        _showFilters = !_showFilters;
+                      });
+                    },
+                    icon: Icon(
+                      _showFilters ? Icons.filter_alt_off : Icons.filter_alt,
+                    ),
+                    tooltip: _showFilters
+                        ? 'Ocultar filtros'
+                        : 'Mostrar filtros',
                   ),
                 ],
               ),
             ),
+            if (_showFilters)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: _buildFilters(textTheme),
+              ),
             Expanded(
-              child: stores.isEmpty
+              child: filteredStores.isEmpty
                   ? const Padding(
                       padding: EdgeInsets.all(20),
                       child: _EmptyState(
-                        message: 'Aun no hay licencias registradas.',
+                        message:
+                            'No hay licencias que coincidan con el filtro.',
                       ),
                     )
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
-                      itemCount: stores.length,
+                      itemCount: filteredStores.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 14),
                       itemBuilder: (context, index) {
-                        final store = stores[index];
-                        return _StoreCard(store: store);
+                        final store = filteredStores[index];
+                        return _StoreCard(
+                          store: store,
+                          onRenewed: _refreshStores,
+                        );
                       },
                     ),
             ),
@@ -129,6 +167,166 @@ class _StoresScreenState extends State<StoresScreen> {
       ),
     );
   }
+
+  Widget _buildFilters(TextTheme textTheme) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border.withOpacity(0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Filtros rápidos',
+                style: textTheme.bodySmall?.copyWith(
+                  color: AppColors.textMuted,
+                ),
+              ),
+              TextButton(
+                onPressed: _resetFilters,
+                style: TextButton.styleFrom(foregroundColor: AppColors.accent),
+                child: const Text('Limpiar'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _searchController,
+            decoration: const InputDecoration(
+              hintText: 'Buscar por tienda, plan, owner o ubicación',
+              prefixIcon: Icon(Icons.search_rounded),
+            ),
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value;
+              });
+            },
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              _FilterSwitch(
+                label: 'Solo vencidas',
+                value: _showOnlyOverdue,
+                onChanged: (value) {
+                  setState(() {
+                    _showOnlyOverdue = value;
+                    if (value) {
+                      _showOnlyActive = false;
+                    }
+                  });
+                },
+              ),
+              _FilterSwitch(
+                label: 'Solo activas',
+                value: _showOnlyActive,
+                onChanged: (value) {
+                  setState(() {
+                    _showOnlyActive = value;
+                    if (value) {
+                      _showOnlyOverdue = false;
+                    }
+                  });
+                },
+              ),
+              _FilterSwitch(
+                label: 'Ocultar gratis',
+                value: _hideFreePlans,
+                onChanged: (value) {
+                  setState(() {
+                    _hideFreePlans = value;
+                  });
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _resetFilters() {
+    setState(() {
+      _searchQuery = '';
+      _showOnlyOverdue = false;
+      _showOnlyActive = false;
+      _hideFreePlans = true;
+      _searchController.clear();
+    });
+  }
+
+  List<StoreInfo> _applyFilters(List<StoreInfo> stores) {
+    final query = _searchQuery.trim().toLowerCase();
+    return stores.where((store) {
+      final planName = store.plan.toLowerCase();
+      final matchesSearch =
+          query.isEmpty ||
+          store.storeName.toLowerCase().contains(query) ||
+          planName.contains(query) ||
+          store.owner.toLowerCase().contains(query) ||
+          (store.phone ?? '').toLowerCase().contains(query) ||
+          (store.state ?? '').toLowerCase().contains(query) ||
+          (store.country ?? '').toLowerCase().contains(query);
+
+      final isFreePlan =
+          store.renewalAmount <= 0 ||
+          planName.contains('gratis') ||
+          planName.contains('free');
+      final matchesFree = !_hideFreePlans || !isFreePlan;
+
+      final matchesOverdue =
+          !_showOnlyOverdue || store.status == LicenseStatus.overdue;
+      final matchesActive =
+          !_showOnlyActive || store.status == LicenseStatus.active;
+
+      return matchesSearch && matchesFree && matchesOverdue && matchesActive;
+    }).toList();
+  }
+}
+
+class _FilterSwitch extends StatelessWidget {
+  const _FilterSwitch({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.border.withOpacity(0.6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(width: 8),
+          Switch.adaptive(
+            value: value,
+            onChanged: onChanged,
+            activeColor: AppColors.accent,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _EmptyState extends StatelessWidget {
@@ -164,9 +362,10 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _StoreCard extends StatelessWidget {
-  const _StoreCard({required this.store});
+  const _StoreCard({required this.store, required this.onRenewed});
 
   final StoreInfo store;
+  final VoidCallback onRenewed;
 
   @override
   Widget build(BuildContext context) {
@@ -243,7 +442,18 @@ class _StoreCard extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: () {
+                  RenewLicenseDialog.show(
+                    context: context,
+                    subscriptionId: store.subscriptionId,
+                    storeId: store.storeId,
+                    storeName: store.storeName,
+                    currentPlanId: store.planId,
+                    currentPlanName: store.plan,
+                    currentStatusId: store.statusId,
+                    onRenewed: onRenewed,
+                  );
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.accentStrong,
                   padding: const EdgeInsets.symmetric(
@@ -255,8 +465,15 @@ class _StoreCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                icon: const Icon(Icons.refresh_rounded, size: 16,color: Colors.white,),
-                label: const Text('Renovar',style: TextStyle(color: AppColors.textPrimary),),
+                icon: const Icon(
+                  Icons.refresh_rounded,
+                  size: 16,
+                  color: Colors.white,
+                ),
+                label: const Text(
+                  'Renovar',
+                  style: TextStyle(color: AppColors.textPrimary),
+                ),
               ),
               const SizedBox(height: 6),
               Text(

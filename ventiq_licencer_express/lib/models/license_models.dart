@@ -4,6 +4,8 @@ class LicenseInfo {
   const LicenseInfo({
     this.subscriptionId,
     this.storeId,
+    this.planId,
+    this.statusId,
     required this.storeName,
     required this.plan,
     required this.owner,
@@ -20,6 +22,8 @@ class LicenseInfo {
 
   final int? subscriptionId;
   final int? storeId;
+  final int? planId;
+  final int? statusId;
   final String storeName;
   final String plan;
   final String owner;
@@ -64,6 +68,8 @@ class StoreInfo {
   const StoreInfo({
     this.subscriptionId,
     this.storeId,
+    this.planId,
+    this.statusId,
     required this.storeName,
     required this.plan,
     required this.owner,
@@ -79,6 +85,8 @@ class StoreInfo {
 
   final int? subscriptionId;
   final int? storeId;
+  final int? planId;
+  final int? statusId;
   final String storeName;
   final String plan;
   final String owner;

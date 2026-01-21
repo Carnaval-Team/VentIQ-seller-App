@@ -23,6 +23,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _dashboardFuture = _subscriptionService.fetchDashboardData();
   }
 
+  Future<void> _refreshDashboard() async {
+    final future = _subscriptionService.fetchDashboardData();
+    setState(() {
+      _dashboardFuture = future;
+    });
+    await future;
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<DashboardData>(
@@ -55,61 +63,66 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return AppBackground(
       child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const _DashboardHeader(),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: _KpiCard(
-                      title: 'Tiendas activas',
-                      value: '${data.activeStores}/${data.totalStores}',
-                      change: '${activeRatio.toStringAsFixed(0)}%',
-                      icon: Icons.storefront_rounded,
-                      gradient: AppGradients.cardBlue,
-                      isPositive: activeRatio >= 80,
+        child: RefreshIndicator(
+          color: AppColors.accent,
+          onRefresh: _refreshDashboard,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _DashboardHeader(),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _KpiCard(
+                        title: 'Tiendas activas',
+                        value: '${data.activeStores}/${data.totalStores}',
+                        change: '${activeRatio.toStringAsFixed(0)}%',
+                        icon: Icons.storefront_rounded,
+                        gradient: AppGradients.cardBlue,
+                        isPositive: activeRatio >= 80,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: _KpiCard(
-                      title: 'Renovaciones',
-                      value: _formatCurrency(data.renewalRevenue),
-                      change:
-                          '${revenueChange >= 0 ? '+' : ''}${revenueChange.toStringAsFixed(1)}%',
-                      icon: Icons.payments_rounded,
-                      gradient: AppGradients.cardCyan,
-                      isPositive: revenueChange >= 0,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _KpiCard(
+                        title: 'Renovaciones',
+                        value: _formatCurrency(data.renewalRevenue),
+                        change:
+                            '${revenueChange >= 0 ? '+' : ''}${revenueChange.toStringAsFixed(1)}%',
+                        icon: Icons.payments_rounded,
+                        gradient: AppGradients.cardCyan,
+                        isPositive: revenueChange >= 0,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Licencias recientes', style: textTheme.titleLarge),
-                  TextButton(
-                    onPressed: () {},
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.accent,
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Licencias recientes', style: textTheme.titleLarge),
+                    TextButton(
+                      onPressed: () {},
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.accent,
+                      ),
+                      child: const Text('Ver todo'),
                     ),
-                    child: const Text('Ver todo'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (data.recentLicenses.isEmpty)
-                _EmptyState(message: 'Sin licencias recientes por mostrar.')
-              else
-                ...data.recentLicenses
-                    .map((license) => _LicenseCard(license: license))
-                    .toList(),
-            ],
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (data.recentLicenses.isEmpty)
+                  _EmptyState(message: 'Sin licencias recientes por mostrar.')
+                else
+                  ...data.recentLicenses
+                      .map((license) => _LicenseCard(license: license))
+                      .toList(),
+              ],
+            ),
           ),
         ),
       ),

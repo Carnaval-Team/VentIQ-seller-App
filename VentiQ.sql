@@ -1677,7 +1677,6 @@ CREATE TABLE public.app_suscripciones_historial (
   fecha_cambio timestamp with time zone NOT NULL DEFAULT now(),
   cambiado_por uuid NOT NULL,
   motivo text,
-  evidencia text,
   CONSTRAINT app_suscripciones_historial_pkey PRIMARY KEY (id),
   CONSTRAINT app_suscripciones_historial_id_suscripcion_fkey FOREIGN KEY (id_suscripcion) REFERENCES public.app_suscripciones(id),
   CONSTRAINT app_suscripciones_historial_cambiado_por_fkey FOREIGN KEY (cambiado_por) REFERENCES auth.users(id)
@@ -1697,6 +1696,20 @@ CREATE TABLE public.app_suscripciones_plan (
   moneda text NOT NULL DEFAULT 'USD'::text,
   CONSTRAINT app_suscripciones_plan_pkey PRIMARY KEY (id)
 );
+CREATE TABLE public.app_suscripciones_renovaciones_resumen (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_mes smallint NOT NULL,
+  id_anno integer NOT NULL,
+  id_tienda bigint NOT NULL,
+  id_plan smallint NOT NULL,
+  total_pagado numeric NOT NULL DEFAULT 0,
+  CONSTRAINT app_suscripciones_renovaciones_resumen_pkey PRIMARY KEY (id),
+  CONSTRAINT app_suscripciones_renovaciones_resumen_mes_check CHECK (id_mes >= 1 AND id_mes <= 12),
+  CONSTRAINT app_suscripciones_renovaciones_resumen_unique UNIQUE (id_mes, id_anno, id_tienda, id_plan),
+  CONSTRAINT app_suscripciones_renovaciones_resumen_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT app_suscripciones_renovaciones_resumen_id_plan_fkey FOREIGN KEY (id_plan) REFERENCES public.app_suscripciones_plan(id)
+);
+
 CREATE TABLE public.app_versiones (
   id integer NOT NULL DEFAULT nextval('app_versiones_id_seq'::regclass),
   app_name character varying NOT NULL,

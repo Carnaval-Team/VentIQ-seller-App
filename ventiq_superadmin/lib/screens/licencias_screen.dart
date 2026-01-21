@@ -300,12 +300,18 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                           border: OutlineInputBorder(),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'todos', child: Text('Todos')),
+                          DropdownMenuItem(
+                            value: 'todos',
+                            child: Text('Todos'),
+                          ),
                           DropdownMenuItem(
                             value: 'gratuita',
                             child: Text('Gratuita'),
                           ),
-                          DropdownMenuItem(value: 'basica', child: Text('Básica')),
+                          DropdownMenuItem(
+                            value: 'basica',
+                            child: Text('Básica'),
+                          ),
                           DropdownMenuItem(
                             value: 'premium',
                             child: Text('Premium'),
@@ -326,8 +332,14 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                           border: OutlineInputBorder(),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'todos', child: Text('Todos')),
-                          DropdownMenuItem(value: 'activa', child: Text('Activas')),
+                          DropdownMenuItem(
+                            value: 'todos',
+                            child: Text('Todos'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'activa',
+                            child: Text('Activas'),
+                          ),
                           DropdownMenuItem(
                             value: 'por_vencer',
                             child: Text('Por Vencer'),
@@ -352,7 +364,10 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                           border: OutlineInputBorder(),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'todas', child: Text('Todas')),
+                          DropdownMenuItem(
+                            value: 'todas',
+                            child: Text('Todas'),
+                          ),
                           DropdownMenuItem(
                             value: 'vencida',
                             child: Text('Vencidas'),
@@ -718,16 +733,15 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                                             ),
                                         tooltip: 'Historial',
                                       ),
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.refresh,
-                                          color: AppColors.success,
-                                        ),
-                                        onPressed:
-                                            () =>
-                                                _showRenovarDialog(suscripcion),
-                                        tooltip: 'Renovar',
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.refresh,
+                                        color: AppColors.success,
                                       ),
+                                      onPressed:
+                                          () => _showRenovarDialog(suscripcion),
+                                      tooltip: 'Renovar',
+                                    ),
                                   ],
                                 ),
                               ),
@@ -771,15 +785,15 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
               children: [
                 Text(suscripcion['tienda_ubicacion']),
                 const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: [
-                        _buildUrgenciaChip(suscripcion['urgencia']),
-                        _buildPlanChip(suscripcion['plan']),
-                        _buildEstadoChip(suscripcion['estado']),
-                      ],
-                    ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    _buildUrgenciaChip(suscripcion['urgencia']),
+                    _buildPlanChip(suscripcion['plan']),
+                    _buildEstadoChip(suscripcion['estado']),
+                  ],
+                ),
               ],
             ),
             children: [
@@ -1248,8 +1262,9 @@ class _HistorialDialogContentState extends State<_HistorialDialogContent> {
                                           );
                                         },
                                         child: ClipRRect(
-                                          borderRadius:
-                                              BorderRadius.circular(4),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
                                           child: Image.network(
                                             item['evidencia'],
                                             height: 100,
@@ -1378,11 +1393,17 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
     setState(() => _isProcessing = true);
 
     try {
-      final idTienda = widget.suscripcion['id_tienda'];
+      final idTienda = (widget.suscripcion['id_tienda'] as num?)?.toInt();
       final idSuscripcionActual = widget.suscripcion['id'];
       final currentUser = widget.supabase.auth.currentUser;
+      final planId = (_planSeleccionado?['id'] as num?)?.toInt();
+      final planAmount =
+          (_planSeleccionado?['precio_mensual'] as num?)?.toDouble() ?? 0;
 
       if (currentUser == null) throw Exception('Usuario no autenticado');
+      if (idTienda == null || planId == null) {
+        throw Exception('No se pudo identificar la tienda o el plan');
+      }
 
       String? evidenciaUrl;
       if (_selectedImageBytes != null) {
@@ -1416,12 +1437,20 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
       await widget.supabase
           .from('app_suscripciones')
           .update({
-            'id_plan': _planSeleccionado!['id'],
+            'id_plan': planId,
             'fecha_fin': _fechaFin.toIso8601String(),
             'estado': 1, // Activa
             'updated_at': ahora.toIso8601String(),
           })
           .eq('id', idSuscripcionActual);
+
+      await _upsertRenewalSummary(
+        month: ahora.month,
+        year: ahora.year,
+        storeId: idTienda,
+        planId: planId,
+        amount: planAmount,
+      );
 
       // Si es plan pro, buscar todas las tiendas del gerente y aplicar el mismo plan
       if (esPlanPro) {
@@ -1462,7 +1491,7 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
                   await widget.supabase
                       .from('app_suscripciones')
                       .update({
-                        'id_plan': _planSeleccionado!['id'],
+                        'id_plan': planId,
                         'fecha_fin': _fechaFin.toIso8601String(),
                         'estado': 1,
                         'updated_at': ahora.toIso8601String(),
@@ -1474,11 +1503,19 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
                       .from('app_suscripciones_historial')
                       .insert({
                         'id_suscripcion': suscripcionExistente['id'],
-                        'id_plan_nuevo': _planSeleccionado!['id'],
+                        'id_plan_nuevo': planId,
                         'estado_nuevo': 1,
                         'motivo': 'Renovación por Plan PRO de gerente',
                         'cambiado_por': currentUser.id,
                       });
+
+                  // await _upsertRenewalSummary(
+                  //   month: ahora.month,
+                  //   year: ahora.year,
+                  //   storeId: idTiendaGerente,
+                  //   planId: planId,
+                  //   amount: planAmount,
+                  // );
                 }
               }
             }
@@ -1514,6 +1551,42 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
       if (mounted) {
         setState(() => _isProcessing = false);
       }
+    }
+  }
+
+  Future<void> _upsertRenewalSummary({
+    required int month,
+    required int year,
+    required int storeId,
+    required int planId,
+    required double amount,
+  }) async {
+    final existing =
+        await widget.supabase
+            .from('app_suscripciones_renovaciones_resumen')
+            .select('id, total_pagado')
+            .eq('id_mes', month)
+            .eq('id_anno', year)
+            .eq('id_tienda', storeId)
+            .eq('id_plan', planId)
+            .maybeSingle();
+
+    if (existing != null && existing['id'] != null) {
+      final currentTotal = (existing['total_pagado'] as num?)?.toDouble() ?? 0;
+      await widget.supabase
+          .from('app_suscripciones_renovaciones_resumen')
+          .update({'total_pagado': currentTotal + amount})
+          .eq('id', existing['id']);
+    } else {
+      await widget.supabase
+          .from('app_suscripciones_renovaciones_resumen')
+          .insert({
+            'id_mes': month,
+            'id_anno': year,
+            'id_tienda': storeId,
+            'id_plan': planId,
+            'total_pagado': amount,
+          });
     }
   }
 
@@ -1584,8 +1657,11 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
 
       await widget.supabase.storage
           .from('suscripciones_evidencias')
-          .uploadBinary(fileName, fileBytes,
-              fileOptions: const FileOptions(contentType: 'image/jpeg'));
+          .uploadBinary(
+            fileName,
+            fileBytes,
+            fileOptions: const FileOptions(contentType: 'image/jpeg'),
+          );
 
       final String publicUrl = widget.supabase.storage
           .from('suscripciones_evidencias')
@@ -1700,10 +1776,11 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
                       style: IconButton.styleFrom(
                         backgroundColor: Colors.black54,
                       ),
-                      onPressed: () => setState(() {
-                        _selectedImageBytes = null;
-                        _selectedImageName = null;
-                      }),
+                      onPressed:
+                          () => setState(() {
+                            _selectedImageBytes = null;
+                            _selectedImageName = null;
+                          }),
                     ),
                   ),
                 ],

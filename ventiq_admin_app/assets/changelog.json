@@ -1,8 +1,41 @@
 {
-  "current_version": "1.8.0",
-  "build": 180,
+  "current_version": "1.8.1",
+  "build": 181,
+
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.8.1",
+      "date": "2026-01-21",
+      "title": "🧾 PDF de ventas con costos reales",
+      "changes": [
+         {
+          "type": "improvement",
+          "title": "Gestión de proveedores",
+          "description": "Gestión de proveedores de prodcutos y reportes de ventas por proveedor."
+        },
+        {
+          "type": "fix",
+          "title": "Costo en CUP por factura",
+          "description": "Cada orden en el PDF ya muestra el costo real en CUP usando el mismo cálculo del análisis de producto cuando el item no trae costo."
+        },
+        {
+          "type": "improvement",
+          "title": "Costos por producto más claros",
+          "description": "Se añadió la columna de costo total por producto junto al costo unitario, subtotal y ganancia."
+        },
+        {
+          "type": "improvement",
+          "title": "Ganancias con colores",
+          "description": "Las ganancias ahora se destacan en verde y las pérdidas en rojo en las tablas y resúmenes del PDF."
+        },
+        {
+          "type": "improvement",
+          "title": "Rango de fechas en un solo diálogo",
+          "description": "La selección de fechas para el PDF se hace en un único selector de rango, más rápido y cómodo."
+        }
+      ]
+    },
     {
       "version": "1.8.0",
       "date": "2026-01-17",

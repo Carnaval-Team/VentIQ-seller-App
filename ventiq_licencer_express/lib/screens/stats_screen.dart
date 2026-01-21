@@ -7,6 +7,7 @@ import '../models/subscription_models.dart';
 import '../services/subscription_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
+import '../widgets/renew_license_dialog.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -23,6 +24,12 @@ class _StatsScreenState extends State<StatsScreen> {
   void initState() {
     super.initState();
     _statsFuture = _subscriptionService.fetchStatsData();
+  }
+
+  void _refreshStats() {
+    setState(() {
+      _statsFuture = _subscriptionService.fetchStatsData();
+    });
   }
 
   @override
@@ -55,6 +62,12 @@ class _StatsScreenState extends State<StatsScreen> {
     final progress = target <= 0
         ? 0.0
         : (data.paidAmount / target).clamp(0, 1).toDouble();
+    final change = _percentageChange(
+      data.revenueLastMonth,
+      data.projectedRenewalRevenue,
+    );
+    final changeLabel =
+        '${change >= 0 ? '+' : ''}${change.toStringAsFixed(1)}% vs mes pasado';
 
     return AppBackground(
       child: SafeArea(
@@ -102,9 +115,12 @@ class _StatsScreenState extends State<StatsScreen> {
               _ProjectedRevenueCard(
                 valueLabel: _formatCurrency(data.projectedRenewalRevenue),
                 targetLabel: _formatCurrency(target),
+                lastMonthLabel: _formatCurrency(data.revenueLastMonth),
                 progress: progress,
                 progressLabel:
                     '${(progress * 100).toStringAsFixed(0)}% completado',
+                changeLabel: changeLabel,
+                changeIsPositive: change >= 0,
               ),
               const SizedBox(height: 18),
               _StatsHighlightRow(
@@ -117,6 +133,8 @@ class _StatsScreenState extends State<StatsScreen> {
               Text('Tendencia de ingresos', style: textTheme.titleLarge),
               const SizedBox(height: 12),
               _RevenueChartCard(points: data.revenueTrend),
+              const SizedBox(height: 22),
+              _buildRenewalSummarySection(context, data),
               const SizedBox(height: 22),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -135,12 +153,67 @@ class _StatsScreenState extends State<StatsScreen> {
                 _EmptyState(message: 'Sin licencias que vencen hoy.')
               else
                 ...data.dueTodayLicenses
-                    .map((license) => _DueTodayCard(license: license))
+                    .map(
+                      (license) => _DueTodayCard(
+                        license: license,
+                        onRenewed: _refreshStats,
+                      ),
+                    )
                     .toList(),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildRenewalSummarySection(BuildContext context, StatsData data) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Dinero en renovaciones de licencia', style: textTheme.titleLarge),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceAlt,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.border.withOpacity(0.5)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Total renovaciones', style: textTheme.bodySmall),
+                  Text(
+                    _formatCurrency(data.renewalTotal),
+                    style: textTheme.titleMedium,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (data.renewalSummaries.isEmpty)
+                _EmptyState(message: 'Sin renovaciones registradas.')
+              else
+                Column(
+                  children: data.renewalSummaries
+                      .map(
+                        (summary) => _RenewalSummaryTile(
+                          summary: summary,
+                          monthLabel: _monthShortLabel(summary.month),
+                          formatCurrency: _formatCurrency,
+                        ),
+                      )
+                      .toList(),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -181,6 +254,13 @@ class _StatsScreenState extends State<StatsScreen> {
     return '\$${value.toStringAsFixed(0)}';
   }
 
+  double _percentageChange(double previous, double current) {
+    if (previous == 0) {
+      return current > 0 ? 100 : 0;
+    }
+    return ((current - previous) / previous) * 100;
+  }
+
   String _monthLabel(DateTime date) {
     const months = [
       'Enero',
@@ -197,6 +277,112 @@ class _StatsScreenState extends State<StatsScreen> {
       'Diciembre',
     ];
     return '${months[date.month - 1]} ${date.year}';
+  }
+
+  String _monthShortLabel(int month) {
+    const months = [
+      'Ene',
+      'Feb',
+      'Mar',
+      'Abr',
+      'May',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dic',
+    ];
+    return months[month.clamp(1, 12) - 1];
+  }
+}
+
+class _RenewalSummaryTile extends StatelessWidget {
+  const _RenewalSummaryTile({
+    required this.summary,
+    required this.monthLabel,
+    required this.formatCurrency,
+  });
+
+  final RenewalMonthlySummary summary;
+  final String monthLabel;
+  final String Function(double) formatCurrency;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border.withOpacity(0.6)),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          title: Text(
+            '$monthLabel ${summary.year}',
+            style: textTheme.titleMedium,
+          ),
+          subtitle: Text(
+            formatCurrency(summary.totalPaid),
+            style: textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
+          ),
+          children: [
+            const Divider(height: 16, color: AppColors.border),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Tienda', style: textTheme.bodySmall),
+                Text('Plan', style: textTheme.bodySmall),
+                Text('Total', style: textTheme.bodySmall),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ...summary.details.map(
+              (detail) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        detail.storeName,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        detail.planName,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        formatCurrency(detail.totalPaid),
+                        textAlign: TextAlign.end,
+                        style: textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -236,18 +422,25 @@ class _ProjectedRevenueCard extends StatelessWidget {
   const _ProjectedRevenueCard({
     required this.valueLabel,
     required this.targetLabel,
+    required this.lastMonthLabel,
     required this.progress,
     required this.progressLabel,
+    required this.changeLabel,
+    required this.changeIsPositive,
   });
 
   final String valueLabel;
   final String targetLabel;
+  final String lastMonthLabel;
   final double progress;
   final String progressLabel;
+  final String changeLabel;
+  final bool changeIsPositive;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final changeColor = changeIsPositive ? AppColors.success : AppColors.danger;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -275,12 +468,12 @@ class _ProjectedRevenueCard extends StatelessWidget {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: AppColors.accentStrong.withOpacity(0.2),
+                  color: changeColor.withOpacity(0.18),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                  '+12% vs mes pasado',
-                  style: textTheme.bodySmall?.copyWith(color: AppColors.accent),
+                  changeLabel,
+                  style: textTheme.bodySmall?.copyWith(color: changeColor),
                 ),
               ),
             ],
@@ -293,6 +486,11 @@ class _ProjectedRevenueCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'Meta mensual: $targetLabel',
+            style: textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Mes pasado: $lastMonthLabel',
             style: textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
           ),
           const SizedBox(height: 16),
@@ -552,9 +750,10 @@ class _RevenueLinePainter extends CustomPainter {
 }
 
 class _DueTodayCard extends StatelessWidget {
-  const _DueTodayCard({required this.license});
+  const _DueTodayCard({required this.license, required this.onRenewed});
 
   final LicenseInfo license;
+  final VoidCallback onRenewed;
 
   @override
   Widget build(BuildContext context) {
@@ -619,7 +818,18 @@ class _DueTodayCard extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: () {},
+              onPressed: () {
+                RenewLicenseDialog.show(
+                  context: context,
+                  subscriptionId: license.subscriptionId,
+                  storeId: license.storeId,
+                  storeName: license.storeName,
+                  currentPlanId: license.planId,
+                  currentPlanName: license.plan,
+                  currentStatusId: license.statusId,
+                  onRenewed: onRenewed,
+                );
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.accentStrong,
                 padding: const EdgeInsets.symmetric(vertical: 12),

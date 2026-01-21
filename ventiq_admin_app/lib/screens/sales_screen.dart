@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:html' as html;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -19,6 +18,11 @@ import '../widgets/admin_bottom_navigation.dart';
 import '../models/sales.dart';
 import '../services/sales_service.dart';
 import '../services/user_preferences_service.dart';
+
+// Importación condicional para descargas en web
+import '../services/web_download_stub.dart'
+    if (dart.library.html) '../services/web_download_web.dart'
+    as web_download;
 
 class SalesScreen extends StatefulWidget {
   const SalesScreen({super.key});
@@ -1682,11 +1686,15 @@ class _SalesScreenState extends State<SalesScreen>
                             ),
                             DataCell(
                               ElevatedButton.icon(
-                                onPressed: () => _showSupplierDetailDialog(report),
+                                onPressed:
+                                    () => _showSupplierDetailDialog(report),
                                 icon: const Icon(Icons.info_outline, size: 16),
                                 label: const Text('Detalles'),
                                 style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
                                   backgroundColor: AppColors.primary,
                                   foregroundColor: Colors.white,
                                 ),
@@ -1738,9 +1746,7 @@ class _SalesScreenState extends State<SalesScreen>
                               ),
                             ),
                           ),
-                          const DataCell(
-                            Text(''),
-                          ),
+                          const DataCell(Text('')),
                         ],
                       ),
                     ],
@@ -5575,13 +5581,11 @@ class _SalesScreenState extends State<SalesScreen>
                             ),
                           ),
                         ],
-                        rows: products
-                            .map((product) {
+                        rows:
+                            products.map((product) {
                               return DataRow(
                                 cells: [
-                                  DataCell(
-                                    Text(product.nombreProducto),
-                                  ),
+                                  DataCell(Text(product.nombreProducto)),
                                   DataCell(
                                     Text(product.totalVendido.toString()),
                                   ),
@@ -5592,8 +5596,7 @@ class _SalesScreenState extends State<SalesScreen>
                                   ),
                                 ],
                               );
-                            })
-                            .toList(),
+                            }).toList(),
                       ),
                     ),
                   ),
@@ -5713,7 +5716,10 @@ class _SalesScreenState extends State<SalesScreen>
                 pw.SizedBox(height: 16),
                 pw.Table(
                   border: pw.TableBorder(
-                    horizontalInside: pw.BorderSide(color: PdfColors.grey300, width: 0.3),
+                    horizontalInside: pw.BorderSide(
+                      color: PdfColors.grey300,
+                      width: 0.3,
+                    ),
                     bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5),
                   ),
                   columnWidths: {
@@ -5734,7 +5740,9 @@ class _SalesScreenState extends State<SalesScreen>
                         children: [
                           _pdfBodyCell(product.nombreProducto),
                           _pdfBodyCell(product.totalVendido.toStringAsFixed(0)),
-                          _pdfBodyCell('\$${product.costoTotalVendido.toStringAsFixed(2)}'),
+                          _pdfBodyCell(
+                            '\$${product.costoTotalVendido.toStringAsFixed(2)}',
+                          ),
                         ],
                       );
                     }).toList(),
@@ -5748,7 +5756,10 @@ class _SalesScreenState extends State<SalesScreen>
                   decoration: pw.BoxDecoration(
                     color: PdfColor.fromHex('#EEF2FF'),
                     borderRadius: pw.BorderRadius.circular(8),
-                    border: pw.Border.all(color: PdfColor.fromHex('#CBD5E1'), width: 0.8),
+                    border: pw.Border.all(
+                      color: PdfColor.fromHex('#CBD5E1'),
+                      width: 0.8,
+                    ),
                   ),
                   child: pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -5777,13 +5788,11 @@ class _SalesScreenState extends State<SalesScreen>
       );
 
       final bytes = await pdf.save();
-      final fileName = 'detalle_proveedor_${supplier.idProveedor}_${DateTime.now().millisecondsSinceEpoch}.pdf';
-      
+      final fileName =
+          'detalle_proveedor_${supplier.idProveedor}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+
       if (kIsWeb) {
-        await Printing.sharePdf(
-          bytes: bytes,
-          filename: fileName,
-        );
+        await Printing.sharePdf(bytes: bytes, filename: fileName);
       } else {
         try {
           final output = await getTemporaryDirectory();
@@ -5795,10 +5804,7 @@ class _SalesScreenState extends State<SalesScreen>
           ], text: 'Detalle de proveedor ${supplier.nombreProveedor}');
         } catch (e) {
           print('Error al guardar en directorio temporal: $e');
-          await Printing.sharePdf(
-            bytes: bytes,
-            filename: fileName,
-          );
+          await Printing.sharePdf(bytes: bytes, filename: fileName);
         }
       }
 
@@ -5813,9 +5819,9 @@ class _SalesScreenState extends State<SalesScreen>
     } catch (e) {
       print('Error al exportar PDF: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al exportar: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al exportar: $e')));
       }
     } finally {
       if (mounted) {
@@ -5855,21 +5861,17 @@ class _SalesScreenState extends State<SalesScreen>
         excel.DoubleCellValue(supplier.totalCosto),
       ]);
 
-      final fileName = 'detalle_proveedor_${supplier.idProveedor}_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+      final fileName =
+          'detalle_proveedor_${supplier.idProveedor}_${DateTime.now().millisecondsSinceEpoch}.xlsx';
 
       if (kIsWeb) {
         final bytes = excelSheet.encode();
         if (bytes != null) {
-          final blob = html.Blob([bytes], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-          final url = html.Url.createObjectUrlFromBlob(blob);
-          final anchor = html.document.createElement('a') as html.AnchorElement
-            ..href = url
-            ..style.display = 'none'
-            ..download = fileName;
-          html.document.body!.children.add(anchor);
-          anchor.click();
-          html.Url.revokeObjectUrl(url);
-          anchor.remove();
+          web_download.downloadFileWeb(
+            Uint8List.fromList(bytes),
+            fileName,
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          );
         }
       } else {
         try {
@@ -5878,7 +5880,11 @@ class _SalesScreenState extends State<SalesScreen>
           await file.writeAsBytes(excelSheet.encode() ?? []);
 
           await Share.shareXFiles([
-            XFile(file.path, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+            XFile(
+              file.path,
+              mimeType:
+                  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ),
           ], text: 'Detalle de proveedor ${supplier.nombreProveedor}');
         } catch (e) {
           print('Error al guardar Excel: $e');
@@ -5896,9 +5902,9 @@ class _SalesScreenState extends State<SalesScreen>
     } catch (e) {
       print('Error al exportar Excel: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al exportar: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al exportar: $e')));
       }
     } finally {
       if (mounted) {
@@ -5949,166 +5955,167 @@ class _SalesScreenState extends State<SalesScreen>
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          build: (context) => [
-            _buildPdfHeader(
-              logoBytes: logoBytes,
-              storeName: storeName,
-              storeAddress: storeAddress,
-              storeLocation: storeLocation,
-              storePhone: storePhone,
-              dateLabel: dateLabel,
-            ),
-            pw.SizedBox(height: 16),
-            pw.Text(
-              'Resumen de Ventas por Proveedor',
-              style: pw.TextStyle(
-                fontSize: 16,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColor.fromHex('#0F172A'),
-              ),
-            ),
-            pw.SizedBox(height: 8),
-            pw.Table(
-              border: pw.TableBorder.all(
-                color: PdfColors.grey300,
-                width: 0.8,
-              ),
-              columnWidths: {
-                0: const pw.FlexColumnWidth(3),
-                1: const pw.FlexColumnWidth(2),
-                2: const pw.FlexColumnWidth(2),
-                3: const pw.FlexColumnWidth(2),
-              },
-              children: [
-                // Encabezado
-                pw.TableRow(
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex('#F1F5F9'),
+          build:
+              (context) => [
+                _buildPdfHeader(
+                  logoBytes: logoBytes,
+                  storeName: storeName,
+                  storeAddress: storeAddress,
+                  storeLocation: storeLocation,
+                  storePhone: storePhone,
+                  dateLabel: dateLabel,
+                ),
+                pw.SizedBox(height: 16),
+                pw.Text(
+                  'Resumen de Ventas por Proveedor',
+                  style: pw.TextStyle(
+                    fontSize: 16,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('#0F172A'),
                   ),
+                ),
+                pw.SizedBox(height: 8),
+                pw.Table(
+                  border: pw.TableBorder.all(
+                    color: PdfColors.grey300,
+                    width: 0.8,
+                  ),
+                  columnWidths: {
+                    0: const pw.FlexColumnWidth(3),
+                    1: const pw.FlexColumnWidth(2),
+                    2: const pw.FlexColumnWidth(2),
+                    3: const pw.FlexColumnWidth(2),
+                  },
                   children: [
-                    _pdfHeaderCell('Proveedor'),
-                    _pdfHeaderCell('Ventas'),
-                    _pdfHeaderCell('Costo'),
-                    _pdfHeaderCell('Ganancia'),
+                    // Encabezado
+                    pw.TableRow(
+                      decoration: pw.BoxDecoration(
+                        color: PdfColor.fromHex('#F1F5F9'),
+                      ),
+                      children: [
+                        _pdfHeaderCell('Proveedor'),
+                        _pdfHeaderCell('Ventas'),
+                        _pdfHeaderCell('Costo'),
+                        _pdfHeaderCell('Ganancia'),
+                      ],
+                    ),
+                    // Filas de datos
+                    ..._supplierReports.map((report) {
+                      return pw.TableRow(
+                        children: [
+                          _pdfBodyCell(report.nombreProveedor),
+                          _pdfBodyCell(
+                            '\$${report.totalVentas.toStringAsFixed(2)}',
+                          ),
+                          _pdfBodyCell(
+                            '\$${report.totalCosto.toStringAsFixed(2)}',
+                          ),
+                          _pdfBodyCell(
+                            '\$${report.totalGanancia.toStringAsFixed(2)}',
+                          ),
+                        ],
+                      );
+                    }).toList(),
+                    // Fila de TOTALES
+                    pw.TableRow(
+                      decoration: pw.BoxDecoration(
+                        color: PdfColor.fromHex('#E2E8F0'),
+                      ),
+                      children: [
+                        _pdfBodyCell('TOTAL', isBold: true),
+                        _pdfBodyCell(
+                          '\$${totalVentas.toStringAsFixed(2)}',
+                          isBold: true,
+                        ),
+                        _pdfBodyCell(
+                          '\$${totalCosto.toStringAsFixed(2)}',
+                          isBold: true,
+                        ),
+                        _pdfBodyCell(
+                          '\$${totalGanancia.toStringAsFixed(2)}',
+                          isBold: true,
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-                // Filas de datos
-                ..._supplierReports.map((report) {
-                  return pw.TableRow(
-                    children: [
-                      _pdfBodyCell(report.nombreProveedor),
-                      _pdfBodyCell('\$${report.totalVentas.toStringAsFixed(2)}'),
-                      _pdfBodyCell('\$${report.totalCosto.toStringAsFixed(2)}'),
-                      _pdfBodyCell('\$${report.totalGanancia.toStringAsFixed(2)}'),
-                    ],
-                  );
-                }).toList(),
-                // Fila de TOTALES
-                pw.TableRow(
+                pw.SizedBox(height: 16),
+                pw.Divider(),
+                pw.SizedBox(height: 8),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(12),
                   decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex('#E2E8F0'),
+                    color: PdfColor.fromHex('#F8FAFC'),
+                    borderRadius: pw.BorderRadius.circular(8),
+                    border: pw.Border.all(color: PdfColors.grey300, width: 0.8),
                   ),
-                  children: [
-                    _pdfBodyCell(
-                      'TOTAL',
-                      isBold: true,
-                    ),
-                    _pdfBodyCell(
-                      '\$${totalVentas.toStringAsFixed(2)}',
-                      isBold: true,
-                    ),
-                    _pdfBodyCell(
-                      '\$${totalCosto.toStringAsFixed(2)}',
-                      isBold: true,
-                    ),
-                    _pdfBodyCell(
-                      '\$${totalGanancia.toStringAsFixed(2)}',
-                      isBold: true,
-                    ),
-                  ],
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'Resumen General',
+                        style: pw.TextStyle(
+                          fontSize: 12,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromHex('#0F172A'),
+                        ),
+                      ),
+                      pw.SizedBox(height: 8),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            'Total Ventas:',
+                            style: const pw.TextStyle(fontSize: 11),
+                          ),
+                          pw.Text(
+                            '\$${totalVentas.toStringAsFixed(2)}',
+                            style: pw.TextStyle(
+                              fontSize: 11,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            'Total Costo:',
+                            style: const pw.TextStyle(fontSize: 11),
+                          ),
+                          pw.Text(
+                            '\$${totalCosto.toStringAsFixed(2)}',
+                            style: pw.TextStyle(
+                              fontSize: 11,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            'Total Ganancia:',
+                            style: const pw.TextStyle(fontSize: 11),
+                          ),
+                          pw.Text(
+                            '\$${totalGanancia.toStringAsFixed(2)}',
+                            style: pw.TextStyle(
+                              fontSize: 11,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromHex('#16A34A'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
-            ),
-            pw.SizedBox(height: 16),
-            pw.Divider(),
-            pw.SizedBox(height: 8),
-            pw.Container(
-              padding: const pw.EdgeInsets.all(12),
-              decoration: pw.BoxDecoration(
-                color: PdfColor.fromHex('#F8FAFC'),
-                borderRadius: pw.BorderRadius.circular(8),
-                border: pw.Border.all(
-                  color: PdfColors.grey300,
-                  width: 0.8,
-                ),
-              ),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Text(
-                    'Resumen General',
-                    style: pw.TextStyle(
-                      fontSize: 12,
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColor.fromHex('#0F172A'),
-                    ),
-                  ),
-                  pw.SizedBox(height: 8),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text(
-                        'Total Ventas:',
-                        style: const pw.TextStyle(fontSize: 11),
-                      ),
-                      pw.Text(
-                        '\$${totalVentas.toStringAsFixed(2)}',
-                        style: pw.TextStyle(
-                          fontSize: 11,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  pw.SizedBox(height: 4),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text(
-                        'Total Costo:',
-                        style: const pw.TextStyle(fontSize: 11),
-                      ),
-                      pw.Text(
-                        '\$${totalCosto.toStringAsFixed(2)}',
-                        style: pw.TextStyle(
-                          fontSize: 11,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  pw.SizedBox(height: 4),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text(
-                        'Total Ganancia:',
-                        style: const pw.TextStyle(fontSize: 11),
-                      ),
-                      pw.Text(
-                        '\$${totalGanancia.toStringAsFixed(2)}',
-                        style: pw.TextStyle(
-                          fontSize: 11,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromHex('#16A34A'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
         ),
       );
 
