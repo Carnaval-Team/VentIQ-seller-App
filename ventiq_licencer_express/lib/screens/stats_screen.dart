@@ -27,9 +27,15 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   void _refreshStats() {
+    _refreshStatsData();
+  }
+
+  Future<void> _refreshStatsData() async {
+    final future = _subscriptionService.fetchStatsData();
     setState(() {
-      _statsFuture = _subscriptionService.fetchStatsData();
+      _statsFuture = future;
     });
+    await future;
   }
 
   @override
@@ -71,96 +77,101 @@ class _StatsScreenState extends State<StatsScreen> {
 
     return AppBackground(
       child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Stats', style: textTheme.headlineLarge),
-                      Text(
-                        'Resumen del mes en tiempo real',
-                        style: textTheme.bodySmall?.copyWith(
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceAlt,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Row(
+        child: RefreshIndicator(
+          color: AppColors.accent,
+          onRefresh: _refreshStatsData,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.calendar_today, size: 16),
-                        const SizedBox(width: 6),
-                        Text(_monthLabel(now), style: textTheme.bodySmall),
+                        Text('Stats', style: textTheme.headlineLarge),
+                        Text(
+                          'Resumen del mes en tiempo real',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: AppColors.textMuted,
+                          ),
+                        ),
                       ],
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              _ProjectedRevenueCard(
-                valueLabel: _formatCurrency(data.projectedRenewalRevenue),
-                targetLabel: _formatCurrency(target),
-                lastMonthLabel: _formatCurrency(data.revenueLastMonth),
-                progress: progress,
-                progressLabel:
-                    '${(progress * 100).toStringAsFixed(0)}% completado',
-                changeLabel: changeLabel,
-                changeIsPositive: change >= 0,
-              ),
-              const SizedBox(height: 18),
-              _StatsHighlightRow(
-                paidLabel: '${data.paidThisMonth} licencias',
-                paidSubtitle: '${_formatCurrency(data.paidAmount)} total',
-                pendingLabel: '$pendingCount',
-                pendingSubtitle: 'Renovaciones por cobrar',
-              ),
-              const SizedBox(height: 22),
-              Text('Tendencia de ingresos', style: textTheme.titleLarge),
-              const SizedBox(height: 12),
-              _RevenueChartCard(points: data.revenueTrend),
-              const SizedBox(height: 22),
-              _buildRenewalSummarySection(context, data),
-              const SizedBox(height: 22),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Vencen hoy', style: textTheme.titleLarge),
-                  Text(
-                    '${data.dueTodayLicenses.length} tiendas',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (data.dueTodayLicenses.isEmpty)
-                _EmptyState(message: 'Sin licencias que vencen hoy.')
-              else
-                ...data.dueTodayLicenses
-                    .map(
-                      (license) => _DueTodayCard(
-                        license: license,
-                        onRenewed: _refreshStats,
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
                       ),
-                    )
-                    .toList(),
-            ],
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceAlt,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.calendar_today, size: 16),
+                          const SizedBox(width: 6),
+                          Text(_monthLabel(now), style: textTheme.bodySmall),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                _ProjectedRevenueCard(
+                  valueLabel: _formatCurrency(data.projectedRenewalRevenue),
+                  targetLabel: _formatCurrency(target),
+                  lastMonthLabel: _formatCurrency(data.revenueLastMonth),
+                  progress: progress,
+                  progressLabel:
+                      '${(progress * 100).toStringAsFixed(0)}% completado',
+                  changeLabel: changeLabel,
+                  changeIsPositive: change >= 0,
+                ),
+                const SizedBox(height: 18),
+                _StatsHighlightRow(
+                  paidLabel: '${data.paidThisMonth} licencias',
+                  paidSubtitle: '${_formatCurrency(data.paidAmount)} total',
+                  pendingLabel: '$pendingCount',
+                  pendingSubtitle: 'Renovaciones por cobrar',
+                ),
+                const SizedBox(height: 22),
+                Text('Tendencia de ingresos', style: textTheme.titleLarge),
+                const SizedBox(height: 12),
+                _RevenueChartCard(points: data.revenueTrend),
+                const SizedBox(height: 22),
+                _buildRenewalSummarySection(context, data),
+                const SizedBox(height: 22),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Vencen hoy', style: textTheme.titleLarge),
+                    Text(
+                      '${data.dueTodayLicenses.length} tiendas',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (data.dueTodayLicenses.isEmpty)
+                  _EmptyState(message: 'Sin licencias que vencen hoy.')
+                else
+                  ...data.dueTodayLicenses
+                      .map(
+                        (license) => _DueTodayCard(
+                          license: license,
+                          onRenewed: _refreshStats,
+                        ),
+                      )
+                      .toList(),
+              ],
+            ),
           ),
         ),
       ),

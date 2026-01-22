@@ -30,9 +30,15 @@ class _StoresScreenState extends State<StoresScreen> {
   }
 
   void _refreshStores() {
+    _refreshStoresData();
+  }
+
+  Future<void> _refreshStoresData() async {
+    final future = _subscriptionService.fetchStores();
     setState(() {
-      _storesFuture = _subscriptionService.fetchStores();
+      _storesFuture = future;
     });
+    await future;
   }
 
   @override
@@ -108,26 +114,29 @@ class _StoresScreenState extends State<StoresScreen> {
                 child: _buildFilters(textTheme),
               ),
             Expanded(
-              child: filteredStores.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: _EmptyState(
-                        message:
-                            'No hay licencias que coincidan con el filtro.',
-                      ),
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
-                      itemCount: filteredStores.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 14),
-                      itemBuilder: (context, index) {
-                        final store = filteredStores[index];
-                        return _StoreCard(
-                          store: store,
-                          onRenewed: _refreshStores,
-                        );
-                      },
-                    ),
+              child: RefreshIndicator(
+                color: AppColors.accent,
+                onRefresh: _refreshStoresData,
+                child: ListView.separated(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+                  itemCount: filteredStores.isEmpty ? 1 : filteredStores.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 14),
+                  itemBuilder: (context, index) {
+                    if (filteredStores.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.all(20),
+                        child: _EmptyState(
+                          message:
+                              'No hay licencias que coincidan con el filtro.',
+                        ),
+                      );
+                    }
+                    final store = filteredStores[index];
+                    return _StoreCard(store: store, onRenewed: _refreshStores);
+                  },
+                ),
+              ),
             ),
           ],
         ),
