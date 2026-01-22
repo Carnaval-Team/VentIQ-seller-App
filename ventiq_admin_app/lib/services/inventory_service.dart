@@ -2495,13 +2495,31 @@ class InventoryService {
       
       try {
         // Verificar si esta operación de recepción pertenece a un envío de devolución
+        // Usar app_dat_consignacion_envio_movimiento para relacionar la operación con el envío
         final envioRecepcion = await _supabase
             .from('app_dat_consignacion_envio')
-            .select('tipo_envio')
+            .select('id, tipo_envio')
             .eq('id_operacion_recepcion', idOperacion)
             .maybeSingle();
         
-        final esDevolucion = envioRecepcion != null && (envioRecepcion['tipo_envio'] as int?) == 2;
+        bool esDevolucion = false;
+        
+        if (envioRecepcion != null) {
+          final idEnvio = envioRecepcion['id'] as int;
+          
+          // Obtener el movimiento del envío desde app_dat_consignacion_envio_movimiento
+          final movimientoEnvio = await _supabase
+              .from('app_dat_consignacion_envio_movimiento')
+              .select('tipo_movimiento')
+              .eq('id_envio', idEnvio)
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle();
+          
+          // Verificar si el tipo_envio es 2 (devolución) O si el último movimiento indica devolución
+          esDevolucion = (envioRecepcion['tipo_envio'] as int?) == 2 || 
+                        (movimientoEnvio != null && (movimientoEnvio['tipo_movimiento'] as int?) == 2);
+        }
         
         if (esDevolucion) {
           print('⚠️ Esta es una operación de DEVOLUCIÓN - NO se actualizarán los precios promedio');
