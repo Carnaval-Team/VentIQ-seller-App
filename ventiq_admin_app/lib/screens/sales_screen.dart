@@ -5560,60 +5560,67 @@ class _SalesScreenState extends State<SalesScreen>
                 children: [
                   Expanded(
                     child: SingleChildScrollView(
-                      child: DataTable(
-                        columns: const [
-                          DataColumn(
-                            label: Text(
-                              'Producto',
-                              style: TextStyle(fontWeight: FontWeight.bold),
+                      scrollDirection: Axis.vertical,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: DataTable(
+                          columns: const [
+                            DataColumn(
+                              label: Text(
+                                'Producto',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
                             ),
-                          ),
-                          DataColumn(
-                            label: Text(
-                              'Cantidad',
-                              style: TextStyle(fontWeight: FontWeight.bold),
+                            DataColumn(
+                              label: Text(
+                                'Cantidad',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
                             ),
-                          ),
-                          DataColumn(
-                            label: Text(
-                              'Monto',
-                              style: TextStyle(fontWeight: FontWeight.bold),
+                            DataColumn(
+                              label: Text(
+                                'Monto',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
                             ),
-                          ),
-                        ],
-                        rows:
-                            products.map((product) {
-                              return DataRow(
-                                cells: [
-                                  DataCell(Text(product.nombreProducto)),
-                                  DataCell(
-                                    Text(product.totalVendido.toString()),
-                                  ),
-                                  DataCell(
-                                    Text(
-                                      '\$${product.costoTotalVendido.toStringAsFixed(2)}',
+                          ],
+                          rows:
+                              products.map((product) {
+                                return DataRow(
+                                  cells: [
+                                    DataCell(Text(product.nombreProducto)),
+                                    DataCell(
+                                      Text(product.totalVendido.toString()),
                                     ),
-                                  ),
-                                ],
-                              );
-                            }).toList(),
+                                    DataCell(
+                                      Text(
+                                        '\$${product.costoTotalVendido.toStringAsFixed(2)}',
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }).toList(),
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
                     children: [
                       ElevatedButton.icon(
                         onPressed: () {
                           Navigator.pop(context);
                           _exportSupplierDetailToPDF(supplier, products);
                         },
-                        icon: const Icon(Icons.picture_as_pdf),
-                        label: const Text('Exportar PDF'),
+                        icon: const Icon(Icons.picture_as_pdf, size: 18),
+                        label: const Text('PDF'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.red,
                           foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         ),
                       ),
                       ElevatedButton.icon(
@@ -5621,11 +5628,12 @@ class _SalesScreenState extends State<SalesScreen>
                           Navigator.pop(context);
                           _exportSupplierDetailToExcel(supplier, products);
                         },
-                        icon: const Icon(Icons.table_chart),
-                        label: const Text('Exportar Excel'),
+                        icon: const Icon(Icons.table_chart, size: 18),
+                        label: const Text('Excel'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
                           foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         ),
                       ),
                     ],
@@ -5701,9 +5709,77 @@ class _SalesScreenState extends State<SalesScreen>
                 ),
                 pw.SizedBox(height: 16),
                 pw.Text(
-                  'Detalle de Productos - ${supplier.nombreProveedor}',
+                  'Reporte de Proveedor',
                   style: pw.TextStyle(
                     fontSize: 16,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('#0F172A'),
+                  ),
+                ),
+                pw.SizedBox(height: 12),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(12),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromHex('#F1F5F9'),
+                    borderRadius: pw.BorderRadius.circular(6),
+                    border: pw.Border.all(
+                      color: PdfColor.fromHex('#CBD5E1'),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'Datos del Proveedor',
+                        style: pw.TextStyle(
+                          fontSize: 12,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromHex('#0F172A'),
+                        ),
+                      ),
+                      pw.SizedBox(height: 8),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            'Nombre:',
+                            style: const pw.TextStyle(fontSize: 11),
+                          ),
+                          pw.Text(
+                            supplier.nombreProveedor,
+                            style: pw.TextStyle(
+                              fontSize: 11,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            'Total Costo:',
+                            style: const pw.TextStyle(fontSize: 11),
+                          ),
+                          pw.Text(
+                            '\$${supplier.totalCosto.toStringAsFixed(2)}',
+                            style: pw.TextStyle(
+                              fontSize: 11,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 16),
+                pw.Text(
+                  'Detalle de Productos',
+                  style: pw.TextStyle(
+                    fontSize: 14,
                     fontWeight: pw.FontWeight.bold,
                     color: PdfColor.fromHex('#0F172A'),
                   ),
@@ -5967,7 +6043,7 @@ class _SalesScreenState extends State<SalesScreen>
                 ),
                 pw.SizedBox(height: 16),
                 pw.Text(
-                  'Resumen de Ventas por Proveedor',
+                  'Resumen de Ventas',
                   style: pw.TextStyle(
                     fontSize: 16,
                     fontWeight: pw.FontWeight.bold,
