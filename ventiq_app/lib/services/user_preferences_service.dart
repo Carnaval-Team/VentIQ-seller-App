@@ -1168,6 +1168,28 @@ class UserPreferencesService {
     return decoded.map((item) => item as Map<String, dynamic>).toList();
   }
 
+  /// Eliminar operaciones pendientes por tipo
+  Future<void> removePendingOperationsByType(String type) async {
+    final prefs = await SharedPreferences.getInstance();
+    final operationsJson = prefs.getString(_pendingOperationsKey);
+
+    if (operationsJson == null) return;
+
+    final decoded = jsonDecode(operationsJson) as List<dynamic>;
+    final operations =
+        decoded.map((item) => item as Map<String, dynamic>).toList();
+    final filtered =
+        operations.where((operation) => operation['type'] != type).toList();
+
+    if (filtered.isEmpty) {
+      await prefs.remove(_pendingOperationsKey);
+    } else {
+      await prefs.setString(_pendingOperationsKey, jsonEncode(filtered));
+    }
+
+    print('🗑️ Operaciones pendientes eliminadas para tipo: $type');
+  }
+
   /// Limpiar operaciones pendientes
   Future<void> clearPendingOperations() async {
     final prefs = await SharedPreferences.getInstance();

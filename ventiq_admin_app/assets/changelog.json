@@ -1,9 +1,26 @@
 {
-  "current_version": "1.8.1",
-  "build": 181,
+  "current_version": "1.8.2",
+  "build": 182,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.8.2",
+      "date": "2026-01-22",
+      "title": "🧾 Consignaciones y gestión de proveedores.",
+      "changes": [
+         {
+          "type": "improvement",
+          "title": "Gestión de proveedores",
+          "description": "Gestión de proveedores de prodcutos y reportes de ventas por proveedor."
+        },
+        {
+          "type": "fix",
+          "title": "🛍️ Mejoras en Consignaciones",
+          "description": "Consignador ve precio costo en USD y CUP, margen seleccionable, precio de venta final en CUP, equivalente en USD y ganancia en USD."
+        }
+      ]
+    },
     {
       "version": "1.8.1",
       "date": "2026-01-21",

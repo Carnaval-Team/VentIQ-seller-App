@@ -1,9 +1,31 @@
 {
-  "current_version": "1.9.2",
-  "build": 802,
+  "current_version": "1.9.3",
+  "build": 803,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.9.3",
+      "date": "2026-01-22",
+      "title": "Offline más estable al volver online",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Sincronización al reconectar más confiable",
+          "description": "Al recuperar internet, la sincronización se activa de forma consistente para que tus datos se actualicen sin esperar."
+        },
+        {
+          "type": "improvement",
+          "title": "Aviso claro durante la sincronización",
+          "description": "Se muestra un aviso bloqueante y elegante mientras se sincroniza, para evitar cierres accidentales y asegurar que todo quede guardado."
+        },
+        {
+          "type": "improvement",
+          "title": "Cambio online/offline más fluido",
+          "description": "Mejoramos la transición entre offline y online para que el catálogo y las ventas se mantengan al día en todo momento."
+        }
+      ]
+    },
     {
       "version": "1.9.2",
       "date": "2026-01-20",
