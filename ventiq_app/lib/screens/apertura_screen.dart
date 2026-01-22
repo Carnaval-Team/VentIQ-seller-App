@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/user_preferences_service.dart';
+import '../services/auto_sync_service.dart';
 import '../services/turno_service.dart';
 import '../models/inventory_product.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -309,6 +310,15 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
   Future<void> _checkExistingShift() async {
     try {
+      final hasPendingApertura = await _hasPendingAperturaTurno();
+      if (hasPendingApertura) {
+        await _triggerPendingAperturaSync();
+        if (mounted) {
+          _showPendingAperturaAlert();
+        }
+        return;
+      }
+
       final turnoAbierto = await TurnoService.getTurnoAbierto();
 
       if (turnoAbierto != null) {
@@ -327,6 +337,50 @@ class _AperturaScreenState extends State<AperturaScreen> {
       _loadUserData();
       _loadPreviousShiftSummary();
     }
+  }
+
+  Future<bool> _hasPendingAperturaTurno() async {
+    final operations = await _userPrefs.getPendingOperations();
+    for (final operation in operations) {
+      if (operation['type'] == 'apertura_turno') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _triggerPendingAperturaSync() async {
+    try {
+      await AutoSyncService().performImmediateSync();
+    } catch (e) {
+      print('⚠️ No se pudo iniciar la sincronización del turno: $e');
+    }
+  }
+
+  void _showPendingAperturaAlert() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Creando turno online'),
+            content: const Text(
+              'Hay un turno pendiente creado en modo offline. En cuanto haya conexión, se sincronizará automáticamente. Si ya estás online, espera unos segundos y vuelve a intentarlo.',
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4A90E2),
+                ),
+                child: const Text('Volver'),
+              ),
+            ],
+          ),
+    );
   }
 
   void _showExistingShiftAlert() {

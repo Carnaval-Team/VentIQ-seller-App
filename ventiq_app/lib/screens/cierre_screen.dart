@@ -2429,13 +2429,13 @@ class _CierreScreenState extends State<CierreScreen> {
           observaciones:
               observacionesFinales.isEmpty ? null : observacionesFinales,
         );
-
+        await _userPrefs.clearOfflineTurno();
+        await _userPrefs.clearResumenCierreCache();
+        await _userPrefs.clearTurnoResumenCache();
         if (success) {
           // Al cerrar online, limpiar cache de turno y resúmenes offline
           try {
-            await _userPrefs.clearOfflineTurno();
-            await _userPrefs.clearResumenCierreCache();
-            await _userPrefs.clearTurnoResumenCache();
+            
             print(
               '🧹 Cache de turno/resúmenes offline limpiado tras cierre online',
             );
