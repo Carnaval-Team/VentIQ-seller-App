@@ -335,6 +335,78 @@ class InventoryService {
     }
   }
 
+  /// Get adjustment details from app_dat_ajuste_inventario
+  static Future<Map<String, dynamic>> getAdjustmentDetails(int operationId) async {
+    try {
+      print('🔍 Obteniendo detalles de ajuste para operación $operationId...');
+
+      // Get adjustment records linked to this operation
+      final response = await _supabase
+          .from('app_dat_ajuste_inventario')
+          .select('''
+            id,
+            id_producto,
+            id_variante,
+            id_ubicacion,
+            cantidad_anterior,
+            cantidad_nueva,
+            diferencia,
+            created_at,
+            app_dat_producto:id_producto (
+              id,
+              denominacion,
+              sku,
+              codigo_barras
+            )
+          ''')
+          .eq('id_operacion', operationId);
+
+      print('✅ Detalles de ajuste obtenidos: ${response.length} registros');
+
+      // Get location names for all adjustments
+      final details = <Map<String, dynamic>>[];
+      for (final item in response as List) {
+        final producto = item['app_dat_producto'];
+        final idUbicacion = item['id_ubicacion'];
+        
+        // Get location name
+        String ubicacionNombre = 'N/A';
+        if (idUbicacion != null) {
+          try {
+            final locationResponse = await _supabase
+                .from('app_dat_layout_almacen')
+                .select('denominacion')
+                .eq('id', idUbicacion)
+                .single();
+            ubicacionNombre = locationResponse['denominacion'] ?? 'N/A';
+          } catch (e) {
+            print('⚠️ No se pudo obtener ubicación $idUbicacion: $e');
+          }
+        }
+        
+        details.add({
+          'id': item['id'],
+          'cantidad_anterior': item['cantidad_anterior'],
+          'cantidad_nueva': item['cantidad_nueva'],
+          'diferencia': item['diferencia'],
+          'producto_nombre': producto?['denominacion'] ?? 'Producto',
+          'producto': {
+            'denominacion': producto?['denominacion'] ?? 'Producto',
+            'codigo_barras': producto?['codigo_barras'],
+            'sku': producto?['sku'],
+          },
+          'ubicacion': ubicacionNombre,
+          'created_at': item['created_at'],
+        });
+      }
+
+      return {'details': details};
+    } catch (e) {
+      print('❌ Error al obtener detalles de ajuste: $e');
+      rethrow;
+    }
+  }
+
   /// Get inventory products using fn_listar_inventario_productos RPC with pagination
   static Future<InventoryResponse> getInventoryProducts({
     String? busqueda,
@@ -1910,7 +1982,7 @@ class InventoryService {
     }
   }
 
-  /// Insert inventory adjustment using fn_insertar_ajuste_inventario RPC
+  /// Insert inventory adjustment using fn_insertar_ajuste_inventario2 RPC
   static Future<Map<String, dynamic>> insertInventoryAdjustment({
     required int idProducto,
     required int idUbicacion,
@@ -1936,7 +2008,7 @@ class InventoryService {
       print('   - ID Tipo Operación: $idTipoOperacion');*/
 
       final response = await _supabase.rpc(
-        'fn_insertar_ajuste_inventario',
+        'fn_insertar_ajuste_inventario2',
         params: {
           'p_id_producto': idProducto,
           'p_id_ubicacion': idUbicacion,
