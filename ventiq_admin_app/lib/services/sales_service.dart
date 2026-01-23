@@ -803,6 +803,7 @@ class SalesService {
   static Future<List<ProductSalesWithSupplier>> getProductSalesWithSupplier({
     DateTime? fechaDesde,
     DateTime? fechaHasta,
+    int? idAlmacen,
   }) async {
     try {
       final userPrefs = UserPreferencesService();
@@ -817,9 +818,12 @@ class SalesService {
       if (fechaHasta != null) {
         params['p_fecha_hasta'] = fechaHasta.toIso8601String().split('T')[0];
       }
+      if (idAlmacen != null) {
+        params['p_id_almacen'] = idAlmacen;
+      }
 
       final response = await _supabase.rpc(
-        'fn_reporte_ventas_con_proveedor',
+        'fn_reporte_ventas_con_proveedor2',
         params: params,
       );
 
@@ -840,12 +844,14 @@ class SalesService {
     required int idProveedor,
     DateTime? fechaDesde,
     DateTime? fechaHasta,
+    int? idAlmacen,
   }) async {
     try {
       // Obtener el reporte general de productos con proveedor
       final allProducts = await getProductSalesWithSupplier(
         fechaDesde: fechaDesde,
         fechaHasta: fechaHasta,
+        idAlmacen: idAlmacen,
       );
 
       // Filtrar por proveedor

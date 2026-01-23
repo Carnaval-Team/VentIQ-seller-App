@@ -1143,6 +1143,12 @@ class _SalesScreenState extends State<SalesScreen>
   List<SupplierSalesReport> _supplierReports = [];
   bool _isLoadingSuppliers = false;
   bool _isExportingPDF = false;
+  
+  // Filtro por almacén
+  int? _selectedWarehouseId;
+  String? _selectedWarehouseName;
+  List<Map<String, dynamic>> _warehouses = [];
+  bool _isLoadingWarehouses = false;
 
   @override
   void initState() {
@@ -1150,6 +1156,7 @@ class _SalesScreenState extends State<SalesScreen>
     _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_onTabChanged);
     _initializeDateRange();
+    _loadWarehouses();
     _loadSalesData();
   }
 
@@ -1295,6 +1302,34 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
+  Future<void> _loadWarehouses() async {
+    if (!mounted) return;
+    setState(() => _isLoadingWarehouses = true);
+    try {
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      if (idTienda == null) return;
+
+      final response = await Supabase.instance.client
+          .from('app_dat_almacen')
+          .select('id, denominacion')
+          .eq('id_tienda', idTienda)
+          .order('denominacion');
+
+      if (mounted) {
+        setState(() {
+          _warehouses = List<Map<String, dynamic>>.from(response);
+          _isLoadingWarehouses = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading warehouses: $e');
+      if (mounted) {
+        setState(() => _isLoadingWarehouses = false);
+      }
+    }
+  }
+
   Future<void> _loadSupplierReports() async {
     if (!mounted) return;
     setState(() => _isLoadingSuppliers = true);
@@ -1302,6 +1337,7 @@ class _SalesScreenState extends State<SalesScreen>
       final detailedSales = await SalesService.getProductSalesWithSupplier(
         fechaDesde: _startDate,
         fechaHasta: _endDate,
+        idAlmacen: _selectedWarehouseId,
       );
 
       // Agrupación local por proveedor
@@ -1543,6 +1579,82 @@ class _SalesScreenState extends State<SalesScreen>
     );
   }
 
+  Widget _buildWarehouseFilter() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warehouse, color: AppColors.primary),
+              const SizedBox(width: 12),
+              const Text('Almacén: ', style: TextStyle(fontWeight: FontWeight.w600)),
+              Expanded(
+                child: _isLoadingWarehouses
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : DropdownButton<int?>(
+                        isExpanded: true,
+                        value: _selectedWarehouseId,
+                        underline: const SizedBox(),
+                        items: [
+                          DropdownMenuItem<int?>(
+                            value: null,
+                            child: const Text('Todos los almacenes'),
+                          ),
+                          ..._warehouses.map((warehouse) {
+                            return DropdownMenuItem<int?>(
+                              value: warehouse['id'] as int?,
+                              child: Text(
+                                warehouse['denominacion'] as String? ?? 'Sin nombre',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }).toList(),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedWarehouseId = value;
+                            _selectedWarehouseName = value != null
+                                ? _warehouses
+                                    .firstWhere(
+                                      (w) => w['id'] == value,
+                                      orElse: () => {'denominacion': 'Desconocido'},
+                                    )['denominacion']
+                                : null;
+                          });
+                          _loadSupplierReports();
+                        },
+                      ),
+              ),
+            ],
+          ),
+          if (_selectedWarehouseId != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Filtrado por: $_selectedWarehouseName',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSuppliersTab() {
     // Calcular totales generales
     double totalVentas = 0;
@@ -1561,6 +1673,8 @@ class _SalesScreenState extends State<SalesScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildPeriodSelector(),
+          const SizedBox(height: 12),
+          _buildWarehouseFilter(),
           const SizedBox(height: 16),
 
           // Resumen General Card
@@ -5544,6 +5658,7 @@ class _SalesScreenState extends State<SalesScreen>
         idProveedor: supplier.idProveedor,
         fechaDesde: _startDate,
         fechaHasta: _endDate,
+        idAlmacen: _selectedWarehouseId,
       );
 
       if (!mounted) return;
@@ -5552,7 +5667,25 @@ class _SalesScreenState extends State<SalesScreen>
         context: context,
         builder: (BuildContext context) {
           return AlertDialog(
-            title: Text('Detalle - ${supplier.nombreProveedor}'),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Detalle - ${supplier.nombreProveedor}'),
+                if (_selectedWarehouseId != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Almacén: $_selectedWarehouseName',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             content: SizedBox(
               width: double.maxFinite,
               child: Column(
@@ -5613,7 +5746,11 @@ class _SalesScreenState extends State<SalesScreen>
                       ElevatedButton.icon(
                         onPressed: () {
                           Navigator.pop(context);
-                          _exportSupplierDetailToPDF(supplier, products);
+                          _exportSupplierDetailToPDF(
+                            supplier,
+                            products,
+                            _selectedWarehouseName,
+                          );
                         },
                         icon: const Icon(Icons.picture_as_pdf, size: 18),
                         label: const Text('PDF'),
@@ -5626,7 +5763,11 @@ class _SalesScreenState extends State<SalesScreen>
                       ElevatedButton.icon(
                         onPressed: () {
                           Navigator.pop(context);
-                          _exportSupplierDetailToExcel(supplier, products);
+                          _exportSupplierDetailToExcel(
+                            supplier,
+                            products,
+                            _selectedWarehouseName,
+                          );
                         },
                         icon: const Icon(Icons.table_chart, size: 18),
                         label: const Text('Excel'),
@@ -5666,6 +5807,7 @@ class _SalesScreenState extends State<SalesScreen>
   Future<void> _exportSupplierDetailToPDF(
     SupplierSalesReport supplier,
     List<ProductSalesWithSupplier> products,
+    String? warehouseName,
   ) async {
     try {
       setState(() => _isExportingPDF = true);
@@ -5739,6 +5881,16 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                       ),
                       pw.SizedBox(height: 8),
+                      if (warehouseName != null) ...[
+                        pw.Text(
+                          'Almacén: $warehouseName',
+                          style: pw.TextStyle(
+                            fontSize: 11,
+                            color: PdfColor.fromHex('#475569'),
+                          ),
+                        ),
+                        pw.SizedBox(height: 8),
+                      ],
                       pw.Row(
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         children: [
@@ -5909,12 +6061,26 @@ class _SalesScreenState extends State<SalesScreen>
   Future<void> _exportSupplierDetailToExcel(
     SupplierSalesReport supplier,
     List<ProductSalesWithSupplier> products,
+    String? warehouseName,
   ) async {
     try {
       setState(() => _isExportingPDF = true);
 
       final excelSheet = excel.Excel.createExcel();
       final sheet = excelSheet['Detalle'];
+
+      // Agregar encabezado con información del almacén si está filtrado
+      if (warehouseName != null) {
+        sheet.appendRow([
+          excel.TextCellValue('Almacén: $warehouseName'),
+        ]);
+        sheet.appendRow([]);
+      }
+
+      sheet.appendRow([
+        excel.TextCellValue('Proveedor: ${supplier.nombreProveedor}'),
+      ]);
+      sheet.appendRow([]);
 
       sheet.appendRow([
         excel.TextCellValue('Producto'),
@@ -6043,13 +6209,24 @@ class _SalesScreenState extends State<SalesScreen>
                 ),
                 pw.SizedBox(height: 16),
                 pw.Text(
-                  'Resumen de Ventas',
+                  'Resumen de Ventas por Proveedor',
                   style: pw.TextStyle(
                     fontSize: 16,
                     fontWeight: pw.FontWeight.bold,
                     color: PdfColor.fromHex('#0F172A'),
                   ),
                 ),
+                if (_selectedWarehouseId != null) ...[
+                  pw.SizedBox(height: 8),
+                  pw.Text(
+                    'Almacén: $_selectedWarehouseName',
+                    style: pw.TextStyle(
+                      fontSize: 11,
+                      color: PdfColor.fromHex('#475569'),
+                      fontStyle: pw.FontStyle.italic,
+                    ),
+                  ),
+                ],
                 pw.SizedBox(height: 8),
                 pw.Table(
                   border: pw.TableBorder.all(
@@ -6263,6 +6440,11 @@ class _SalesScreenState extends State<SalesScreen>
           'Período: ${_startDate.day}/${_startDate.month}/${_startDate.year} - ${_endDate.day}/${_endDate.month}/${_endDate.year}',
         ),
       ]);
+      if (_selectedWarehouseId != null) {
+        sheet.appendRow([
+          excel.TextCellValue('Almacén: $_selectedWarehouseName'),
+        ]);
+      }
       sheet.appendRow([]); // Fila vacía
 
       // Agregar encabezados de columnas
