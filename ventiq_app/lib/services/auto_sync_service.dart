@@ -353,7 +353,17 @@ class AutoSyncService {
         print('  ❌ Error sincronizando egresos offline: $e');
       }
 
-      // 10. Sincronizar ventas offline pendientes
+      // 10. Crear turno online si hay turno offline pendiente (antes de ventas offline)
+      try {
+        final turnoSynced = await _ensureOnlineTurnoFromOffline();
+        if (turnoSynced) {
+          syncedItems.add('turno offline');
+        }
+      } catch (e) {
+        print('  ❌ Error asegurando turno offline: $e');
+      }
+
+      // 11. Sincronizar ventas offline pendientes
       try {
         final syncedSales = await _syncOfflineSales();
         if (syncedSales > 0) {
@@ -365,7 +375,7 @@ class AutoSyncService {
         print('  ❌ Error sincronizando ventas offline: $e');
       }
 
-      // 11. Sincronizar órdenes (solo cada 2 sincronizaciones)
+      // 12. Sincronizar órdenes (solo cada 2 sincronizaciones)
       if (_syncCount % 2 == 0) {
         try {
           syncedData['orders'] = await _syncOrders();
@@ -376,7 +386,7 @@ class AutoSyncService {
         }
       }
 
-      // 12. Sincronizar operaciones pendientes de trabajadores de turno
+      // 13. Sincronizar operaciones pendientes de trabajadores de turno
       try {
         final syncedWorkers = await ShiftWorkersService.syncPendingOperations();
         if (syncedWorkers > 0) {
@@ -719,6 +729,113 @@ class AutoSyncService {
     }
 
     return null;
+  }
+
+  Future<Map<String, dynamic>?> _getOnlineOpenShift({
+    required int idTpv,
+    required int idVendedor,
+  }) async {
+    final response = await Supabase.instance.client
+        .from('app_dat_caja_turno')
+        .select('*')
+        .eq('id_tpv', idTpv)
+        .eq('id_vendedor', idVendedor)
+        .eq('estado', 1)
+        .order('fecha_apertura', ascending: false, nullsFirst: false)
+        .limit(1);
+
+    if (response.isNotEmpty) {
+      return response.first;
+    }
+
+    return null;
+  }
+
+  Future<bool> _ensureOnlineTurnoFromOffline() async {
+    final offlineTurno = await _userPreferencesService.getOfflineTurno();
+    if (offlineTurno == null) {
+      return false;
+    }
+
+    final idTpv =
+        offlineTurno['id_tpv'] as int? ??
+        await _userPreferencesService.getIdTpv();
+    final idVendedor =
+        offlineTurno['id_vendedor'] as int? ??
+        await _userPreferencesService.getIdSeller();
+
+    if (idTpv == null || idVendedor == null) {
+      print(
+        '  ⚠️ No se pudo obtener TPV o vendedor para validar turno offline',
+      );
+      return false;
+    }
+
+    final existingTurno = await _getOnlineOpenShift(
+      idTpv: idTpv,
+      idVendedor: idVendedor,
+    );
+    if (existingTurno != null) {
+      await _userPreferencesService.saveOfflineTurno(existingTurno);
+      print('  ✅ Turno online ya existe, cache offline actualizado');
+      return false;
+    }
+
+    print('  🔄 Creando turno online desde datos offline...');
+
+    final pendingOperations =
+        await _userPreferencesService.getPendingOperations();
+    Map<String, dynamic>? aperturaData;
+
+    for (final operation in pendingOperations) {
+      if (operation['type'] == 'apertura_turno') {
+        final data = operation['data'];
+        if (data is Map<String, dynamic>) {
+          aperturaData = Map<String, dynamic>.from(data);
+        }
+        break;
+      }
+    }
+
+    aperturaData ??= Map<String, dynamic>.from(offlineTurno);
+
+    final efectivoInicial =
+        (aperturaData['efectivo_inicial'] ?? 0.0).toDouble();
+    final usuario = aperturaData['usuario'] as String? ?? '';
+    final manejaInventario =
+        aperturaData['maneja_inventario'] as bool? ?? false;
+    final observaciones = aperturaData['observaciones'] as String?;
+    final productosRaw = aperturaData['productos'] as List<dynamic>? ?? [];
+    final productos =
+        productosRaw.map((item) => item as Map<String, dynamic>).toList();
+
+    final result = await TurnoService.registrarAperturaTurno(
+      efectivoInicial: efectivoInicial,
+      idTpv: idTpv,
+      idVendedor: idVendedor,
+      usuario: usuario,
+      manejaInventario: manejaInventario,
+      productos: productos.isEmpty ? null : productos,
+      observaciones: observaciones,
+    );
+
+    if (result['success'] == true) {
+      final turnoOnline = await _getOnlineOpenShift(
+        idTpv: idTpv,
+        idVendedor: idVendedor,
+      );
+      if (turnoOnline != null) {
+        await _userPreferencesService.saveOfflineTurno(turnoOnline);
+      }
+      await _userPreferencesService.removePendingOperationsByType(
+        'apertura_turno',
+      );
+      print('  ✅ Turno offline sincronizado antes de ventas');
+      return true;
+    }
+
+    print('  ❌ Error creando turno offline: ${result['message']}');
+    return false;
   }
 
   /// Sincronizar resumen de turno anterior
@@ -1080,7 +1197,7 @@ class AutoSyncService {
         }
         print('order_data $orderData');
         if (orderData['estado'] == 'completada') {
-        print('order_status 1');
+          print('order_status 1');
 
           await Supabase.instance.client.rpc(
             'fn_registrar_cambio_estado_operacion',
