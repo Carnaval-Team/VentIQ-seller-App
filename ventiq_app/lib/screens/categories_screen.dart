@@ -276,6 +276,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       );
 
       if (shouldShowChangelog) {
+        await _preferencesService.clearOfflinePreferencesForNewVersion();
         // Wait a bit for the screen to load
         await Future.delayed(const Duration(milliseconds: 500));
 

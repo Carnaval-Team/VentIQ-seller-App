@@ -1329,6 +1329,24 @@ class UserPreferencesService {
     print('🗑️ Todos los datos offline eliminados después de sincronización');
   }
 
+  /// Limpiar preferencias offline al abrir una nueva versión
+  Future<void> clearOfflinePreferencesForNewVersion() async {
+    try {
+      await clearPendingOrders();
+      await clearPendingOperations();
+      await clearOfflineTurno();
+      await clearTurnoResumenCache();
+      await clearResumenCierreCache();
+      await clearEgresosOffline();
+      await clearEgresosCache();
+      await clearOfflineData();
+      await clearAllOfflineUsers();
+      print('🧹 Preferencias offline limpiadas por actualización de versión');
+    } catch (e) {
+      print('⚠️ Error limpiando preferencias offline en actualización: $e');
+    }
+  }
+
   // ========== MÉTODOS PARA CACHE DE RESUMEN DE TURNO ==========
 
   /// Guardar resumen de turno en cache para modo offline

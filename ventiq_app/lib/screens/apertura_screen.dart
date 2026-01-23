@@ -310,22 +310,35 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
   Future<void> _checkExistingShift() async {
     try {
+      final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
       final hasPendingApertura = await _hasPendingAperturaTurno();
       if (hasPendingApertura) {
         await _triggerPendingAperturaSync();
-        if (mounted) {
-          _showPendingAperturaAlert();
+        if (isOfflineModeEnabled) {
+          if (mounted) {
+            _showPendingAperturaAlert();
+          }
+          return;
         }
-        return;
+        print(
+          'ℹ️ Turno offline pendiente detectado en modo online. Se permitirá crear turno online.',
+        );
       }
 
       final turnoAbierto = await TurnoService.getTurnoAbierto();
 
       if (turnoAbierto != null) {
-        if (mounted) {
-          _showExistingShiftAlert();
+        final isOfflineTurno = _isOfflineTurno(turnoAbierto);
+        if (!isOfflineModeEnabled && isOfflineTurno) {
+          print(
+            'ℹ️ Turno offline detectado en modo online. Se ignora para crear turno.',
+          );
+        } else {
+          if (mounted) {
+            _showExistingShiftAlert();
+          }
+          return;
         }
-        return;
       }
 
       // If no open shift, proceed with normal initialization
@@ -1438,6 +1451,19 @@ class _AperturaScreenState extends State<AperturaScreen> {
     return '${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}';
   }
 
+  bool _isOfflineTurno(Map<String, dynamic> turno) {
+    final turnoId = turno['id'];
+    return turnoId is String ||
+        turno['created_offline_at'] != null ||
+        turno['tipo_operacion'] == 'apertura';
+  }
+
+  String _formatInventoryCount(double quantity) {
+    if (quantity.isNaN || quantity.isInfinite) return '0';
+    if (quantity % 1 == 0) return quantity.toInt().toString();
+    return quantity.toStringAsFixed(2);
+  }
+
   // Inventory list method removed since inventory management is disabled
 
   Future<void> _crearApertura() async {
@@ -1651,10 +1677,13 @@ class _AperturaScreenState extends State<AperturaScreen> {
             // Guardar turno abierto en cache offline para uso en modo sin conexión
             try {
               final turnoAbierto = await TurnoService.getTurnoAbierto();
-              if (turnoAbierto != null) {
+              if (turnoAbierto != null && !_isOfflineTurno(turnoAbierto)) {
                 await _userPrefs.saveOfflineTurno(turnoAbierto);
                 print('💾 Turno online guardado en cache offline');
+              } else {
+                print('⚠️ No se pudo obtener turno online para cachear');
               }
+              await _userPrefs.removePendingOperationsByType('apertura_turno');
             } catch (e) {
               print('⚠️ No se pudo cachear el turno online: $e');
             }
@@ -2045,6 +2074,14 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                   (sum, loc) =>
                                       sum + (loc['cantidad'] as double),
                                 );
+
+                                if (snapshot.connectionState ==
+                                        ConnectionState.done &&
+                                    controller.text.trim().isEmpty) {
+                                  controller.text = _formatInventoryCount(
+                                    totalQuantity,
+                                  );
+                                }
 
                                 return Container(
                                   margin: const EdgeInsets.only(bottom: 12),
