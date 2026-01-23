@@ -65,7 +65,7 @@ BEGIN
     NOW()
   ) RETURNING id INTO v_id_operacion;
 
-  -- PASO 2: Crear estado inicial (Pendiente = 1)
+  -- PASO 2: Crear estado inicial (Completada = 2)
   INSERT INTO app_dat_estado_operacion (
     id_operacion,
     estado,
@@ -74,10 +74,10 @@ BEGIN
     comentario
   ) VALUES (
     v_id_operacion,
-    1,
+    2,
     p_uuid_usuario,
     NOW(),
-    'Ajuste de inventario creado - Estado inicial'
+    'Ajuste de inventario completado'
   );
 
   -- PASO 3: Insertar en tabla de ajuste CON id_operacion
