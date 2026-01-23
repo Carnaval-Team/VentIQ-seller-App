@@ -1,9 +1,26 @@
 {
-  "current_version": "1.8.2",
-  "build": 182,
+  "current_version": "1.8.3",
+  "build": 183,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.8.3",
+      "date": "2026-01-22",
+      "title": "🔧 Correcciones menores.",
+      "changes": [
+         {
+          "type": "improvement",
+          "title": "Gestión de Ventas",
+          "description": "Mejoras en gestión ventas por proveedor."
+        },
+        {
+          "type": "fix",
+          "title": "🛍️ Corrección en recepciones",
+          "description": "Corrección en el buscador de productos en las recepciones de productos."
+        }
+      ]
+    },
     {
       "version": "1.8.2",
       "date": "2026-01-22",
