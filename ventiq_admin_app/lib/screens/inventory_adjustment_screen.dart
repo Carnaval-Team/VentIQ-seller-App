@@ -524,20 +524,19 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
       print('📦 Resultado del servicio: $result');
 
       if (result['status'] == 'success') {
-        final data = result['data'];
         print('✅ ÉXITO: Ajuste de inventario registrado correctamente');
         print('📊 Detalles del ajuste:');
-        print('   - ID Operación: ${data['id_operacion']}');
-        print('   - ID Ajuste: ${data['id_ajuste']}');
-        print('   - Diferencia aplicada: ${data['diferencia']}');
+        print('   - ID Operación: ${result['id_operacion']}');
+        print('   - ID Ajuste: ${result['id_ajuste']}');
+        print('   - Diferencia aplicada: ${result['diferencia']}');
 
         // Mostrar mensaje de éxito al usuario
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               'Ajuste registrado exitosamente\n'
-              'Operación ID: ${data['id_operacion']}\n'
-              'Diferencia: ${data['diferencia']}',
+              'Operación ID: ${result['id_operacion']}\n'
+              'Diferencia: ${result['diferencia']}',
             ),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 4),
