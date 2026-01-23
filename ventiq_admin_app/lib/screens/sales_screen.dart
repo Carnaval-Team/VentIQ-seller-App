@@ -45,6 +45,7 @@ class _SalesScreenState extends State<SalesScreen>
   DateTime? _pdfStartDate;
   DateTime? _pdfEndDate;
   bool _isGeneratingPdf = false;
+  bool _isPdfFabExpanded = false;
   String _selectedTPV = 'Todos';
   double _totalSales = 0.0;
   int _totalProductsSold = 0;
@@ -163,9 +164,10 @@ class _SalesScreenState extends State<SalesScreen>
   Widget _buildGeneratePdfFab() {
     // Un solo botón con opciones según el tab activo
     bool isLoading = false;
+    bool isPdfAction = false;
     String label = 'Opciones';
     IconData icon = Icons.more_vert;
-    VoidCallback? onPressed;
+    Future<void> Function()? action;
 
     debugPrint(
       '🔍 FAB: Tab ${_tabController.index}, SupplierReports: ${_supplierReports.length}',
@@ -173,10 +175,11 @@ class _SalesScreenState extends State<SalesScreen>
 
     switch (_tabController.index) {
       case 0: // Tiempo Real
+        isPdfAction = true;
         isLoading = _isGeneratingPdf;
-        label = _isGeneratingPdf ? 'Generando...' : 'Facturas PDF';
+        label = _isGeneratingPdf ? 'Generando...' : 'Exportar factura PDF';
         icon = Icons.picture_as_pdf_outlined;
-        onPressed =
+        action =
             _isGeneratingPdf
                 ? null
                 : () async {
@@ -191,10 +194,11 @@ class _SalesScreenState extends State<SalesScreen>
         break;
 
       case 1: // TPVs
+        isPdfAction = true;
         isLoading = _isGeneratingPdf;
-        label = _isGeneratingPdf ? 'Generando...' : 'Facturas PDF';
+        label = _isGeneratingPdf ? 'Generando...' : 'Exportar factura PDF';
         icon = Icons.picture_as_pdf_outlined;
-        onPressed =
+        action =
             _isGeneratingPdf
                 ? null
                 : () async {
@@ -215,17 +219,18 @@ class _SalesScreenState extends State<SalesScreen>
         isLoading = _isExportingPDF;
         label = _isExportingPDF ? 'Exportando...' : 'Exportar Resumen';
         icon = Icons.download_outlined;
-        onPressed =
+        action =
             _supplierReports.isNotEmpty && !_isExportingPDF
-                ? () => _showExportMenu()
+                ? () async => _showExportMenu()
                 : null;
         break;
 
       case 3: // Análisis
+        isPdfAction = true;
         isLoading = _isGeneratingPdf;
-        label = _isGeneratingPdf ? 'Generando...' : 'Facturas PDF';
+        label = _isGeneratingPdf ? 'Generando...' : 'Exportar factura PDF';
         icon = Icons.picture_as_pdf_outlined;
-        onPressed =
+        action =
             _isGeneratingPdf
                 ? null
                 : () async {
@@ -240,26 +245,54 @@ class _SalesScreenState extends State<SalesScreen>
         break;
     }
 
+    VoidCallback? onPressed;
+    if (action != null) {
+      if (isPdfAction) {
+        onPressed = () async {
+          if (!_isPdfFabExpanded) {
+            setState(() => _isPdfFabExpanded = true);
+            return;
+          }
+          setState(() => _isPdfFabExpanded = false);
+          await action!();
+        };
+      } else {
+        onPressed = action;
+      }
+    }
+
     debugPrint(
       '🔍 FAB: onPressed=$onPressed, isLoading=$isLoading, label=$label',
     );
 
+    final isDisabled = onPressed == null && !isLoading;
+    final backgroundColor = isDisabled ? Colors.grey : AppColors.primary;
+    final fabIcon =
+        isLoading
+            ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+            : Icon(icon);
+
+    if (isPdfAction && !_isPdfFabExpanded) {
+      return FloatingActionButton(
+        backgroundColor: backgroundColor,
+        foregroundColor: Colors.white,
+        onPressed: onPressed,
+        child: fabIcon,
+      );
+    }
+
     // Mostrar el botón siempre (deshabilitado si no hay acción)
     return FloatingActionButton.extended(
-      backgroundColor:
-          onPressed == null && !isLoading ? Colors.grey : AppColors.primary,
+      backgroundColor: backgroundColor,
       foregroundColor: Colors.white,
-      icon:
-          isLoading
-              ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-              : Icon(icon),
+      icon: fabIcon,
       label: Text(label),
       onPressed: onPressed,
     );
@@ -1143,7 +1176,7 @@ class _SalesScreenState extends State<SalesScreen>
   List<SupplierSalesReport> _supplierReports = [];
   bool _isLoadingSuppliers = false;
   bool _isExportingPDF = false;
-  
+
   // Filtro por almacén
   int? _selectedWarehouseId;
   String? _selectedWarehouseName;
@@ -1169,7 +1202,9 @@ class _SalesScreenState extends State<SalesScreen>
   void _onTabChanged() {
     if (_tabController.indexIsChanging || !_tabController.indexIsChanging) {
       // Forzar reconstrucción del FAB cuando cambias de tab
-      setState(() {});
+      setState(() {
+        _isPdfFabExpanded = false;
+      });
 
       switch (_tabController.index) {
         case 2: // Suppliers
@@ -1594,47 +1629,55 @@ class _SalesScreenState extends State<SalesScreen>
             children: [
               const Icon(Icons.warehouse, color: AppColors.primary),
               const SizedBox(width: 12),
-              const Text('Almacén: ', style: TextStyle(fontWeight: FontWeight.w600)),
+              const Text(
+                'Almacén: ',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               Expanded(
-                child: _isLoadingWarehouses
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : DropdownButton<int?>(
-                        isExpanded: true,
-                        value: _selectedWarehouseId,
-                        underline: const SizedBox(),
-                        items: [
-                          DropdownMenuItem<int?>(
-                            value: null,
-                            child: const Text('Todos los almacenes'),
-                          ),
-                          ..._warehouses.map((warehouse) {
-                            return DropdownMenuItem<int?>(
-                              value: warehouse['id'] as int?,
-                              child: Text(
-                                warehouse['denominacion'] as String? ?? 'Sin nombre',
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            );
-                          }).toList(),
-                        ],
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedWarehouseId = value;
-                            _selectedWarehouseName = value != null
-                                ? _warehouses
-                                    .firstWhere(
-                                      (w) => w['id'] == value,
-                                      orElse: () => {'denominacion': 'Desconocido'},
-                                    )['denominacion']
-                                : null;
-                          });
-                          _loadSupplierReports();
-                        },
-                      ),
+                child:
+                    _isLoadingWarehouses
+                        ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : DropdownButton<int?>(
+                          isExpanded: true,
+                          value: _selectedWarehouseId,
+                          underline: const SizedBox(),
+                          items: [
+                            DropdownMenuItem<int?>(
+                              value: null,
+                              child: const Text('Todos los almacenes'),
+                            ),
+                            ..._warehouses.map((warehouse) {
+                              return DropdownMenuItem<int?>(
+                                value: warehouse['id'] as int?,
+                                child: Text(
+                                  warehouse['denominacion'] as String? ??
+                                      'Sin nombre',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }).toList(),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedWarehouseId = value;
+                              _selectedWarehouseName =
+                                  value != null
+                                      ? _warehouses.firstWhere(
+                                        (w) => w['id'] == value,
+                                        orElse:
+                                            () => {
+                                              'denominacion': 'Desconocido',
+                                            },
+                                      )['denominacion']
+                                      : null;
+                            });
+                            _loadSupplierReports();
+                          },
+                        ),
               ),
             ],
           ),
@@ -5757,7 +5800,10 @@ class _SalesScreenState extends State<SalesScreen>
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.red,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                         ),
                       ),
                       ElevatedButton.icon(
@@ -5774,7 +5820,10 @@ class _SalesScreenState extends State<SalesScreen>
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                         ),
                       ),
                     ],
@@ -6071,9 +6120,7 @@ class _SalesScreenState extends State<SalesScreen>
 
       // Agregar encabezado con información del almacén si está filtrado
       if (warehouseName != null) {
-        sheet.appendRow([
-          excel.TextCellValue('Almacén: $warehouseName'),
-        ]);
+        sheet.appendRow([excel.TextCellValue('Almacén: $warehouseName')]);
         sheet.appendRow([]);
       }
 
