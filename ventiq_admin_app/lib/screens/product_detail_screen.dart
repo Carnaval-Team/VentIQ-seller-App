@@ -367,8 +367,23 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ],
       ),
       body:
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
+          _isLoadingPricingData
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Cargando información del producto...',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                )
               : SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 child: Column(
