@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'user_preferences_service.dart';
 
 class Store {
   final int id;
@@ -40,14 +41,22 @@ class Store {
 }
 
 class StoreSelectorService extends ChangeNotifier {
+  static final StoreSelectorService _instance =
+      StoreSelectorService._internal();
+  factory StoreSelectorService() => _instance;
+  StoreSelectorService._internal();
+
   static const String _selectedStoreKey = 'selected_store_id';
-  
+
   final SupabaseClient _supabase = Supabase.instance.client;
-  
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
+
   List<Store> _userStores = [];
   Store? _selectedStore;
   bool _isLoading = false;
   bool _isInitialized = false;
+  Future<void>? _initializeFuture;
 
   List<Store> get userStores => _userStores;
   Store? get selectedStore => _selectedStore;
@@ -57,6 +66,14 @@ class StoreSelectorService extends ChangeNotifier {
 
   /// Inicializar el servicio cargando las tiendas del usuario
   Future<void> initialize() async {
+    if (_isInitialized) return;
+    if (_initializeFuture != null) return _initializeFuture;
+
+    _initializeFuture = _runInitialization();
+    return _initializeFuture;
+  }
+
+  Future<void> _runInitialization() async {
     _isLoading = true;
     notifyListeners();
 
@@ -68,6 +85,7 @@ class StoreSelectorService extends ChangeNotifier {
       print('Error initializing StoreSelectorService: $e');
     } finally {
       _isLoading = false;
+      _initializeFuture = null;
       notifyListeners();
     }
   }
@@ -90,10 +108,14 @@ class StoreSelectorService extends ChangeNotifier {
       print('🏪 Respuesta tiendas: $response');
 
       if (response != null && response is List && response.isNotEmpty) {
-        _userStores = response
-            .map((storeData) => Store.fromJson(storeData as Map<String, dynamic>))
-            .toList();
-        
+        _userStores =
+            response
+                .map(
+                  (storeData) =>
+                      Store.fromJson(storeData as Map<String, dynamic>),
+                )
+                .toList();
+
         print('🏪 Tiendas cargadas: ${_userStores.length}');
       } else {
         print('⚠️ No se encontraron tiendas para el usuario');
@@ -102,7 +124,7 @@ class StoreSelectorService extends ChangeNotifier {
     } catch (e) {
       print('❌ Error cargando tiendas: $e');
       _userStores = [];
-      
+
       // Si estamos en modo debug, usar mock como fallback
       if (kDebugMode) {
         print('🔧 Modo debug: usando datos mock como fallback');
@@ -119,8 +141,17 @@ class StoreSelectorService extends ChangeNotifier {
         return;
       }
 
-      final prefs = await SharedPreferences.getInstance();
-      final selectedStoreId = prefs.getInt(_selectedStoreKey);
+      int? selectedStoreId = await _userPreferencesService.getIdTienda();
+      if (selectedStoreId == null) {
+        final prefs = await SharedPreferences.getInstance();
+        final legacySelectedStoreId = prefs.getInt(_selectedStoreKey);
+        if (legacySelectedStoreId != null) {
+          selectedStoreId = legacySelectedStoreId;
+          await _userPreferencesService.updateSelectedStore(
+            legacySelectedStoreId,
+          );
+        }
+      }
 
       if (selectedStoreId != null) {
         _selectedStore = _userStores.firstWhere(
@@ -133,9 +164,15 @@ class StoreSelectorService extends ChangeNotifier {
           (store) => store.denominacion == 'Tienda Principal',
           orElse: () => _userStores.first,
         );
+        await _userPreferencesService.updateSelectedStore(_selectedStore!.id);
       }
 
-      print('🏪 Tienda seleccionada: ${_selectedStore?.denominacion} (ID: ${_selectedStore?.id})');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_selectedStoreKey, _selectedStore!.id);
+
+      print(
+        '🏪 Tienda seleccionada: ${_selectedStore?.denominacion} (ID: ${_selectedStore?.id})',
+      );
     } catch (e) {
       print('❌ Error cargando tienda seleccionada: $e');
       if (_userStores.isNotEmpty) {
@@ -151,13 +188,14 @@ class StoreSelectorService extends ChangeNotifier {
     if (_selectedStore?.id == store.id) return;
 
     _selectedStore = store;
-    
+
     // Guardar en preferencias
+    await _userPreferencesService.updateSelectedStore(store.id);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_selectedStoreKey, store.id);
-    
+
     print('🏪 Tienda cambiada a: ${store.denominacion} (ID: ${store.id})');
-    
+
     notifyListeners();
   }
 
@@ -166,13 +204,29 @@ class StoreSelectorService extends ChangeNotifier {
     return _selectedStore?.id;
   }
 
+  /// Sincronizar tienda seleccionada con preferencias (Dashboard)
+  Future<void> syncSelectedStore({bool notify = true}) async {
+    if (_userStores.isEmpty) return;
+
+    final selectedStoreId = await _userPreferencesService.getIdTienda();
+    if (selectedStoreId == null) return;
+    if (_selectedStore?.id == selectedStoreId) return;
+
+    _selectedStore = _userStores.firstWhere(
+      (store) => store.id == selectedStoreId,
+      orElse: () => _userStores.first,
+    );
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
   /// Refrescar lista de tiendas
   Future<void> refresh() async {
     await _loadUserStores();
     await _loadSelectedStore();
     notifyListeners();
   }
-
 
   /// Datos mock para desarrollo/fallback
   List<Store> _getMockStores() {

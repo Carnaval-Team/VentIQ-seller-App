@@ -17,6 +17,7 @@ class VendedorService {
     try {
       final userPrefs = UserPreferencesService();
       final storeId = await userPrefs.getIdTienda();
+
       if (storeId == null) {
         throw Exception('No se pudo obtener el ID de la tienda');
       }
@@ -27,10 +28,11 @@ class VendedorService {
           .select('id')
           .eq('id_tienda', storeId);
 
-      final trabajadoresIds = trabajadoresResponse
-          .map((t) => t['id'])
-          .where((id) => id != null)
-          .toList();
+      final trabajadoresIds =
+          trabajadoresResponse
+              .map((t) => t['id'])
+              .where((id) => id != null)
+              .toList();
 
       if (trabajadoresIds.isEmpty) {
         print('⚠️ No hay trabajadores en la tienda $storeId');
@@ -61,6 +63,54 @@ class VendedorService {
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('❌ Error obteniendo vendedores: $e');
+      return [];
+    }
+  }
+
+  /// Obtiene vendedores por ID de tienda (para filtros con StoreSelectorService)
+  static Future<List<Map<String, dynamic>>> getVendedoresByStoreId(
+    int storeId,
+  ) async {
+    try {
+      final trabajadoresResponse = await _supabase
+          .from('app_dat_trabajadores')
+          .select('id')
+          .eq('id_tienda', storeId);
+
+      final trabajadoresIds =
+          trabajadoresResponse
+              .map((t) => t['id'])
+              .where((id) => id != null)
+              .toList();
+
+      if (trabajadoresIds.isEmpty) {
+        print('⚠️ No hay trabajadores en la tienda $storeId');
+        return [];
+      }
+
+      final response = await _supabase
+          .from('app_dat_vendedor')
+          .select('''
+            *,
+            trabajador:app_dat_trabajadores(
+              id,
+              nombres,
+              apellidos,
+              id_roll,
+              id_tienda
+            ),
+            tpv:app_dat_tpv(
+              id,
+              denominacion
+            )
+          ''')
+          .inFilter('id_trabajador', trabajadoresIds)
+          .order('created_at', ascending: false);
+
+      print('✅ Vendedores obtenidos: ${response.length} para tienda $storeId');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error obteniendo vendedores por tienda: $e');
       return [];
     }
   }
@@ -156,6 +206,27 @@ class VendedorService {
       return true;
     } catch (e) {
       print('❌ Error creando vendedor: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza el permiso de cambio de precio para un vendedor
+  static Future<bool> updatePriceCustomizationPermission({
+    required int vendedorId,
+    required bool canCustomize,
+  }) async {
+    try {
+      await _supabase
+          .from('app_dat_vendedor')
+          .update({'permitir_customizar_precio_venta': canCustomize})
+          .eq('id', vendedorId);
+
+      print(
+        '✅ Permiso de cambio de precio actualizado para vendedor $vendedorId: $canCustomize',
+      );
+      return true;
+    } catch (e) {
+      print('❌ Error actualizando permiso de cambio de precio: $e');
       return false;
     }
   }

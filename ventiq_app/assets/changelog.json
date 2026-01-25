@@ -1,9 +1,26 @@
 {
-  "current_version": "1.9.4",
-  "build": 804,
+  "current_version": "1.9.5",
+  "build": 805,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.9.5",
+      "date": "2026-01-24",
+      "title": "Precios editables (beta)",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Ajuste rápido de precios (beta)",
+          "description": "Ahora puedes ajustar el precio de venta desde el detalle del producto con el ícono del lápiz. Esta función está en beta y por ahora solo está activa en algunas tiendas de prueba, hasta que la configuración se habilite desde la administración de la tienda."
+        },
+        {
+          "type": "improvement",
+          "title": "Seguimiento de cambios de precio",
+          "description": "Se guarda un historial interno cada vez que cambias un precio para tener más claridad y control en tus ventas."
+        }
+      ]
+    },
     {
       "version": "1.9.4",
       "date": "2026-01-23",

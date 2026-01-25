@@ -4,12 +4,28 @@ import '../services/order_service.dart';
 import '../services/product_detail_service.dart';
 import '../services/promotion_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/price_change_service.dart';
 import '../services/currency_service.dart';
 import '../utils/price_utils.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/elaborated_product_chip.dart';
 import '../utils/connection_error_handler.dart';
 import '../widgets/notification_widget.dart';
+
+enum _PriceAdjustmentType {
+  increasePercent,
+  decreasePercent,
+  increaseFixed,
+  decreaseFixed,
+  setDirect,
+}
+
+class _PriceCustomizationResult {
+  final double? price;
+  final bool clear;
+
+  const _PriceCustomizationResult({this.price, this.clear = false});
+}
 
 class ProductDetailsScreen extends StatefulWidget {
   final Product product;
@@ -25,7 +41,8 @@ class ProductDetailsScreen extends StatefulWidget {
   State<ProductDetailsScreen> createState() => _ProductDetailsScreenState();
 }
 
-class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
+class _ProductDetailsScreenState extends State<ProductDetailsScreen>
+    with SingleTickerProviderStateMixin {
   ProductVariant? selectedVariant;
   int selectedQuantity = 1;
   Map<ProductVariant, int> variantQuantities = {};
@@ -35,6 +52,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
   final PromotionService _promotionService = PromotionService();
+  final PriceChangeService _priceChangeService = PriceChangeService();
   Product? _detailedProduct;
   bool _isLoadingDetails = false;
   String? _errorMessage;
@@ -54,10 +72,23 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   ProductPresentation? _selectedPresentation;
   bool _isLoadingPresentations = false;
   Map<String, ProductPresentation?> _selectedPresentationsByProduct = {};
+  bool _canCustomizeSalePrice = false;
+  double? _customProductPrice;
+  int? _lastCustomizedVariantId;
+  final Map<int, double> _customVariantPrices = {};
+  late final AnimationController _editIconController;
+  late final Animation<double> _editIconOpacity;
 
   @override
   void initState() {
     super.initState();
+    _editIconController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _editIconOpacity = Tween<double>(begin: 0.4, end: 1).animate(
+      CurvedAnimation(parent: _editIconController, curve: Curves.easeInOut),
+    );
     // Inicializar cantidades de variantes
     for (var variant in widget.product.variantes) {
       variantQuantities[variant] = 0;
@@ -70,6 +101,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     _loadUsdRate();
     _loadProductPresentations();
     _loadDataUsageSettings();
+    _loadSalePricePermission();
+  }
+
+  @override
+  void dispose() {
+    _editIconController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadDataUsageSettings() async {
@@ -79,6 +117,427 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         _isLimitDataUsageEnabled = isEnabled;
       });
     }
+  }
+
+  String _getPriceChangeType(_PriceAdjustmentType type) {
+    switch (type) {
+      case _PriceAdjustmentType.increasePercent:
+        return 'aumentar_porcentaje';
+      case _PriceAdjustmentType.decreasePercent:
+        return 'disminuir_porcentaje';
+      case _PriceAdjustmentType.increaseFixed:
+        return 'aumentar_monto';
+      case _PriceAdjustmentType.decreaseFixed:
+        return 'disminuir_monto';
+      case _PriceAdjustmentType.setDirect:
+        return 'precio_directo';
+    }
+  }
+
+  int? _getVariantIdForLog(ProductVariant? variant) {
+    if (variant == null) return null;
+    final metadataId = variant.inventoryMetadata?['id_variante'];
+    if (metadataId is num) return metadataId.toInt();
+    return variant.id;
+  }
+
+  Future<void> _loadSalePricePermission() async {
+    final canCustomize = await _userPreferencesService.canCustomizeSalePrice();
+    if (!mounted) return;
+    setState(() {
+      _canCustomizeSalePrice = canCustomize;
+    });
+    if (canCustomize) {
+      _editIconController.repeat(reverse: true);
+    } else {
+      _editIconController.stop();
+      _editIconController.value = 1;
+    }
+  }
+
+  double _getOriginalBasePrice(Product product, [ProductVariant? variant]) {
+    return variant?.precio ?? product.precio;
+  }
+
+  double _getEffectiveBasePrice(Product product, [ProductVariant? variant]) {
+    if (variant != null) {
+      return _customVariantPrices[variant.id] ?? variant.precio;
+    }
+    if (product.variantes.isNotEmpty) {
+      return product.precio;
+    }
+    return _customProductPrice ?? product.precio;
+  }
+
+  bool _hasCustomPrice(Product product, [ProductVariant? variant]) {
+    if (variant != null) {
+      return _customVariantPrices.containsKey(variant.id);
+    }
+    if (product.variantes.isNotEmpty) {
+      return false;
+    }
+    return _customProductPrice != null;
+  }
+
+  ProductVariant? _getGlobalPriceVariant(Product product) {
+    if (product.variantes.isEmpty) return null;
+
+    if (_lastCustomizedVariantId != null) {
+      for (final variant in product.variantes) {
+        if (variant.id == _lastCustomizedVariantId) {
+          return variant;
+        }
+      }
+    }
+
+    for (final entry in variantQuantities.entries) {
+      if (entry.value > 0) return entry.key;
+    }
+
+    return product.variantes.first;
+  }
+
+  Future<void> _applyCustomPrice(
+    Product product,
+    ProductVariant? variant,
+    double price,
+    _PriceAdjustmentType adjustmentType,
+  ) async {
+    final originalPrice = _getEffectiveBasePrice(product, variant);
+    final variantId = _getVariantIdForLog(variant);
+    if (!mounted) return;
+    setState(() {
+      if (variant != null) {
+        _customVariantPrices[variant.id] = price;
+        _lastCustomizedVariantId = variant.id;
+      } else {
+        _customProductPrice = price;
+      }
+    });
+    await _priceChangeService.logPriceChange(
+      productId: product.id,
+      variantId: variantId,
+      originalPrice: originalPrice,
+      resultPrice: price,
+      tipo: _getPriceChangeType(adjustmentType),
+    );
+  }
+
+  Future<void> _clearCustomPrice(
+    Product product,
+    ProductVariant? variant,
+  ) async {
+    final originalPrice = _getEffectiveBasePrice(product, variant);
+    final resultPrice = _getOriginalBasePrice(product, variant);
+    final variantId = _getVariantIdForLog(variant);
+    if (!mounted) return;
+    setState(() {
+      if (variant != null) {
+        _customVariantPrices.remove(variant.id);
+        _lastCustomizedVariantId = variant.id;
+      } else {
+        _customProductPrice = null;
+      }
+    });
+    await _priceChangeService.logPriceChange(
+      productId: product.id,
+      variantId: variantId,
+      originalPrice: originalPrice,
+      resultPrice: resultPrice,
+      tipo: 'restablecer',
+    );
+  }
+
+  double _calculateAdjustedPrice(
+    double basePrice,
+    _PriceAdjustmentType type,
+    double value,
+  ) {
+    switch (type) {
+      case _PriceAdjustmentType.increasePercent:
+        return basePrice * (1 + value / 100);
+      case _PriceAdjustmentType.decreasePercent:
+        return basePrice * (1 - value / 100);
+      case _PriceAdjustmentType.increaseFixed:
+        return basePrice + value;
+      case _PriceAdjustmentType.decreaseFixed:
+        return basePrice - value;
+      case _PriceAdjustmentType.setDirect:
+        return value;
+    }
+  }
+
+  String _getAdjustmentLabel(_PriceAdjustmentType type) {
+    switch (type) {
+      case _PriceAdjustmentType.increasePercent:
+        return 'Aumentar %';
+      case _PriceAdjustmentType.decreasePercent:
+        return 'Disminuir %';
+      case _PriceAdjustmentType.increaseFixed:
+        return 'Aumentar monto';
+      case _PriceAdjustmentType.decreaseFixed:
+        return 'Disminuir monto';
+      case _PriceAdjustmentType.setDirect:
+        return 'Precio directo';
+    }
+  }
+
+  bool _isPercentageAdjustment(_PriceAdjustmentType type) {
+    return type == _PriceAdjustmentType.increasePercent ||
+        type == _PriceAdjustmentType.decreasePercent;
+  }
+
+  String _getAdjustmentHint(_PriceAdjustmentType type) {
+    if (type == _PriceAdjustmentType.setDirect) {
+      return 'Precio final';
+    }
+    return _isPercentageAdjustment(type) ? 'Porcentaje' : 'Monto';
+  }
+
+  Future<void> _showPriceCustomizationDialog(
+    Product product, {
+    ProductVariant? variant,
+  }) async {
+    if (!_canCustomizeSalePrice) return;
+    if (variant == null && product.variantes.isNotEmpty) return;
+
+    final currentPrice = _getEffectiveBasePrice(product, variant);
+    final originalPrice = _getOriginalBasePrice(product, variant);
+    final hasCustom = _hasCustomPrice(product, variant);
+    var adjustmentType = _PriceAdjustmentType.setDirect;
+    final valueController = TextEditingController();
+
+    final result = await showDialog<_PriceCustomizationResult>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final inputValue = valueController.text.replaceAll(',', '.');
+            final parsedValue = double.tryParse(inputValue);
+            final previewPrice =
+                parsedValue == null
+                    ? null
+                    : _calculateAdjustedPrice(
+                      currentPrice,
+                      adjustmentType,
+                      parsedValue,
+                    );
+            final previewPriceClamped =
+                previewPrice == null
+                    ? null
+                    : previewPrice.clamp(0, double.maxFinite).toDouble();
+            final previewDelta =
+                previewPriceClamped != null
+                    ? previewPriceClamped - currentPrice
+                    : null;
+
+            return AlertDialog(
+              scrollable: true,
+              title: const Text('Personalizar precio de venta (beta)'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    variant != null ? variant.nombre : product.denominacion,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Precio actual: \$${currentPrice.toStringAsFixed(2)}',
+                    style: TextStyle(color: Colors.grey[700]),
+                  ),
+                  if (hasCustom && originalPrice != currentPrice)
+                    Text(
+                      'Precio original: \$${originalPrice.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: Colors.grey[500],
+                        fontSize: 12,
+                        decoration: TextDecoration.lineThrough,
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<_PriceAdjustmentType>(
+                    value: adjustmentType,
+                    decoration: const InputDecoration(
+                      labelText: 'Tipo de ajuste',
+                      border: OutlineInputBorder(),
+                    ),
+                    items:
+                        _PriceAdjustmentType.values
+                            .map(
+                              (type) => DropdownMenuItem(
+                                value: type,
+                                child: Text(_getAdjustmentLabel(type)),
+                              ),
+                            )
+                            .toList(),
+                    onChanged: (value) {
+                      if (value == null || !context.mounted) return;
+                      setDialogState(() {
+                        adjustmentType = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: valueController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _getAdjustmentHint(adjustmentType),
+                      border: const OutlineInputBorder(),
+                      suffixText:
+                          _isPercentageAdjustment(adjustmentType) ? '%' : null,
+                    ),
+                    onChanged: (_) {
+                      if (!context.mounted) return;
+                      setDialogState(() {});
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[200]!),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Vista previa',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          previewPriceClamped != null
+                              ? '\$${previewPriceClamped.toStringAsFixed(2)}'
+                              : 'Ingresa un valor para previsualizar',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color:
+                                previewPrice != null
+                                    ? widget.categoryColor
+                                    : Colors.grey[500],
+                          ),
+                        ),
+                        if (previewDelta != null)
+                          Text(
+                            previewDelta >= 0
+                                ? '+\$${previewDelta.toStringAsFixed(2)}'
+                                : '-\$${previewDelta.abs().toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color:
+                                  previewDelta >= 0
+                                      ? Colors.green[700]
+                                      : Colors.red[700],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                if (hasCustom)
+                  TextButton(
+                    onPressed:
+                        () => Navigator.of(
+                          context,
+                        ).pop(const _PriceCustomizationResult(clear: true)),
+                    child: const Text('Restablecer'),
+                  ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed:
+                      previewPriceClamped == null
+                          ? null
+                          : () {
+                            Navigator.of(context).pop(
+                              _PriceCustomizationResult(
+                                price: previewPriceClamped,
+                              ),
+                            );
+                          },
+                  child: const Text('Aplicar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted || result == null) return;
+    if (result.clear) {
+      await _clearCustomPrice(product, variant);
+      return;
+    }
+    if (result.price != null) {
+      await _applyCustomPrice(product, variant, result.price!, adjustmentType);
+    }
+  }
+
+  Widget _buildEditPriceButton({
+    required Product product,
+    ProductVariant? variant,
+    double size = 18,
+  }) {
+    return FadeTransition(
+      opacity: _editIconOpacity,
+      child: InkWell(
+        onTap: () => _showPriceCustomizationDialog(product, variant: variant),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: widget.categoryColor.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Icon(Icons.edit, size: size, color: widget.categoryColor),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCustomPriceBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.orange.withOpacity(0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.edit, size: 12, color: Colors.orange[700]),
+          const SizedBox(width: 4),
+          Text(
+            'Precio personalizado',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.orange[700],
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Cargar detalles completos del producto desde Supabase o cache offline
@@ -467,116 +926,161 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     return _globalPromotionData;
   }
 
-  Widget _buildPriceSection(double originalPrice) {
-    final prices = _calculatePromotionPrices(originalPrice);
+  Widget _buildPriceSection(
+    Product product, {
+    ProductVariant? variant,
+    bool showEditButton = true,
+  }) {
+    final basePrice = _getEffectiveBasePrice(product, variant);
+    final originalBasePrice = _getOriginalBasePrice(product, variant);
+    final hasCustom = _hasCustomPrice(product, variant);
+    final prices = _calculatePromotionPrices(basePrice);
     final activePromotion = _getActivePromotion();
 
     // Determinar si hay promoción activa
     final hasPromotion =
-        prices['precio_oferta'] != originalPrice ||
-        prices['precio_venta'] != originalPrice;
+        prices['precio_oferta'] != basePrice ||
+        prices['precio_venta'] != basePrice;
+
+    final List<Widget> priceContent = [];
 
     if (hasPromotion && activePromotion != null) {
       final tipoDescuento = activePromotion['tipo_descuento'] as int?;
       final isRecargo = tipoDescuento == 3; // Recargo porcentual
 
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Mostrar tipo de promoción
-          if (activePromotion['tipo_promocion_nombre'] != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              margin: const EdgeInsets.only(bottom: 4),
-              decoration: BoxDecoration(
-                color:
-                    isRecargo
-                        ? Colors.orange.withOpacity(0.1)
-                        : Colors.green.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(
-                  color: isRecargo ? Colors.orange : Colors.green,
-                  width: 1,
-                ),
-              ),
-              child: Text(
-                activePromotion['tipo_promocion_nombre'],
-                style: TextStyle(
-                  fontSize: 10,
-                  color: isRecargo ? Colors.orange[700] : Colors.green[700],
-                  fontWeight: FontWeight.w600,
-                ),
+      if (activePromotion['tipo_promocion_nombre'] != null)
+        priceContent.add(
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            margin: const EdgeInsets.only(bottom: 4),
+            decoration: BoxDecoration(
+              color:
+                  isRecargo
+                      ? Colors.orange.withOpacity(0.1)
+                      : Colors.green.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: isRecargo ? Colors.orange : Colors.green,
+                width: 1,
               ),
             ),
-
-          // Precio de venta (normal o intercambiado)
-          Row(
-            children: [
-              Text(
-                isRecargo ? 'Precio venta: ' : 'Precio base: ',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isRecargo ? widget.categoryColor : Colors.grey[600],
-                  fontWeight: FontWeight.w500,
-                ),
+            child: Text(
+              activePromotion['tipo_promocion_nombre'],
+              style: TextStyle(
+                fontSize: 10,
+                color: isRecargo ? Colors.orange[700] : Colors.green[700],
+                fontWeight: FontWeight.w600,
               ),
-              Text(
-                '\$${prices['precio_venta']!.toStringAsFixed(2)}',
-                style: TextStyle(
-                  fontSize: isRecargo ? 16 : 14,
-                  color: isRecargo ? widget.categoryColor : Colors.grey[600],
-                  fontWeight: isRecargo ? FontWeight.w600 : FontWeight.w500,
-                  decoration: isRecargo ? null : TextDecoration.lineThrough,
-                ),
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 4),
+        );
 
-          // Precio de oferta (normal o intercambiado)
-          Row(
-            children: [
-              Text(
-                isRecargo ? 'Precio oferta: ' : 'Precio oferta: ',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isRecargo ? Colors.grey[600] : widget.categoryColor,
-                  fontWeight: FontWeight.w600,
-                ),
+      priceContent.add(
+        Row(
+          children: [
+            Text(
+              isRecargo ? 'Precio venta: ' : 'Precio base: ',
+              style: TextStyle(
+                fontSize: 12,
+                color: isRecargo ? widget.categoryColor : Colors.grey[600],
+                fontWeight: FontWeight.w500,
               ),
-              Text(
-                '\$${PriceUtils.formatDiscountPrice(prices['precio_oferta']!)}',
-                style: TextStyle(
-                  fontSize: isRecargo ? 14 : 16,
-                  fontWeight: FontWeight.w600,
-                  color: isRecargo ? Colors.grey[600] : widget.categoryColor,
-                  height: 1.2,
-                ),
+            ),
+            Text(
+              '\$${prices['precio_venta']!.toStringAsFixed(2)}',
+              style: TextStyle(
+                fontSize: isRecargo ? 16 : 14,
+                color: isRecargo ? widget.categoryColor : Colors.grey[600],
+                fontWeight: isRecargo ? FontWeight.w600 : FontWeight.w500,
+                decoration: isRecargo ? null : TextDecoration.lineThrough,
               ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
+      );
+      priceContent.add(const SizedBox(height: 4));
+      priceContent.add(
+        Row(
+          children: [
+            Text(
+              'Precio oferta: ',
+              style: TextStyle(
+                fontSize: 12,
+                color: isRecargo ? Colors.grey[600] : widget.categoryColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              '\$${PriceUtils.formatDiscountPrice(prices['precio_oferta']!)}',
+              style: TextStyle(
+                fontSize: isRecargo ? 14 : 16,
+                fontWeight: FontWeight.w600,
+                color: isRecargo ? Colors.grey[600] : widget.categoryColor,
+                height: 1.2,
+              ),
+            ),
+          ],
+        ),
       );
     } else {
-      return Text(
-        '\$${originalPrice.toStringAsFixed(2)}',
-        style: TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: widget.categoryColor,
-          height: 1.2,
+      priceContent.add(
+        Text(
+          '\$${basePrice.toStringAsFixed(2)}',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: widget.categoryColor,
+            height: 1.2,
+          ),
         ),
       );
     }
+
+    if (hasCustom && originalBasePrice != basePrice) {
+      priceContent.add(const SizedBox(height: 4));
+      priceContent.add(
+        Text(
+          'Original: \$${originalBasePrice.toStringAsFixed(2)}',
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.grey[600],
+            decoration: TextDecoration.lineThrough,
+          ),
+        ),
+      );
+      priceContent.add(const SizedBox(height: 6));
+      priceContent.add(_buildCustomPriceBadge());
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: priceContent,
+          ),
+        ),
+        if (showEditButton &&
+            _canCustomizeSalePrice &&
+            (variant != null || product.variantes.isEmpty))
+          Padding(
+            padding: const EdgeInsets.only(left: 8, top: 2),
+            child: _buildEditPriceButton(product: product, variant: variant),
+          ),
+      ],
+    );
   }
 
-  Widget _buildVariantPriceSection(double originalPrice) {
-    final prices = _calculatePromotionPrices(originalPrice);
+  Widget _buildVariantPriceSection(Product product, ProductVariant variant) {
+    final basePrice = _getEffectiveBasePrice(product, variant);
+    final prices = _calculatePromotionPrices(basePrice);
     final activePromotion = _getActivePromotion();
     final hasPromotion =
-        prices['precio_oferta'] != originalPrice ||
-        prices['precio_venta'] != originalPrice;
+        prices['precio_oferta'] != basePrice ||
+        prices['precio_venta'] != basePrice;
 
+    Widget priceWidget;
     if (hasPromotion && activePromotion != null) {
       final tipoDescuento = activePromotion['tipo_descuento'] as int?;
       final isRecargo = tipoDescuento == 3; // Recargo porcentual
@@ -586,7 +1090,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       final displayPrice =
           isRecargo ? prices['precio_venta']! : prices['precio_oferta']!;
 
-      return Text(
+      priceWidget = Text(
         '\$${PriceUtils.formatDiscountPrice(displayPrice)}',
         style: TextStyle(
           fontSize: 11,
@@ -597,8 +1101,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         overflow: TextOverflow.ellipsis,
       );
     } else {
-      return Text(
-        '\$${originalPrice.toStringAsFixed(2)}',
+      priceWidget = Text(
+        '\$${basePrice.toStringAsFixed(2)}',
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
@@ -608,6 +1112,17 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         overflow: TextOverflow.ellipsis,
       );
     }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(child: priceWidget),
+        if (_canCustomizeSalePrice) ...[
+          const SizedBox(width: 4),
+          _buildEditPriceButton(product: product, variant: variant, size: 14),
+        ],
+      ],
+    );
   }
 
   /// Get the current product (detailed if loaded, otherwise fallback to original)
@@ -618,7 +1133,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
     if (currentProduct.variantes.isEmpty) {
       // Producto sin variantes - usar precio con presentación
-      final prices = _calculatePromotionPrices(currentProduct.precio);
+      final basePrice = _getEffectiveBasePrice(currentProduct);
+      final prices = _calculatePromotionPrices(basePrice);
       final finalPrice = prices['precio_oferta']!;
       total = _calculateTotalPriceWithPresentation(
         finalPrice,
@@ -630,7 +1146,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       for (var entry in variantQuantities.entries) {
         final variant = entry.key;
         final quantity = entry.value;
-        final prices = _calculatePromotionPrices(variant.precio);
+        final basePrice = _getEffectiveBasePrice(currentProduct, variant);
+        final prices = _calculatePromotionPrices(basePrice);
         final finalPrice = prices['precio_oferta']!;
         total += _calculateTotalPriceWithPresentation(
           finalPrice,
@@ -938,7 +1455,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                               ),
                               const SizedBox(height: 8),
                               // Precio del producto con descuento
-                              _buildPriceSection(currentProduct.precio),
+                              _buildPriceSection(
+                                currentProduct,
+                                variant: _getGlobalPriceVariant(currentProduct),
+                                showEditButton:
+                                    currentProduct.variantes.isEmpty,
+                              ),
                             ],
                           ),
                         ),
@@ -993,9 +1515,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                             _buildSelectedProductItem(
                               currentProduct.denominacion,
                               selectedQuantity,
-                              currentProduct.precio,
+                              _getEffectiveBasePrice(currentProduct),
                               _getLocationName(currentProduct, null),
                               isVariant: false,
+                              originalPrice: _getOriginalBasePrice(
+                                currentProduct,
+                              ),
                             ),
                           if (currentProduct.variantes.isNotEmpty)
                             ...variantQuantities.entries
@@ -1004,9 +1529,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                   (entry) => _buildSelectedProductItem(
                                     '${currentProduct.denominacion} - ${entry.key.nombre}',
                                     entry.value,
-                                    entry.key.precio,
+                                    _getEffectiveBasePrice(
+                                      currentProduct,
+                                      entry.key,
+                                    ),
                                     _getLocationName(currentProduct, entry.key),
                                     isVariant: true,
+                                    originalPrice: _getOriginalBasePrice(
+                                      currentProduct,
+                                      entry.key,
+                                    ),
                                   ),
                                 ),
                         ],
@@ -1272,7 +1804,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     // Precio y stock
                     Row(
                       children: [
-                        _buildVariantPriceSection(variant.precio),
+                        _buildVariantPriceSection(currentProduct, variant),
                         const SizedBox(width: 6),
                         Container(
                           width: 3,
@@ -1327,8 +1859,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     double price,
     String ubicacion, {
     bool isVariant = false,
+    double? originalPrice,
   }) {
     final locationColor = _getLocationColor(ubicacion);
+    final originalPriceValue = originalPrice;
+    final hasCustom = originalPriceValue != null && originalPriceValue != price;
     final prices = _calculatePromotionPrices(price);
     final activePromotion = _getActivePromotion();
     final isRecargo =
@@ -1448,6 +1983,23 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   ),
             ],
           ),
+          if (hasCustom) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text(
+                  'Original: \$${originalPriceValue!.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey[600],
+                    decoration: TextDecoration.lineThrough,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                _buildCustomPriceBadge(),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           // Fila de presentación
           _buildPresentationSelector(currentProduct),
@@ -2119,8 +2671,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       if (currentProduct.variantes.isEmpty) {
         // Producto sin variantes
         if (selectedQuantity > 0) {
-          final discountPrice = _calculateDiscountPrice(currentProduct.precio);
-          final finalPrice = discountPrice ?? currentProduct.precio;
+          final basePrice = _getEffectiveBasePrice(currentProduct);
+          final discountPrice = _calculateDiscountPrice(basePrice);
+          final finalPrice = discountPrice ?? basePrice;
 
           orderService.addItemToCurrentOrder(
             producto: currentProduct,
@@ -2128,7 +2681,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             ubicacionAlmacen: _getLocationName(currentProduct, null),
             inventoryData: _buildInventoryData(currentProduct, null),
             precioUnitario: finalPrice,
-            precioBase: currentProduct.precio,
+            precioBase: basePrice,
             promotionData: _getActivePromotion(),
           );
           totalItemsAdded += selectedQuantity;
@@ -2143,8 +2696,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         // Producto con variantes
         for (var entry in variantQuantities.entries) {
           if (entry.value > 0) {
-            final discountPrice = _calculateDiscountPrice(entry.key.precio);
-            final finalPrice = discountPrice ?? entry.key.precio;
+            final basePrice = _getEffectiveBasePrice(currentProduct, entry.key);
+            final discountPrice = _calculateDiscountPrice(basePrice);
+            final finalPrice = discountPrice ?? basePrice;
 
             orderService.addItemToCurrentOrder(
               producto: currentProduct,
@@ -2153,7 +2707,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
               ubicacionAlmacen: _getLocationName(currentProduct, entry.key),
               inventoryData: _buildInventoryData(currentProduct, entry.key),
               precioUnitario: finalPrice,
-              precioBase: entry.key.precio,
+              precioBase: basePrice,
               promotionData: _getActivePromotion(),
             );
             totalItemsAdded += entry.value;

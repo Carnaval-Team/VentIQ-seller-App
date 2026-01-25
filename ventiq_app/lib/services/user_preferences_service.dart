@@ -24,6 +24,8 @@ class UserPreferencesService {
   static const String _idRollKey = 'id_roll';
   static const String _appVersionKey = 'app_version';
   static const String _appIdAlmacenKey = 'id_almacen';
+  static const String _allowCustomSalePriceKey =
+      'permitir_customizar_precio_venta';
 
   // Remember me keys
   static const String _rememberMeKey = 'remember_me';
@@ -126,10 +128,15 @@ class UserPreferencesService {
   Future<void> saveSellerData({
     required int idTpv,
     required int idTrabajador,
+    bool? permitirCustomizarPrecioVenta,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_idTpvKey, idTpv);
     await prefs.setInt(_idTrabajadorKey, idTrabajador);
+    await prefs.setBool(
+      _allowCustomSalePriceKey,
+      permitirCustomizarPrecioVenta ?? false,
+    );
   }
 
   // Guardar datos del trabajador/perfil
@@ -186,7 +193,14 @@ class UserPreferencesService {
       'idRoll': prefs.getInt(_idRollKey),
       'idTrabajador': prefs.getInt(_idTrabajadorKey),
       'idSeller': prefs.getInt(_idSellerKey),
+      'permitirCustomizarPrecioVenta':
+          prefs.getBool(_allowCustomSalePriceKey) ?? false,
     };
+  }
+
+  Future<bool> canCustomizeSalePrice() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_allowCustomSalePriceKey) ?? false;
   }
 
   /// Cargar configuración de maneja_apertura_control del trabajador desde la base de datos
@@ -251,6 +265,7 @@ class UserPreferencesService {
     await prefs.remove(_apellidosKey);
     await prefs.remove(_idTiendaKey);
     await prefs.remove(_idRollKey);
+    await prefs.remove(_allowCustomSalePriceKey);
     await prefs.setBool(_isLoggedInKey, false);
 
     // Limpiar promociones al cerrar sesión
@@ -359,6 +374,8 @@ class UserPreferencesService {
       'apellidos': prefs.getString(_apellidosKey),
       'idTienda': prefs.getInt(_idTiendaKey),
       'idRoll': prefs.getInt(_idRollKey),
+      'permitirCustomizarPrecioVenta':
+          prefs.getBool(_allowCustomSalePriceKey) ?? false,
     };
   }
 
@@ -793,6 +810,8 @@ class UserPreferencesService {
     final nombres = prefs.getString(_nombresKey);
     final apellidos = prefs.getString(_apellidosKey);
     final idRoll = prefs.getInt(_idRollKey);
+    final permitirCustomizarPrecioVenta =
+        prefs.getBool(_allowCustomSalePriceKey) ?? false;
 
     // Obtener lista actual de usuarios offline
     final usersJson = prefs.getString(_offlineUsersKey);
@@ -820,6 +839,7 @@ class UserPreferencesService {
       'nombres': nombres,
       'apellidos': apellidos,
       'idRoll': idRoll,
+      'permitir_customizar_precio_venta': permitirCustomizarPrecioVenta,
       'lastSync': DateTime.now().toIso8601String(),
     };
 
@@ -898,6 +918,8 @@ class UserPreferencesService {
         'nombres': user['nombres'],
         'apellidos': user['apellidos'],
         'idRoll': user['idRoll'],
+        'permitir_customizar_precio_venta':
+            user['permitir_customizar_precio_venta'] ?? false,
         'lastSync': user['lastSync'],
       };
     } else {

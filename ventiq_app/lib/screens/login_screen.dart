@@ -178,6 +178,8 @@ class _LoginScreenState extends State<LoginScreen> {
             await _userPreferencesService.saveSellerData(
               idTpv: idTpv,
               idTrabajador: sellerData['id_trabajador'] as int,
+              permitirCustomizarPrecioVenta:
+                  sellerData['permitir_customizar_precio_venta'] == true,
             );
             await _userPreferencesService.saveIdAlmacen(idAlmacen);
 
@@ -393,6 +395,8 @@ class _LoginScreenState extends State<LoginScreen> {
         await _userPreferencesService.saveSellerData(
           idTpv: offlineUser['idTpv'],
           idTrabajador: offlineUser['idTrabajador'],
+          permitirCustomizarPrecioVenta:
+              offlineUser['permitir_customizar_precio_venta'] == true,
         );
       }
 

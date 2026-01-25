@@ -676,6 +676,7 @@ class PermissionsService {
     'vendor.unassign_tpv': [UserRole.gerente, UserRole.supervisor],
     'vendor.create': [UserRole.gerente, UserRole.supervisor],
     'vendor.delete': [UserRole.gerente, UserRole.supervisor],
+    'vendor.edit_price_permission': [UserRole.gerente, UserRole.supervisor],
 
     // Clientes (CRM)
     'customer.create': [UserRole.gerente],

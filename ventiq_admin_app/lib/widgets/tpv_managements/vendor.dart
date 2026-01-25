@@ -31,6 +31,8 @@ class _VendorListWidgetState extends State<VendorListWidget> {
   bool _canAssignTpv = false;
   bool _canUnassignTpv = false;
   bool _canDeleteVendor = false;
+  bool _canEditPricePermission = false;
+  final Set<int> _updatingPricePermission = {};
 
   @override
   void initState() {
@@ -44,6 +46,7 @@ class _VendorListWidgetState extends State<VendorListWidget> {
       NavigationGuard.canPerformAction('vendor.assign_tpv'),
       NavigationGuard.canPerformAction('vendor.unassign_tpv'),
       NavigationGuard.canPerformAction('vendor.delete'),
+      NavigationGuard.canPerformAction('vendor.edit_price_permission'),
     ]);
 
     if (!mounted) return;
@@ -51,6 +54,7 @@ class _VendorListWidgetState extends State<VendorListWidget> {
       _canAssignTpv = permissions[0];
       _canUnassignTpv = permissions[1];
       _canDeleteVendor = permissions[2];
+      _canEditPricePermission = permissions[3];
     });
   }
 
@@ -330,8 +334,72 @@ class _VendorListWidgetState extends State<VendorListWidget> {
                   ),
               ],
             ),
+            const SizedBox(height: 12),
+            _buildPricePermissionToggle(vendedor),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPricePermissionToggle(Map<String, dynamic> vendedor) {
+    final vendedorId = vendedor['id'] as int?;
+    if (vendedorId == null) return const SizedBox.shrink();
+
+    final canCustomize = vendedor['permitir_customizar_precio_venta'] == true;
+    final isUpdating = _updatingPricePermission.contains(vendedorId);
+    final statusLabel =
+        canCustomize ? 'Permitido para este vendedor' : 'No permitido';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.price_change,
+            size: 18,
+            color: canCustomize ? AppColors.success : AppColors.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Cambio de precio',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  statusLabel,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isUpdating)
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            Switch.adaptive(
+              value: canCustomize,
+              activeColor: AppColors.success,
+              onChanged:
+                  _canEditPricePermission
+                      ? (value) =>
+                          _togglePriceCustomizationPermission(vendedor, value)
+                      : null,
+            ),
+        ],
       ),
     );
   }
@@ -421,5 +489,74 @@ class _VendorListWidgetState extends State<VendorListWidget> {
         );
         break;
     }
+  }
+
+  Future<void> _togglePriceCustomizationPermission(
+    Map<String, dynamic> vendedor,
+    bool value,
+  ) async {
+    if (!_canEditPricePermission) {
+      NavigationGuard.showActionDeniedMessage(
+        context,
+        'Editar permiso de precio',
+      );
+      return;
+    }
+
+    final vendedorId = vendedor['id'] as int?;
+    if (vendedorId == null) return;
+
+    final previousValue = vendedor['permitir_customizar_precio_venta'] == true;
+
+    setState(() {
+      _updatingPricePermission.add(vendedorId);
+      _updateVendorPricePermission(vendedorId, value);
+    });
+
+    final success = await VendedorService.updatePriceCustomizationPermission(
+      vendedorId: vendedorId,
+      canCustomize: value,
+    );
+
+    if (!mounted) return;
+
+    if (!success) {
+      setState(() {
+        _updateVendorPricePermission(vendedorId, previousValue);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo actualizar el permiso de precio'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            value
+                ? 'Permiso para cambiar precio activado'
+                : 'Permiso para cambiar precio desactivado',
+          ),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    }
+
+    setState(() {
+      _updatingPricePermission.remove(vendedorId);
+    });
+  }
+
+  void _updateVendorPricePermission(int vendedorId, bool value) {
+    final index = _vendedores.indexWhere((v) => v['id'] == vendedorId);
+    if (index == -1) return;
+
+    final updated = Map<String, dynamic>.from(_vendedores[index]);
+    updated['permitir_customizar_precio_venta'] = value;
+
+    final updatedList = List<Map<String, dynamic>>.from(_vendedores);
+    updatedList[index] = updated;
+    _vendedores = updatedList;
   }
 }
