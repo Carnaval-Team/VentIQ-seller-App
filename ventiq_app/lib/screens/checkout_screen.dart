@@ -194,8 +194,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     // Aplicar promoción
-    final precioBase =
-        applicablePromotion['precio_base'] as double? ?? item.precioUnitario;
+    final promoBase = (applicablePromotion['precio_base'] as num?)?.toDouble();
+    final precioBase = item.precioBase ?? promoBase ?? item.precioUnitario;
     final valorDescuento =
         applicablePromotion['valor_descuento'] as double? ?? 0.0;
     final esRecargo = applicablePromotion['es_recargo'] as bool? ?? false;
