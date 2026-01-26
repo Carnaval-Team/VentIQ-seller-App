@@ -44,6 +44,41 @@ class ProductService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> getMostRecent({
+    int limit = 10,
+    int? categoryId,
+  }) async {
+    try {
+      print('🔍 Llamando RPC: fn_get_productos_mas_recientes');
+      print('  - Límite: $limit');
+      print('  - Categoría: ${categoryId ?? "Todas"}');
+
+      // Usar la función RPC optimizada que ya creamos
+      final response = await _supabase.rpc(
+        'fn_get_productos_mas_recientes',
+        params: {
+          'p_limit': limit,
+          'p_id_categoria': categoryId,
+        },
+      );
+
+      if (response == null) {
+        print('⚠️ Respuesta nula de la función RPC');
+        return [];
+      }
+
+      final List<Map<String, dynamic>> products = 
+          List<Map<String, dynamic>>.from(response as List);
+
+      print('✅ ${products.length} productos obtenidos desde RPC');
+      
+      return products;
+    } catch (e) {
+      print('❌ Error en RPC fn_get_productos_mas_recientes: $e');
+      return [];
+    }
+  }
+
   /// Obtener detalles de un producto específico
   Future<Map<String, dynamic>?> getProductDetails(int productId) async {
     try {

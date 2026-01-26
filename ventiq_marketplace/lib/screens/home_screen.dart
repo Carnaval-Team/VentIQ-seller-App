@@ -20,6 +20,7 @@ import '../services/user_preferences_service.dart';
 import '../services/notification_service.dart';
 import '../services/update_service.dart';
 import '../widgets/changelog_dialog.dart';
+import '../widgets/supabase_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
 
@@ -48,10 +49,12 @@ class _HomeScreenState extends State<HomeScreen> {
   final NotificationService _notificationService = NotificationService();
 
   List<Map<String, dynamic>> _bestSellingProducts = [];
+  List<Map<String, dynamic>> _mostRecentProducts = [];
   List<Map<String, dynamic>> _featuredStores = [];
 
   // Search state
   bool _isLoadingProducts = true;
+  bool _isLoadingRecentProducts = true;
   bool _isLoadingStores = true;
   bool _isSearching = false;
   bool _isLoadingSearch = false;
@@ -767,7 +770,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Cargar datos desde Supabase
   Future<void> _loadData() async {
-    await Future.wait([_loadBestSellingProducts(), _loadFeaturedStores()]);
+    await Future.wait([
+      _loadBestSellingProducts(),
+      _loadMostRecentProducts(),
+      _loadFeaturedStores(),
+    ]);
   }
 
   /// Cargar productos más vendidos
@@ -786,6 +793,26 @@ class _HomeScreenState extends State<HomeScreen> {
       print('❌ Error cargando productos: $e');
       setState(() {
         _isLoadingProducts = false;
+      });
+    }
+  }
+
+  /// Cargar productos más recientes
+  Future<void> _loadMostRecentProducts() async {
+    setState(() {
+      _isLoadingRecentProducts = true;
+    });
+
+    try {
+      final products = await _productService.getMostRecent(limit: 20);
+      setState(() {
+        _mostRecentProducts = products;
+        _isLoadingRecentProducts = false;
+      });
+    } catch (e) {
+      print('❌ Error cargando productos recientes: $e');
+      setState(() {
+        _isLoadingRecentProducts = false;
       });
     }
   }
@@ -948,6 +975,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
           // Productos más vendidos
           _buildBestSellingProducts(),
+
+          const SizedBox(height: AppTheme.paddingXL),
+
+          // Productos nuevos
+          _buildMostRecentProducts(),
 
           const SizedBox(height: AppTheme.paddingXL),
 
@@ -1668,6 +1700,498 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ],
     );
+  }
+
+  /// Sección de productos nuevos con carrusel compacto
+  Widget _buildMostRecentProducts() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.paddingM),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppTheme.primaryColor.withOpacity(0.18),
+                          AppTheme.accentColor.withOpacity(0.18),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.auto_awesome_rounded,
+                      color: AppTheme.primaryColor,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Nuevos productos',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        'Lo más reciente en el catálogo',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: TextButton(
+                  onPressed: () {
+                    widget.onNavigateToTab?.call(2);
+                  },
+                  child: Row(
+                    children: [
+                      Text(
+                        'Ver más',
+                        style: TextStyle(
+                          color: AppTheme.primaryColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.arrow_forward_rounded,
+                        color: AppTheme.primaryColor,
+                        size: 18,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppTheme.paddingM),
+        SizedBox(
+          height: 165,
+          child: _isLoadingRecentProducts
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(color: AppTheme.primaryColor),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Cargando novedades...',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : _mostRecentProducts.isEmpty
+              ? Center(
+                  child: Container(
+                    margin: const EdgeInsets.all(AppTheme.paddingM),
+                    padding: const EdgeInsets.all(AppTheme.paddingL),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusL),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.new_releases_outlined,
+                          size: 48,
+                          color: AppTheme.textSecondary.withOpacity(0.5),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Aún no hay productos nuevos',
+                          style: TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final availableWidth =
+                        constraints.maxWidth - (AppTheme.paddingM * 2);
+                    final double cardWidth = (availableWidth * 0.92)
+                        .clamp(260.0, 360.0)
+                        .toDouble();
+
+                    return Stack(
+                      children: [
+                        ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTheme.paddingM,
+                          ),
+                          itemCount: _mostRecentProducts.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(width: 12),
+                          itemBuilder: (context, index) {
+                            final product = _mostRecentProducts[index];
+                            return SizedBox(
+                              width: cardWidth,
+                              child: _buildMostRecentProductCard(product),
+                            );
+                          },
+                        ),
+                        if (_mostRecentProducts.length > 1)
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            bottom: 0,
+                            child: IgnorePointer(
+                              child: Container(
+                                width: 46,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.centerLeft,
+                                    end: Alignment.centerRight,
+                                    colors: [
+                                      AppTheme.backgroundColor.withOpacity(0),
+                                      AppTheme.backgroundColor,
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (_mostRecentProducts.length > 1)
+                          Positioned(
+                            right: 14,
+                            top: 0,
+                            bottom: 0,
+                            child: Align(
+                              alignment: Alignment.center,
+                              child: Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.95),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.grey.withOpacity(0.2),
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.08),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  Icons.arrow_forward_ios_rounded,
+                                  size: 12,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMostRecentProductCard(Map<String, dynamic> product) {
+    final String name =
+        (product['nombre'] ?? product['denominacion'] ?? 'Producto').toString();
+    final String category = (product['categoria_nombre'] ?? 'Categoría')
+        .toString();
+    final String storeName =
+        (product['tienda_nombre'] ?? product['store'] ?? 'Tienda').toString();
+    final String? imageUrl = product['imagen']?.toString();
+    final double price = _parseDouble(product['precio_venta']);
+    final double offerPrice = _parseDouble(product['precio_oferta']);
+    final bool hasOffer =
+        product['tiene_oferta'] == true && offerPrice > 0 && offerPrice < price;
+    final double rating = _parseDouble(product['rating_promedio']);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProductDetailScreen(product: product),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(AppTheme.radiusL),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(AppTheme.radiusL),
+            border: Border.all(color: Colors.grey.withOpacity(0.15), width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(AppTheme.radiusL),
+            child: Stack(
+              children: [
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 130,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          imageUrl != null && imageUrl.isNotEmpty
+                              ? SupabaseImage(
+                                  imageUrl: imageUrl,
+                                  width: 130,
+                                  fit: BoxFit.cover,
+                                )
+                              : Container(
+                                  color: Colors.grey[100],
+                                  child: Center(
+                                    child: Icon(
+                                      Icons.shopping_bag_outlined,
+                                      size: 38,
+                                      color: Colors.grey[400],
+                                    ),
+                                  ),
+                                ),
+                          Positioned(
+                            top: 8,
+                            left: 8,
+                            child: _buildCategoryBadge(category),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.textPrimary,
+                                height: 1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            _buildStoreChip(storeName),
+                            const Spacer(),
+                            Align(
+                              alignment: Alignment.bottomRight,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          AppTheme.successColor.withOpacity(
+                                            0.12,
+                                          ),
+                                          AppTheme.successColor.withOpacity(
+                                            0.05,
+                                          ),
+                                        ],
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      '\$${(hasOffer ? offerPrice : price).toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.priceColor,
+                                      ),
+                                    ),
+                                  ),
+                                  if (hasOffer) ...[
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '\$${price.toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppTheme.textSecondary,
+                                        decoration: TextDecoration.lineThrough,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                Positioned(top: 8, right: 8, child: _buildRecentRating(rating)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStoreChip(String storeName) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.backgroundColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.withOpacity(0.15), width: 0.5),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.store_rounded,
+            size: 12,
+            color: AppTheme.primaryColor,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              storeName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 10.5,
+                color: AppTheme.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryBadge(String category) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 110),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppTheme.primaryColor,
+              AppTheme.primaryColor.withOpacity(0.8),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.primaryColor.withOpacity(0.25),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Text(
+          category,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.2,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecentRating(double rating) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppTheme.warningColor.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: AppTheme.warningColor.withOpacity(0.2),
+          width: 0.5,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.star_rounded,
+            size: 12,
+            color: AppTheme.warningColor,
+          ),
+          const SizedBox(width: 2),
+          Text(
+            rating.toStringAsFixed(1),
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.warningColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _parseDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
   }
 
   /// Sección de tiendas destacadas con diseño mejorado

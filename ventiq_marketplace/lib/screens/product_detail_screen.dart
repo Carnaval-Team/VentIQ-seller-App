@@ -1688,7 +1688,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       return StockStatusChip(
                         stock: stock,
                         lowStockThreshold: lowStockThreshold,
-                        showQuantity: false,
+                        showQuantity: true,
                         fullWidth: true,
                         fontSize: 13,
                         iconSize: 18,
