@@ -6,6 +6,7 @@ import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/openfoodfacts_service.dart';
+import '../services/supplier_service.dart';
 import 'barcode_scanner_screen.dart';
 
 final _supabase = Supabase.instance.client;
@@ -64,6 +65,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool _isLoadingData = true;
   bool _isLoadingOpenFoodFacts = false;
   bool _isLoadingSubcategorias = false; // Estado de carga de subcategorías
+  bool _isLoadingProveedores = false; // Estado de carga de proveedores
   bool _showAdvancedConfig =
       false; // Nueva variable para mostrar/ocultar configuración avanzada
 
@@ -72,12 +74,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
   List<Map<String, dynamic>> _subcategorias = [];
   List<Map<String, dynamic>> _presentaciones = [];
   List<Map<String, dynamic>> _atributos = [];
+  List<Map<String, dynamic>> _proveedores = [];
 
   // Selecciones
   int? _selectedCategoryId;
   List<int> _selectedSubcategorias = [];
   int? _selectedBasePresentationId; // Changed to single base presentation ID
   String _unidadMedida = ''; // New field for unit of measure
+  int? _selectedSupplierId; // Proveedor seleccionado
 
   // Presentation management - Removed complex presentation management
   // Unidad de medida seleccionada
@@ -177,6 +181,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
         print('✅ Categoría cargada en initState: ID $categoryId');
       }
 
+      // ✅ AGREGADO: Cargar proveedor en modo edición
+      if (widget.product!.idProveedor != null) {
+        _selectedSupplierId = widget.product!.idProveedor;
+        print('✅ Proveedor cargado en initState: ID $_selectedSupplierId');
+      }
+
       // Cargar listas
       _etiquetas = widget.product!.etiquetas ?? [];
       _multimedias = widget.product!.multimedias ?? [];
@@ -263,6 +273,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         ProductService.getCategorias(),
         ProductService.getPresentaciones(),
         ProductService.getAtributos(),
+        _loadProveedoresFromService(),
       ]);
 
       // ✅ NUEVO: En modo edición, cargar categoría y subcategorías ANTES del setState
@@ -316,6 +327,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         _categorias = futures[0];
         _presentaciones = futures[1];
         _atributos = futures[2];
+        _proveedores = futures[3];
 
         // Configurar valores por defecto solo para productos nuevos
         if (widget.product == null) {
@@ -516,6 +528,26 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // ✅ IMPORTANTE: Limpiar selecciones en caso de error
       _selectedCategoryId = null;
       _selectedSubcategorias.clear();
+    }
+  }
+
+  /// ✅ NUEVO: Carga proveedores desde el servicio
+  Future<List<Map<String, dynamic>>> _loadProveedoresFromService() async {
+    try {
+      print('🔄 Cargando proveedores de la tienda activa...');
+      final suppliers = await SupplierService.getAllSuppliers();
+      final proveedoresMap = suppliers
+          .map((supplier) => {
+                'id': supplier.id,
+                'denominacion': supplier.denominacion,
+                'sku_codigo': supplier.skuCodigo,
+              })
+          .toList();
+      print('✅ Proveedores cargados: ${proveedoresMap.length}');
+      return proveedoresMap;
+    } catch (e) {
+      print('❌ Error cargando proveedores: $e');
+      return [];
     }
   }
 
@@ -1300,6 +1332,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
         // Subcategorías - Siempre visible con estados mejorados
         const SizedBox(height: 16),
         _buildSubcategoriasSection(),
+        const SizedBox(height: 16),
+        // Proveedor - Nuevo campo
+        _buildProveedorSection(),
       ],
     );
   }
@@ -1453,6 +1488,73 @@ class _AddProductScreenState extends State<AddProductScreen> {
             ),
           ),
         ],
+      ],
+    );
+  }
+
+  /// Construye la sección de proveedor
+  Widget _buildProveedorSection() {
+    print('🎨 Renderizando proveedor:');
+    print('  • _selectedSupplierId: $_selectedSupplierId');
+    print('  • _proveedores.length: ${_proveedores.length}');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.local_shipping, color: AppColors.primary, size: 20),
+            const SizedBox(width: 8),
+            const Text(
+              'Proveedor',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Dropdown de proveedor
+        DropdownButtonFormField<int?>(
+          value: _selectedSupplierId,
+          decoration: InputDecoration(
+            labelText: 'Proveedor',
+            hintText: 'Selecciona un proveedor (opcional)',
+            border: const OutlineInputBorder(),
+            suffixIcon: _selectedSupplierId != null
+                ? IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      setState(() {
+                        _selectedSupplierId = null;
+                      });
+                    },
+                  )
+                : null,
+          ),
+          items: [
+            const DropdownMenuItem<int?>(
+              value: null,
+              child: Text('Sin proveedor'),
+            ),
+            ..._proveedores.map((proveedor) {
+              return DropdownMenuItem<int?>(
+                value: proveedor['id'],
+                child: Text(
+                  '${proveedor['denominacion']} (${proveedor['sku_codigo']})',
+                ),
+              );
+            }).toList(),
+          ],
+          onChanged: (value) {
+            setState(() {
+              _selectedSupplierId = value;
+            });
+            print('✅ Proveedor seleccionado: $_selectedSupplierId');
+          },
+        ),
       ],
     );
   }
@@ -2346,6 +2448,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
               ? int.tryParse(_diasAlertController.text)
               : null,
       'codigo_barras': _codigoBarrasController.text,
+      if (_selectedSupplierId != null) 'id_proveedor': _selectedSupplierId,
     };
 
     // Preparar subcategorías
@@ -2603,6 +2706,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
               ? int.tryParse(_diasAlertController.text)
               : null,
       'codigo_barras': _codigoBarrasController.text,
+      if (_selectedSupplierId != null) 'id_proveedor': _selectedSupplierId,
     };
 
     print('🔄 Datos del producto a actualizar: ${jsonEncode(productoData)}');

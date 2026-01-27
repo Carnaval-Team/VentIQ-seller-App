@@ -174,7 +174,7 @@ class ProductCard extends StatelessWidget {
                     child: StockStatusChip(
                       stock: availableStock!,
                       lowStockThreshold: 10,
-                      showQuantity: false,
+                      showQuantity: true,
                       fontSize: 10,
                       iconSize: 12,
                       padding: const EdgeInsets.symmetric(

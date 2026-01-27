@@ -1,10 +1,11 @@
 -- Función para reporte de ventas detallado por producto con proveedor
-DROP FUNCTION IF EXISTS public.fn_reporte_ventas_con_proveedor(BIGINT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE);
+DROP FUNCTION IF EXISTS public.fn_reporte_ventas_con_proveedor2(BIGINT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, BIGINT);
 
-CREATE OR REPLACE FUNCTION public.fn_reporte_ventas_con_proveedor(
+CREATE OR REPLACE FUNCTION public.fn_reporte_ventas_con_proveedor2(
     p_id_tienda BIGINT,
     p_fecha_desde TIMESTAMP WITH TIME ZONE DEFAULT NULL,
-    p_fecha_hasta TIMESTAMP WITH TIME ZONE DEFAULT NULL
+    p_fecha_hasta TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    p_id_almacen BIGINT DEFAULT NULL
 )
 RETURNS TABLE (
     id_tienda BIGINT,
@@ -61,6 +62,9 @@ BEGIN
           AND o.id_tipo_operacion = (SELECT id FROM app_nom_tipo_operacion WHERE LOWER(denominacion) = 'venta')
           AND (p_fecha_desde IS NULL OR o.created_at::DATE >= p_fecha_desde)
           AND (p_fecha_hasta IS NULL OR o.created_at::DATE <= p_fecha_hasta)
+          AND (p_id_almacen IS NULL OR ep.id_ubicacion IN (
+            SELECT id FROM app_dat_layout_almacen WHERE id_almacen = p_id_almacen
+          ))
         GROUP BY ep.id_producto, ep.id_variante
         HAVING SUM(ep.cantidad) > 0
     ) ventas
@@ -118,5 +122,5 @@ END;
 $$;
 
 -- Grant permissions
-GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_con_proveedor(BIGINT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_con_proveedor(BIGINT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE) TO service_role;
+GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_con_proveedor2(BIGINT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, BIGINT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_con_proveedor2(BIGINT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, BIGINT) TO service_role;

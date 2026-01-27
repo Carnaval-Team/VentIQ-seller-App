@@ -792,11 +792,25 @@ class _ProductsScreenState extends State<ProductsScreen> {
       }
       return;
     }
-    // Navegar a la pantalla de agregar producto
-    await NavigationGuard.navigateWithPermission(context, '/add-product');
-
-    // Recargar la lista de productos cuando regrese
-    _loadProducts();
+    // Navegar a la pantalla de agregar producto con callback
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddProductScreen(
+          onProductSaved: () {
+            // Recargar la lista de productos después de crear
+            print('🔄 Producto creado, recargando lista...');
+            _loadProducts();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Producto creado exitosamente'),
+                backgroundColor: AppColors.success,
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   void _showProductDetails(Product product) {

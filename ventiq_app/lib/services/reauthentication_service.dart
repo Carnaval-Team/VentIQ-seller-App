@@ -8,11 +8,13 @@ import 'promotion_service.dart';
 /// Servicio para reautenticar automáticamente al usuario cuando se restaura la conexión
 /// Replica el proceso de autenticación completo del login_screen.dart
 class ReauthenticationService {
-  static final ReauthenticationService _instance = ReauthenticationService._internal();
+  static final ReauthenticationService _instance =
+      ReauthenticationService._internal();
   factory ReauthenticationService() => _instance;
   ReauthenticationService._internal();
 
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
   final AuthService _authService = AuthService();
   final SellerService _sellerService = SellerService();
   final PromotionService _promotionService = PromotionService();
@@ -28,7 +30,10 @@ class ReauthenticationService {
       final email = credentials['email'];
       final password = credentials['password'];
 
-      if (email == null || password == null || email.isEmpty || password.isEmpty) {
+      if (email == null ||
+          password == null ||
+          email.isEmpty ||
+          password.isEmpty) {
         print('❌ No hay credenciales guardadas para reautenticar');
         return false;
       }
@@ -61,7 +66,9 @@ class ReauthenticationService {
 
       // PASO 3: Verificar y obtener perfil del vendedor
       try {
-        final sellerProfile = await _sellerService.verifySellerAndGetProfile(response.user!.id);
+        final sellerProfile = await _sellerService.verifySellerAndGetProfile(
+          response.user!.id,
+        );
 
         final sellerData = sellerProfile['seller'] as Map<String, dynamic>;
         final workerData = sellerProfile['worker'] as Map<String, dynamic>;
@@ -80,6 +87,8 @@ class ReauthenticationService {
         await _userPreferencesService.saveSellerData(
           idTpv: idTpv,
           idTrabajador: sellerData['id_trabajador'] as int,
+          permitirCustomizarPrecioVenta:
+              sellerData['permitir_customizar_precio_venta'] == true,
         );
 
         await _userPreferencesService.saveIdSeller(idSeller);
@@ -96,8 +105,10 @@ class ReauthenticationService {
 
         // PASO 6: Actualizar promoción global
         try {
-          final globalPromotion = await _promotionService.getGlobalPromotion(idTienda);
-          
+          final globalPromotion = await _promotionService.getGlobalPromotion(
+            idTienda,
+          );
+
           if (globalPromotion != null) {
             await _promotionService.saveGlobalPromotion(
               idPromocion: globalPromotion['id_promocion'],
@@ -130,24 +141,22 @@ class ReauthenticationService {
         await _userPreferencesService.saveOfflineUser(
           email: email,
           password: password,
-          userId: response.user!.id
+          userId: response.user!.id,
         );
 
         print('✅ Reautenticación completa exitosa');
         print('🌐 Usuario listo para trabajar online');
 
         return true;
-
       } catch (e) {
         print('❌ Error verificando perfil del vendedor: $e');
-        
+
         // Limpiar datos en caso de error
         await _userPreferencesService.clearUserData();
         await _authService.signOut();
-        
+
         return false;
       }
-
     } catch (e) {
       print('❌ Error en reautenticación automática: $e');
       return false;
@@ -160,9 +169,11 @@ class ReauthenticationService {
     try {
       // Verificar si hay una sesión activa en Supabase
       final currentUser = Supabase.instance.client.auth.currentUser;
-      
+
       if (currentUser == null) {
-        print('🔍 No hay sesión activa en Supabase - Reautenticación necesaria');
+        print(
+          '🔍 No hay sesión activa en Supabase - Reautenticación necesaria',
+        );
         return true;
       }
 
@@ -174,21 +185,26 @@ class ReauthenticationService {
       }
 
       // Verificar si el token está próximo a expirar (menos de 5 minutos)
-      final expiresAt = DateTime.fromMillisecondsSinceEpoch(session.expiresAt! * 1000);
+      final expiresAt = DateTime.fromMillisecondsSinceEpoch(
+        session.expiresAt! * 1000,
+      );
       final now = DateTime.now();
       final timeUntilExpiry = expiresAt.difference(now);
 
       if (timeUntilExpiry.inMinutes < 5) {
-        print('🔍 Token próximo a expirar (${timeUntilExpiry.inMinutes} min) - Reautenticación necesaria');
+        print(
+          '🔍 Token próximo a expirar (${timeUntilExpiry.inMinutes} min) - Reautenticación necesaria',
+        );
         return true;
       }
 
       // Verificar que los datos locales estén completos
       final userData = await _userPreferencesService.getUserData();
-      final hasCompleteData = userData['userId'] != null && 
-                             userData['email'] != null &&
-                             userData['accessToken'] != null &&
-                             userData['accessToken'] != 'offline_mode';
+      final hasCompleteData =
+          userData['userId'] != null &&
+          userData['email'] != null &&
+          userData['accessToken'] != null &&
+          userData['accessToken'] != 'offline_mode';
 
       if (!hasCompleteData) {
         print('🔍 Datos locales incompletos - Reautenticación necesaria');
@@ -197,7 +213,6 @@ class ReauthenticationService {
 
       print('✅ Sesión válida - No se requiere reautenticación');
       return false;
-
     } catch (e) {
       print('❌ Error verificando necesidad de reautenticación: $e');
       return true; // En caso de error, asumir que se necesita reautenticar
@@ -209,7 +224,7 @@ class ReauthenticationService {
   Future<bool> ensureAuthenticated() async {
     try {
       final needsReauth = await needsReauthentication();
-      
+
       if (!needsReauth) {
         print('✅ Usuario ya autenticado correctamente');
         return true;
@@ -217,7 +232,6 @@ class ReauthenticationService {
 
       print('🔄 Iniciando reautenticación automática...');
       return await reauthenticateUser();
-
     } catch (e) {
       print('❌ Error asegurando autenticación: $e');
       return false;
@@ -235,15 +249,18 @@ class ReauthenticationService {
       return AuthenticationStatus(
         hasSupabaseSession: currentUser != null && session != null,
         hasLocalUserData: userData['userId'] != null,
-        hasCredentials: credentials['email'] != null && credentials['password'] != null,
+        hasCredentials:
+            credentials['email'] != null && credentials['password'] != null,
         isOfflineMode: userData['accessToken'] == 'offline_mode',
-        sessionExpiresAt: session?.expiresAt != null 
-            ? DateTime.fromMillisecondsSinceEpoch(session!.expiresAt! * 1000)
-            : null,
+        sessionExpiresAt:
+            session?.expiresAt != null
+                ? DateTime.fromMillisecondsSinceEpoch(
+                  session!.expiresAt! * 1000,
+                )
+                : null,
         currentUserId: currentUser?.id,
         currentEmail: currentUser?.email ?? userData['email'],
       );
-
     } catch (e) {
       print('❌ Error obteniendo estado de autenticación: $e');
       return AuthenticationStatus(
@@ -279,7 +296,8 @@ class AuthenticationStatus {
     this.currentEmail,
   });
 
-  bool get isFullyAuthenticated => hasSupabaseSession && hasLocalUserData && !isOfflineMode;
+  bool get isFullyAuthenticated =>
+      hasSupabaseSession && hasLocalUserData && !isOfflineMode;
   bool get canReauthenticate => hasCredentials;
   bool get needsReauthentication => !hasSupabaseSession || isOfflineMode;
 
@@ -296,4 +314,3 @@ class AuthenticationStatus {
         ')';
   }
 }
-

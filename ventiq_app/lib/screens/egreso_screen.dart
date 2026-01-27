@@ -48,13 +48,13 @@ class _EgresoScreenState extends State<EgresoScreen> {
     try {
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
-      
+
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline activado - Cargando turno desde cache...');
-        
+
         // Obtener turno offline
         final turnoOffline = await _userPrefs.getOfflineTurno();
-        
+
         setState(() {
           _isLoadingTurno = false;
           if (turnoOffline != null) {
@@ -92,18 +92,25 @@ class _EgresoScreenState extends State<EgresoScreen> {
     try {
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
-      
+
       if (isOfflineModeEnabled) {
-        print('🔌 Modo offline activado - Cargando métodos de pago desde cache...');
-        
+        print(
+          '🔌 Modo offline activado - Cargando métodos de pago desde cache...',
+        );
+
         // Obtener datos offline
         final offlineData = await _userPrefs.getOfflineData();
-        final paymentMethodsData = offlineData?['payment_methods'] as List<dynamic>? ?? [];
-        
+        final paymentMethodsData =
+            offlineData?['payment_methods'] as List<dynamic>? ?? [];
+
         // Convertir a objetos PaymentMethod
-        final paymentMethods = paymentMethodsData.map((data) => 
-          PaymentMethod.fromJson(data as Map<String, dynamic>)
-        ).toList();
+        final paymentMethods =
+            paymentMethodsData
+                .map(
+                  (data) =>
+                      PaymentMethod.fromJson(data as Map<String, dynamic>),
+                )
+                .toList();
 
         setState(() {
           _paymentMethods = paymentMethods;
@@ -113,14 +120,17 @@ class _EgresoScreenState extends State<EgresoScreen> {
             _selectedPaymentMethod = paymentMethods.first;
           }
         });
-        
-        print('✅ Métodos de pago cargados desde cache offline: ${paymentMethods.length}');
+
+        print(
+          '✅ Métodos de pago cargados desde cache offline: ${paymentMethods.length}',
+        );
         return;
       }
 
       print('🌐 Modo online - Cargando métodos de pago desde servidor...');
-      final paymentMethods =
-          await PaymentMethodService.getActivePaymentMethods(only_efectivo: true);
+      final paymentMethods = await PaymentMethodService.getActivePaymentMethods(
+        only_efectivo: true,
+      );
 
       setState(() {
         _paymentMethods = paymentMethods;
@@ -607,7 +617,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
 
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
-      
+
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline - Creando egreso offline...');
         await _createOfflineEgreso(
@@ -716,35 +726,61 @@ class _EgresoScreenState extends State<EgresoScreen> {
         'es_digital': _selectedPaymentMethod?.esDigital ?? false,
         'medio_pago': _selectedPaymentMethod?.denominacion ?? 'Efectivo',
       };
-      
+
       // Guardar egreso offline
       await _userPrefs.saveOfflineEgreso(egresoData);
-      
+
+      final egresosCache = await _userPrefs.getEgresosCache();
+      final updatedCache = List<Map<String, dynamic>>.from(egresosCache);
+      final offlineId = egresoData['offline_id'];
+      final alreadyCached = updatedCache.any(
+        (item) => item['offline_id'] == offlineId,
+      );
+      if (!alreadyCached) {
+        updatedCache.add({
+          'id_egreso': offlineId ?? 0,
+          'monto_entrega': monto,
+          'motivo_entrega': motivo,
+          'nombre_autoriza': nombreAutoriza,
+          'nombre_recibe': nombreRecibe,
+          'fecha_entrega': egresoData['fecha_entrega'],
+          'id_medio_pago': _selectedPaymentMethod?.id,
+          'turno_estado': 1,
+          'medio_pago': _selectedPaymentMethod?.denominacion ?? 'Efectivo',
+          'es_digital': _selectedPaymentMethod?.esDigital ?? false,
+          'offline_id': offlineId,
+          'created_offline_at': egresoData['created_offline_at'],
+        });
+        await _userPrefs.saveEgresosCache(updatedCache);
+        print('💾 Egreso offline agregado al cache de egresos');
+      }
+
       // Guardar como operación pendiente para sincronización
       await _userPrefs.savePendingOperation({
         'type': 'egreso',
         'data': egresoData,
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Egreso creado offline. Se sincronizará cuando tengas conexión.'),
+            content: Text(
+              'Egreso creado offline. Se sincronizará cuando tengas conexión.',
+            ),
             backgroundColor: Colors.orange,
             duration: Duration(seconds: 3),
           ),
         );
-        
+
         // Mostrar diálogo de éxito offline
         _showOfflineSuccessDialog(monto);
       }
-      
+
       print('✅ Egreso offline creado exitosamente');
-      
     } catch (e, stackTrace) {
       print('❌ Error creando egreso offline: $e');
       print('Stack trace: $stackTrace');
-      
+
       if (mounted) {
         _showErrorMessage('Error creando egreso offline: $e');
       }
@@ -755,60 +791,76 @@ class _EgresoScreenState extends State<EgresoScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.cloud_off, color: Colors.orange[700], size: 28),
-            const SizedBox(width: 8),
-            const Text(
-              'Egreso Offline Creado',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.cloud_off, color: Colors.orange[700], size: 28),
+                const SizedBox(width: 8),
+                const Text(
+                  'Egreso Offline Creado',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+              ],
             ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'El egreso se ha guardado localmente y se sincronizará automáticamente cuando tengas conexión a internet.',
-              style: TextStyle(fontSize: 14),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'El egreso se ha guardado localmente y se sincronizará automáticamente cuando tengas conexión a internet.',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildDialogInfoRow(
+                        'Monto:',
+                        '\$${monto.toStringAsFixed(2)}',
+                      ),
+                      _buildDialogInfoRow('Motivo:', _motivoController.text),
+                      _buildDialogInfoRow(
+                        'Autoriza:',
+                        _nombreAutorizaController.text,
+                      ),
+                      _buildDialogInfoRow(
+                        'Recibe:',
+                        _nombreRecibeController.text,
+                      ),
+                      _buildDialogInfoRow(
+                        'Método de pago:',
+                        _selectedPaymentMethod?.denominacion ?? 'N/A',
+                      ),
+                      _buildDialogInfoRow(
+                        'Estado:',
+                        'Pendiente de sincronización',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey[300]!),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context); // Cerrar diálogo
+                  Navigator.pop(context); // Volver a pantalla anterior
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange[700],
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Continuar'),
               ),
-              child: Column(
-                children: [
-                  _buildDialogInfoRow('Monto:', '\$${monto.toStringAsFixed(2)}'),
-                  _buildDialogInfoRow('Motivo:', _motivoController.text),
-                  _buildDialogInfoRow('Autoriza:', _nombreAutorizaController.text),
-                  _buildDialogInfoRow('Recibe:', _nombreRecibeController.text),
-                  _buildDialogInfoRow('Método de pago:', _selectedPaymentMethod?.denominacion ?? 'N/A'),
-                  _buildDialogInfoRow('Estado:', 'Pendiente de sincronización'),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context); // Cerrar diálogo
-              Navigator.pop(context); // Volver a pantalla anterior
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange[700],
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Continuar'),
+            ],
           ),
-        ],
-      ),
     );
   }
 

@@ -195,6 +195,37 @@ class ProductService {
     }
   }
 
+  /// Busca un producto existente por nombre (denominacion) y tienda
+  static Future<Map<String, dynamic>?> findProductByNameAndStore({
+    required String denominacion,
+    required int idTienda,
+  }) async {
+    try {
+      print('🔍 Buscando producto existente: "$denominacion" en tienda: $idTienda');
+
+      final response = await _supabase
+          .from('app_dat_producto')
+          .select('id, denominacion, sku, id_categoria, precio_venta')
+          .eq('id_tienda', idTienda)
+          .ilike('denominacion', denominacion) // Búsqueda case-insensitive
+          .limit(1);
+
+      if (response.isEmpty) {
+        print('❌ No se encontró producto con nombre: "$denominacion"');
+        return null;
+      }
+
+      final producto = response.first;
+      print('✅ Producto existente encontrado: ID=${producto['id']}, SKU=${producto['sku']}');
+      
+      return producto;
+    } catch (e, stackTrace) {
+      print('❌ Error al buscar producto por nombre: $e');
+      print('📍 StackTrace: $stackTrace');
+      return null;
+    }
+  }
+
   /// Obtiene categorías disponibles para filtros
   static Future<List<Map<String, dynamic>>> getCategorias() async {
     try {

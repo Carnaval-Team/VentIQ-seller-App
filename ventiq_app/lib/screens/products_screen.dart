@@ -8,6 +8,7 @@ import '../services/currency_service.dart';
 import '../utils/price_utils.dart';
 import 'product_details_screen.dart';
 import 'barcode_scanner_screen.dart';
+import 'assign_supplier_screen.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/sales_monitor_fab.dart';
 import '../widgets/marquee_text.dart';
@@ -376,6 +377,21 @@ class _ProductsScreenState extends State<ProductsScreen> {
               tooltip: 'Modo ahorro de datos activado',
             ),
           const NotificationWidget(),
+          IconButton(
+            icon: const Icon(Icons.local_shipping, color: Colors.white, size: 28),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => AssignSupplierScreen(
+                    categoryId: widget.categoryId,
+                    categoryName: widget.categoryName,
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Asignar proveedor',
+          ),
           IconButton(
             icon: const Icon(Icons.search, color: Colors.white, size: 28),
             onPressed: _toggleSearch,

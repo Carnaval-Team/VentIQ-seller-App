@@ -16,6 +16,7 @@ import 'screens/subscription_detail_screen.dart';
 import 'screens/wifi_printers_screen.dart';
 import 'services/auth_service.dart';
 import 'utils/platform_utils.dart';
+import 'widgets/sync_blocking_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,6 +40,9 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF194B8C)),
       ),
+      builder: (context, child) {
+        return SyncBlockingOverlay(child: child ?? const SizedBox.shrink());
+      },
       initialRoute: '/',
       routes: {
         '/': (context) => const SplashScreen(),

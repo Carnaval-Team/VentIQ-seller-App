@@ -972,6 +972,14 @@ class _CierreScreenState extends State<CierreScreen> {
                                       sum + (loc['cantidad'] as double),
                                 );
 
+                                if (snapshot.connectionState ==
+                                        ConnectionState.done &&
+                                    controller.text.trim().isEmpty) {
+                                  controller.text = _formatInventoryCount(
+                                    totalQuantity,
+                                  );
+                                }
+
                                 return Container(
                                   margin: const EdgeInsets.only(bottom: 12),
                                   padding: const EdgeInsets.all(12),
@@ -2042,6 +2050,12 @@ class _CierreScreenState extends State<CierreScreen> {
     return '${localDate.day.toString().padLeft(2, '0')}/${localDate.month.toString().padLeft(2, '0')}/${localDate.year}';
   }
 
+  String _formatInventoryCount(double quantity) {
+    if (quantity.isNaN || quantity.isInfinite) return '0';
+    if (quantity % 1 == 0) return quantity.toInt().toString();
+    return quantity.toStringAsFixed(2);
+  }
+
   String _formatTime(DateTime time) {
     final localTime = time.toLocal();
     return '${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}';
@@ -2429,13 +2443,12 @@ class _CierreScreenState extends State<CierreScreen> {
           observaciones:
               observacionesFinales.isEmpty ? null : observacionesFinales,
         );
-
         if (success) {
+          await _userPrefs.clearOfflineTurno();
+          await _userPrefs.clearResumenCierreCache();
+          await _userPrefs.clearTurnoResumenCache();
           // Al cerrar online, limpiar cache de turno y resúmenes offline
           try {
-            await _userPrefs.clearOfflineTurno();
-            await _userPrefs.clearResumenCierreCache();
-            await _userPrefs.clearTurnoResumenCache();
             print(
               '🧹 Cache de turno/resúmenes offline limpiado tras cierre online',
             );
@@ -2446,7 +2459,15 @@ class _CierreScreenState extends State<CierreScreen> {
           // Close all pending orders locally
           _showSuccessDialog(montoFinal, diferencia);
         } else {
-          _showErrorMessage('Error al procesar el cierre de turno');
+          print(
+            '⚠️ Error en cierre online. Creando cierre offline de respaldo',
+          );
+          await _createOfflineCierre(
+            efectivoFinal: montoFinal,
+            productos: productCounts ?? [],
+            observaciones: observacionesFinales,
+            diferencia: diferencia,
+          );
         }
       }
     } catch (e) {

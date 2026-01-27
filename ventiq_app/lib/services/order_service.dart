@@ -1197,7 +1197,7 @@ class OrderService {
           total: (orderData['total'] as num).toDouble(),
           status: storedStatus,
           pagos:
-              orderData['pagos']
+              (orderData['pagos'] ?? orderData['desglose_pagos'])
                   as List<
                     dynamic
                   >?, // ✅ Agregar campo pagos para órdenes offline

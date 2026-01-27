@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../widgets/tpv_managements/tpv.dart';
 import '../widgets/tpv_managements/vendor.dart';
+import '../widgets/tpv_managements/price_alterations.dart';
 import '../widgets/tpv_managements/asignate_vendor.dart';
 import '../services/tpv_service.dart';
 import '../utils/navigation_guard.dart';
@@ -27,8 +28,15 @@ class _TpvManagementScreenState extends State<TpvManagementScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_handleTabChange);
     _loadPermissions();
+  }
+
+  void _handleTabChange() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _loadPermissions() async {
@@ -41,6 +49,7 @@ class _TpvManagementScreenState extends State<TpvManagementScreen>
 
   @override
   void dispose() {
+    _tabController.removeListener(_handleTabChange);
     _tabController.dispose();
     super.dispose();
   }
@@ -64,6 +73,7 @@ class _TpvManagementScreenState extends State<TpvManagementScreen>
           tabs: const [
             Tab(icon: Icon(Icons.point_of_sale), text: 'TPVs'),
             Tab(icon: Icon(Icons.people), text: 'Vendedores'),
+            Tab(icon: Icon(Icons.price_change), text: 'Cambios'),
           ],
         ),
       ),
@@ -84,13 +94,18 @@ class _TpvManagementScreenState extends State<TpvManagementScreen>
                   searchQuery: _searchQuery,
                   onRefresh: _refreshData,
                 ),
+                PriceAlterationsTabView(
+                  key: ValueKey('price_changes_$_refreshKey'),
+                  searchQuery: _searchQuery,
+                  onRefresh: _refreshData,
+                ),
               ],
             ),
           ),
         ],
       ),
       floatingActionButton:
-          _canCreateTpv
+          _canCreateTpv && _tabController.index == 0
               ? FloatingActionButton(
                 onPressed: _showAddDialog,
                 backgroundColor: AppColors.primary,
@@ -101,6 +116,13 @@ class _TpvManagementScreenState extends State<TpvManagementScreen>
   }
 
   Widget _buildSearchBar() {
+    final hintText =
+        _tabController.index == 0
+            ? 'Buscar TPVs...'
+            : _tabController.index == 1
+            ? 'Buscar vendedores...'
+            : 'Buscar cambios de precio...';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -116,10 +138,7 @@ class _TpvManagementScreenState extends State<TpvManagementScreen>
       ),
       child: TextField(
         decoration: InputDecoration(
-          hintText:
-              _tabController.index == 0
-                  ? 'Buscar TPVs...'
-                  : 'Buscar vendedores...',
+          hintText: hintText,
           prefixIcon: const Icon(Icons.search),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
@@ -139,6 +158,7 @@ class _TpvManagementScreenState extends State<TpvManagementScreen>
 
   void _showAddDialog() {
     final isTPVTab = _tabController.index == 0;
+    final isVendorTab = _tabController.index == 1;
 
     if (isTPVTab) {
       if (!_canCreateTpv) {
@@ -146,7 +166,7 @@ class _TpvManagementScreenState extends State<TpvManagementScreen>
         return;
       }
       _showCreateTpvDialog();
-    } else {
+    } else if (isVendorTab) {
       // Mostrar diálogo de asignación de vendedor
       // Nota: Este diálogo requiere un TPV seleccionado
       ScaffoldMessenger.of(context).showSnackBar(
@@ -154,6 +174,13 @@ class _TpvManagementScreenState extends State<TpvManagementScreen>
           content: Text(
             'Seleccione un TPV desde la lista para asignar un vendedor',
           ),
+          backgroundColor: AppColors.info,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay acciones disponibles en esta pestaña'),
           backgroundColor: AppColors.info,
         ),
       );

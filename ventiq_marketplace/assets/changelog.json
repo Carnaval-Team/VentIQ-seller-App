@@ -1,8 +1,35 @@
 {
-  "current_version": "1.3.0",
-  "build": 8,
+  "current_version": "1.3.1",
+  "build": 9,
   "app_name": "ventiq_marketplace",
   "changelogs": [
+    {
+      "version": "1.3.1",
+      "date": "2026-01-26",
+      "title": "✨ Novedades más claras al instante",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Tarjetas de nuevos productos más compactas",
+          "description": "Ahora ves más productos sin perder claridad, con un diseño más limpio y fácil de leer."
+        },
+        {
+          "type": "improvement",
+          "title": "Precio destacado en verde",
+          "description": "El precio resalta mejor para tomar decisiones más rápido."
+        },
+        {
+          "type": "improvement",
+          "title": "Rating visible de un vistazo",
+          "description": "La calificación aparece en la esquina superior para identificar lo mejor al momento."
+        },
+        {
+          "type": "improvement",
+          "title": "Categoría sobre la imagen",
+          "description": "Reconoce la categoría del producto de forma inmediata mientras navegas."
+        }
+      ]
+    },
     {
       "version": "1.3.0",
       "date": "2026-01-08",

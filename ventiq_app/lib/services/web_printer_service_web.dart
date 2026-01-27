@@ -5,119 +5,149 @@ import '../services/user_preferences_service.dart';
 
 /// Implementación web del servicio de impresión
 class WebPrinterServiceImpl {
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
 
   /// Muestra diálogo de confirmación de impresión para web
-  Future<bool> showPrintConfirmationDialog(BuildContext context, Order order) async {
+  Future<bool> showPrintConfirmationDialog(
+    BuildContext context,
+    Order order,
+  ) async {
     return await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.print, color: Colors.blue),
-              SizedBox(width: 8),
-              Text('Imprimir Factura'),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('¿Deseas imprimir la factura de la orden?'),
-              SizedBox(height: 12),
-              Container(
-                padding: EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue[200]!),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Orden: ${order.id}',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.print, color: Colors.blue),
+                  SizedBox(width: 8),
+                  Text('Imprimir Factura'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('¿Deseas imprimir la factura de la orden?'),
+                  SizedBox(height: 12),
+                  Container(
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue[200]!),
                     ),
-                    Text('Cliente: ${order.buyerName ?? 'Sin nombre'}'),
-                    Text('Total: \$${order.total.toStringAsFixed(2)}'),
-                    Text('Productos: ${order.totalItems}'),
-                  ],
-                ),
-              ),
-              SizedBox(height: 12),
-              Container(
-                padding: EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.amber[50],
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.amber[200]!),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.amber[700], size: 16),
-                    SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Se abrirá el diálogo de impresión del navegador',
-                        style: TextStyle(fontSize: 12, color: Colors.amber[700]),
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Orden: ${order.id}',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Text('Cliente: ${order.buyerName ?? 'Sin nombre'}'),
+                        Text('Total: \$${order.total.toStringAsFixed(2)}'),
+                        Text('Productos: ${order.totalItems}'),
+                      ],
                     ),
-                  ],
+                  ),
+                  SizedBox(height: 12),
+                  Container(
+                    padding: EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.amber[50],
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.amber[200]!),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: Colors.amber[700],
+                          size: 16,
+                        ),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Se abrirá el diálogo de impresión del navegador',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.amber[700],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: Text('Cancelar'),
                 ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text('Cancelar'),
-            ),
-            ElevatedButton.icon(
-              onPressed: () => Navigator.of(context).pop(true),
-              icon: Icon(Icons.print),
-              label: Text('Imprimir'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
-        );
-      },
-    ) ?? false;
+                ElevatedButton.icon(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  icon: Icon(Icons.print),
+                  label: Text('Imprimir'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
   }
 
   /// Imprime la factura usando la API de impresión del navegador
-  /// Imprime tanto el ticket del cliente como la guía de picking para el almacenero
+  /// Imprime ticket del cliente, copia del vendedor y guía de picking para el almacenero
   Future<bool> printInvoice(Order order) async {
     try {
       print('🖨️ Iniciando impresión web completa para orden ${order.id}');
-      
+
       // ========== IMPRIMIR TICKET DEL CLIENTE PRIMERO ==========
       print('📄 Imprimiendo ticket del cliente...');
       final customerResult = await _printCustomerTicket(order);
-      
+
       if (!customerResult) {
         print('❌ Ticket del cliente falló al imprimir');
         return false;
       }
-      
+
       // Esperar entre impresiones para evitar problemas
-      print('⏳ Esperando 3 segundos antes de la guía de almacén...');
-      await Future.delayed(const Duration(seconds: 3));
-      
+      print('⏳ Esperando 2 segundos antes de la copia del vendedor...');
+      await Future.delayed(const Duration(seconds: 2));
+
+      // ========== IMPRIMIR COPIA DEL VENDEDOR ==========
+      print('🧾 Imprimiendo copia del vendedor...');
+      final sellerResult = await _printCustomerTicket(
+        order,
+        copyLabel: 'COPIA VENDEDOR',
+      );
+
+      if (!sellerResult) {
+        print('❌ Copia del vendedor falló al imprimir');
+        return false;
+      }
+
+      // Esperar entre impresiones para evitar problemas
+      print('⏳ Esperando 2 segundos antes de la guía de almacén...');
+      await Future.delayed(const Duration(seconds: 2));
+
       // ========== IMPRIMIR GUÍA DE PICKING PARA ALMACENERO ==========
       print('🏭 Imprimiendo guía de picking para almacenero...');
       final warehouseResult = await _printWarehousePickingSlip(order);
-      
+
       if (!warehouseResult) {
         print('❌ Guía de picking falló al imprimir');
         return false;
       }
-      
-      print('✅ Ambos documentos enviados a impresión web exitosamente');
+
+      print(
+        '✅ Ticket cliente, copia vendedor y guía de picking enviados a impresión web',
+      );
       return true;
     } catch (e) {
       print('❌ Error imprimiendo factura web: $e');
@@ -125,19 +155,22 @@ class WebPrinterServiceImpl {
     }
   }
 
-  /// Imprime el ticket del cliente
-  Future<bool> _printCustomerTicket(Order order) async {
+  /// Imprime el ticket del cliente (o copia del vendedor)
+  Future<bool> _printCustomerTicket(Order order, {String? copyLabel}) async {
     try {
       // Generar el HTML del ticket del cliente
-      final customerHtml = await _generateCustomerTicketHtml(order);
-      
+      final customerHtml = await _generateCustomerTicketHtml(
+        order,
+        copyLabel: copyLabel,
+      );
+
       // Crear un blob con el HTML
       final blob = html.Blob([customerHtml], 'text/html');
       final url = html.Url.createObjectUrlFromBlob(blob);
-      
+
       // Abrir en nueva ventana
       html.window.open(url, '_blank');
-      
+
       // Limpiar el URL inmediatamente después de abrir
       Future.delayed(Duration(milliseconds: 100), () {
         try {
@@ -147,10 +180,18 @@ class WebPrinterServiceImpl {
         }
       });
 
-      print('✅ Ticket del cliente enviado a impresión web');
+      final label =
+          (copyLabel != null && copyLabel.isNotEmpty)
+              ? copyLabel.toLowerCase()
+              : 'cliente';
+      print('✅ Ticket $label enviado a impresión web');
       return true;
     } catch (e) {
-      print('❌ Error imprimiendo ticket del cliente: $e');
+      final label =
+          (copyLabel != null && copyLabel.isNotEmpty)
+              ? copyLabel.toLowerCase()
+              : 'cliente';
+      print('❌ Error imprimiendo ticket $label: $e');
       return false;
     }
   }
@@ -160,14 +201,14 @@ class WebPrinterServiceImpl {
     try {
       // Generar el HTML de la guía de picking
       final warehouseHtml = await _generateWarehousePickingSlipHtml(order);
-      
+
       // Crear un blob con el HTML
       final blob = html.Blob([warehouseHtml], 'text/html');
       final url = html.Url.createObjectUrlFromBlob(blob);
-      
+
       // Abrir en nueva ventana
       html.window.open(url, '_blank');
-      
+
       // Limpiar el URL inmediatamente después de abrir
       Future.delayed(Duration(milliseconds: 100), () {
         try {
@@ -186,13 +227,18 @@ class WebPrinterServiceImpl {
   }
 
   /// Genera el HTML del ticket del cliente para impresión
-  Future<String> _generateCustomerTicketHtml(Order order) async {
+  Future<String> _generateCustomerTicketHtml(
+    Order order, {
+    String? copyLabel,
+  }) async {
     // Obtener datos del usuario y tienda (no necesarios para este formato simplificado)
-    
+
     // Fecha y hora actual
     final now = DateTime.now();
-    final dateStr = '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
-    final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final dateStr =
+        '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+    final timeStr =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
     // Generar filas de productos (formato igual al Bluetooth)
     final productRows = order.items
@@ -203,7 +249,13 @@ class WebPrinterServiceImpl {
         <div class="product-line">${item.cantidad}x ${item.nombre}</div>
         <div class="product-price">\$${item.precioUnitario.toStringAsFixed(0)} c/u = \$${itemTotal.toStringAsFixed(0)}</div>
           ''';
-        }).join('');
+        })
+        .join('');
+
+    final copyLabelHtml =
+        copyLabel != null && copyLabel.isNotEmpty
+            ? '<div class="copy-label">$copyLabel</div>'
+            : '';
 
     return '''
 <!DOCTYPE html>
@@ -242,6 +294,12 @@ class WebPrinterServiceImpl {
             font-size: 16px;
             font-weight: bold;
             margin-bottom: 10px;
+        }
+        .copy-label {
+            font-size: 13px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
         }
         .separator {
             text-align: center;
@@ -301,6 +359,7 @@ class WebPrinterServiceImpl {
         <div class="store-name">INVENTTIA</div>
         <div class="system-name">Sistema de Ventas</div>
         <div class="invoice-title">FACTURA DE VENTA</div>
+        $copyLabelHtml
         <div class="separator">================================</div>
     </div>
 
@@ -359,8 +418,10 @@ class WebPrinterServiceImpl {
   Future<String> _generateWarehousePickingSlipHtml(Order order) async {
     // Fecha y hora actual
     final now = DateTime.now();
-    final dateStr = '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
-    final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final dateStr =
+        '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+    final timeStr =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
     // Generar filas de productos con ubicaciones de almacén
     final productRows = order.items
@@ -368,12 +429,12 @@ class WebPrinterServiceImpl {
         .map((item) {
           final ubicacion = item.ubicacionAlmacen ?? 'N/A';
           String productName = item.nombre;
-          
+
           // Truncar nombre si es muy largo
           if (productName.length > 15) {
             productName = productName.substring(0, 15) + '...';
           }
-          
+
           return '''
         <div class="product-item">
           <div class="product-line">${item.cantidad.toString().padLeft(3, ' ')} | $productName</div>
@@ -381,7 +442,8 @@ class WebPrinterServiceImpl {
           <div class="price-line">    | \$${item.precioUnitario.toStringAsFixed(0)} c/u</div>
         </div>
           ''';
-        }).join('');
+        })
+        .join('');
 
     return '''
 <!DOCTYPE html>
@@ -549,7 +611,8 @@ class WebPrinterServiceImpl {
       'method': 'Browser Print API',
       'supports_network_printers': true,
       'supports_usb_printers': true,
-      'description': 'Impresión a través del navegador web. Soporta impresoras de red y USB conectadas al sistema.',
+      'description':
+          'Impresión a través del navegador web. Soporta impresoras de red y USB conectadas al sistema.',
     };
   }
 }

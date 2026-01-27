@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -41,15 +40,12 @@ class Store {
 }
 
 class StoreSelectorService extends ChangeNotifier {
-  static const String _selectedStoreKey = 'selected_store_id';
-
   static final StoreSelectorService _instance =
       StoreSelectorService._internal();
-
   factory StoreSelectorService() => _instance;
-
   StoreSelectorService._internal();
 
+  static const String _selectedStoreKey = 'selected_store_id';
   final SupabaseClient _supabase = Supabase.instance.client;
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
@@ -163,7 +159,12 @@ class StoreSelectorService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final storedStoreId = prefs.getInt(_selectedStoreKey);
       final currentStoreId = await _userPreferencesService.getIdTienda();
-      final selectedStoreId = currentStoreId ?? storedStoreId;
+      int? selectedStoreId = currentStoreId;
+
+      if (selectedStoreId == null && storedStoreId != null) {
+        selectedStoreId = storedStoreId;
+        await _userPreferencesService.updateSelectedStore(storedStoreId);
+      }
 
       if (selectedStoreId != null) {
         _selectedStore = _userStores.firstWhere(
@@ -176,6 +177,8 @@ class StoreSelectorService extends ChangeNotifier {
           (store) => store.denominacion == 'Tienda Principal',
           orElse: () => _userStores.first,
         );
+        await _userPreferencesService.updateSelectedStore(_selectedStore!.id);
+        selectedStoreId = _selectedStore!.id;
       }
 
       final resolvedStoreId = _selectedStore?.id;
@@ -183,7 +186,7 @@ class StoreSelectorService extends ChangeNotifier {
         if (storedStoreId != resolvedStoreId) {
           await prefs.setInt(_selectedStoreKey, resolvedStoreId);
         }
-        if (currentStoreId != resolvedStoreId) {
+        if (selectedStoreId != resolvedStoreId) {
           await _userPreferencesService.updateSelectedStore(resolvedStoreId);
         }
       }
@@ -220,6 +223,23 @@ class StoreSelectorService extends ChangeNotifier {
   /// Obtener ID de la tienda seleccionada (compatibilidad con código existente)
   int? getSelectedStoreId() {
     return _selectedStore?.id;
+  }
+
+  /// Sincronizar tienda seleccionada con preferencias (Dashboard)
+  Future<void> syncSelectedStore({bool notify = true}) async {
+    if (_userStores.isEmpty) return;
+
+    final selectedStoreId = await _userPreferencesService.getIdTienda();
+    if (selectedStoreId == null) return;
+    if (_selectedStore?.id == selectedStoreId) return;
+
+    _selectedStore = _userStores.firstWhere(
+      (store) => store.id == selectedStoreId,
+      orElse: () => _userStores.first,
+    );
+    if (notify) {
+      notifyListeners();
+    }
   }
 
   /// Refrescar lista de tiendas

@@ -1177,6 +1177,15 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       return;
     }
 
+    // Check if this is an adjustment operation
+    final isAdjustment = tipoOperacion.contains('ajuste') || 
+                        tipoOperacion.contains('adjustment');
+    
+    if (isAdjustment) {
+      _showAdjustmentDetails(operation);
+      return;
+    }
+
     // Show regular operation details for other types
     showModalBottomSheet(
       context: context,
@@ -1333,6 +1342,272 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                   ),
                 ),
           ),
+    );
+  }
+
+  /// Show adjustment operation details from app_dat_ajuste_inventario
+  void _showAdjustmentDetails(Map<String, dynamic> operation) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        maxChildSize: 0.9,
+        minChildSize: 0.5,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(20),
+            ),
+          ),
+          child: Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Ajuste #${operation['id']}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // Content
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    // Información general
+                    _buildModalDetailRow(
+                      'Tipo:',
+                      operation['tipo_operacion_nombre'] ?? 'N/A',
+                    ),
+                    _buildModalDetailRow(
+                      'Estado:',
+                      operation['estado_nombre'] ?? 'N/A',
+                    ),
+                    _buildModalDetailRow(
+                      'Fecha:',
+                      _formatDateTime(
+                        DateTime.parse(operation['created_at']),
+                      ),
+                    ),
+                    if (operation['observaciones']?.isNotEmpty == true)
+                      _buildModalDetailRow(
+                        'Observaciones:',
+                        operation['observaciones'],
+                      ),
+
+                    // Detalles del ajuste
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Detalles del Ajuste:',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1F2937),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    FutureBuilder<Map<String, dynamic>>(
+                      future: InventoryService.getAdjustmentDetails(operation['id']),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+
+                        if (snapshot.hasError) {
+                          return Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              'Error al cargar detalles: ${snapshot.error}',
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                          );
+                        }
+
+                        final adjustmentData = snapshot.data;
+                        if (adjustmentData == null || adjustmentData['details'].isEmpty) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Text('Sin detalles de ajuste'),
+                          );
+                        }
+
+                        return _buildAdjustmentDetailsList(adjustmentData['details']);
+                      },
+                    ),
+
+                    // Show print button for all operations
+                    const SizedBox(height: 24),
+                    _buildPrintButton(operation),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build the list of adjustment details
+  Widget _buildAdjustmentDetailsList(List<dynamic> details) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: details.map((detail) {
+        final cantidadAnterior = detail['cantidad_anterior'] ?? 0;
+        final cantidadNueva = detail['cantidad_nueva'] ?? 0;
+        final diferencia = detail['diferencia'] ?? 0;
+        final productoNombre = detail['producto_nombre'] ?? 'Producto';
+        final ubicacion = detail['ubicacion'] ?? 'N/A';
+
+        // Determinar color según si es aumento o disminución
+        final isIncrease = (diferencia as num) >= 0;
+        final differenceColor = isIncrease ? Colors.green : Colors.red;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Nombre del producto
+              Text(
+                productoNombre,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              const SizedBox(height: 8),
+              
+              // Ubicación
+              Row(
+                children: [
+                  const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(
+                    ubicacion,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              // Cantidades
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Cantidad Anterior:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        Text(
+                          cantidadAnterior.toString(),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Cantidad Nueva:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        Text(
+                          cantidadNueva.toString(),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Diferencia:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        Text(
+                          '${isIncrease ? '+' : ''}$diferencia',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: differenceColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 

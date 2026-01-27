@@ -54,6 +54,88 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     _loadUsdRate();
   }
 
+  double _parseDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString()) ?? 0.0;
+  }
+
+  int _parseInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString()) ?? 0;
+  }
+
+  Map<String, dynamic> _calculatePendingOrdersTotals(
+    List<Map<String, dynamic>> pendingOrders,
+  ) {
+    double ventasOffline = 0.0;
+    double efectivoOffline = 0.0;
+    double transferenciasOffline = 0.0;
+    int productosOffline = 0;
+
+    for (final orderData in pendingOrders) {
+      final total = _parseDouble(
+        orderData['total'] ??
+            orderData['total_operacion'] ??
+            orderData['total_venta'],
+      );
+      ventasOffline += total;
+
+      final items = orderData['items'];
+      if (items is List) {
+        for (final item in items) {
+          if (item is Map) {
+            productosOffline += _parseInt(item['cantidad']);
+          }
+        }
+      }
+
+      final pagos = orderData['pagos'] ?? orderData['desglose_pagos'];
+      double efectivoOrden = 0.0;
+      double transferenciaOrden = 0.0;
+
+      if (pagos is List && pagos.isNotEmpty) {
+        for (final pago in pagos) {
+          if (pago is Map) {
+            final monto = _parseDouble(
+              pago['monto'] ??
+                  pago['monto_pago'] ??
+                  pago['monto_total'] ??
+                  pago['monto_entrega'],
+            );
+            final esEfectivo =
+                pago['es_efectivo'] == true || pago['id_medio_pago'] == 1;
+            final esDigital = pago['es_digital'] == true;
+
+            if (esEfectivo) {
+              efectivoOrden += monto;
+            } else if (esDigital) {
+              transferenciaOrden += monto;
+            } else {
+              transferenciaOrden += monto;
+            }
+          }
+        }
+      }
+
+      if (total > 0 && (efectivoOrden + transferenciaOrden) == 0) {
+        efectivoOrden = total * 0.7;
+        transferenciaOrden = total * 0.3;
+      }
+
+      efectivoOffline += efectivoOrden;
+      transferenciasOffline += transferenciaOrden;
+    }
+
+    return {
+      'ventasOffline': ventasOffline,
+      'efectivoOffline': efectivoOffline,
+      'transferenciasOffline': transferenciasOffline,
+      'productosOffline': productosOffline,
+    };
+  }
+
   Future<void> _initializeData() async {
     await _loadExpenses();
     await _calcularVentaTotal();
@@ -103,6 +185,13 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       // Primero cargar las órdenes desde Supabase
       _orderService.clearAllOrders();
       await _orderService.listOrdersFromSupabase();
+
+      // Agregar órdenes offline pendientes (para lista y totales reales)
+      final pendingOrders = await userPrefs.getPendingOrders();
+      if (pendingOrders.isNotEmpty) {
+        _orderService.addPendingOrdersToList(pendingOrders);
+      }
+      final offlineTotals = _calculatePendingOrdersTotals(pendingOrders);
 
       // Obtener datos del turno abierto
       final turnoAbierto = await TurnoService.getTurnoAbierto();
@@ -157,7 +246,13 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           final ordenesVendidas = <Order>[];
 
           for (final order in orders) {
-            if (order.status == OrderStatus.completada) {
+            final isCompletedOrOffline =
+                order.status == OrderStatus.completada ||
+                order.status == OrderStatus.pagoConfirmado ||
+                order.status == OrderStatus.pendienteDeSincronizacion ||
+                order.status == OrderStatus.enviada;
+
+            if (isCompletedOrOffline) {
               ordenesVendidas.add(order);
               for (final item in order.items) {
                 productosVendidos.add(item);
@@ -168,19 +263,33 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           setState(() {
             _productosVendidos = productosVendidos;
             _ordenesVendidas = ordenesVendidas;
-            // Usar ventas_totales de la función
-            _totalVentas = (data['ventas_totales'] ?? 0.0).toDouble();
-            _totalProductos = (data['productos_vendidos'] ?? 0).toInt();
+
+            final offlineVentas =
+                (offlineTotals['ventasOffline'] ?? 0.0).toDouble();
+            final offlineProductos =
+                (offlineTotals['productosOffline'] ?? 0).toInt();
+            final offlineEfectivo =
+                (offlineTotals['efectivoOffline'] ?? 0.0).toDouble();
+
+            final ventasTotalesBase =
+                (data['ventas_totales'] ?? 0.0).toDouble();
+            final efectivoRealBase = (data['efectivo_real'] ?? 0.0).toDouble();
+            final efectivoEsperadoBase =
+                (data['efectivo_esperado'] ?? 0.0).toDouble();
+
+            // Totales reales = resumen online + ventas offline pendientes
+            final ventasTotales = ventasTotalesBase + offlineVentas;
+            final efectivoReal = efectivoRealBase + offlineEfectivo;
+            final efectivoEsperado = efectivoEsperadoBase + offlineEfectivo;
+
+            _totalVentas = ventasTotales;
+            _totalProductos =
+                (data['productos_vendidos'] ?? 0).toInt() + offlineProductos;
 
             // Calcular egresado: ventas_totales - efectivo_real + egresos en efectivo
-            final ventasTotales = (data['ventas_totales'] ?? 0.0).toDouble();
-            final efectivoReal = (data['efectivo_real'] ?? 0.0).toDouble();
-            //marca cambiada
             _totalEgresado = ventasTotales - efectivoReal + _egresosEfectivo;
 
             // Efectivo real: efectivo_esperado - egresos en efectivo
-            final efectivoEsperado =
-                (data['efectivo_esperado'] ?? 0.0).toDouble();
             _totalEfectivoReal = efectivoEsperado - _egresosEfectivo;
 
             _isLoading = false;
@@ -210,7 +319,13 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       int totalProductos = 0;
 
       for (final order in orders) {
-        if (order.status == OrderStatus.completada) {
+        final isCompletedOrOffline =
+            order.status == OrderStatus.completada ||
+            order.status == OrderStatus.pagoConfirmado ||
+            order.status == OrderStatus.pendienteDeSincronizacion ||
+            order.status == OrderStatus.enviada;
+
+        if (isCompletedOrOffline) {
           ordenesVendidas.add(order);
           totalVentas += order.total;
 
@@ -601,7 +716,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             .where(
               (order) =>
                   order.status == OrderStatus.completada ||
-                  order.status == OrderStatus.pagoConfirmado,
+                  order.status == OrderStatus.pagoConfirmado ||
+                  order.status == OrderStatus.pendienteDeSincronizacion ||
+                  order.status == OrderStatus.enviada,
             )
             .toList();
 
@@ -628,7 +745,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             .where(
               (order) =>
                   order.status == OrderStatus.completada ||
-                  order.status == OrderStatus.pagoConfirmado,
+                  order.status == OrderStatus.pagoConfirmado ||
+                  order.status == OrderStatus.pendienteDeSincronizacion ||
+                  order.status == OrderStatus.enviada,
             )
             .toList();
 
@@ -1811,8 +1930,23 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
       final userPrefs = UserPreferencesService();
 
-      // Obtener resumen de cierre actualizado con órdenes offline
-      final resumenCierre = await userPrefs.getResumenCierreWithOfflineOrders();
+      // Cargar órdenes offline (sincronizadas + pendientes)
+      _orderService.clearAllOrders();
+      final offlineData = await userPrefs.getOfflineData();
+      if (offlineData != null && offlineData['orders'] != null) {
+        _orderService.transformSupabaseToOrdersPublic(
+          offlineData['orders'] as List<dynamic>,
+        );
+      }
+
+      final pendingOrders = await userPrefs.getPendingOrders();
+      if (pendingOrders.isNotEmpty) {
+        _orderService.addPendingOrdersToList(pendingOrders);
+      }
+      final offlineTotals = _calculatePendingOrdersTotals(pendingOrders);
+
+      // Obtener resumen de cierre base desde cache
+      final resumenCierre = await userPrefs.getResumenCierreCache();
 
       if (resumenCierre != null) {
         print('✅ Resumen de cierre cargado desde cache offline');
@@ -1825,9 +1959,13 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
         // Filtrar órdenes completadas y offline
         for (final order in orders) {
-          if (order.status == OrderStatus.completada ||
+          final isCompletedOrOffline =
+              order.status == OrderStatus.completada ||
               order.status == OrderStatus.pagoConfirmado ||
-              order.status.name == 'pendienteDeSincronizacion') {
+              order.status == OrderStatus.pendienteDeSincronizacion ||
+              order.status == OrderStatus.enviada;
+
+          if (isCompletedOrOffline) {
             ordenesVendidas.add(order);
             for (final item in order.items) {
               productosVendidos.add(item);
@@ -1841,30 +1979,43 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
           // Usar datos del resumen de cierre (ya incluye órdenes offline)
           // Mapear correctamente los nombres de campos del cache
-          _totalVentas =
+          final ventasTotalesBase =
               (resumenCierre['ventas_totales'] ??
                       resumenCierre['total_ventas'] ??
                       0.0)
                   .toDouble();
-          _totalProductos = (resumenCierre['productos_vendidos'] ?? 0).toInt();
+          final productosBase =
+              (resumenCierre['productos_vendidos'] ?? 0).toInt();
 
-          // Calcular valores estimados para campos específicos
-          final ventasTotales = _totalVentas;
+          final offlineVentas =
+              (offlineTotals['ventasOffline'] ?? 0.0).toDouble();
+          final offlineProductos =
+              (offlineTotals['productosOffline'] ?? 0).toInt();
+          final offlineEfectivo =
+              (offlineTotals['efectivoOffline'] ?? 0.0).toDouble();
+
+          // Calcular valores reales incluyendo pendientes offline
+          final ventasTotales = ventasTotalesBase + offlineVentas;
           final efectivoReal =
               (resumenCierre['efectivo_real'] ??
                       resumenCierre['total_efectivo'] ??
-                      ventasTotales * 0.7)
-                  .toDouble();
+                      ventasTotalesBase * 0.7)
+                  .toDouble() +
+              offlineEfectivo;
 
           // Egresado: ventas_totales - efectivo_real + egresos en efectivo
           _totalEgresado = ventasTotales - efectivoReal + _egresosEfectivo;
 
           // Efectivo real: efectivo_esperado - egresos en efectivo
+          final efectivoEsperadoCache = resumenCierre['efectivo_esperado'];
           final efectivoEsperado =
-              (resumenCierre['efectivo_esperado'] ??
-                      (resumenCierre['efectivo_inicial'] ?? 500.0) +
-                          efectivoReal)
-                  .toDouble();
+              efectivoEsperadoCache != null
+                  ? _parseDouble(efectivoEsperadoCache) + offlineEfectivo
+                  : _parseDouble(resumenCierre['efectivo_inicial'] ?? 500.0) +
+                      efectivoReal;
+
+          _totalVentas = ventasTotales;
+          _totalProductos = productosBase + offlineProductos;
           _totalEfectivoReal = efectivoEsperado - _egresosEfectivo;
 
           _isLoading = false;
@@ -1884,11 +2035,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         );
 
         // Mostrar información de órdenes offline si las hay
-        if (resumenCierre['ordenes_offline'] != null &&
-            resumenCierre['ordenes_offline'] > 0) {
+        if (pendingOrders.isNotEmpty) {
           print('📱 Órdenes offline incluidas en el cálculo:');
-          print('  - Órdenes offline: ${resumenCierre['ordenes_offline']}');
-          print('  - Ventas offline: \$${resumenCierre['ventas_offline']}');
+          print('  - Órdenes offline: ${pendingOrders.length}');
+          print('  - Ventas offline: \$${offlineTotals['ventasOffline']}');
         }
       } else {
         print('⚠️ No hay resumen de cierre en cache - usando cálculo local');
@@ -1913,8 +2063,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
       for (final order in orders) {
         if (order.status == OrderStatus.completada ||
-            order.status.name == 'pendienteDeSincronizacion' ||
-            order.status == OrderStatus.pagoConfirmado) {
+            order.status == OrderStatus.pagoConfirmado ||
+            order.status == OrderStatus.pendienteDeSincronizacion ||
+            order.status == OrderStatus.enviada) {
           ordenesVendidas.add(order);
           totalVentas += order.total;
 

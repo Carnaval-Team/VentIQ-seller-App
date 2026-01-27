@@ -1,9 +1,70 @@
 {
-  "current_version": "1.8.1",
-  "build": 181,
+  "current_version": "1.8.4",
+  "build": 184,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.8.4",
+      "date": "2026-01-25",
+      "title": "🧪 Control de cambio de precio por vendedor (Beta)",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Permiso individual para cambiar precios",
+          "description": "Ahora puedes decidir si cada vendedor puede o no modificar el precio al vender. Esta función está en beta (en prueba) para validar el flujo con tu equipo."
+        },
+        {
+          "type": "improvement",
+          "title": "Dónde se edita y cómo",
+          "description": "Ve a Gestión de TPVs → pestaña Vendedores. En cada tarjeta verás el switch “Cambio de precio”: actívalo para permitirlo o apágalo para bloquearlo. Los cambios se guardan al instante."
+        },
+        {
+          "type": "feature",
+          "title": "Historial claro de cambios de precio",
+          "description": "Ahora puedes ver un listado con los cambios de precio realizados por vendedores, incluyendo quién lo hizo, en qué TPV y la fecha del cambio."
+        },
+        {
+          "type": "improvement",
+          "title": "Cómo ver los cambios de precio",
+          "description": "Entra a Gestión de TPVs → pestaña Cambios. Ahí puedes filtrar por TPV, vendedor o rango de fechas para encontrar el ajuste que buscas."
+        }
+      ]
+    },
+    {
+      "version": "1.8.3",
+      "date": "2026-01-22",
+      "title": "🔧 Correcciones menores.",
+      "changes": [
+         {
+          "type": "improvement",
+          "title": "Gestión de Ventas",
+          "description": "Mejoras en gestión ventas por proveedor."
+        },
+        {
+          "type": "fix",
+          "title": "🛍️ Corrección en recepciones",
+          "description": "Corrección en el buscador de productos en las recepciones de productos."
+        }
+      ]
+    },
+    {
+      "version": "1.8.2",
+      "date": "2026-01-22",
+      "title": "🧾 Consignaciones y gestión de proveedores.",
+      "changes": [
+         {
+          "type": "improvement",
+          "title": "Gestión de proveedores",
+          "description": "Gestión de proveedores de prodcutos y reportes de ventas por proveedor."
+        },
+        {
+          "type": "fix",
+          "title": "🛍️ Mejoras en Consignaciones",
+          "description": "Consignador ve precio costo en USD y CUP, margen seleccionable, precio de venta final en CUP, equivalente en USD y ganancia en USD."
+        }
+      ]
+    },
     {
       "version": "1.8.1",
       "date": "2026-01-21",

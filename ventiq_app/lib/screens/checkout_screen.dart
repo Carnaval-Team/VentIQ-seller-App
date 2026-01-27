@@ -34,7 +34,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   double _promoDiscount = 0.0;
   bool _promoApplied = false;
   bool _isProcessing = false;
-  late bool _noSolicitarCliente;
+  bool _configLoading = true;
+  bool _noSolicitarCliente = false; // Valor por defecto mientras se carga
   Map<int, List<Map<String, dynamic>>> _productPromotions =
       {}; // productId -> promotions
 
@@ -86,7 +87,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
         // Notificar al widget que se actualizó la configuración
         if (mounted) {
-          setState(() {});
+          setState(() {
+            _configLoading = false;
+          });
         }
       }
     } catch (e) {
@@ -94,7 +97,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // Usar valor por defecto en caso de error
       _noSolicitarCliente = false;
       if (mounted) {
-        setState(() {});
+        setState(() {
+          _configLoading = false;
+        });
       }
     }
   }
@@ -189,8 +194,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     // Aplicar promoción
-    final precioBase =
-        applicablePromotion['precio_base'] as double? ?? item.precioUnitario;
+    final promoBase = (applicablePromotion['precio_base'] as num?)?.toDouble();
+    final precioBase = item.precioBase ?? promoBase ?? item.precioUnitario;
     final valorDescuento =
         applicablePromotion['valor_descuento'] as double? ?? 0.0;
     final esRecargo = applicablePromotion['es_recargo'] as bool? ?? false;

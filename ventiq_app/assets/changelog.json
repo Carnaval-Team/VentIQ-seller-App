@@ -1,9 +1,75 @@
 {
-  "current_version": "1.9.2",
-  "build": 802,
+  "current_version": "1.9.5",
+  "build": 805,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.9.5",
+      "date": "2026-01-24",
+      "title": "Precios editables (beta)",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Ajuste rápido de precios (beta)",
+          "description": "Ahora puedes ajustar el precio de venta desde el detalle del producto con el ícono del lápiz. Esta función está en beta y por ahora solo está activa en algunas tiendas de prueba, hasta que la configuración se habilite desde la administración de la tienda."
+        },
+        {
+          "type": "improvement",
+          "title": "Seguimiento de cambios de precio",
+          "description": "Se guarda un historial interno cada vez que cambias un precio para tener más claridad y control en tus ventas."
+        }
+      ]
+    },
+    {
+      "version": "1.9.4",
+      "date": "2026-01-23",
+      "title": "Inventario más rápido y turnos sin fricción",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Conteo con cantidades sugeridas",
+          "description": "Ahora el conteo de inventario se prellena con la existencia actual para que ajustes solo lo que cambió, sin empezar desde cero."
+        },
+        {
+          "type": "improvement",
+          "title": "Apertura online sin bloqueos",
+          "description": "Si existía un turno offline pendiente, igual puedes abrir online y todo se actualiza automáticamente para mantener tus datos alineados."
+        },
+        {
+          "type": "improvement",
+          "title": "Cierre de turno más seguro",
+          "description": "Si el cierre online falla, la app guarda el cierre offline de respaldo para que no pierdas el trabajo del día."
+        },
+        {
+          "type": "improvement",
+          "title": "Limpieza automática al actualizar",
+          "description": "Al abrir una versión nueva se limpian datos offline antiguos para evitar conflictos y mantener la app estable."
+        }
+      ]
+    },
+    {
+      "version": "1.9.3",
+      "date": "2026-01-22",
+      "title": "Offline más estable al volver online",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Sincronización al reconectar más confiable",
+          "description": "Al recuperar internet, la sincronización se activa de forma consistente para que tus datos se actualicen sin esperar."
+        },
+        {
+          "type": "improvement",
+          "title": "Aviso claro durante la sincronización",
+          "description": "Se muestra un aviso bloqueante y elegante mientras se sincroniza, para evitar cierres accidentales y asegurar que todo quede guardado."
+        },
+        {
+          "type": "improvement",
+          "title": "Cambio online/offline más fluido",
+          "description": "Mejoramos la transición entre offline y online para que el catálogo y las ventas se mantengan al día en todo momento."
+        }
+      ]
+    },
     {
       "version": "1.9.2",
       "date": "2026-01-20",

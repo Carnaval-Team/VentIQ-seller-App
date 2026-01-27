@@ -179,7 +179,7 @@ class ProductSearchService {
     print('   📡 Ejecutando búsqueda con filtro de texto: "$searchQuery"');
     
     // Para búsqueda con texto, cargamos todo y filtramos (limitación actual)
-    final response = await _supabase.rpc('get_productos_completos_by_tienda_with_supplier', params: {
+    final response = await _supabase.rpc('get_productos_completos_by_tienda_optimized_provider', params: {
       'id_tienda_param': await _getUserStoreId(),
       'id_categoria_param': null,
       'solo_disponibles_param': false,
@@ -192,6 +192,7 @@ class ProductSearchService {
     
     final productosData = response['productos'] as List<dynamic>? ?? [];
     List<Map<String, dynamic>> products = List<Map<String, dynamic>>.from(productosData);
+    print('   Productos Encontrados: $products');
     
     // Aplicar filtro de búsqueda por texto
     final productosAntesDelFiltro = products.length;

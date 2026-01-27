@@ -107,6 +107,8 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
             await _userPreferencesService.saveSellerData(
               idTpv: idTpv,
               idTrabajador: sellerData['id_trabajador'] as int,
+              permitirCustomizarPrecioVenta:
+                  sellerData['permitir_customizar_precio_venta'] == true,
             );
 
             // Guardar ID del vendedor

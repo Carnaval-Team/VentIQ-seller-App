@@ -46,6 +46,24 @@ class TpvService {
     }
   }
 
+  /// Obtiene TPVs por ID de tienda (para filtros con StoreSelectorService)
+  static Future<List<Map<String, dynamic>>> getTpvsByStoreId(
+    int storeId,
+  ) async {
+    try {
+      final response = await _supabase
+          .from('app_dat_tpv')
+          .select('id, denominacion')
+          .eq('id_tienda', storeId)
+          .order('denominacion');
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error obteniendo TPVs por tienda: $e');
+      return [];
+    }
+  }
+
   /// Crea un nuevo TPV
   static Future<bool> createTpv({
     required String denominacion,
