@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
+import '../models/warehouse.dart';
 import '../services/warehouse_service.dart';
 import '../services/user_preferences_service.dart';
 
 class AddWarehouseScreen extends StatefulWidget {
-  const AddWarehouseScreen({Key? key}) : super(key: key);
+  final Warehouse? initialWarehouse;
+
+  const AddWarehouseScreen({Key? key, this.initialWarehouse}) : super(key: key);
 
   @override
   State<AddWarehouseScreen> createState() => _AddWarehouseScreenState();
@@ -13,43 +16,66 @@ class AddWarehouseScreen extends StatefulWidget {
 class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
   final _formKey = GlobalKey<FormState>();
   final _scrollController = ScrollController();
-  
+
   // Controladores de texto
   final _denominacionController = TextEditingController();
   final _direccionController = TextEditingController();
   final _ubicacionController = TextEditingController();
-  
+  final _tiendaController = TextEditingController();
+
   // Variables de estado
   bool _isLoading = false;
   bool _isLoadingData = true;
-  
+
+  String _selectedWarehouseType = 'principal';
+
   // Datos para dropdowns
   List<Map<String, dynamic>> _tiposLayout = [];
   List<Map<String, dynamic>> _condiciones = [];
   List<Map<String, dynamic>> _productos = [];
-  
+
   // ID de tienda del usuario (desde preferencias)
   int? _tiendaId;
   List<int> _selectedCondiciones = [];
-  
+
   // Listas dinámicas para layouts y límites de stock
   List<Map<String, dynamic>> _layouts = [];
   List<Map<String, dynamic>> _limitesStock = [];
-  
+
   final _warehouseService = WarehouseService();
   final _prefsService = UserPreferencesService();
+
+  bool get _isEdit => widget.initialWarehouse != null;
 
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
+    if (_isEdit) {
+      final warehouse = widget.initialWarehouse!;
+      _denominacionController.text =
+          warehouse.denominacion.isNotEmpty
+              ? warehouse.denominacion
+              : warehouse.name;
+      _direccionController.text =
+          warehouse.direccion.isNotEmpty
+              ? warehouse.direccion
+              : warehouse.address;
+      _ubicacionController.text = warehouse.ubicacion ?? warehouse.city;
+      _selectedWarehouseType =
+          warehouse.type.isNotEmpty ? warehouse.type : 'principal';
+      _tiendaController.text = warehouse.tienda?.denominacion ?? '';
+      _isLoadingData = false;
+    } else {
+      _loadInitialData();
+    }
   }
-  
+
   @override
   void dispose() {
     _denominacionController.dispose();
     _direccionController.dispose();
     _ubicacionController.dispose();
+    _tiendaController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -57,20 +83,26 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
   Future<void> _loadInitialData() async {
     try {
       setState(() => _isLoadingData = true);
-      
+
       // Obtener tienda del usuario desde preferencias
       final idTienda = await _prefsService.getIdTienda();
       if (idTienda == null) {
-        throw Exception('No se encontró ID de tienda en preferencias del usuario');
+        throw Exception(
+          'No se encontró ID de tienda en preferencias del usuario',
+        );
       }
-      
+
+      final storeInfo = await _prefsService.getCurrentStoreInfo();
+      final storeName =
+          storeInfo?['denominacion']?.toString() ?? 'Tienda seleccionada';
+
       // Cargar datos iniciales en paralelo
       final futures = await Future.wait([
         _warehouseService.getTiposLayout(),
         _warehouseService.getCondiciones(),
         _warehouseService.getProductos(),
       ]);
-      
+
       setState(() {
         _tiendaId = idTienda;
         _tiposLayout = List<Map<String, dynamic>>.from(futures[0]);
@@ -78,7 +110,7 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
         _productos = List<Map<String, dynamic>>.from(futures[2]);
         _isLoadingData = false;
       });
-      
+      _tiendaController.text = storeName;
     } catch (e) {
       setState(() => _isLoadingData = false);
       _showErrorSnackBar('Error al cargar datos iniciales: $e');
@@ -89,12 +121,9 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Agregar Almacén',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-          ),
+        title: Text(
+          _isEdit ? 'Editar Almacén' : 'Agregar Almacén',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
         ),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
@@ -103,7 +132,7 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
           TextButton(
             onPressed: _isLoading ? null : _saveWarehouse,
             child: Text(
-              'GUARDAR',
+              _isEdit ? 'GUARDAR CAMBIOS' : 'GUARDAR',
               style: TextStyle(
                 color: _isLoading ? Colors.white54 : Colors.white,
                 fontWeight: FontWeight.w600,
@@ -113,29 +142,32 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
         ],
       ),
       backgroundColor: AppColors.background,
-      body: _isLoadingData
-          ? const Center(child: CircularProgressIndicator())
-          : Form(
-              key: _formKey,
-              child: SingleChildScrollView(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildBasicInfoSection(),
-                    const SizedBox(height: 24),
-                    _buildLayoutsSection(),
-                    const SizedBox(height: 24),
-                    _buildConditionsSection(),
-                    const SizedBox(height: 24),
-                    _buildStockLimitsSection(),
-                    const SizedBox(height: 32),
-                    _buildSaveButton(),
-                  ],
+      body:
+          _isLoadingData
+              ? const Center(child: CircularProgressIndicator())
+              : Form(
+                key: _formKey,
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildBasicInfoSection(),
+                      if (!_isEdit) ...[
+                        const SizedBox(height: 24),
+                        _buildLayoutsSection(),
+                        const SizedBox(height: 24),
+                        _buildConditionsSection(),
+                        const SizedBox(height: 24),
+                        _buildStockLimitsSection(),
+                      ],
+                      const SizedBox(height: 32),
+                      _buildSaveButton(),
+                    ],
+                  ),
                 ),
               ),
-            ),
     );
   }
 
@@ -149,7 +181,7 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
           children: [
             _buildSectionTitle('Información Básica'),
             const SizedBox(height: 16),
-            
+
             // Campo: Denominación
             TextFormField(
               controller: _denominacionController,
@@ -166,7 +198,7 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
               },
             ),
             const SizedBox(height: 16),
-            
+
             // Campo: Dirección
             TextFormField(
               controller: _direccionController,
@@ -183,7 +215,7 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
               },
             ),
             const SizedBox(height: 16),
-            
+
             // Campo: Ubicación
             TextFormField(
               controller: _ubicacionController,
@@ -193,14 +225,48 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
                 prefixIcon: Icon(Icons.place),
               ),
             ),
+            if (_isEdit) ...[
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _selectedWarehouseType,
+                decoration: const InputDecoration(
+                  labelText: 'Tipo',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.category),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'principal',
+                    child: Text('Principal'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'secundario',
+                    child: Text('Secundario'),
+                  ),
+                  DropdownMenuItem(value: 'temporal', child: Text('Temporal')),
+                ],
+                onChanged: (value) {
+                  if (value == null) {
+                    return;
+                  }
+                  setState(() {
+                    _selectedWarehouseType = value;
+                  });
+                },
+              ),
+            ],
             const SizedBox(height: 16),
-            
+
             // Campo: Tienda (solo lectura)
             TextFormField(
               enabled: false,
+              controller: _tiendaController,
               decoration: InputDecoration(
                 labelText: 'Tienda',
-                hintText: 'Se usará la tienda asignada al usuario',
+                hintText:
+                    _tiendaController.text.isEmpty
+                        ? 'Se usará la tienda asignada al usuario'
+                        : null,
                 border: const OutlineInputBorder(),
                 prefixIcon: const Icon(Icons.store),
                 filled: true,
@@ -282,7 +348,9 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
                     child: ListTile(
                       leading: const Icon(Icons.view_module),
                       title: Text(layout['denominacion'] ?? ''),
-                      subtitle: Text('Tipo: ${layout['tipo_layout_nombre'] ?? ''}'),
+                      subtitle: Text(
+                        'Tipo: ${layout['tipo_layout_nombre'] ?? ''}',
+                      ),
                       trailing: IconButton(
                         icon: const Icon(Icons.delete, color: Colors.red),
                         onPressed: () => _removeLayout(index),
@@ -320,27 +388,30 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
-                  children: _condiciones.map((condicion) {
-                    final isSelected = _selectedCondiciones.contains(condicion['id']);
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
-                      child: FilterChip(
-                        label: Text(condicion['denominacion']),
-                        selected: isSelected,
-                        onSelected: (selected) {
-                          setState(() {
-                            if (selected) {
-                              _selectedCondiciones.add(condicion['id']);
-                            } else {
-                              _selectedCondiciones.remove(condicion['id']);
-                            }
-                          });
-                        },
-                        selectedColor: AppColors.primary.withOpacity(0.2),
-                        checkmarkColor: AppColors.primary,
-                      ),
-                    );
-                  }).toList(),
+                  children:
+                      _condiciones.map((condicion) {
+                        final isSelected = _selectedCondiciones.contains(
+                          condicion['id'],
+                        );
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: FilterChip(
+                            label: Text(condicion['denominacion']),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              setState(() {
+                                if (selected) {
+                                  _selectedCondiciones.add(condicion['id']);
+                                } else {
+                                  _selectedCondiciones.remove(condicion['id']);
+                                }
+                              });
+                            },
+                            selectedColor: AppColors.primary.withOpacity(0.2),
+                            checkmarkColor: AppColors.primary,
+                          ),
+                        );
+                      }).toList(),
                 ),
               ),
             ),
@@ -408,7 +479,9 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
                     child: ListTile(
                       leading: const Icon(Icons.inventory),
                       title: Text(limite['producto_nombre'] ?? ''),
-                      subtitle: Text('Min: ${limite['stock_min']} | Max: ${limite['stock_max']} | Ordenar: ${limite['stock_ordenar']}'),
+                      subtitle: Text(
+                        'Min: ${limite['stock_min']} | Max: ${limite['stock_max']} | Ordenar: ${limite['stock_ordenar']}',
+                      ),
                       trailing: IconButton(
                         icon: const Icon(Icons.delete, color: Colors.red),
                         onPressed: () => _removeStockLimit(index),
@@ -432,19 +505,18 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
-        child: _isLoading
-            ? const CircularProgressIndicator(color: Colors.white)
-            : const Text(
-                'CREAR ALMACÉN',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+        child:
+            _isLoading
+                ? const CircularProgressIndicator(color: Colors.white)
+                : Text(
+                  _isEdit ? 'GUARDAR CAMBIOS' : 'CREAR ALMACÉN',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
       ),
     );
   }
@@ -452,14 +524,15 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
   void _addLayout() {
     showDialog(
       context: context,
-      builder: (context) => _LayoutDialog(
-        tiposLayout: _tiposLayout,
-        onSave: (layout) {
-          setState(() {
-            _layouts.add(layout);
-          });
-        },
-      ),
+      builder:
+          (context) => _LayoutDialog(
+            tiposLayout: _tiposLayout,
+            onSave: (layout) {
+              setState(() {
+                _layouts.add(layout);
+              });
+            },
+          ),
     );
   }
 
@@ -472,14 +545,15 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
   void _addStockLimit() {
     showDialog(
       context: context,
-      builder: (context) => _StockLimitDialog(
-        productos: _productos,
-        onSave: (limite) {
-          setState(() {
-            _limitesStock.add(limite);
-          });
-        },
-      ),
+      builder:
+          (context) => _StockLimitDialog(
+            productos: _productos,
+            onSave: (limite) {
+              setState(() {
+                _limitesStock.add(limite);
+              });
+            },
+          ),
     );
   }
 
@@ -497,30 +571,62 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // Preparar datos para el RPC
-      final layoutsData = _layouts.map((layout) => {
-        'id_tipo_layout': layout['id_tipo_layout'],
-        'id_layout_padre': layout['id_layout_padre'],
-        'denominacion': layout['denominacion'],
-        'sku_codigo': layout['sku_codigo'],
-        'clasificacion_abc': layout['clasificacion_abc'],
-        'fecha_desde': layout['fecha_desde'],
-        'fecha_hasta': layout['fecha_hasta'],
-      }).toList();
+      if (_isEdit) {
+        await _warehouseService
+            .updateWarehouseBasic(widget.initialWarehouse!.id, {
+              'denominacion': _denominacionController.text.trim(),
+              'direccion': _direccionController.text.trim(),
+              'ubicacion': _ubicacionController.text.trim(),
+              'tipo': _selectedWarehouseType,
+            });
 
-      final limitesStockData = _limitesStock.map((limite) => {
-        'id_producto': limite['id_producto'],
-        'stock_min': limite['stock_min'],
-        'stock_max': limite['stock_max'],
-        'stock_ordenar': limite['stock_ordenar'],
-      }).toList();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Almacén actualizado exitosamente'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.of(context).pop(true);
+        }
+        return;
+      }
+
+      // Preparar datos para el RPC
+      final layoutsData =
+          _layouts
+              .map(
+                (layout) => {
+                  'id_tipo_layout': layout['id_tipo_layout'],
+                  'id_layout_padre': layout['id_layout_padre'],
+                  'denominacion': layout['denominacion'],
+                  'sku_codigo': layout['sku_codigo'],
+                  'clasificacion_abc': layout['clasificacion_abc'],
+                  'fecha_desde': layout['fecha_desde'],
+                  'fecha_hasta': layout['fecha_hasta'],
+                },
+              )
+              .toList();
+
+      final limitesStockData =
+          _limitesStock
+              .map(
+                (limite) => {
+                  'id_producto': limite['id_producto'],
+                  'stock_min': limite['stock_min'],
+                  'stock_max': limite['stock_max'],
+                  'stock_ordenar': limite['stock_ordenar'],
+                },
+              )
+              .toList();
 
       final response = await _warehouseService.createWarehouse(
         denominacionAlmacen: _denominacionController.text,
         direccionAlmacen: _direccionController.text,
         ubicacionAlmacen: _ubicacionController.text,
         idTiendaParam: _tiendaId!,
-        condicionesData: _selectedCondiciones.isNotEmpty ? _selectedCondiciones : null,
+        condicionesData:
+            _selectedCondiciones.isNotEmpty ? _selectedCondiciones : null,
         layoutsData: layoutsData.isNotEmpty ? layoutsData : null,
         limitesStockData: limitesStockData.isNotEmpty ? limitesStockData : null,
       );
@@ -536,7 +642,11 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
       }
     } catch (e) {
       if (mounted) {
-        _showErrorSnackBar('Error al crear almacén: $e');
+        _showErrorSnackBar(
+          _isEdit
+              ? 'Error al actualizar almacén: $e'
+              : 'Error al crear almacén: $e',
+        );
       }
     } finally {
       if (mounted) {
@@ -547,10 +657,7 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
 
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 }
@@ -559,10 +666,7 @@ class _LayoutDialog extends StatefulWidget {
   final List<Map<String, dynamic>> tiposLayout;
   final Function(Map<String, dynamic>) onSave;
 
-  const _LayoutDialog({
-    required this.tiposLayout,
-    required this.onSave,
-  });
+  const _LayoutDialog({required this.tiposLayout, required this.onSave});
 
   @override
   State<_LayoutDialog> createState() => _LayoutDialogState();
@@ -597,10 +701,15 @@ class _LayoutDialogState extends State<_LayoutDialog> {
                 labelText: 'Tipo de Layout *',
                 border: OutlineInputBorder(),
               ),
-              items: widget.tiposLayout.map((tipo) => DropdownMenuItem<int>(
-                value: tipo['id'],
-                child: Text(tipo['denominacion']),
-              )).toList(),
+              items:
+                  widget.tiposLayout
+                      .map(
+                        (tipo) => DropdownMenuItem<int>(
+                          value: tipo['id'],
+                          child: Text(tipo['denominacion']),
+                        ),
+                      )
+                      .toList(),
               onChanged: (value) {
                 setState(() {
                   _selectedTipoLayout = value;
@@ -641,27 +750,30 @@ class _LayoutDialogState extends State<_LayoutDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancelar'),
         ),
-        ElevatedButton(
-          onPressed: _saveLayout,
-          child: const Text('Guardar'),
-        ),
+        ElevatedButton(onPressed: _saveLayout, child: const Text('Guardar')),
       ],
     );
   }
 
   void _saveLayout() {
-    if (_denominacionController.text.trim().isEmpty || _selectedTipoLayout == null) {
+    if (_denominacionController.text.trim().isEmpty ||
+        _selectedTipoLayout == null) {
       return;
     }
 
-    final tipoLayoutNombre = widget.tiposLayout
-        .firstWhere((tipo) => tipo['id'] == _selectedTipoLayout)['denominacion'];
+    final tipoLayoutNombre =
+        widget.tiposLayout.firstWhere(
+          (tipo) => tipo['id'] == _selectedTipoLayout,
+        )['denominacion'];
 
     widget.onSave({
       'id_tipo_layout': _selectedTipoLayout,
       'id_layout_padre': _selectedLayoutPadre,
       'denominacion': _denominacionController.text.trim(),
-      'sku_codigo': _skuController.text.trim().isNotEmpty ? _skuController.text.trim() : null,
+      'sku_codigo':
+          _skuController.text.trim().isNotEmpty
+              ? _skuController.text.trim()
+              : null,
       'clasificacion_abc': _clasificacionAbc,
       'fecha_desde': DateTime.now().toIso8601String(),
       'fecha_hasta': null,
@@ -676,10 +788,7 @@ class _StockLimitDialog extends StatefulWidget {
   final List<Map<String, dynamic>> productos;
   final Function(Map<String, dynamic>) onSave;
 
-  const _StockLimitDialog({
-    required this.productos,
-    required this.onSave,
-  });
+  const _StockLimitDialog({required this.productos, required this.onSave});
 
   @override
   State<_StockLimitDialog> createState() => _StockLimitDialogState();
@@ -705,10 +814,15 @@ class _StockLimitDialogState extends State<_StockLimitDialog> {
                 labelText: 'Producto *',
                 border: OutlineInputBorder(),
               ),
-              items: widget.productos.map((producto) => DropdownMenuItem<int>(
-                value: producto['id'],
-                child: Text(producto['denominacion']),
-              )).toList(),
+              items:
+                  widget.productos
+                      .map(
+                        (producto) => DropdownMenuItem<int>(
+                          value: producto['id'],
+                          child: Text(producto['denominacion']),
+                        ),
+                      )
+                      .toList(),
               onChanged: (value) {
                 setState(() {
                   _selectedProducto = value;
@@ -766,14 +880,17 @@ class _StockLimitDialogState extends State<_StockLimitDialog> {
       return;
     }
 
-    final productoNombre = widget.productos
-        .firstWhere((producto) => producto['id'] == _selectedProducto)['denominacion'];
+    final productoNombre =
+        widget.productos.firstWhere(
+          (producto) => producto['id'] == _selectedProducto,
+        )['denominacion'];
 
     widget.onSave({
       'id_producto': _selectedProducto,
       'stock_min': double.tryParse(_stockMinController.text.trim()) ?? 0,
       'stock_max': double.tryParse(_stockMaxController.text.trim()) ?? 0,
-      'stock_ordenar': double.tryParse(_stockOrdenarController.text.trim()) ?? 0,
+      'stock_ordenar':
+          double.tryParse(_stockOrdenarController.text.trim()) ?? 0,
       'producto_nombre': productoNombre,
     });
 

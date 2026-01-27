@@ -11,6 +11,7 @@ import '../services/changelog_service.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/notification_widget.dart';
 import '../services/notification_service.dart';
+import '../services/store_selector_service.dart';
 import '../utils/subscription_protection_mixin.dart';
 import '../utils/navigation_guard.dart';
 import '../widgets/consignaciones_widget.dart';
@@ -35,9 +36,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   final PermissionsService _permissionsService = PermissionsService();
   final ChangelogService _changelogService = ChangelogService();
   final NotificationService _notificationService = NotificationService();
+  final StoreSelectorService _storeSelectorService = StoreSelectorService();
 
   String _currentStoreName = 'Cargando...';
-  List<Map<String, dynamic>> _userStores = [];
+  int? _currentStoreId;
+  List<Store> _userStores = [];
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
 
@@ -55,12 +58,20 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   void initState() {
     super.initState();
+    _storeSelectorService.addListener(_onStoreChanged);
+    _storeSelectorService.initialize();
     _verifySubscriptionOnLoad();
     _loadStoreInfo();
     _loadDashboardData(); // Ya incluye _loadUsdRate() después de actualizar las tasas
     _checkForChangelog();
     // Inicializar servicio de notificaciones para suscribirse a Realtime
     _notificationService.initialize();
+  }
+
+  @override
+  void dispose() {
+    _storeSelectorService.removeListener(_onStoreChanged);
+    super.dispose();
   }
 
   /// Verifica la suscripción al cargar el dashboard
@@ -87,21 +98,40 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Future<void> _loadStoreInfo() async {
     try {
-      final stores = await _userPreferencesService.getUserStores();
-      final currentStoreInfo =
-          await _userPreferencesService.getCurrentStoreInfo();
+      await _storeSelectorService.initialize();
+      final selectedStore = _storeSelectorService.selectedStore;
 
       setState(() {
-        _userStores = stores;
-        _currentStoreName =
-            currentStoreInfo?['denominacion'] ?? 'Tienda Principal';
+        _userStores = _storeSelectorService.userStores;
+        _currentStoreName = selectedStore?.denominacion ?? 'Tienda Principal';
+        _currentStoreId = selectedStore?.id;
       });
     } catch (e) {
       print('❌ Error loading store info: $e');
       setState(() {
         _currentStoreName = 'Tienda Principal';
+        _currentStoreId = null;
+        _userStores = [];
       });
     }
+  }
+
+  Future<void> _onStoreChanged() async {
+    final selectedStore = _storeSelectorService.selectedStore;
+    if (!mounted || selectedStore == null) {
+      return;
+    }
+    if (_currentStoreId == selectedStore.id) {
+      return;
+    }
+
+    setState(() {
+      _currentStoreId = selectedStore.id;
+      _currentStoreName = selectedStore.denominacion;
+      _userStores = _storeSelectorService.userStores;
+    });
+
+    _loadDashboardData();
   }
 
   void _loadDashboardData() async {
@@ -241,7 +271,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       return;
     }
 
-    final selectedStore = await showDialog<Map<String, dynamic>>(
+    final selectedStore = await showDialog<Store>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
@@ -268,9 +298,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                   itemCount: _userStores.length,
                   itemBuilder: (context, index) {
                     final store = _userStores[index];
-                    final storeId = store['id_tienda'] as int;
-                    final isCurrentStore =
-                        store['denominacion'] == _currentStoreName;
+                    final storeId = store.id;
+                    final isCurrentStore = storeId == _currentStoreId;
                     final userRole = rolesByStore[storeId] ?? UserRole.none;
                     final roleName = _permissionsService.getRoleName(userRole);
 
@@ -288,7 +317,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         ),
                       ),
                       title: Text(
-                        store['denominacion'] ?? 'Tienda ${store['id_tienda']}',
+                        store.denominacion,
                         style: TextStyle(
                           fontWeight:
                               isCurrentStore
@@ -300,7 +329,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('ID: ${store['id_tienda']}'),
+                          Text('ID: ${store.id}'),
                           const SizedBox(height: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(
@@ -348,8 +377,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       },
     );
 
-    if (selectedStore != null &&
-        selectedStore['denominacion'] != _currentStoreName) {
+    if (selectedStore != null && selectedStore.id != _currentStoreId) {
       await _switchStore(selectedStore);
     }
   }
@@ -371,7 +399,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  Future<void> _switchStore(Map<String, dynamic> store) async {
+  Future<void> _switchStore(Store store) async {
     try {
       // Show loading indicator
       showDialog(
@@ -389,14 +417,14 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
       );
 
-      final storeId = store['id_tienda'] as int;
+      final storeId = store.id;
 
       // Limpiar TODO el caché de roles para forzar recarga completa
       _permissionsService.clearAllCache();
       print('🧹 TODO el caché de roles limpiado al cambiar de tienda');
 
-      // Update selected store in preferences
-      await _userPreferencesService.updateSelectedStore(storeId);
+      // Actualizar la tienda seleccionada en el servicio centralizado
+      await _storeSelectorService.selectStore(store);
 
       // Obtener el rol para esta tienda y guardarlo
       final userRole = await _permissionsService.getUserRoleForStore(storeId);
@@ -411,15 +439,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       await _userPreferencesService.saveUserRolesByStore(rolesByStore);
       print('💾 Rol guardado para tienda $storeId: ${rolesByStore[storeId]}');
 
-      // Update current store name
-      setState(() {
-        _currentStoreName =
-            store['denominacion'] ?? 'Tienda ${store['id_tienda']}';
-      });
-
-      // Reload dashboard data for new store
-      _loadDashboardData();
-
       // Close loading dialog
       if (mounted) {
         Navigator.of(context).pop();
@@ -427,7 +446,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Cambiado a: ${store['denominacion']}'),
+            content: Text('Cambiado a: ${store.denominacion}'),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),

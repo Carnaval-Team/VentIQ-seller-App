@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'user_preferences_service.dart';
 
 class Store {
   final int id;
@@ -41,13 +42,23 @@ class Store {
 
 class StoreSelectorService extends ChangeNotifier {
   static const String _selectedStoreKey = 'selected_store_id';
-  
+
+  static final StoreSelectorService _instance =
+      StoreSelectorService._internal();
+
+  factory StoreSelectorService() => _instance;
+
+  StoreSelectorService._internal();
+
   final SupabaseClient _supabase = Supabase.instance.client;
-  
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
+
   List<Store> _userStores = [];
   Store? _selectedStore;
   bool _isLoading = false;
   bool _isInitialized = false;
+  Future<void>? _initializationFuture;
 
   List<Store> get userStores => _userStores;
   Store? get selectedStore => _selectedStore;
@@ -56,7 +67,32 @@ class StoreSelectorService extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
 
   /// Inicializar el servicio cargando las tiendas del usuario
-  Future<void> initialize() async {
+  Future<void> initialize() {
+    if (_isInitialized) {
+      return _refreshSelectedStore();
+    }
+
+    if (_initializationFuture != null) {
+      return _initializationFuture!;
+    }
+
+    _initializationFuture = _initializeInternal();
+    return _initializationFuture!;
+  }
+
+  Future<void> _refreshSelectedStore() async {
+    try {
+      if (_userStores.isEmpty) {
+        await _loadUserStores();
+      }
+      await _loadSelectedStore();
+      notifyListeners();
+    } catch (e) {
+      print('❌ Error refreshing selected store: $e');
+    }
+  }
+
+  Future<void> _initializeInternal() async {
     _isLoading = true;
     notifyListeners();
 
@@ -68,6 +104,7 @@ class StoreSelectorService extends ChangeNotifier {
       print('Error initializing StoreSelectorService: $e');
     } finally {
       _isLoading = false;
+      _initializationFuture = null;
       notifyListeners();
     }
   }
@@ -90,10 +127,14 @@ class StoreSelectorService extends ChangeNotifier {
       print('🏪 Respuesta tiendas: $response');
 
       if (response != null && response is List && response.isNotEmpty) {
-        _userStores = response
-            .map((storeData) => Store.fromJson(storeData as Map<String, dynamic>))
-            .toList();
-        
+        _userStores =
+            response
+                .map(
+                  (storeData) =>
+                      Store.fromJson(storeData as Map<String, dynamic>),
+                )
+                .toList();
+
         print('🏪 Tiendas cargadas: ${_userStores.length}');
       } else {
         print('⚠️ No se encontraron tiendas para el usuario');
@@ -102,7 +143,7 @@ class StoreSelectorService extends ChangeNotifier {
     } catch (e) {
       print('❌ Error cargando tiendas: $e');
       _userStores = [];
-      
+
       // Si estamos en modo debug, usar mock como fallback
       if (kDebugMode) {
         print('🔧 Modo debug: usando datos mock como fallback');
@@ -120,7 +161,9 @@ class StoreSelectorService extends ChangeNotifier {
       }
 
       final prefs = await SharedPreferences.getInstance();
-      final selectedStoreId = prefs.getInt(_selectedStoreKey);
+      final storedStoreId = prefs.getInt(_selectedStoreKey);
+      final currentStoreId = await _userPreferencesService.getIdTienda();
+      final selectedStoreId = currentStoreId ?? storedStoreId;
 
       if (selectedStoreId != null) {
         _selectedStore = _userStores.firstWhere(
@@ -135,7 +178,19 @@ class StoreSelectorService extends ChangeNotifier {
         );
       }
 
-      print('🏪 Tienda seleccionada: ${_selectedStore?.denominacion} (ID: ${_selectedStore?.id})');
+      final resolvedStoreId = _selectedStore?.id;
+      if (resolvedStoreId != null) {
+        if (storedStoreId != resolvedStoreId) {
+          await prefs.setInt(_selectedStoreKey, resolvedStoreId);
+        }
+        if (currentStoreId != resolvedStoreId) {
+          await _userPreferencesService.updateSelectedStore(resolvedStoreId);
+        }
+      }
+
+      print(
+        '🏪 Tienda seleccionada: ${_selectedStore?.denominacion} (ID: ${_selectedStore?.id})',
+      );
     } catch (e) {
       print('❌ Error cargando tienda seleccionada: $e');
       if (_userStores.isNotEmpty) {
@@ -151,13 +206,14 @@ class StoreSelectorService extends ChangeNotifier {
     if (_selectedStore?.id == store.id) return;
 
     _selectedStore = store;
-    
+
     // Guardar en preferencias
+    await _userPreferencesService.updateSelectedStore(store.id);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_selectedStoreKey, store.id);
-    
+
     print('🏪 Tienda cambiada a: ${store.denominacion} (ID: ${store.id})');
-    
+
     notifyListeners();
   }
 
@@ -172,7 +228,6 @@ class StoreSelectorService extends ChangeNotifier {
     await _loadSelectedStore();
     notifyListeners();
   }
-
 
   /// Datos mock para desarrollo/fallback
   List<Store> _getMockStores() {
