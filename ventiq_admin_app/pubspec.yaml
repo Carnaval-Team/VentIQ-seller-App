@@ -82,7 +82,7 @@ flutter:
     - assets/images/ic.png
     - assets/changelog.json
 
-flutter_launcher_icons:
+a:
   android: "launcher_icon"
   ios: true
   image_path: "assets/images/ic.png"

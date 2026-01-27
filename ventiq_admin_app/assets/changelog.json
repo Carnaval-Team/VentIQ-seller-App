@@ -1,9 +1,36 @@
 {
-  "current_version": "1.8.4",
-  "build": 184,
+  "current_version": "1.8.5",
+  "build": 185,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.8.5",
+      "date": "2026-01-27",
+      "title": "✅ Tienda sincronizada en todo el panel",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "La tienda se mantiene igual en todas las pantallas",
+          "description": "Si cambias la tienda en el Dashboard o en Promociones, se refleja al instante en el resto del panel."
+        },
+        {
+          "type": "improvement",
+          "title": "Cambio de tienda más confiable",
+          "description": "Al seleccionar una tienda, los datos se recargan automáticamente para mostrar siempre la información correcta."
+        },
+        {
+          "type": "improvement",
+          "title": "Edición de almacenes más simple",
+          "description": "Ahora puedes editar nombre, dirección y tipo desde una sola pantalla, con la tienda siempre visible."
+        },
+        {
+          "type": "improvement",
+          "title": "Promociones más ordenadas",
+          "description": "El buscador de productos es más cómodo y evitamos repeticiones en la selección."
+        }
+      ]
+    },
     {
       "version": "1.8.4",
       "date": "2026-01-25",

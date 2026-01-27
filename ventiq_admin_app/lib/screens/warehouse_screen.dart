@@ -3,7 +3,9 @@ import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../models/warehouse.dart';
+import '../services/user_preferences_service.dart';
 import '../services/warehouse_service.dart';
+import 'add_warehouse_screen.dart';
 import 'warehouse_detail_screen.dart';
 import '../utils/navigation_guard.dart';
 
@@ -16,6 +18,7 @@ class WarehouseScreen extends StatefulWidget {
 
 class _WarehouseScreenState extends State<WarehouseScreen> {
   final _service = WarehouseService();
+  final _prefsService = UserPreferencesService();
   List<Warehouse> _warehouses = [];
   String _search = '';
   String _direccionFilter = '';
@@ -64,6 +67,30 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     }
 
     try {
+      final selectedStoreId = await _prefsService.getIdTienda();
+      if (selectedStoreId == null) {
+        print('⚠️ No hay tienda seleccionada para cargar almacenes');
+        setState(() {
+          if (isRefresh) {
+            _warehouses = [];
+            _currentPage = 1;
+          }
+          _pagination = null;
+          _loading = false;
+          _loadingMore = false;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Selecciona una tienda en el dashboard'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
       print('📦 Cargando stores...');
       // Load stores for filter
       final stores = await _service.listStores();
@@ -76,7 +103,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
       print(
         '  - Filtro dirección: ${_direccionFilter.isNotEmpty ? _direccionFilter : 'null'}',
       );
-      print('  - Filtro tienda: null (sin filtro)');
+      print('  - Filtro tienda: $selectedStoreId');
       print('  - Página: ${isRefresh ? 1 : _currentPage}');
       print('  - Por página: $_itemsPerPage');
 
@@ -84,7 +111,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
       final response = await _service.listWarehousesWithPagination(
         denominacionFilter: _search.isNotEmpty ? _search : null,
         direccionFilter: _direccionFilter.isNotEmpty ? _direccionFilter : null,
-        tiendaFilter: null, // Sin filtro de tienda
+        tiendaFilter: selectedStoreId,
         pagina: isRefresh ? 1 : _currentPage,
         porPagina: _itemsPerPage,
       );
@@ -367,10 +394,24 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   }
 
   void _onEditWarehouse(Warehouse w) {
-    // Placeholder: in future, open edit modal
-    ScaffoldMessenger.of(
+    if (!_canEditWarehouse) {
+      NavigationGuard.showActionDeniedMessage(context, 'Editar almacén');
+      return;
+    }
+    _openEditWarehouse(w);
+  }
+
+  Future<void> _openEditWarehouse(Warehouse w) async {
+    final result = await Navigator.push(
       context,
-    ).showSnackBar(SnackBar(content: Text('Editar: ${w.name} (pendiente)')));
+      MaterialPageRoute(
+        builder: (_) => AddWarehouseScreen(initialWarehouse: w),
+      ),
+    );
+
+    if (result == true && mounted) {
+      await _loadData(isRefresh: true);
+    }
   }
 
   Future<void> _onViewWarehouse(Warehouse w) async {

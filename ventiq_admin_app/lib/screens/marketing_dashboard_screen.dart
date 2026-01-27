@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../utils/screen_protection_mixin.dart';
-import '../utils/navigation_guard.dart';
 import '../widgets/marketing_menu_widget.dart';
 import '../widgets/store_selector_widget.dart';
 
@@ -17,6 +16,7 @@ class _MarketingDashboardScreenState extends State<MarketingDashboardScreen>
     with ScreenProtectionMixin {
   @override
   String get protectedRoute => '/marketing-dashboard';
+
   @override
   Widget build(BuildContext context) {
     if (isCheckingPermissions) return buildPermissionLoadingWidget();

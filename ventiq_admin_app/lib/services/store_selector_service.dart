@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -47,7 +46,6 @@ class StoreSelectorService extends ChangeNotifier {
   StoreSelectorService._internal();
 
   static const String _selectedStoreKey = 'selected_store_id';
-
   final SupabaseClient _supabase = Supabase.instance.client;
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
@@ -56,7 +54,7 @@ class StoreSelectorService extends ChangeNotifier {
   Store? _selectedStore;
   bool _isLoading = false;
   bool _isInitialized = false;
-  Future<void>? _initializeFuture;
+  Future<void>? _initializationFuture;
 
   List<Store> get userStores => _userStores;
   Store? get selectedStore => _selectedStore;
@@ -65,15 +63,32 @@ class StoreSelectorService extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
 
   /// Inicializar el servicio cargando las tiendas del usuario
-  Future<void> initialize() async {
-    if (_isInitialized) return;
-    if (_initializeFuture != null) return _initializeFuture;
+  Future<void> initialize() {
+    if (_isInitialized) {
+      return _refreshSelectedStore();
+    }
 
-    _initializeFuture = _runInitialization();
-    return _initializeFuture;
+    if (_initializationFuture != null) {
+      return _initializationFuture!;
+    }
+
+    _initializationFuture = _initializeInternal();
+    return _initializationFuture!;
   }
 
-  Future<void> _runInitialization() async {
+  Future<void> _refreshSelectedStore() async {
+    try {
+      if (_userStores.isEmpty) {
+        await _loadUserStores();
+      }
+      await _loadSelectedStore();
+      notifyListeners();
+    } catch (e) {
+      print('❌ Error refreshing selected store: $e');
+    }
+  }
+
+  Future<void> _initializeInternal() async {
     _isLoading = true;
     notifyListeners();
 
@@ -85,7 +100,7 @@ class StoreSelectorService extends ChangeNotifier {
       print('Error initializing StoreSelectorService: $e');
     } finally {
       _isLoading = false;
-      _initializeFuture = null;
+      _initializationFuture = null;
       notifyListeners();
     }
   }
@@ -141,16 +156,14 @@ class StoreSelectorService extends ChangeNotifier {
         return;
       }
 
-      int? selectedStoreId = await _userPreferencesService.getIdTienda();
-      if (selectedStoreId == null) {
-        final prefs = await SharedPreferences.getInstance();
-        final legacySelectedStoreId = prefs.getInt(_selectedStoreKey);
-        if (legacySelectedStoreId != null) {
-          selectedStoreId = legacySelectedStoreId;
-          await _userPreferencesService.updateSelectedStore(
-            legacySelectedStoreId,
-          );
-        }
+      final prefs = await SharedPreferences.getInstance();
+      final storedStoreId = prefs.getInt(_selectedStoreKey);
+      final currentStoreId = await _userPreferencesService.getIdTienda();
+      int? selectedStoreId = currentStoreId;
+
+      if (selectedStoreId == null && storedStoreId != null) {
+        selectedStoreId = storedStoreId;
+        await _userPreferencesService.updateSelectedStore(storedStoreId);
       }
 
       if (selectedStoreId != null) {
@@ -165,10 +178,18 @@ class StoreSelectorService extends ChangeNotifier {
           orElse: () => _userStores.first,
         );
         await _userPreferencesService.updateSelectedStore(_selectedStore!.id);
+        selectedStoreId = _selectedStore!.id;
       }
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_selectedStoreKey, _selectedStore!.id);
+      final resolvedStoreId = _selectedStore?.id;
+      if (resolvedStoreId != null) {
+        if (storedStoreId != resolvedStoreId) {
+          await prefs.setInt(_selectedStoreKey, resolvedStoreId);
+        }
+        if (selectedStoreId != resolvedStoreId) {
+          await _userPreferencesService.updateSelectedStore(resolvedStoreId);
+        }
+      }
 
       print(
         '🏪 Tienda seleccionada: ${_selectedStore?.denominacion} (ID: ${_selectedStore?.id})',

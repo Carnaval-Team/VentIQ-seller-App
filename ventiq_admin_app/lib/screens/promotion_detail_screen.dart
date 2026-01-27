@@ -32,6 +32,14 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
     _loadProductData();
   }
 
+  List<Product> _dedupeProductsById(List<Product> products) {
+    final unique = <String, Product>{};
+    for (final product in products) {
+      unique[product.id] = product;
+    }
+    return unique.values.toList();
+  }
+
   Future<void> _loadProductData() async {
     setState(() {
       _isLoadingProducts = true;
@@ -41,24 +49,31 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
       if (_promotion.aplicaTodo) {
         // Si aplica a todos los productos, obtener todos los productos de la tienda
         final products = await ProductService.getProductsByTienda();
-        
+        final dedupedProducts = _dedupeProductsById(products);
+
         // Crear un mapa de productos por ID para búsqueda rápida
-        for (final product in products) {
+        for (final product in dedupedProducts) {
           _productCache[product.id] = product;
         }
-        
-        _promotionProducts = products;
+
+        _promotionProducts = dedupedProducts;
         print('✅ Cargados ${_productCache.length} productos (aplica a todos)');
       } else {
         // Si no aplica a todos, obtener solo los productos específicos de la promoción
-        _promotionProducts = await _promotionService.getPromotionProducts(_promotion.id);
-        
+        final products = await _promotionService.getPromotionProducts(
+          _promotion.id,
+        );
+        final dedupedProducts = _dedupeProductsById(products);
+
         // También cargar en caché para búsqueda rápida
-        for (final product in _promotionProducts) {
+        for (final product in dedupedProducts) {
           _productCache[product.id] = product;
         }
-        
-        print('✅ Cargados ${_promotionProducts.length} productos específicos de la promoción');
+
+        _promotionProducts = dedupedProducts;
+        print(
+          '✅ Cargados ${_promotionProducts.length} productos específicos de la promoción',
+        );
       }
     } catch (e) {
       print('❌ Error cargando productos: $e');
@@ -159,25 +174,26 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
     try {
       // Fetch promotion types first
       final promotionTypes = await _promotionService.getPromotionTypes();
-      
+
       // Navigate to promotion form with pre-filled product data
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => PromotionFormScreen(
-            promotionTypes: promotionTypes,
-            prefilledProduct: product,
-            onPromotionCreated: (newPromotion) {
-              // Refresh the current screen when a new promotion is created
-              _refreshPromotion();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Promoción especial creada exitosamente'),
-                  backgroundColor: AppColors.success,
-                ),
-              );
-            },
-          ),
+          builder:
+              (context) => PromotionFormScreen(
+                promotionTypes: promotionTypes,
+                prefilledProduct: product,
+                onPromotionCreated: (newPromotion) {
+                  // Refresh the current screen when a new promotion is created
+                  _refreshPromotion();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Promoción especial creada exitosamente'),
+                      backgroundColor: AppColors.success,
+                    ),
+                  );
+                },
+              ),
         ),
       );
     } catch (e) {
@@ -464,8 +480,10 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
 
   Widget _buildDiscountInfoCard() {
     final isCharge = _promotion.isChargePromotion;
-    final color = isCharge ? AppColors.promotionCharge : AppColors.promotionDiscount;
-    final backgroundColor = isCharge ? AppColors.promotionChargeBg : AppColors.promotionDiscountBg;
+    final color =
+        isCharge ? AppColors.promotionCharge : AppColors.promotionDiscount;
+    final backgroundColor =
+        isCharge ? AppColors.promotionChargeBg : AppColors.promotionDiscountBg;
     final icon = isCharge ? Icons.trending_up : Icons.local_offer;
     final text = isCharge ? 'de recargo' : 'de descuento';
     final prefix = isCharge ? '+' : '';
@@ -481,8 +499,13 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
                 Icon(icon, color: color),
                 const SizedBox(width: 8),
                 Text(
-                  isCharge ? 'Información de Recargo' : 'Información de Descuento',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  isCharge
+                      ? 'Información de Recargo'
+                      : 'Información de Descuento',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ],
             ),
@@ -505,10 +528,7 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
                       color: color,
                     ),
                   ),
-                  Text(
-                    text,
-                    style: TextStyle(fontSize: 16, color: color),
-                  ),
+                  Text(text, style: TextStyle(fontSize: 16, color: color)),
                 ],
               ),
             ),
@@ -663,7 +683,9 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
                     value: usagePercentage / 100,
                     backgroundColor: Colors.grey[300],
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      usagePercentage > 80 ? AppColors.warning : AppColors.usage,
+                      usagePercentage > 80
+                          ? AppColors.warning
+                          : AppColors.usage,
                     ),
                   ),
                 ],
@@ -712,9 +734,11 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
 
   Widget _buildProductsCard() {
     final isCharge = _promotion.isChargePromotion;
-    final color = isCharge ? AppColors.promotionCharge : AppColors.promotionDiscount;
+    final color =
+        isCharge ? AppColors.promotionCharge : AppColors.promotionDiscount;
     final icon = isCharge ? Icons.trending_up : Icons.inventory;
-    final title = isCharge ? 'Productos con Recargo' : 'Productos con Descuento';
+    final title =
+        isCharge ? 'Productos con Recargo' : 'Productos con Descuento';
 
     return Card(
       child: Padding(
@@ -733,7 +757,7 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            
+
             // Warning banner for surcharge promotions
             if (isCharge) ...[
               Container(
@@ -742,11 +766,17 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.promotionChargeBg,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.promotionCharge.withOpacity(0.3)),
+                  border: Border.all(
+                    color: AppColors.promotionCharge.withOpacity(0.3),
+                  ),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.warning, color: AppColors.promotionCharge, size: 20),
+                    const Icon(
+                      Icons.warning,
+                      color: AppColors.promotionCharge,
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -779,7 +809,7 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      _promotion.aplicaTodo 
+                      _promotion.aplicaTodo
                           ? 'Esta promoción aplica a todos los productos de la tienda'
                           : 'Esta promoción aplica solo a productos específicos',
                       style: TextStyle(
@@ -812,17 +842,17 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
                 ),
                 child: Column(
                   children: [
-                    Icon(Icons.inventory_2_outlined, 
-                         color: Colors.grey[400], size: 32),
+                    Icon(
+                      Icons.inventory_2_outlined,
+                      color: Colors.grey[400],
+                      size: 32,
+                    ),
                     const SizedBox(height: 8),
                     Text(
-                      _promotion.aplicaTodo 
+                      _promotion.aplicaTodo
                           ? 'No se pudieron cargar los productos de la tienda'
                           : 'No hay productos específicos asignados a esta promoción',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 14,
-                      ),
+                      style: TextStyle(color: Colors.grey[600], fontSize: 14),
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -842,7 +872,11 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.inventory, color: Colors.grey[600], size: 16),
+                        Icon(
+                          Icons.inventory,
+                          color: Colors.grey[600],
+                          size: 16,
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           _promotion.aplicaTodo
@@ -858,12 +892,18 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  
+
                   // Products list - show only affected products
-                  ...(_promotionProducts.take(10).map(
-                    (product) => _buildProductItemFromCache(product, isCharge, color),
-                  )),
-                  
+                  ...(_promotionProducts
+                      .take(10)
+                      .map(
+                        (product) => _buildProductItemFromCache(
+                          product,
+                          isCharge,
+                          color,
+                        ),
+                      )),
+
                   // Show more indicator if there are more products
                   if (_promotionProducts.length > 10)
                     Container(
@@ -899,12 +939,21 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
     );
   }
 
-  Widget _buildProductItemFromCache(Product product, bool isCharge, Color color) {
+  Widget _buildProductItemFromCache(
+    Product product,
+    bool isCharge,
+    Color color,
+  ) {
     final double basePrice = product.basePrice;
-    print('DEBUG: Product ${product.name} - basePrice: $basePrice, id: ${product.id}');
+    print(
+      'DEBUG: Product ${product.name} - basePrice: $basePrice, id: ${product.id}',
+    );
     final double promotionalPrice = _calculatePromotionalPrice(basePrice);
-    final double priceDifference = _calculatePriceDifference(basePrice, promotionalPrice);
-    
+    final double priceDifference = _calculatePriceDifference(
+      basePrice,
+      promotionalPrice,
+    );
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
@@ -956,10 +1005,7 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
                     ),
                     Text(
                       'Producto',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
                     ),
                   ],
                 ),
@@ -971,10 +1017,10 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
               ),
             ],
           ),
-          
+
           const SizedBox(height: 12),
           _buildPriceInfoFromProduct(product, isCharge, color),
-          
+
           // Add "Create Special Promotion" button for individual products
           const SizedBox(height: 8),
           SizedBox(
@@ -988,7 +1034,10 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
               ),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: color.withOpacity(0.5)),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
               ),
             ),
           ),
@@ -997,12 +1046,19 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
     );
   }
 
-  Widget _buildPriceInfoFromProduct(Product product, bool isCharge, Color color) {
+  Widget _buildPriceInfoFromProduct(
+    Product product,
+    bool isCharge,
+    Color color,
+  ) {
     final double basePrice = product.basePrice;
     print('DEBUG: PriceInfo - Product ${product.name} - basePrice: $basePrice');
     final double promotionalPrice = _calculatePromotionalPrice(basePrice);
-    final double priceDifference = _calculatePriceDifference(basePrice, promotionalPrice);
-    
+    final double priceDifference = _calculatePriceDifference(
+      basePrice,
+      promotionalPrice,
+    );
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1029,7 +1085,10 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
               ),
               if (product.tieneStock)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.green.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(10),
@@ -1046,17 +1105,14 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          
+
           // Base price
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 'Precio base:',
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 13,
-                ),
+                style: TextStyle(color: Colors.grey[600], fontSize: 13),
               ),
               Text(
                 '\$${NumberFormat('#,###.00').format(basePrice)}',
@@ -1069,7 +1125,7 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
             ],
           ),
           const SizedBox(height: 6),
-          
+
           // Promotional price
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1093,7 +1149,7 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
             ],
           ),
           const SizedBox(height: 6),
-          
+
           // Price difference
           Container(
             width: double.infinity,
@@ -1122,10 +1178,7 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
                 const SizedBox(width: 4),
                 Text(
                   '(${_promotion.valorDescuento.toStringAsFixed(1)}%)',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: color.withOpacity(0.8),
-                  ),
+                  style: TextStyle(fontSize: 11, color: color.withOpacity(0.8)),
                 ),
               ],
             ),
@@ -1207,15 +1260,16 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
     try {
       // Load fresh promotion types for editing
       final promotionTypes = await _promotionService.getPromotionTypes();
-      
+
       if (mounted) {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => PromotionFormScreen(
-              promotion: _promotion,
-              promotionTypes: promotionTypes,
-            ),
+            builder:
+                (context) => PromotionFormScreen(
+                  promotion: _promotion,
+                  promotionTypes: promotionTypes,
+                ),
           ),
         ).then((result) {
           if (result == true) {
