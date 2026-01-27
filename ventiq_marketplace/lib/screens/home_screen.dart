@@ -19,6 +19,7 @@ import '../services/changelog_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/notification_service.dart';
 import '../services/update_service.dart';
+import '../services/user_activity_service.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/supabase_image.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -47,10 +48,15 @@ class _HomeScreenState extends State<HomeScreen> {
   final ChangelogService _changelogService = ChangelogService();
   final UserPreferencesService _preferencesService = UserPreferencesService();
   final NotificationService _notificationService = NotificationService();
+  final UserActivityService _userActivityService = UserActivityService();
 
   List<Map<String, dynamic>> _bestSellingProducts = [];
   List<Map<String, dynamic>> _mostRecentProducts = [];
   List<Map<String, dynamic>> _featuredStores = [];
+
+  // Access mode state
+  AccessModeInfo? _accessModeInfo;
+  bool _isAccessModeLoading = true;
 
   // Search state
   bool _isLoadingProducts = true;
@@ -73,10 +79,68 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadData();
     _startBannerTimer();
+    unawaited(_initializeAccessTracking());
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _runStartupDialogs();
     });
+  }
+
+  Future<void> _initializeAccessTracking() async {
+    try {
+      final info = await _userActivityService.registerAccess();
+      if (!mounted) return;
+      setState(() {
+        _accessModeInfo = info;
+        _isAccessModeLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isAccessModeLoading = false;
+      });
+      print('❌ Error inicializando acceso: $e');
+    }
+  }
+
+  Future<void> _refreshAccessMode({bool register = false}) async {
+    if (mounted) {
+      setState(() {
+        _isAccessModeLoading = true;
+      });
+    }
+
+    try {
+      final info = register
+          ? await _userActivityService.registerAccess()
+          : await _userActivityService.resolveAccessMode();
+      if (!mounted) return;
+      setState(() {
+        _accessModeInfo = info;
+        _isAccessModeLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isAccessModeLoading = false;
+      });
+      print('❌ Error actualizando acceso: $e');
+    }
+  }
+
+  Future<void> _handleAccessModeAction() async {
+    final info = _accessModeInfo;
+    if (info?.isLoggedIn == true) {
+      await _onProfilePressed();
+      return;
+    }
+
+    final result = await Navigator.of(context).pushNamed('/auth');
+    if (!mounted) return;
+    if (result == true) {
+      await _notificationService.initializeUserNotifications(force: true);
+      await _refreshAccessMode(register: true);
+    }
   }
 
   Future<void> _runStartupDialogs() async {
@@ -184,6 +248,9 @@ class _HomeScreenState extends State<HomeScreen> {
       final result = await Navigator.of(context).pushNamed('/auth');
       if (!mounted) return;
       if (result != true) return;
+
+      await _refreshAccessMode(register: true);
+      if (!mounted) return;
     }
 
     await _notificationService.initializeUserNotifications(force: true);
@@ -434,6 +501,191 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildAccessModeCard() {
+    final info = _accessModeInfo;
+    final isLoggedIn = info?.isLoggedIn ?? false;
+    final accentColor = isLoggedIn
+        ? AppTheme.accentColor
+        : AppTheme.primaryColor;
+    final title = isLoggedIn ? 'Sesión activa' : 'Modo invitado';
+    final subtitle = isLoggedIn
+        ? 'Estás navegando como ${info?.friendlyName ?? 'tu cuenta'}.'
+        : 'Explora el catálogo sin registrarte. Inicia sesión para recibir novedades y personalizar tu experiencia.';
+    final actionLabel = isLoggedIn ? 'Ver perfil' : 'Iniciar sesión';
+    final badgeLabel = isLoggedIn ? 'Con cuenta' : 'Invitado';
+    final tokenLabel = info == null
+        ? 'Identificando acceso...'
+        : 'ID: ${_shortToken(info.token)}';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.paddingM,
+        0,
+        AppTheme.paddingM,
+        AppTheme.paddingS,
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.white, accentColor.withOpacity(0.06)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(AppTheme.radiusL),
+          border: Border.all(color: accentColor.withOpacity(0.15)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppTheme.paddingM),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: accentColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(
+                      isLoggedIn
+                          ? Icons.verified_user_rounded
+                          : Icons.person_outline_rounded,
+                      color: accentColor,
+                      size: 26,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppTheme.textPrimary,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: accentColor.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                badgeLabel,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: accentColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          subtitle,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            height: 1.3,
+                            color: AppTheme.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.privacy_tip_outlined,
+                        size: 16,
+                        color: accentColor.withOpacity(0.8),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        tokenLabel,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  FilledButton.icon(
+                    onPressed: _isAccessModeLoading
+                        ? null
+                        : _handleAccessModeAction,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accentColor,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                    ),
+                    icon: Icon(
+                      isLoggedIn
+                          ? Icons.account_circle_rounded
+                          : Icons.login_rounded,
+                      size: 16,
+                    ),
+                    label: Text(
+                      actionLabel,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (_isAccessModeLoading) ...[
+                const SizedBox(height: 10),
+                LinearProgressIndicator(
+                  color: accentColor,
+                  backgroundColor: accentColor.withOpacity(0.15),
+                  minHeight: 3,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _shortToken(String token) {
+    if (token.isEmpty) return token;
+    if (token.length <= 10) return token;
+    return '${token.substring(0, 6)}…${token.substring(token.length - 4)}';
+  }
+
   Future<void> _downloadUpdate() async {
     try {
       final url = Uri.parse(UpdateService.downloadUrl);
@@ -565,7 +817,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       if (result == true) {
         await _notificationService.initializeUserNotifications(force: true);
-        if (mounted) setState(() {});
+        await _refreshAccessMode(register: true);
       }
       return;
     }
@@ -738,7 +990,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       await _notificationService.clearUserNotifications();
                     } catch (_) {}
                     if (context.mounted) Navigator.of(context).pop();
-                    if (mounted) setState(() {});
+                    await _refreshAccessMode(register: true);
                   },
                 ),
               ],
@@ -954,6 +1206,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
             // Banner informativo sobre Carnaval App
             SliverToBoxAdapter(child: _buildCarnavalInfoBanner()),
+
+            // Estado de acceso (invitado vs. cuenta)
+            // SliverToBoxAdapter(child: _buildAccessModeCard()),
 
             if (_isSearching) _buildSearchResults() else _buildHomeContent(),
           ],
