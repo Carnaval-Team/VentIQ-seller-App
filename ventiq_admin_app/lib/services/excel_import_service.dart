@@ -3,9 +3,11 @@ import 'dart:typed_data';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:ventiq_admin_app/services/inventory_service.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/currency_service.dart';
 
 /// Clase para manejar archivos de forma compatible con web y escritorio
 class ExcelFileWrapper {
@@ -128,6 +130,21 @@ class ExcelImportService {
     'producto_elaborado': 'es_elaborado', // Alias
     'costo_produccion': 'costo_produccion',
     'costo_elaboracion': 'costo_produccion', // Alias
+    
+    // ========== PRECIOS Y COSTOS ==========
+    'precio_costo': 'precio_costo',
+    'costo': 'precio_costo', // Alias
+    'costo_unitario': 'precio_costo', // Alias
+    'precio_costo_cup': 'precio_costo', // Alias
+    'costo_cup': 'precio_costo', // Alias
+    'costo_real': 'precio_costo', // Alias para recepción (se mapea como precio_costo)
+    'precio_compra': 'precio_costo', // Alias para recepción
+    
+    // ========== PROVEEDOR ==========
+    'proveedor': 'proveedor',
+    'nombre_proveedor': 'proveedor', // Alias
+    'proveedor_nombre': 'proveedor', // Alias
+    'id_proveedor': 'proveedor', // Alias
   };
 
   /// Selecciona archivo Excel
@@ -370,6 +387,56 @@ class ExcelImportService {
       if (idTienda == null) {
         throw Exception('No se encontró ID de tienda');
       }
+      
+      // ✅ NUEVO: Obtener tasa de cambio SIEMPRE (necesaria para ambas direcciones de conversión)
+      double? finalExchangeRate = exchangeRate;
+      if (finalExchangeRate == null) {
+        try {
+          print('💱 Obteniendo tasa de cambio desde CurrencyService...');
+          print('   - Moneda seleccionada en Excel: $priceCurrency');
+          final rates = await CurrencyService.getCurrentRatesFromDatabase();
+          
+          print('   - Tasas obtenidas de BD: ${rates.length} registros');
+          for (final rate in rates) {
+            print('     • ${rate['moneda_origen']} → ${rate['tasa']} USD');
+          }
+          
+          // Buscar la tasa correcta según la moneda seleccionada
+          // La tasa en BD puede estar en dos formatos:
+          // Formato 1: moneda_origen='CUP', tasa=0.002061855670103093 (1 CUP = X USD)
+          // Formato 2: moneda_origen='USD', tasa=485 (1 USD = X CUP)
+          
+          var rateData = rates.firstWhere(
+            (rate) => rate['moneda_origen'] == 'CUP',
+            orElse: () => <String, dynamic>{},
+          );
+          
+          if (rateData.isEmpty) {
+            // Si no está en formato CUP→USD, buscar en formato USD→CUP
+            rateData = rates.firstWhere(
+              (rate) => rate['moneda_origen'] == 'USD',
+              orElse: () => <String, dynamic>{},
+            );
+            
+            if (rateData.isNotEmpty) {
+              // Invertir la tasa: si 1 USD = 485 CUP, entonces 1 CUP = 1/485 USD
+              final tasaUsdACup = (rateData['tasa'] as num?)?.toDouble() ?? 0;
+              finalExchangeRate = 1.0 / tasaUsdACup;
+              print('✅ Tasa invertida de BD: 1 USD = $tasaUsdACup CUP → 1 CUP = $finalExchangeRate USD');
+            }
+          } else {
+            finalExchangeRate = (rateData['tasa'] as num?)?.toDouble();
+            print('✅ Tasa obtenida de BD: 1 CUP = $finalExchangeRate USD');
+          }
+          
+          if (finalExchangeRate == null || finalExchangeRate == 0) {
+            print('⚠️ No se pudo obtener tasa válida de BD');
+            print('   - Tasas disponibles: ${rates.map((r) => '${r['moneda_origen']}=${r['tasa']}').toList()}');
+          }
+        } catch (e) {
+          print('❌ Error obteniendo tasa de cambio: $e');
+        }
+      }
 
       final results = ImportResult();
       final totalRows = dataRows.length;
@@ -406,82 +473,241 @@ class ExcelImportService {
               warnings: results.warnings,
             );
 
-            // ✅ NUEVO: Convertir precio si es necesario
-            double precioFinal = (productData['precio_venta'] as num?)?.toDouble() ?? 0.0;
+            // ✅ NUEVO: Convertir precio si es necesario usando CurrencyService
+            // IMPORTANTE: Guardar valores ORIGINALES antes de convertir
+            final precioVentaOriginal = (productData['precio_venta'] as num?)?.toDouble() ?? 0.0;
+            final precioCostoOriginal = (productData['precio_costo'] as num?)?.toDouble();
             
-            if (priceCurrency != 'USD' && exchangeRate != null && exchangeRate > 0) {
-              // Convertir de la moneda origen a USD
-              precioFinal = precioFinal / exchangeRate;
-              
-              print('💱 Conversión de precio:');
-              print('   - Precio original ($priceCurrency): $precioFinal');
-              print('   - Tasa de cambio: 1 $priceCurrency = $exchangeRate USD');
-              print('   - Precio en USD: ${(precioFinal / exchangeRate).toStringAsFixed(2)}');
-              
-              // Actualizar el precio en productData
-              productData['precio_venta'] = precioFinal;
-            } else if (priceCurrency == 'USD') {
-              print('💵 Precio ya está en USD: \$${precioFinal.toStringAsFixed(2)}');
-            }
-
-            // Preparar datos de precios
-            List<Map<String, dynamic>>? preciosData;
-            if (productData.containsKey('precio_venta')) {
-              preciosData = [
-                {
-                  'precio_venta_cup': productData['precio_venta'],
-                  'fecha_desde': DateTime.now().toIso8601String().substring(
-                    0,
-                    10,
-                  ),
-                  'es_activo': true,
-                },
-              ];
-            }
-
-            // Preparar datos de subcategorías
-            List<Map<String, dynamic>>? subcategoriasData;
-            if (productData.containsKey('id_categoria')) {
-              subcategoriasData = [
-                {
-                  'id_sub_categoria': productData['id_categoria'],
-                  'es_principal': true,
-                },
-              ];
-            }
+            double precioVentaConvertido = precioVentaOriginal;
+            double? precioCostoConvertido = precioCostoOriginal;
             
-            // Preparar datos de presentación base
-            List<Map<String, dynamic>>? presentacionesData = [
-              {
-                'id_presentacion': 1, // ID 1 = Presentación "Unidad"
-                'cantidad': 1.0, // 1 unidad base = 1 unidad
-                'es_base': true,
-              },
-            ];
+            if (priceCurrency == 'CUP' && finalExchangeRate != null && finalExchangeRate > 0) {
+              // ✅ CORRECCIÓN: Excel en CUP
+              // - precio_venta: guardar como está (ya en CUP)
+              // - precio_costo: convertir a USD (CUP × tasa = USD)
+              print('💱 Excel en CUP - Conversión de costo a USD:');
+              print('   - Precio venta: $precioVentaOriginal CUP (se guarda como está)');
+              
+              if (precioCostoOriginal != null && precioCostoOriginal > 0) {
+                precioCostoConvertido = precioCostoOriginal * finalExchangeRate;
+                print('   - Precio costo: $precioCostoOriginal CUP → \$${precioCostoConvertido.toStringAsFixed(2)} USD');
+              }
+              
+              productData['precio_venta_original_cup'] = precioVentaOriginal;  // CUP como está
+              productData['precio_costo'] = precioCostoConvertido;  // Convertido a USD
+              
+            } else if (priceCurrency == 'USD' && finalExchangeRate != null && finalExchangeRate > 0) {
+              // ✅ CORRECCIÓN: Excel en USD
+              // - precio_venta: convertir a CUP (USD ÷ tasa = CUP)
+              // - precio_costo: guardar como está (ya en USD)
+              print('💱 Excel en USD - Conversión de venta a CUP:');
+              
+              precioVentaConvertido = precioVentaOriginal / finalExchangeRate;
+              print('   - Precio venta: \$${precioVentaOriginal.toStringAsFixed(2)} USD → ${precioVentaConvertido.toStringAsFixed(2)} CUP');
+              print('   - Precio costo: \$${precioCostoOriginal?.toStringAsFixed(2)} USD (se guarda como está)');
+              
+              productData['precio_venta_original_cup'] = precioVentaConvertido;  // Convertido a CUP
+              // precioCostoUsd ya tiene el valor correcto (no necesita conversión)
+              
+            } else {
+              // Sin tasa de conversión disponible
+              print('⚠️ Sin tasa de conversión disponible para $priceCurrency');
+              productData['precio_venta_original_cup'] = precioVentaOriginal;
+            }
 
-            // Insertar producto
-            final insertResult = await ProductService.insertProductoCompleto(
-              productoData: productData,
-              preciosData: preciosData,
-              subcategoriasData: subcategoriasData,
-              presentacionesData: presentacionesData,
+            // ✅ VALIDAR SI EL PRODUCTO YA EXISTE POR NOMBRE
+            final denominacion = productData['denominacion'] as String;
+            final productoExistente = await ProductService.findProductByNameAndStore(
+              denominacion: denominacion,
+              idTienda: idTienda,
             );
             
-            print('🔍 Estructura completa de insertResult: $insertResult');
-            print('🔍 Claves disponibles: ${insertResult.keys.toList()}');
+            int? productoId;
             
-            // Intentar obtener el ID del producto de diferentes ubicaciones posibles
-            final productoId = (insertResult['id_producto'] ?? 
-                               insertResult['producto_id'] ?? 
-                               insertResult['data']?['id_producto'] ??
-                               insertResult['data']?['producto_id']) as int?;
-            
-            print('🎯 ID del producto obtenido: $productoId');
+            if (productoExistente != null) {
+              // ✅ PRODUCTO EXISTENTE: Reutilizar
+              productoId = productoExistente['id'] as int;
+              
+              print('♻️ PRODUCTO EXISTENTE REUTILIZADO:');
+              print('   - ID: $productoId');
+              print('   - Nombre: $denominacion');
+              print('   - SKU existente: ${productoExistente['sku']}');
+              
+              // ✅ NUEVO: Actualizar precio de costo en presentación base si está disponible
+              if (productData.containsKey('precio_costo') && productData['precio_costo'] != null) {
+                try {
+                  final precioCosto = (productData['precio_costo'] as num?)?.toDouble() ?? 0.0;
+                  print('💰 Actualizando precio de costo para producto existente: \$${precioCosto.toStringAsFixed(2)}');
+                  
+                  // Actualizar el precio_promedio en la presentación base (id_presentacion = 1)
+                  await Supabase.instance.client
+                      .from('app_dat_producto_presentacion')
+                      .update({'precio_promedio': precioCosto})
+                      .eq('id_producto', productoId)
+                      .eq('id_presentacion', 1);
+                  
+                  print('✅ Precio de costo actualizado exitosamente');
+                } catch (e) {
+                  print('⚠️ Error actualizando precio de costo: $e');
+                  results.warnings.add(ImportWarning(
+                    row: rowIndex + 2,
+                    message: 'Error actualizando precio de costo del producto: $e',
+                    type: 'cost_price_update_error',
+                  ));
+                }
+              }
+              
+              // Agregar warning informativo
+              results.warnings.add(ImportWarning(
+                row: rowIndex + 2,
+                message: 'Producto "$denominacion" ya existe (ID: $productoId). Se reutilizó el producto existente.',
+                type: 'product_reused',
+              ));
+              
+              results.successCount++;
+              results.successfulProducts.add(
+                '$denominacion (Existente)',
+              );
+            } else {
+              // ✅ PRODUCTO NUEVO: Insertar
+              print('🆕 PRODUCTO NUEVO: Insertando "$denominacion"');
+              
+              // ✅ NUEVO: Buscar proveedor si está disponible
+              int? idProveedor;
+              if (productData.containsKey('proveedor') && productData['proveedor'] != null) {
+                final nombreProveedor = productData['proveedor'].toString().trim();
+                if (nombreProveedor.isNotEmpty) {
+                  try {
+                    print('🔍 Buscando proveedor: "$nombreProveedor"');
+                    // Buscar proveedor por nombre en la tienda
+                    final proveedoresResponse = await Supabase.instance.client
+                        .from('app_dat_proveedor')
+                        .select('id')
+                        .eq('idtienda', idTienda)
+                        .ilike('denominacion', '%$nombreProveedor%')
+                        .limit(1);
+                    
+                    if (proveedoresResponse.isNotEmpty) {
+                      idProveedor = proveedoresResponse.first['id'] as int;
+                      print('✅ Proveedor encontrado: ID=$idProveedor');
+                    } else {
+                      print('⚠️ Proveedor no encontrado: "$nombreProveedor"');
+                      results.warnings.add(ImportWarning(
+                        row: rowIndex + 2,
+                        message: 'Proveedor "$nombreProveedor" no encontrado en la tienda. Se dejará sin asignar.',
+                        type: 'provider_not_found',
+                      ));
+                    }
+                  } catch (e) {
+                    print('❌ Error buscando proveedor: $e');
+                    results.warnings.add(ImportWarning(
+                      row: rowIndex + 2,
+                      message: 'Error buscando proveedor: $e',
+                      type: 'provider_search_error',
+                    ));
+                  }
+                }
+              }
+              
+              // Agregar proveedor a productData si se encontró
+              if (idProveedor != null) {
+                productData['id_proveedor'] = idProveedor;
+              }
+              
+              // ✅ CRÍTICO: Preparar datos de precios con valor ORIGINAL en CUP
+              // precio_venta_cup SIEMPRE debe estar en CUP (valor original del Excel)
+              List<Map<String, dynamic>>? preciosData;
+              if (productData.containsKey('precio_venta_original_cup')) {
+                final precioVentaCup = (productData['precio_venta_original_cup'] as num?)?.toDouble() ?? 0.0;
+                print('💾 Guardando precio_venta_cup: $precioVentaCup CUP (valor original)');
+                preciosData = [
+                  {
+                    'precio_venta_cup': precioVentaCup,  // ✅ ORIGINAL en CUP
+                    'fecha_desde': DateTime.now().toIso8601String().substring(
+                      0,
+                      10,
+                    ),
+                    'es_activo': true,
+                  },
+                ];
+              }
 
-            results.successCount++;
-            results.successfulProducts.add(
-              productData['denominacion'] ?? 'Producto ${rowIndex + 1}',
-            );
+              // Preparar datos de subcategorías
+              List<Map<String, dynamic>>? subcategoriasData;
+              if (productData.containsKey('id_categoria')) {
+                subcategoriasData = [
+                  {
+                    'id_sub_categoria': productData['id_categoria'],
+                    'es_principal': true,
+                  },
+                ];
+              }
+              
+              // ✅ NUEVO: Preparar datos de presentación base con precio de costo EN USD
+              // El precio_costo ya fue convertido en productData en la sección anterior
+              // IMPORTANTE: precio_promedio SIEMPRE debe estar en USD
+              // ✅ VALIDACIÓN: Mismo criterio que en SQL
+              dynamic precioCostoFinal;
+              
+              if (productData.containsKey('precio_costo')) {
+                final precioCostoRaw = (productData['precio_costo'] as num?)?.toDouble();
+                
+                // ✅ MISMO CRITERIO QUE SQL:
+                // - No null
+                // - No string 'null'
+                // - Mayor a 0
+                if (precioCostoRaw != null && precioCostoRaw > 0) {
+                  precioCostoFinal = precioCostoRaw;
+                  print('💾 Guardando precio_promedio en USD: \$${precioCostoRaw.toStringAsFixed(2)}');
+                } else {
+                  precioCostoFinal = null;
+                  print('⚠️ precio_costo es null o <= 0, precio_promedio será null');
+                }
+              } else {
+                precioCostoFinal = null;
+                print('⚠️ No hay precio_costo en productData, precio_promedio será null');
+              }
+              
+              List<Map<String, dynamic>>? presentacionesData = [
+                {
+                  'id_presentacion': 1, // ID 1 = Presentación "Unidad"
+                  'cantidad': 1.0, // 1 unidad base = 1 unidad
+                  'es_base': true,
+                  'precio_promedio': precioCostoFinal, // En USD (puede ser null)
+                },
+              ];
+
+              // Insertar producto
+              print('\n📦 ===== DATOS FINALES ANTES DE INSERTAR =====');
+              print('📦 productData: $productData');
+              print('📦 preciosData: $preciosData');
+              print('📦 presentacionesData: $presentacionesData');
+              print('📦 subcategoriasData: $subcategoriasData');
+              
+              final insertResult = await ProductService.insertProductoCompleto(
+                productoData: productData,
+                preciosData: preciosData,
+                subcategoriasData: subcategoriasData,
+                presentacionesData: presentacionesData,
+              );
+              
+              print('\n📦 ===== RESULTADO DE INSERCIÓN =====');
+              print('🔍 Estructura completa de insertResult: $insertResult');
+              print('🔍 Claves disponibles: ${insertResult.keys.toList()}');
+              
+              // Intentar obtener el ID del producto de diferentes ubicaciones posibles
+              productoId = (insertResult['id_producto'] ?? 
+                                 insertResult['producto_id'] ?? 
+                                 insertResult['data']?['id_producto'] ??
+                                 insertResult['data']?['producto_id']) as int?;
+              
+              print('🎯 ID del producto obtenido: $productoId');
+
+              results.successCount++;
+              results.successfulProducts.add(
+                productData['denominacion'] ?? 'Producto ${rowIndex + 1}',
+              );
+            }
             
             // Si se importa con stock, guardar info del producto
             print('🔍 Verificando si agregar producto a lista de stock (fila ${rowIndex + 2}):');
@@ -490,10 +716,14 @@ class ExcelImportService {
             print('   - stockConfig: ${stockConfig != null ? "presente" : "null"}');
             
             if (importWithStock && productoId != null && stockConfig != null) {
+              // ✅ NUEVO: Pasar precio_costo convertido a USD para recepción
+              final precioCostoParaRecepcion = (productData['precio_costo'] as num?)?.toDouble() ?? 0.0;
               productosConStock.add({
                 'id_producto': productoId,
                 'row': row,
                 'rowIndex': rowIndex,
+                'precio_costo_usd': precioCostoParaRecepcion,  // ✅ NUEVO: Precio convertido a USD
+                'precio_venta_original_cup': precioVentaOriginal,  // ✅ NUEVO: Precio venta original en CUP
               });
               print('   ✅ Producto $productoId agregado a lista de stock (total: ${productosConStock.length})');
             } else {
@@ -535,6 +765,8 @@ class ExcelImportService {
             stockConfig: stockConfig,
             idTienda: idTienda,
             warnings: results.warnings,
+            priceCurrency: priceCurrency,
+            exchangeRate: finalExchangeRate,
           );
           print('✅ Recepción masiva creada exitosamente');
         } catch (e, stackTrace) {
@@ -734,13 +966,21 @@ class ExcelImportService {
         case 'precio_venta':
         case 'precio_oferta':
         case 'costo_produccion':
+        case 'precio_costo':
           // Usar _parseNumericValue para manejar formatos de moneda
           final doubleValue = _parseNumericValue(cellValueStr);
           if (doubleValue != null) {
             productData[mappedField] = doubleValue;
+            // ✅ NUEVO: Si es precio_costo, también guardarlo como costo_real para recepción
+            if (mappedField == 'precio_costo') {
+              productData['costo_real'] = doubleValue;
+            }
           } else {
             // No se pudo parsear, usar 0 y agregar warning
             productData[mappedField] = 0.0;
+            if (mappedField == 'precio_costo') {
+              productData['costo_real'] = 0.0;
+            }
             warnings?.add(ImportWarning(
               row: rowIndex ?? 0,
               message: 'Campo "$mappedField" no pudo parsearse ("$cellValueStr"), se cambió a 0',
@@ -839,9 +1079,31 @@ class ExcelImportService {
     if (!productData.containsKey('id_categoria')) {
       throw Exception('Categoría es obligatoria');
     }
-    if (!productData.containsKey('sku') ||
+
+    // ✅ NUEVO: Generar SKU automáticamente si no está disponible
+    if (!productData.containsKey('sku') || 
         productData['sku'].toString().isEmpty) {
-      throw Exception('SKU es obligatorio');
+      print('🏷️ SKU no disponible en Excel, generando automáticamente...');
+      
+      final denominacion = productData['denominacion'].toString();
+      final idCategoria = productData['id_categoria'];
+      
+      // Generar SKU basado en: Categoría + Subcategoría + Denominación + Timestamp
+      final generatedSku = _generateSkuForProduct(
+        denominacion: denominacion,
+        idCategoria: idCategoria,
+      );
+      
+      productData['sku'] = generatedSku;
+      
+      print('✅ SKU generado automáticamente: $generatedSku');
+      
+      // Agregar warning informativo
+      warnings?.add(ImportWarning(
+        row: rowIndex ?? 0,
+        message: 'SKU no proporcionado en Excel. Se generó automáticamente: $generatedSku',
+        type: 'sku_generated',
+      ));
     }
 
     // Valores por defecto
@@ -1051,6 +1313,8 @@ class ExcelImportService {
     required Map<String, dynamic> stockConfig,
     required int idTienda,
     List<ImportWarning>? warnings,
+    String priceCurrency = 'USD',
+    double? exchangeRate,
   }) async {
     final columnMapping = stockConfig['columnMapping'] as Map<String, String>;
     final locationId = stockConfig['locationId'] as int;
@@ -1090,15 +1354,36 @@ class ExcelImportService {
           precioRaw = cellValueStr;
           precioCompra = _parseNumericValue(precioRaw);
           print('   💵 Precio: "$precioRaw" -> $precioCompra');
+          
+          // ✅ NUEVO: Convertir precio si es necesario
+          if (priceCurrency != 'USD' && exchangeRate != null && exchangeRate > 0 && precioCompra != null) {
+            final precioOriginal = precioCompra;
+            precioCompra = precioCompra * exchangeRate;  // ✅ Convertir a USD
+            print('   💱 Precio convertido: $precioOriginal $priceCurrency → \$${precioCompra.toStringAsFixed(2)} USD');
+          } else if (priceCurrency == 'USD') {
+            print('   💵 Precio ya está en USD: \$${precioCompra?.toStringAsFixed(2)}');
+          }
         }
       }
       
       // Validar datos con logs detallados
+      // ✅ NUEVO: Obtener precio final para validación
+      double precioValidacion = precioCompra ?? 0.0;
+      if (precioValidacion == 0.0) {
+        final productoInfo = productosConStock.firstWhere(
+          (p) => p['id_producto'] == productoId,
+          orElse: () => <String, dynamic>{},
+        );
+        if (productoInfo.containsKey('precio_costo_usd')) {
+          precioValidacion = (productoInfo['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
+        }
+      }
+      
       print('   ✅ Validación:');
       print('      - Cantidad: $cantidad ${cantidad != null && cantidad > 0 ? "✅" : "❌ (debe ser > 0)"}');
-      print('      - Precio: $precioCompra ${precioCompra != null && precioCompra > 0 ? "✅" : "❌ (debe ser > 0)"}');
+      print('      - Precio: $precioValidacion ${precioValidacion > 0 ? "✅" : "❌ (debe ser > 0)"}');
       
-      if (cantidad != null && cantidad > 0 && precioCompra != null && precioCompra > 0) {
+      if (cantidad != null && cantidad > 0 && precioValidacion > 0) {
         // Obtener el ID del registro de presentación base (PK de app_dat_producto_presentacion)
         int? idProductoPresentacion;
         try {
@@ -1114,32 +1399,45 @@ class ExcelImportService {
           print('  ❌ Error obteniendo presentación para producto $productoId: $e');
         }
         
+        // ✅ NUEVO: Obtener precio_costo_usd y precio_venta_original_cup del producto
+        double precioFinal = precioCompra ?? 0.0;
+        double precioVentaCup = 0.0;
+        
+        // Si el precio no se encontró en la fila, intentar obtener del productosConStock
+        final productoInfo = productosConStock.firstWhere(
+          (p) => p['id_producto'] == productoId,
+          orElse: () => <String, dynamic>{},
+        );
+        
+        if (precioFinal == 0.0 && productoInfo.containsKey('precio_costo_usd')) {
+          precioFinal = (productoInfo['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
+          print('   💰 Usando precio_costo_usd del producto: \$${precioFinal.toStringAsFixed(2)}');
+        }
+        
+        if (productoInfo.containsKey('precio_venta_original_cup')) {
+          precioVentaCup = (productoInfo['precio_venta_original_cup'] as num?)?.toDouble() ?? 0.0;
+          print('   💾 Usando precio_venta_original_cup del producto: $precioVentaCup CUP');
+        }
+        
         productos.add({
           'id_producto': productoId,
-          'id_producto_presentacion': idProductoPresentacion,
+          'id_presentacion': idProductoPresentacion,
           'id_ubicacion': locationId,
           'cantidad': cantidad,
-          'precio_compra': precioCompra,
+          'precio_unitario': precioFinal,  // ✅ En USD (convertido si era necesario)
         });
-        print('   ✅ AGREGADO - Cantidad: $cantidad, Precio: \$$precioCompra, Subtotal: \$${cantidad * precioCompra}');
+        print('   ✅ AGREGADO - Cantidad: $cantidad, Precio: \$$precioFinal, Subtotal: \$${cantidad * precioFinal}');
       } else {
         productosDescartados++;
         print('   ❌ DESCARTADO - Razones:');
         
         String razon = '';
-        if (cantidad == null) {
-          razon = 'Cantidad no pudo parsearse ("$cantidadRaw")';
-          print('      - $razon');
-        } else if (cantidad <= 0) {
-          razon = 'Cantidad es 0 o negativa: $cantidad';
+        if (cantidad == null || cantidad <= 0) {
+          razon = cantidad == null ? 'Cantidad no pudo parsearse ("$cantidadRaw")' : 'Cantidad es 0 o negativa: $cantidad';
           print('      - $razon');
         }
-        if (precioCompra == null) {
-          final precioRazon = 'Precio no pudo parsearse ("$precioRaw")';
-          razon = razon.isEmpty ? precioRazon : '$razon, $precioRazon';
-          print('      - $precioRazon');
-        } else if (precioCompra <= 0) {
-          final precioRazon = 'Precio es 0 o negativo: $precioCompra';
+        if (precioValidacion <= 0) {
+          final precioRazon = 'Precio es 0 o negativo: $precioValidacion';
           razon = razon.isEmpty ? precioRazon : '$razon, $precioRazon';
           print('      - $precioRazon');
         }
@@ -1170,7 +1468,7 @@ class ExcelImportService {
     // Calcular monto total
     final montoTotal = productos.fold<double>(
       0.0,
-      (sum, p) => sum + ((p['precio_compra'] as double) * (p['cantidad'] as double)),
+      (sum, p) => sum + (((p['precio_unitario'] as num?)?.toDouble() ?? 0.0) * ((p['cantidad'] as num?)?.toDouble() ?? 0.0)),
     );
     
     // Crear operación de recepción
@@ -1202,6 +1500,50 @@ class ExcelImportService {
     );
     
     print('✅ Recepción masiva completada exitosamente');
+  }
+
+  /// Genera un SKU automáticamente basado en categoría y denominación del producto
+  static String _generateSkuForProduct({
+    required String denominacion,
+    required int idCategoria,
+  }) {
+    try {
+      print('🏷️ Generando SKU automáticamente...');
+      print('   - Denominación: $denominacion');
+      print('   - ID Categoría: $idCategoria');
+
+      // Limpiar denominación: solo letras y números, convertir a mayúsculas
+      final cleanDenom = denominacion
+          .replaceAll(RegExp(r'[^a-zA-Z0-9\s]'), '') // Remover caracteres especiales
+          .trim()
+          .toUpperCase();
+
+      // Tomar primeras 3 letras de la denominación
+      String skuPart1 = cleanDenom.length >= 3 
+          ? cleanDenom.substring(0, 3) 
+          : cleanDenom.padRight(3, 'X');
+
+      // Usar ID de categoría (máximo 3 dígitos)
+      String skuPart2 = idCategoria.toString().padLeft(3, '0').substring(0, 3);
+
+      // Agregar timestamp para unicidad (últimos 3 dígitos)
+      final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+      String skuPart3 = timestamp.substring(timestamp.length - 3);
+
+      // Combinar: DDD-CCC-TTT (Denominación-Categoría-Timestamp)
+      final generatedSku = '$skuPart1$skuPart2$skuPart3';
+
+      print('✅ SKU generado: $generatedSku');
+      print('   - Parte 1 (Denominación): $skuPart1');
+      print('   - Parte 2 (Categoría): $skuPart2');
+      print('   - Parte 3 (Timestamp): $skuPart3');
+
+      return generatedSku;
+    } catch (e) {
+      print('❌ Error generando SKU: $e');
+      // Fallback: usar timestamp simple
+      return 'SKU${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
+    }
   }
 }
 
@@ -1265,7 +1607,7 @@ class ImportError {
 class ImportWarning {
   final int row;
   final String message;
-  final String type; // 'value_changed', 'category_override', 'stock_skipped', etc.
+  final String type; // 'value_changed', 'category_override', 'stock_skipped', 'product_reused', etc.
 
   ImportWarning({required this.row, required this.message, required this.type});
 }

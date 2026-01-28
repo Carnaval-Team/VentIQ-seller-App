@@ -103,7 +103,7 @@ class ProductService {
       print('📦 Datos del producto: $productoData');
 
       final response = await _supabase.rpc(
-        'insert_producto_completo_v2',
+        'insert_producto_completo_v3',
         params: {
           'producto_data': productoData,
           'subcategorias_data': subcategoriasData,
@@ -203,22 +203,43 @@ class ProductService {
     try {
       print('🔍 Buscando producto existente: "$denominacion" en tienda: $idTienda');
 
+      // Normalizar denominación: trim y convertir a minúsculas para comparación
+      final denominacionNormalizada = denominacion.trim().toLowerCase();
+      
+      print('   - Denominación normalizada: "$denominacionNormalizada"');
+
+      // Obtener todos los productos de la tienda para búsqueda case-insensitive exacta
       final response = await _supabase
           .from('app_dat_producto')
-          .select('id, denominacion, sku, id_categoria, precio_venta')
-          .eq('id_tienda', idTienda)
-          .ilike('denominacion', denominacion) // Búsqueda case-insensitive
-          .limit(1);
+          .select('id, denominacion, sku, id_categoria')
+          .eq('id_tienda', idTienda);
 
       if (response.isEmpty) {
-        print('❌ No se encontró producto con nombre: "$denominacion"');
+        print('❌ No hay productos en esta tienda');
         return null;
       }
 
-      final producto = response.first;
-      print('✅ Producto existente encontrado: ID=${producto['id']}, SKU=${producto['sku']}');
+      // Buscar coincidencia exacta (case-insensitive)
+      Map<String, dynamic>? productoEncontrado;
+      for (final producto in response) {
+        final denomProducto = (producto['denominacion'] as String?)?.trim().toLowerCase() ?? '';
+        print('   - Comparando con: "$denomProducto"');
+        
+        if (denomProducto == denominacionNormalizada) {
+          productoEncontrado = producto;
+          print('   ✅ Coincidencia exacta encontrada');
+          break;
+        }
+      }
+
+      if (productoEncontrado == null) {
+        print('❌ No se encontró producto con nombre exacto: "$denominacion"');
+        return null;
+      }
+
+      print('✅ Producto existente encontrado: ID=${productoEncontrado['id']}, SKU=${productoEncontrado['sku']}');
       
-      return producto;
+      return productoEncontrado;
     } catch (e, stackTrace) {
       print('❌ Error al buscar producto por nombre: $e');
       print('📍 StackTrace: $stackTrace');
@@ -397,6 +418,10 @@ class ProductService {
 
       // Extraer presentaciones para crear variantes
       final presentaciones = json['presentaciones'] as List<dynamic>? ?? [];
+      
+      // Obtener precio de venta del RPC (el RPC retorna 'precio_venta', no 'precio_venta_cup')
+      final precioVenta = (json['precio_venta'] ?? 0).toDouble();
+      
       final variants =
           presentaciones.map((pres) {
             final presMap = pres as Map<String, dynamic>;
@@ -405,7 +430,7 @@ class ProductService {
               productId: json['id']?.toString() ?? '',
               name: presMap['presentacion'] ?? '',
               presentation: presMap['presentacion'] ?? '',
-              price: (json['precio_venta'] ?? 0).toDouble(),
+              price: precioVenta,
               sku: presMap['sku_codigo'] ?? '',
               barcode: json['codigo_barras'] ?? '',
               isActive: json['es_vendible'] ?? true,
@@ -420,7 +445,7 @@ class ProductService {
             productId: json['id']?.toString() ?? '',
             name: 'Presentación base',
             presentation: json['um'] ?? 'Unidad',
-            price: (json['precio_venta'] ?? 0).toDouble(),
+            price: precioVenta,
             sku: json['sku'] ?? '',
             barcode: json['codigo_barras'] ?? '',
             isActive: json['es_vendible'] ?? true,
@@ -438,7 +463,7 @@ class ProductService {
         brand: json['nombre_comercial'] ?? 'Sin marca',
         sku: json['sku'] ?? '',
         barcode: json['codigo_barras'] ?? '',
-        basePrice: (json['precio_venta'] ?? 0).toDouble(),
+        basePrice: precioVenta,
         imageUrl: json['imagen'] ?? '',
         isActive: json['es_vendible'] ?? true,
         createdAt: DateTime.now(), // La API no retorna fecha de creación

@@ -1,12 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:ventiq_admin_app/services/product_service.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../services/excel_import_service.dart';
 import '../widgets/admin_drawer.dart';
 import '../services/user_preferences_service.dart';
 import '../services/warehouse_service.dart';
+import '../services/currency_service.dart';
 
 class ExcelImportScreen extends StatefulWidget {
   const ExcelImportScreen({super.key});
@@ -890,6 +890,10 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
         return Icons.category;
       case 'stock_skipped':
         return Icons.inventory_2;
+      case 'product_reused':
+        return Icons.recycling;
+      case 'sku_generated':
+        return Icons.qr_code_2;
       default:
         return Icons.warning;
     }
@@ -1060,10 +1064,42 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
         _showError('Debe seleccionar una ubicación para el stock');
         return;
       }
-      if (!_stockColumnMapping.containsKey('cantidad') || 
-          !_stockColumnMapping.containsKey('precio_compra')) {
-        _showError('Debe mapear las columnas de Cantidad y Precio de Compra');
+      
+      // ✅ NUEVO: Validar cantidad
+      if (!_stockColumnMapping.containsKey('cantidad')) {
+        _showError('Debe mapear la columna de Cantidad');
         return;
+      }
+      
+      // ✅ NUEVO: Validar precio_compra - buscar fallback en precio_costo
+      bool tienePrecioCompra = _stockColumnMapping.containsKey('precio_compra');
+      
+      if (!tienePrecioCompra) {
+        // Buscar si precio_costo o costo está mapeado en _finalColumnMapping
+        final tienePrecioCosto = _finalColumnMapping.values.contains('precio_costo') ||
+                                 _finalColumnMapping.values.contains('costo');
+        
+        if (!tienePrecioCosto) {
+          _showError('Debe mapear las columnas de Cantidad y Precio de Compra (o Costo)');
+          return;
+        }
+        
+        // ✅ Si precio_costo está mapeado, usarlo como precio_compra automáticamente
+        print('💡 Usando precio_costo como precio_compra para stock inicial');
+        
+        // Encontrar la columna que mapea a precio_costo
+        String? columnaPrecioCosto;
+        for (final entry in _finalColumnMapping.entries) {
+          if (entry.value == 'precio_costo') {
+            columnaPrecioCosto = entry.key;
+            break;
+          }
+        }
+        
+        if (columnaPrecioCosto != null) {
+          _stockColumnMapping['precio_compra'] = columnaPrecioCosto;
+          print('✅ Mapeado automáticamente: $columnaPrecioCosto → precio_compra');
+        }
       }
     }
 
@@ -1191,9 +1227,20 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
                       border: Border.all(color: Colors.grey.withOpacity(0.3)),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(
-                      _getTasaInfo(selectedCurrency),
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    child: FutureBuilder<String>(
+                      future: _getTasaInfo(selectedCurrency),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Text(
+                            'Cargando tasa...',
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          );
+                        }
+                        return Text(
+                          snapshot.data ?? 'No se pudo cargar la tasa',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        );
+                      },
                     ),
                   ),
                 ],
@@ -1243,54 +1290,89 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
   }
 
   /// Obtener información de la tasa para mostrar en el diálogo
-  String _getTasaInfo(String currency) {
-    switch (currency) {
-      case 'USD':
+  Future<String> _getTasaInfo(String currency) async {
+    try {
+      if (currency == 'USD') {
         return '💵 USD: Sin conversión, los precios se guardan tal cual.';
-      case 'CUP':
-        return '💱 CUP: 1 USD = 435 CUP\nLos precios se convertirán dividiendo entre 435.';
-      case 'EUR':
-        return '💶 EUR: 1 EUR = 480 CUP\nLos precios se convertirán dividiendo entre 480.';
-      default:
-        return '';
+      }
+      
+      // Cargar tasas reales desde CurrencyService
+      final rates = await CurrencyService.getCurrentRatesFromDatabase();
+      
+      // Buscar la tasa para la moneda seleccionada
+      final rateData = rates.firstWhere(
+        (rate) => rate['moneda_origen'] == currency,
+        orElse: () => <String, dynamic>{},
+      );
+      
+      if (rateData.isNotEmpty) {
+        final tasa = (rateData['tasa'] as num?)?.toDouble() ?? 0;
+        
+        switch (currency) {
+          case 'CUP':
+            return '💱 CUP: 1 CUP = ${tasa.toStringAsFixed(6)} USD\nLos precios se convertirán multiplicando por $tasa.';
+          case 'EUR':
+            return '💶 EUR: 1 EUR = ${tasa.toStringAsFixed(2)} CUP\nLos precios se convertirán dividiendo entre $tasa.';
+          default:
+            return '💱 $currency: Tasa = $tasa';
+        }
+      } else {
+        // Si no encuentra la tasa, buscar en formato inverso (USD→CUP)
+        final inverseRate = rates.firstWhere(
+          (rate) => rate['moneda_origen'] == 'USD',
+          orElse: () => <String, dynamic>{},
+        );
+        
+        if (inverseRate.isNotEmpty) {
+          final tasaUsdACup = (inverseRate['tasa'] as num?)?.toDouble() ?? 0;
+          final tasaCupAUsd = 1.0 / tasaUsdACup;
+          return '💱 $currency: 1 USD = ${tasaUsdACup.toStringAsFixed(2)} CUP (1 CUP = ${tasaCupAUsd.toStringAsFixed(6)} USD)';
+        }
+        
+        return '⚠️ No se encontró tasa para $currency en la base de datos.';
+      }
+    } catch (e) {
+      return '❌ Error al cargar la tasa: $e';
     }
   }
 
-  /// Obtener tasa de cambio desde la BD (tabla tasas_conversion)
+  /// Obtener tasa de cambio usando CurrencyService
   Future<double> _getExchangeRate(String fromCurrency) async {
     try {
-      print('📊 Obteniendo tasa de cambio de $fromCurrency a USD desde BD...');
+      print('📊 Obteniendo tasa de cambio de $fromCurrency a USD usando CurrencyService...');
       
-      // Obtener tasa de conversión desde la tabla tasas_conversion
-      // Busca la tasa de fromCurrency a USD
-      final response = await Supabase.instance.client
-          .from('tasas_conversion')
-          .select('tasa')
-          .eq('moneda_origen', fromCurrency)
-          .eq('moneda_destino', 'U') // USD
-          .limit(1);
-      
-      if (response.isEmpty) {
-        print('⚠️ No se encontró tasa de conversión en BD para $fromCurrency → USD');
-        print('   Usando tasa por defecto...');
-        
-        // Tasas por defecto si no están en BD
-        // Conversión a USD basada en CUP
-        final defaultRates = {
-          'CUP': 435.0, // 1 USD = 435 CUP
-          'EUR': 480.0, // 1 EUR = 480 CUP (convertir a USD: 480/435 = 1.10 USD)
-        };
-        
-        final rate = defaultRates[fromCurrency];
-        if (rate == null) {
-          throw Exception('Moneda no soportada: $fromCurrency');
-        }
-        
-        print('✅ Tasa de cambio (por defecto): 1 $fromCurrency = $rate CUP');
-        return rate;
+      // Si es USD, retornar 1.0 (no hay conversión)
+      if (fromCurrency == 'USD') {
+        print('✅ Moneda es USD, no requiere conversión');
+        return 1.0;
       }
       
-      final rate = (response.first['tasa'] as num).toDouble();
+      // Si es CUP, usar CurrencyService para obtener la tasa USD→CUP y luego invertir
+      if (fromCurrency == 'CUP') {
+        final usdToCupRate = await CurrencyService.getEffectiveUsdToCupRate();
+        print('💱 Tasa USD→CUP obtenida de CurrencyService: $usdToCupRate');
+        final cupToUsdRate = 1.0 / usdToCupRate;
+        print('✅ Tasa de cambio CUP→USD: $cupToUsdRate');
+        return cupToUsdRate;
+      }
+      
+      // Para otras monedas, obtener de la tabla tasas_conversion usando CurrencyService
+      print('🔍 Buscando tasa de conversión para $fromCurrency en BD...');
+      final rates = await CurrencyService.getEffectiveRatesFromDatabase();
+      
+      // Buscar la tasa de fromCurrency a USD
+      final rateData = rates.firstWhere(
+        (rate) => rate['moneda_origen'] == fromCurrency && 
+                  (rate['moneda_destino'] == 'USD' || rate['moneda_destino'] == null),
+        orElse: () => <String, dynamic>{},
+      );
+      
+      if (rateData.isEmpty) {
+        print('⚠️ No se encontró tasa de conversión para $fromCurrency → USD');
+        throw Exception('Moneda no soportada: $fromCurrency. Solo se soportan USD y CUP.');
+      }
+      
+      final rate = (rateData['tasa'] as num?)?.toDouble() ?? 1.0;
       print('✅ Tasa de cambio (desde BD): 1 $fromCurrency = $rate USD');
       return rate;
       
@@ -1635,7 +1717,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
             ),
             const SizedBox(height: 8),
             _buildStockColumnRow('cantidad', 'Cantidad/Stock *'),
-            _buildStockColumnRow('precio_compra', 'Precio de Compra *'),
+            // _buildStockColumnRow('precio_compra', 'Precio de Compra *'),
           ],
         ],
       ),
@@ -1643,9 +1725,22 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
   }
 
   Widget _buildStockColumnRow(String field, String label) {
-    final availableColumns = _analysisResult?.headers
-        .where((h) => !_finalColumnMapping.containsKey(h))
-        .toList() ?? [];
+    // ✅ NUEVO: Filtrar columnas disponibles eliminando duplicados
+    final allHeaders = _analysisResult?.headers ?? [];
+    final availableColumns = <String>{};
+    
+    for (final h in allHeaders) {
+      // Incluir si no está mapeada en _finalColumnMapping
+      if (!_finalColumnMapping.containsKey(h)) {
+        availableColumns.add(h);
+      }
+      // O si ya está seleccionada en el stock mapping actual
+      else if (_stockColumnMapping[field] == h) {
+        availableColumns.add(h);
+      }
+    }
+    
+    final availableColumnsList = availableColumns.toList();
     
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -1682,7 +1777,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                ...availableColumns.map((col) {
+                ...availableColumnsList.map((col) {
                   return DropdownMenuItem<String>(
                     value: col,
                     child: Text(

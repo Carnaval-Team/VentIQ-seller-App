@@ -146,7 +146,7 @@ class ConsignacionMovimientosService {
       final stats = (response is List ? response[0] : response) as Map<String, dynamic>;
 
       // ✅ Retornar solo los campos necesarios (sin promedio ni cantidad de operaciones)
-      // El total a liquidar es: cantidad_vendida * precio_costo_promedio
+      // El total a liquidar es: cantidad_vendida * precio_promedio
       return {
         'totalEnviado': stats['total_enviado'] ?? 0,
         'totalVendido': stats['total_vendido'] ?? 0,

@@ -84,11 +84,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     print('  • Es Gerente: $isGerente');
 
     print('✅ Puede editar productos: $canEdit');
-    setState(() {
-      _canEditProduct = canEdit;
-      _canDeleteProduct = canDelete;
-      _isGerente = isGerente;
-    });
+    if (mounted) {
+      setState(() {
+        _canEditProduct = canEdit;
+        _canDeleteProduct = canDelete;
+        _isGerente = isGerente;
+      });
+    }
   }
 
   Future<void> _loadAdditionalData() async {
@@ -99,16 +101,18 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     print('🔍 Verificando si debe cargar ingredientes...');
 
     // Establecer estado de carga
-    setState(() {
-      _isLoadingPricingData = true;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoadingPricingData = true;
+      });
+    }
 
     // Recargar el producto completo para obtener datos actualizados
     try {
       final productActualizado = await ProductService.getProductoCompletoById(
         int.parse(_product.id),
       );
-      if (productActualizado != null) {
+      if (productActualizado != null && mounted) {
         setState(() {
           _product = productActualizado;
           _isLoadingPricingData = false;
@@ -117,9 +121,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       }
     } catch (e) {
       print('⚠️ Error al recargar producto: $e');
-      setState(() {
-        _isLoadingPricingData = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingPricingData = false;
+        });
+      }
     }
 
     await Future.wait([
@@ -143,36 +149,36 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _loadIngredients() async {
-    setState(() => _isLoadingIngredients = true);
+    if (mounted) setState(() => _isLoadingIngredients = true);
     try {
       _ingredientes = await ProductService.getProductIngredients(_product.id);
     } catch (e) {
       print('Error loading ingredients: $e');
       _ingredientes = [];
     } finally {
-      setState(() => _isLoadingIngredients = false);
+      if (mounted) setState(() => _isLoadingIngredients = false);
     }
   }
 
   Future<void> _loadProductsUsingThisIngredient() async {
-    setState(() => _isLoadingProductsUsingIngredient = true);
+    if (mounted) setState(() => _isLoadingProductsUsingIngredient = true);
     try {
-      print('🔍 Cargando productos que usan este producto como ingrediente...');
+      print(' Cargando productos que usan este producto como ingrediente...');
       _productsUsingThisIngredient =
           await ProductService.getProductsUsingThisIngredient(_product.id);
       print(
-        '📊 Productos encontrados que usan este ingrediente: ${_productsUsingThisIngredient.length}',
+        ' Productos encontrados que usan este ingrediente: ${_productsUsingThisIngredient.length}',
       );
     } catch (e) {
       print('Error loading products using this ingredient: $e');
       _productsUsingThisIngredient = [];
     } finally {
-      setState(() => _isLoadingProductsUsingIngredient = false);
+      if (mounted) setState(() => _isLoadingProductsUsingIngredient = false);
     }
   }
 
   Future<void> _loadStockLocations() async {
-    setState(() => _isLoadingLocations = true);
+    if (mounted) setState(() => _isLoadingLocations = true);
     try {
       _stockLocations = await ProductService.getProductStockLocations(
         _product.id,
@@ -181,12 +187,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       print('Error loading stock locations: $e');
       _stockLocations = [];
     } finally {
-      setState(() => _isLoadingLocations = false);
+      if (mounted) setState(() => _isLoadingLocations = false);
     }
   }
 
   Future<void> _loadReceptionOperations() async {
-    setState(() => _isLoadingOperations = true);
+    if (mounted) setState(() => _isLoadingOperations = true);
     try {
       final response = await ProductService.getProductReceptionOperations(
         _product.id,
@@ -202,53 +208,57 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       print('Error loading reception operations: $e');
       _receptionOperations = [];
     } finally {
-      setState(() => _isLoadingOperations = false);
+      if (mounted) setState(() => _isLoadingOperations = false);
     }
   }
 
   Future<void> _loadPriceHistory() async {
-    setState(() => _isLoadingCharts = true);
+    if (mounted) setState(() => _isLoadingCharts = true);
     try {
       _priceHistory = await ProductService.getProductPriceHistory(_product.id);
     } catch (e) {
       print('Error loading price history: $e');
       _priceHistory = [];
     } finally {
-      setState(() => _isLoadingCharts = false);
+      if (mounted) setState(() => _isLoadingCharts = false);
     }
   }
 
   Future<void> _loadPromotionalPrices() async {
-    setState(() => _isLoadingPromotions = true);
+    if (mounted) setState(() => _isLoadingPromotions = true);
     try {
-      print('🔍 ===== CARGANDO PROMOCIONES =====');
-      print('🔍 Producto ID: ${_product.id}');
+      print(' ===== CARGANDO PROMOCIONES =====');
+      print(' Producto ID: ${_product.id}');
 
       final promociones = await ProductService.getProductPromotionalPrices(
         _product.id,
       );
 
-      print('📊 Promociones recibidas en pantalla: ${promociones.length}');
+      print(' Promociones recibidas en pantalla: ${promociones.length}');
       if (promociones.isNotEmpty) {
-        print('🔍 Primera promoción:');
+        print(' Primera promoción:');
         print('   ${promociones.first}');
       }
 
-      setState(() {
-        _promotionalPrices = promociones;
-        _isLoadingPromotions = false;
-      });
+      if (mounted) {
+        setState(() {
+          _promotionalPrices = promociones;
+          _isLoadingPromotions = false;
+        });
+      }
 
       print(
-        '✅ Estado actualizado - Promociones en _promotionalPrices: ${_promotionalPrices.length}',
+        ' Estado actualizado - Promociones en _promotionalPrices: ${_promotionalPrices.length}',
       );
     } catch (e, stackTrace) {
-      print('❌ Error loading promotional prices: $e');
-      print('📍 StackTrace: $stackTrace');
-      setState(() {
-        _promotionalPrices = [];
-        _isLoadingPromotions = false;
-      });
+      print(' Error loading promotional prices: $e');
+      print(' StackTrace: $stackTrace');
+      if (mounted) {
+        setState(() {
+          _promotionalPrices = [];
+          _isLoadingPromotions = false;
+        });
+      }
     }
   }
 
@@ -262,17 +272,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       // Debug: Comparar stock actual del producto vs stock final del gráfico
       if (_stockHistory.isNotEmpty) {
         final stockFinalGrafico = _stockHistory.last['cantidad'];
-        print('🔍 COMPARACIÓN DE STOCK:');
-        print('📦 Stock actual del producto: ${_product.stockDisponible}');
-        print('📈 Stock final en gráfico: $stockFinalGrafico');
-        print('📊 Diferencia: ${stockFinalGrafico - _product.stockDisponible}');
+        print(' COMPARACIÓN DE STOCK:');
+        print(' Stock actual del producto: ${_product.stockDisponible}');
+        print(' Stock final en gráfico: $stockFinalGrafico');
+        print(' Diferencia: ${stockFinalGrafico - _product.stockDisponible}');
       }
 
-      setState(() {}); // Update UI after loading data
+      if (mounted) setState(() {}); // Update UI after loading data
     } catch (e) {
       print('Error loading stock history: $e');
       _stockHistory = [];
-      setState(() {}); // Update UI even on error
+      if (mounted) setState(() {}); // Update UI even on error
     }
   }
 
@@ -793,10 +803,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         border: OutlineInputBorder(),
                       ),
                       onChanged: (value) {
-                        setState(() {
-                          _operationIdFilter = value.isEmpty ? null : value;
-                          _currentPage = 1;
-                        });
+                        if (mounted) {
+                          setState(() {
+                            _operationIdFilter = value.isEmpty ? null : value;
+                            _currentPage = 1;
+                          });
+                        }
                         _loadReceptionOperations();
                       },
                     ),
@@ -804,10 +816,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   const SizedBox(width: 8),
                   ElevatedButton(
                     onPressed: () {
-                      setState(() {
-                        _operationIdFilter = null;
-                        _currentPage = 1;
-                      });
+                      if (mounted) {
+                        setState(() {
+                          _operationIdFilter = null;
+                          _currentPage = 1;
+                        });
+                      }
                       _loadReceptionOperations();
                     },
                     style: ElevatedButton.styleFrom(
@@ -931,7 +945,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     onPressed:
                         _hasPreviousPage
                             ? () {
-                              setState(() => _currentPage--);
+                              if (mounted) setState(() => _currentPage--);
                               _loadReceptionOperations();
                             }
                             : null,
@@ -952,7 +966,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     onPressed:
                         _hasNextPage
                             ? () {
-                              setState(() => _currentPage++);
+                              if (mounted) setState(() => _currentPage++);
                               _loadReceptionOperations();
                             }
                             : null,
@@ -1004,12 +1018,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       reservedSize: 60,
                       getTitlesWidget:
                           (value, meta) => Text(
-                            '\$${value.toInt()}',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey[600],
-                            ),
-                          ),
+                        '\$${value.toInt()}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey[600],
+                        ),
+                      ),
                     ),
                   ),
                   bottomTitles: AxisTitles(
@@ -1072,7 +1086,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       title: 'Precios Promocionales',
       icon: Icons.local_offer,
       children: [
-        // ✅ AGREGAR: Indicador de carga
+        // AGREGAR: Indicador de carga
         if (_isLoadingPromotions)
           const Center(
             child: Padding(
@@ -1091,10 +1105,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              // ✅ AGREGAR: Botón para recargar
+              // AGREGAR: Botón para recargar
               TextButton.icon(
                 onPressed: () {
-                  print('🔄 Recargando promociones manualmente...');
+                  print(' Recargando promociones manualmente...');
                   _loadPromotionalPrices();
                 },
                 icon: const Icon(Icons.refresh),
@@ -1105,7 +1119,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         else
           Column(
             children: [
-              // ✅ AGREGAR: Contador de promociones
+              // AGREGAR: Contador de promociones
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Text(
@@ -1175,7 +1189,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      // ✅ CORRECCIÓN: Cambiar Row por Column para evitar overflow
+                      // CORRECCIÓN: Cambiar Row por Column para evitar overflow
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1247,12 +1261,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       reservedSize: 60,
                       getTitlesWidget:
                           (value, meta) => Text(
-                            value.toInt().toString(),
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey[600],
-                            ),
-                          ),
+                        value.toInt().toString(),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey[600],
+                        ),
+                      ),
                     ),
                   ),
                   bottomTitles: AxisTitles(
@@ -2556,9 +2570,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   ) async {
     try {
       print(
-        '🔍 Navegando al detalle del producto: ${productData['denominacion_producto']}',
+        ' Navegando al detalle del producto: ${productData['denominacion_producto']}',
       );
-      print('🔍 ID del producto: ${productData['id_producto_elaborado']}');
+      print(' ID del producto: ${productData['id_producto_elaborado']}');
 
       // Mostrar indicador de carga
       showDialog(
@@ -2598,7 +2612,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         Navigator.pop(context);
       }
 
-      print('❌ Error navegando al detalle del producto: $e');
+      print(' Error navegando al detalle del producto: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error al cargar el producto: $e'),
@@ -2621,7 +2635,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               product: _product,
               onProductSaved: () {
                 // Refresh the product data after editing
-                print('🔄 Producto editado, recargando datos...');
+                print(' Producto editado, recargando datos...');
                 _loadAdditionalData();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -2644,7 +2658,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       return;
     }
     try {
-      setState(() => _isLoading = true);
+      if (mounted) setState(() => _isLoading = true);
 
       final result = await ProductService.duplicateProduct(_product.id);
 
@@ -2669,7 +2683,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -2690,7 +2704,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       );
 
       if (result != null && result.files.single.bytes != null) {
-        setState(() => _isLoading = true);
+        if (mounted) setState(() => _isLoading = true);
 
         Uint8List bytes = result.files.single.bytes!;
         var excel = excel_lib.Excel.decodeBytes(bytes);
@@ -3074,7 +3088,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
     if (confirmed == true) {
       try {
-        setState(() => _isLoading = true);
+        if (mounted) setState(() => _isLoading = true);
 
         final success = await ProductService.deleteProduct(_product.id);
 
@@ -3515,10 +3529,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _showSupplierSelectionDialog() async {
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isLoading = true);
     try {
       List<Supplier> suppliers = await SupplierService.getAllSuppliers();
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
 
       if (!mounted) return;
 
@@ -3591,7 +3605,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al cargar proveedores: $e')),
         );
       }
@@ -3599,7 +3613,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _updateProductSupplier(Supplier? supplier) async {
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isLoading = true);
     try {
       final success = await ProductService.updateProductSupplier(
         int.parse(_product.id),
@@ -3609,7 +3623,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       if (success) {
         // Recargar datos para ver el nombre actualizado
         final updatedProduct = await ProductService.getProductoCompletoById(int.parse(_product.id));
-        if (updatedProduct != null) {
+        if (updatedProduct != null && mounted) {
           setState(() {
             _product = updatedProduct;
           });
