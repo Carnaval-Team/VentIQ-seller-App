@@ -1,9 +1,36 @@
 {
-  "current_version": "1.8.5",
-  "build": 185,
+  "current_version": "1.8.6",
+  "build": 186,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.8.6",
+      "date": "2026-01-28",
+      "title": "💱 Importación de Excel con Conversión de Monedas Mejorada",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Soporte para Tasas de Cambio Bidireccionales",
+          "description": "El sistema ahora soporta tasas de cambio en ambos formatos: CUP→USD y USD→CUP. Automáticamente invierte la tasa si es necesario para realizar conversiones correctas."
+        },
+        {
+          "type": "improvement",
+          "title": "Tasas de Cambio Dinámicas en Diálogo de Importación",
+          "description": "El diálogo de selección de moneda ahora carga las tasas reales desde la base de datos en lugar de valores hardcodeados, mostrando la tasa actual vigente."
+        },
+        {
+          "type": "fix",
+          "title": "Manejo de Tasas Inversas en Importación",
+          "description": "Corregido problema donde las tasas guardadas como USD→CUP (1 USD = 485 CUP) no se invertían correctamente para obtener CUP→USD (1 CUP = 1/485 USD)."
+        },
+        {
+          "type": "fix",
+          "title": "Null Safety en Cálculo de Monto Total",
+          "description": "Agregadas validaciones null-safe en el cálculo del monto total de recepción para evitar errores cuando precio_unitario o cantidad son nulos."
+        }
+      ]
+    },
     {
       "version": "1.8.5",
       "date": "2026-01-27",
