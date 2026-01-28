@@ -608,8 +608,63 @@ class WarehouseService {
     String id,
     Map<String, dynamic> payload,
   ) async {
-    // PUT /api/almacenes/{id}
-    await Future.delayed(const Duration(milliseconds: 150));
+    final updateData = <String, dynamic>{};
+    final denominacion = payload['denominacion']?.toString().trim();
+    final direccion = payload['direccion']?.toString().trim();
+    final ubicacion = payload['ubicacion']?.toString().trim();
+    final tipo = payload['tipo']?.toString().trim();
+
+    if (denominacion != null && denominacion.isNotEmpty) {
+      updateData['denominacion'] = denominacion;
+    }
+    if (direccion != null && direccion.isNotEmpty) {
+      updateData['direccion'] = direccion;
+    }
+    if (payload.containsKey('ubicacion')) {
+      updateData['ubicacion'] =
+          ubicacion != null && ubicacion.isNotEmpty ? ubicacion : null;
+    }
+    if (payload.containsKey('tipo')) {
+      updateData['tipo'] = tipo != null && tipo.isNotEmpty ? tipo : null;
+    }
+
+    if (updateData.isEmpty) {
+      return;
+    }
+
+    final idInt = int.tryParse(id);
+    if (idInt == null) {
+      throw Exception('ID de almacén inválido');
+    }
+
+    try {
+      print('🔄 Actualizando almacén $idInt con datos: $updateData');
+      await _supabase
+          .from('app_dat_almacen')
+          .update(updateData)
+          .eq('id', idInt);
+      print('✅ Almacén actualizado correctamente');
+    } on PostgrestException catch (e) {
+      if (updateData.containsKey('tipo') &&
+          (e.message.contains('tipo') ||
+              (e.details?.toString().contains('tipo') ?? false))) {
+        updateData.remove('tipo');
+        if (updateData.isEmpty) {
+          rethrow;
+        }
+        print('⚠️ Columna tipo no disponible, actualizando sin tipo');
+        await _supabase
+            .from('app_dat_almacen')
+            .update(updateData)
+            .eq('id', idInt);
+        return;
+      }
+      print('❌ Error actualizando almacén: $e');
+      rethrow;
+    } catch (e) {
+      print('❌ Error actualizando almacén: $e');
+      rethrow;
+    }
   }
 
   Future<void> deleteWarehouse(String id) async {

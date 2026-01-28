@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../models/promotion.dart';
 import '../services/promotion_service.dart';
+import '../services/store_selector_service.dart';
 import '../widgets/marketing_menu_widget.dart';
 import '../widgets/store_selector_widget.dart';
 import 'promotion_detail_screen.dart';
@@ -16,6 +17,7 @@ class PromotionsScreen extends StatefulWidget {
 
 class _PromotionsScreenState extends State<PromotionsScreen> {
   final PromotionService _promotionService = PromotionService();
+  final StoreSelectorService _storeService = StoreSelectorService();
   final TextEditingController _searchController = TextEditingController();
 
   List<Promotion> _promotions = [];
@@ -28,18 +30,43 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
   int _currentPage = 1;
   final int _pageSize = 20;
   bool _hasMoreData = true;
+  int? _currentStoreId;
 
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
+    _storeService.addListener(_onStoreChanged);
+    _initializeStore();
     _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _storeService.removeListener(_onStoreChanged);
     super.dispose();
+  }
+
+  Future<void> _initializeStore() async {
+    await _storeService.initialize();
+    if (!mounted) return;
+
+    if (_currentStoreId != null) {
+      return;
+    }
+
+    _currentStoreId = _storeService.selectedStore?.id;
+    await _loadInitialData();
+  }
+
+  Future<void> _onStoreChanged() async {
+    final newStoreId = _storeService.selectedStore?.id;
+    if (!mounted || newStoreId == null || newStoreId == _currentStoreId) {
+      return;
+    }
+
+    _currentStoreId = newStoreId;
+    await _loadInitialData();
   }
 
   Future<void> _loadInitialData() async {
@@ -49,7 +76,14 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
 
     try {
       final futures = await Future.wait([
-        _promotionService.listPromotions(page: 1, limit: _pageSize),
+        _promotionService.listPromotions(
+          search:
+              _searchController.text.isEmpty ? null : _searchController.text,
+          estado: _selectedStatus,
+          tipoPromocion: _selectedType,
+          page: 1,
+          limit: _pageSize,
+        ),
         _promotionService.getPromotionTypes(),
         _promotionService.getPromotionStats(),
       ]);
@@ -206,10 +240,7 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
         title: const Text('Promociones'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        actions: const [
-          AppBarStoreSelectorWidget(),
-          MarketingMenuWidget(),
-        ],
+        actions: const [AppBarStoreSelectorWidget(), MarketingMenuWidget()],
       ),
       body: Column(
         children: [
@@ -227,10 +258,14 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
   }
 
   Widget _buildStatsCards() {
-    // No mostrar estadísticas si no hay promociones activas
-    if (_stats.isEmpty || (_stats['promociones_activas'] ?? 0) == 0) {
+    if (_isLoading) {
       return const SizedBox.shrink();
     }
+
+    final totalPromotions = _promotions.length;
+    final activePromotions =
+        _promotions.where((promotion) => promotion.isActive).length;
+    final totalUsos = _stats['total_usos'] ?? 0;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -239,7 +274,7 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
           Expanded(
             child: _buildStatCard(
               'Total',
-              _stats['total_promociones']?.toString() ?? '0',
+              totalPromotions.toString(),
               Icons.campaign,
               AppColors.primary,
             ),
@@ -248,7 +283,7 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
           Expanded(
             child: _buildStatCard(
               'Activas',
-              _stats['promociones_activas']?.toString() ?? '0',
+              activePromotions.toString(),
               Icons.check_circle,
               Colors.green,
             ),
@@ -257,7 +292,7 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
           Expanded(
             child: _buildStatCard(
               'Usos',
-              _stats['total_usos']?.toString() ?? '0',
+              totalUsos.toString(),
               Icons.trending_up,
               Colors.orange,
             ),
@@ -318,123 +353,124 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
   void _showFiltersDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Filtros de Búsqueda'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Buscar promociones...',
-                  prefixIcon: const Icon(Icons.search),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: _selectedType,
-                decoration: InputDecoration(
-                  labelText: 'Tipo de Promoción',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                ),
-                items: [
-                  const DropdownMenuItem<String>(
-                    value: null,
-                    child: Text('Todos los tipos'),
-                  ),
-                  ..._promotionTypes.map(
-                    (type) => DropdownMenuItem<String>(
-                      value: type.id,
-                      child: Text(type.denominacion),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Filtros de Búsqueda'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Buscar promociones...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: _selectedType,
+                    decoration: InputDecoration(
+                      labelText: 'Tipo de Promoción',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                    ),
+                    items: [
+                      const DropdownMenuItem<String>(
+                        value: null,
+                        child: Text('Todos los tipos'),
+                      ),
+                      ..._promotionTypes.map(
+                        (type) => DropdownMenuItem<String>(
+                          value: type.id,
+                          child: Text(type.denominacion),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedType = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<bool>(
+                    value: _selectedStatus,
+                    decoration: InputDecoration(
+                      labelText: 'Estado',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                    ),
+                    items: const [
+                      DropdownMenuItem<bool>(
+                        value: null,
+                        child: Text('Todos los estados'),
+                      ),
+                      DropdownMenuItem<bool>(
+                        value: true,
+                        child: Text('Activas'),
+                      ),
+                      DropdownMenuItem<bool>(
+                        value: false,
+                        child: Text('Inactivas'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedStatus = value;
+                      });
+                    },
+                  ),
                 ],
-                onChanged: (value) {
-                  setState(() {
-                    _selectedType = value;
-                  });
-                },
               ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<bool>(
-                value: _selectedStatus,
-                decoration: InputDecoration(
-                  labelText: 'Estado',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                ),
-                items: const [
-                  DropdownMenuItem<bool>(
-                    value: null,
-                    child: Text('Todos los estados'),
-                  ),
-                  DropdownMenuItem<bool>(
-                    value: true,
-                    child: Text('Activas'),
-                  ),
-                  DropdownMenuItem<bool>(
-                    value: false,
-                    child: Text('Inactivas'),
-                  ),
-                ],
-                onChanged: (value) {
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
                   setState(() {
-                    _selectedStatus = value;
+                    _searchController.clear();
+                    _selectedType = null;
+                    _selectedStatus = null;
                   });
+                  _refreshPromotions();
+                  Navigator.pop(context);
                 },
+                child: const Text('Limpiar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  _refreshPromotions();
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Aplicar'),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _searchController.clear();
-                _selectedType = null;
-                _selectedStatus = null;
-              });
-              _refreshPromotions();
-              Navigator.pop(context);
-            },
-            child: const Text('Limpiar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              _refreshPromotions();
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Aplicar'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -664,9 +700,11 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
               Row(
                 children: [
                   _buildInfoChip(
-                    promotion.isChargePromotion ? Icons.trending_up : Icons.local_offer,
-                    promotion.isChargePromotion 
-                        ? '+${promotion.valorDescuento}%' 
+                    promotion.isChargePromotion
+                        ? Icons.trending_up
+                        : Icons.local_offer,
+                    promotion.isChargePromotion
+                        ? '+${promotion.valorDescuento}%'
                         : '${promotion.valorDescuento}%',
                     color: promotion.isChargePromotion ? Colors.orange : null,
                   ),
@@ -736,7 +774,10 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
         children: [
           Icon(icon, size: 14, color: color ?? Colors.grey[600]),
           const SizedBox(width: 4),
-          Text(text, style: TextStyle(fontSize: 12, color: color ?? Colors.grey[600])),
+          Text(
+            text,
+            style: TextStyle(fontSize: 12, color: color ?? Colors.grey[600]),
+          ),
         ],
       ),
     );
@@ -756,7 +797,6 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
       ),
     );
   }
-
 
   void _navigateToPromotionDetail(Promotion promotion) {
     Navigator.push(

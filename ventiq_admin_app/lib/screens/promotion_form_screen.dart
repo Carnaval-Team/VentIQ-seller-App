@@ -52,7 +52,7 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
   bool _isLoading = false;
   bool _isEditing = false;
   bool _isLoadingTypes = false;
-  
+
   // Payment method state
   bool _requiereMedioPago = false;
   String? _selectedMedioPago;
@@ -69,7 +69,9 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
   bool _isLoadingProducts = false;
   String? _productSearchQuery;
   final _productSearchController = TextEditingController();
-  
+  bool _isLoadingPromotionProducts = false;
+  bool _didLoadPromotionProducts = false;
+
   // Store state
   int? _selectedStoreId;
   String? _selectedStoreName;
@@ -79,29 +81,29 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     super.initState();
     _isEditing = widget.promotion != null;
     _promotionTypes = widget.promotionTypes;
-    
+
     // Initialize store service and load selected store
     _initializeStore();
-    
+
     // Set default dates for new promotions
     if (!_isEditing) {
       _fechaInicio = DateTime.now();
       _fechaFin = DateTime.now().add(const Duration(days: 30));
-      
+
       // Pre-fill form if product is provided
       if (widget.prefilledProduct != null) {
         _prefilledProductForm();
       }
     }
-    
+
     // Load promotion types if not provided or if we need fresh data
     if (_promotionTypes.isEmpty || _isEditing) {
       _loadPromotionTypes();
     }
-    
+
     // Load available products
     _loadAvailableProducts();
-    
+
     // Load payment methods first, then populate form for editing
     _loadPaymentMethods().then((_) {
       if (_isEditing) {
@@ -117,7 +119,9 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
         _selectedStoreId = _storeService.selectedStore?.id;
         _selectedStoreName = _storeService.selectedStore?.denominacion;
       });
-      print('🏪 Tienda seleccionada para promociones: $_selectedStoreName (ID: $_selectedStoreId)');
+      print(
+        '🏪 Tienda seleccionada para promociones: $_selectedStoreName (ID: $_selectedStoreId)',
+      );
     } catch (e) {
       print('❌ Error inicializando tienda: $e');
       _showErrorSnackBar('Error al cargar la tienda seleccionada');
@@ -145,32 +149,91 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     _minCompraController.text = promotion.minCompra?.toString() ?? '';
     _limiteUsosController.text = promotion.limiteUsos?.toString() ?? '';
     _selectedTipoPromocion = promotion.idTipoPromocion;
-    _fechaInicio = promotion.fechaInicio;
-    _fechaFin = promotion.fechaFin;
+    _fechaInicio = promotion.fechaInicio.toLocal();
+    _fechaFin = promotion.fechaFin?.toLocal();
     _estado = promotion.estado ?? false;
     _aplicaTodo = promotion.aplicaTodo ?? false;
     _requiereMedioPago = promotion.requiereMedioPago ?? false;
     _selectedMedioPago = promotion.idMedioPagoRequerido?.toString();
-    
+
     print('📝 Formulario poblado con datos de promoción: ${promotion.nombre}');
     print('📝 Tipo de promoción seleccionado: $_selectedTipoPromocion');
     print('📝 Requiere medio de pago: $_requiereMedioPago');
     print('📝 Medio de pago seleccionado: $_selectedMedioPago');
+
+    _loadSelectedProductsForEdit();
+  }
+
+  Future<void> _loadSelectedProductsForEdit() async {
+    if (!_isEditing || _aplicaTodo) {
+      return;
+    }
+    if (_isLoadingPromotionProducts || _didLoadPromotionProducts) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingPromotionProducts = true;
+    });
+
+    try {
+      final promotion = widget.promotion;
+      if (promotion == null) {
+        return;
+      }
+
+      final embeddedProducts =
+          promotion.productos
+              .map((item) => item.producto)
+              .whereType<Product>()
+              .toList();
+
+      final products =
+          embeddedProducts.isNotEmpty
+              ? embeddedProducts
+              : await _promotionService.getPromotionProducts(promotion.id);
+      final dedupedProducts = _dedupeProductsById(products);
+
+      if (!mounted) return;
+
+      setState(() {
+        _selectedProducts = dedupedProducts;
+        _didLoadPromotionProducts = true;
+        _isLoadingPromotionProducts = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingPromotionProducts = false;
+        _didLoadPromotionProducts = true;
+      });
+      _showErrorSnackBar('Error al cargar productos de la promoción: $e');
+    }
+  }
+
+  List<Product> _dedupeProductsById(List<Product> products) {
+    final unique = <String, Product>{};
+    for (final product in products) {
+      unique[product.id] = product;
+    }
+    return unique.values.toList();
   }
 
   void _prefilledProductForm() {
     final product = widget.prefilledProduct!;
-    
+
     // Pre-fill form with product-specific data
     _nombreController.text = 'Promoción Especial - ${product.name}';
-    _descripcionController.text = 'Promoción especial para el producto ${product.name} (SKU: ${product.sku})';
-    _codigoController.text = 'PROMO_${product.sku}_${DateTime.now().millisecondsSinceEpoch}';
-    
+    _descripcionController.text =
+        'Promoción especial para el producto ${product.name} (SKU: ${product.sku})';
+    _codigoController.text =
+        'PROMO_${product.sku}_${DateTime.now().millisecondsSinceEpoch}';
+
     // Set default values for product-specific promotion
     _aplicaTodo = false; // This promotion applies to specific product, not all
     _valorDescuentoController.text = '10.0'; // Default 10% discount
     _minCompraController.text = '1'; // Minimum purchase of 1 unit
-    
+
     print('📝 Formulario pre-llenado para producto: ${product.name}');
     print('📝 SKU del producto: ${product.sku}');
   }
@@ -187,12 +250,12 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
         _promotionTypes = types;
         _isLoadingTypes = false;
       });
-      
+
       // Si estamos editando, volver a poblar el formulario después de cargar los tipos
       if (_isEditing && widget.promotion != null) {
         _populateForm();
       }
-      
+
       print('✅ Cargados ${types.length} tipos de promoción');
     } catch (e) {
       setState(() {
@@ -215,16 +278,20 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
         // Actualizar preferencias con la tienda seleccionada antes de cargar productos
         final userPrefs = UserPreferencesService();
         await userPrefs.updateSelectedStore(_selectedStoreId!);
-        print('🏪 Tienda actualizada en preferencias: $_selectedStoreName (ID: $_selectedStoreId)');
+        print(
+          '🏪 Tienda actualizada en preferencias: $_selectedStoreName (ID: $_selectedStoreId)',
+        );
       }
-      
+
       final products = await ProductService.getProductsByTienda();
-      
+
       setState(() {
         _availableProducts = products;
         _isLoadingProducts = false;
       });
-      print('✅ Cargados ${products.length} productos de tienda: $_selectedStoreName');
+      print(
+        '✅ Cargados ${products.length} productos de tienda: $_selectedStoreName',
+      );
     } catch (e) {
       setState(() {
         _isLoadingProducts = false;
@@ -246,12 +313,16 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
         _isLoadingPaymentMethods = false;
       });
       print('✅ Cargados ${paymentMethods.length} métodos de pago');
-      
+
       // Si estamos editando y hay un método de pago seleccionado, verificar que existe en la lista
       if (_isEditing && _selectedMedioPago != null) {
-        final methodExists = _paymentMethods.any((method) => method.id.toString() == _selectedMedioPago);
+        final methodExists = _paymentMethods.any(
+          (method) => method.id.toString() == _selectedMedioPago,
+        );
         if (!methodExists) {
-          print('⚠️ Método de pago ${_selectedMedioPago} no encontrado en la lista cargada');
+          print(
+            '⚠️ Método de pago ${_selectedMedioPago} no encontrado en la lista cargada',
+          );
           // Mantener el valor pero mostrar advertencia
         } else {
           print('✅ Método de pago ${_selectedMedioPago} encontrado y validado');
@@ -300,7 +371,9 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     }
 
     // Validar que el tipo de promoción existe en la lista cargada
-    final tipoExists = _promotionTypes.any((type) => type.id == _selectedTipoPromocion);
+    final tipoExists = _promotionTypes.any(
+      (type) => type.id == _selectedTipoPromocion,
+    );
     if (!tipoExists) {
       _showErrorSnackBar('El tipo de promoción seleccionado no es válido');
       return;
@@ -324,8 +397,8 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
             _minCompraController.text.isEmpty
                 ? null
                 : double.parse(_minCompraController.text),
-        'fecha_inicio': _fechaInicio!.toIso8601String(),
-        'fecha_fin': _fechaFin?.toIso8601String(),
+        'fecha_inicio': _formatDateForApi(_fechaInicio!),
+        'fecha_fin': _fechaFin != null ? _formatDateForApi(_fechaFin!) : null,
         'estado': _estado,
         'aplica_todo': _aplicaTodo,
         'limite_usos':
@@ -333,11 +406,16 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                 ? null
                 : int.parse(_limiteUsosController.text),
         'requiere_medio_pago': _requiereMedioPago,
-        'id_medio_pago_requerido': _selectedMedioPago != null ? int.tryParse(_selectedMedioPago!) : null,
+        'id_medio_pago_requerido':
+            _selectedMedioPago != null
+                ? int.tryParse(_selectedMedioPago!)
+                : null,
         'id_tienda': _selectedStoreId,
       };
 
-      print('💾 Guardando promoción en tienda: $_selectedStoreName (ID: $_selectedStoreId)');
+      print(
+        '💾 Guardando promoción en tienda: $_selectedStoreName (ID: $_selectedStoreId)',
+      );
       print('💾 Datos de promoción: $promotionData');
 
       late promo.Promotion createdPromotion;
@@ -347,35 +425,43 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
           widget.promotion!.id,
           promotionData,
         );
-        createdPromotion = await _promotionService.getPromotionById(widget.promotion!.id);
+        createdPromotion = await _promotionService.getPromotionById(
+          widget.promotion!.id,
+        );
         _showSuccessSnackBar('Promoción actualizada exitosamente');
       } else {
         // Determinar qué productos usar para la relación
         List<Product> productsToLink = [];
-        
+
         // Si hay un producto pre-llenado, usarlo
         if (widget.prefilledProduct != null) {
           productsToLink = [widget.prefilledProduct!];
-          print('📦 Usando producto pre-llenado: ${widget.prefilledProduct!.name}');
+          print(
+            '📦 Usando producto pre-llenado: ${widget.prefilledProduct!.name}',
+          );
         }
         // Si no aplica a todo y hay productos seleccionados, usarlos
         else if (!_aplicaTodo && _selectedProducts.isNotEmpty) {
           productsToLink = _selectedProducts;
-          print('📦 Usando productos seleccionados: ${_selectedProducts.length}');
+          print(
+            '📦 Usando productos seleccionados: ${_selectedProducts.length}',
+          );
         }
 
         // Crear promoción con productos específicos si hay productos para vincular
         if (productsToLink.isNotEmpty) {
-          print('📦 Creando promoción con ${productsToLink.length} productos específicos');
-          createdPromotion = await _promotionService.createPromotionWithProducts(
-            promotionData,
-            productsToLink,
+          print(
+            '📦 Creando promoción con ${productsToLink.length} productos específicos',
           );
+          createdPromotion = await _promotionService
+              .createPromotionWithProducts(promotionData, productsToLink);
         } else {
           print('📦 Creando promoción general (aplica a todos los productos)');
-          createdPromotion = await _promotionService.createPromotion(promotionData);
+          createdPromotion = await _promotionService.createPromotion(
+            promotionData,
+          );
         }
-        
+
         _showSuccessSnackBar('Promoción creada exitosamente');
       }
 
@@ -599,7 +685,10 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                   Expanded(
                     child: Text(
                       _loadingError!,
-                      style: const TextStyle(color: AppColors.error, fontSize: 12),
+                      style: const TextStyle(
+                        color: AppColors.error,
+                        fontSize: 12,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -628,14 +717,15 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
         border: OutlineInputBorder(),
         prefixIcon: Icon(Icons.category),
       ),
-      items: _promotionTypes
-          .map(
-            (type) => DropdownMenuItem<String>(
-              value: type.id,
-              child: Text(type.denominacion),
-            ),
-          )
-          .toList(),
+      items:
+          _promotionTypes
+              .map(
+                (type) => DropdownMenuItem<String>(
+                  value: type.id,
+                  child: Text(type.denominacion),
+                ),
+              )
+              .toList(),
       onChanged: (value) {
         setState(() {
           _selectedTipoPromocion = value;
@@ -651,7 +741,8 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
   }
 
   Widget _buildChargePromotionWarning() {
-    if (_selectedTipoPromocion == null || !_isChargePromotionType(_selectedTipoPromocion!)) {
+    if (_selectedTipoPromocion == null ||
+        !_isChargePromotionType(_selectedTipoPromocion!)) {
       return const SizedBox.shrink();
     }
 
@@ -692,11 +783,12 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     // Verificar por denominación
     final tipoPromocion = _promotionTypes.firstWhere(
       (type) => type.id == tipoPromocionId,
-      orElse: () => promo.PromotionType(
-        id: '',
-        denominacion: '',
-        createdAt: DateTime.now(),
-      ),
+      orElse:
+          () => promo.PromotionType(
+            id: '',
+            denominacion: '',
+            createdAt: DateTime.now(),
+          ),
     );
 
     return tipoPromocion.denominacion.toLowerCase().contains('recargo');
@@ -813,9 +905,10 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                                 ? dateFormat.format(_fechaInicio!)
                                 : 'Seleccionar fecha',
                             style: TextStyle(
-                              color: _fechaInicio != null
-                                  ? AppColors.textPrimary
-                                  : AppColors.textSecondary,
+                              color:
+                                  _fechaInicio != null
+                                      ? AppColors.textPrimary
+                                      : AppColors.textSecondary,
                             ),
                           ),
                         ),
@@ -836,9 +929,10 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                                     ? dateFormat.format(_fechaFin!)
                                     : 'Sin vencimiento',
                                 style: TextStyle(
-                                  color: _fechaFin != null
-                                      ? AppColors.textPrimary
-                                      : AppColors.textSecondary,
+                                  color:
+                                      _fechaFin != null
+                                          ? AppColors.textPrimary
+                                          : AppColors.textSecondary,
                                 ),
                               ),
                             ),
@@ -853,10 +947,15 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                                   });
                                 },
                                 icon: const Icon(Icons.clear, size: 16),
-                                label: const Text('Sin vencimiento', style: TextStyle(fontSize: 12)),
+                                label: const Text(
+                                  'Sin vencimiento',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                                 style: TextButton.styleFrom(
                                   foregroundColor: AppColors.textSecondary,
-                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                  ),
                                 ),
                               ),
                             ),
@@ -882,9 +981,10 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                                   ? dateFormat.format(_fechaInicio!)
                                   : 'Seleccionar fecha',
                               style: TextStyle(
-                                color: _fechaInicio != null
-                                    ? AppColors.textPrimary
-                                    : AppColors.textSecondary,
+                                color:
+                                    _fechaInicio != null
+                                        ? AppColors.textPrimary
+                                        : AppColors.textSecondary,
                               ),
                             ),
                           ),
@@ -908,9 +1008,10 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                                       ? dateFormat.format(_fechaFin!)
                                       : 'Sin vencimiento',
                                   style: TextStyle(
-                                    color: _fechaFin != null
-                                        ? AppColors.textPrimary
-                                        : AppColors.textSecondary,
+                                    color:
+                                        _fechaFin != null
+                                            ? AppColors.textPrimary
+                                            : AppColors.textSecondary,
                                   ),
                                 ),
                               ),
@@ -925,10 +1026,15 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                                     });
                                   },
                                   icon: const Icon(Icons.clear, size: 16),
-                                  label: const Text('Sin vencimiento', style: TextStyle(fontSize: 12)),
+                                  label: const Text(
+                                    'Sin vencimiento',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
                                   style: TextButton.styleFrom(
                                     foregroundColor: AppColors.textSecondary,
-                                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -953,7 +1059,7 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                     const Icon(Icons.info, color: AppColors.primary, size: 16),
                     const SizedBox(width: 8),
                     Text(
-                      _fechaFin != null 
+                      _fechaFin != null
                           ? 'Duración: ${_fechaFin!.difference(_fechaInicio!).inDays} días'
                           : 'Promoción sin fecha de vencimiento',
                       style: const TextStyle(
@@ -1108,20 +1214,21 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.credit_card),
                 ),
-                items: _paymentMethods
-                    .map(
-                      (method) => DropdownMenuItem<String>(
-                        value: method.id.toString(),
-                        child: Row(
-                          children: [
-                            Icon(method.typeIcon, size: 16),
-                            const SizedBox(width: 8),
-                            Text(method.denominacion),
-                          ],
-                        ),
-                      ),
-                    )
-                    .toList(),
+                items:
+                    _paymentMethods
+                        .map(
+                          (method) => DropdownMenuItem<String>(
+                            value: method.id.toString(),
+                            child: Row(
+                              children: [
+                                Icon(method.typeIcon, size: 16),
+                                const SizedBox(width: 8),
+                                Text(method.denominacion),
+                              ],
+                            ),
+                          ),
+                        )
+                        .toList(),
                 onChanged: (value) {
                   setState(() {
                     _selectedMedioPago = value;
@@ -1146,6 +1253,35 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
       return const SizedBox.shrink();
     }
 
+    final searchQuery = _productSearchQuery?.trim().toLowerCase();
+    final filteredProducts =
+        searchQuery == null || searchQuery.isEmpty
+            ? _availableProducts
+            : _availableProducts.where((product) {
+              final query = searchQuery;
+              final name = product.name.toLowerCase();
+              final denominacion = product.denominacion.toLowerCase();
+              final denominacionCorta =
+                  product.denominacionCorta?.toLowerCase() ?? '';
+              final sku = product.sku.toLowerCase();
+              final barcode = product.barcode.toLowerCase();
+              final codigoBarras = product.codigoBarras?.toLowerCase() ?? '';
+              final nombreComercial =
+                  product.nombreComercial?.toLowerCase() ?? '';
+              final brand = product.brand.toLowerCase();
+              final category = product.categoryName.toLowerCase();
+
+              return name.contains(query) ||
+                  denominacion.contains(query) ||
+                  denominacionCorta.contains(query) ||
+                  sku.contains(query) ||
+                  barcode.contains(query) ||
+                  codigoBarras.contains(query) ||
+                  nombreComercial.contains(query) ||
+                  brand.contains(query) ||
+                  category.contains(query);
+            }).toList();
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1163,13 +1299,13 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            
+
             // Show selected product card if prefilledProduct exists
             if (widget.prefilledProduct != null) ...[
               _buildSelectedProductCard(),
               const SizedBox(height: 16),
             ],
-            
+
             TextFormField(
               controller: _productSearchController,
               decoration: const InputDecoration(
@@ -1195,17 +1331,20 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
-                children: _selectedProducts.map((product) {
-                  return Chip(
-                    label: Text(product.name),
-                    deleteIcon: const Icon(Icons.close, size: 18),
-                    onDeleted: () {
-                      setState(() {
-                        _selectedProducts.remove(product);
-                      });
-                    },
-                  );
-                }).toList(),
+                children:
+                    _selectedProducts.map((product) {
+                      return Chip(
+                        label: Text(product.name),
+                        deleteIcon: const Icon(Icons.close, size: 18),
+                        onDeleted: () {
+                          setState(() {
+                            _selectedProducts.removeWhere(
+                              (selected) => selected.id == product.id,
+                            );
+                          });
+                        },
+                      );
+                    }).toList(),
               ),
               const SizedBox(height: 16),
             ],
@@ -1215,38 +1354,43 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                 border: Border.all(color: Colors.grey.shade300),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: _isLoadingProducts
-                  ? const Center(
-                      child: CircularProgressIndicator(),
-                    )
-                  : _availableProducts.isEmpty
-                      ? const Center(
-                          child: Text('No se encontraron productos'),
-                        )
+              child:
+                  _isLoadingProducts
+                      ? const Center(child: CircularProgressIndicator())
+                      : filteredProducts.isEmpty
+                      ? const Center(child: Text('No se encontraron productos'))
                       : ListView.builder(
-                          itemCount: _availableProducts.length,
-                          itemBuilder: (context, index) {
-                            final product = _availableProducts[index];
-                            final isSelected = _selectedProducts.contains(product);
+                        itemCount: filteredProducts.length,
+                        itemBuilder: (context, index) {
+                          final product = filteredProducts[index];
+                          final isSelected = _selectedProducts.any(
+                            (selected) => selected.id == product.id,
+                          );
 
-                            return ListTile(
-                              title: Text(product.name),
-                              subtitle: Text('SKU: ${product.sku}'),
-                              trailing: isSelected
-                                  ? const Icon(Icons.check_circle, color: AppColors.primary)
-                                  : const Icon(Icons.radio_button_unchecked),
-                              onTap: () {
-                                setState(() {
-                                  if (isSelected) {
-                                    _selectedProducts.remove(product);
-                                  } else {
-                                    _selectedProducts.add(product);
-                                  }
-                                });
-                              },
-                            );
-                          },
-                        ),
+                          return ListTile(
+                            title: Text(product.name),
+                            subtitle: Text('SKU: ${product.sku}'),
+                            trailing:
+                                isSelected
+                                    ? const Icon(
+                                      Icons.check_circle,
+                                      color: AppColors.primary,
+                                    )
+                                    : const Icon(Icons.radio_button_unchecked),
+                            onTap: () {
+                              setState(() {
+                                if (isSelected) {
+                                  _selectedProducts.removeWhere(
+                                    (selected) => selected.id == product.id,
+                                  );
+                                } else {
+                                  _selectedProducts.add(product);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
             ),
           ],
         ),
@@ -1256,7 +1400,7 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
 
   Widget _buildSelectedProductCard() {
     final product = widget.prefilledProduct!;
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1319,10 +1463,16 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
               children: [
                 _buildProductInfoRow('SKU', product.sku),
                 const Divider(height: 16),
-                _buildProductInfoRow('Precio Base', '\$${product.basePrice?.toStringAsFixed(0) ?? 'N/A'}'),
+                _buildProductInfoRow(
+                  'Precio Base',
+                  '\$${product.basePrice?.toStringAsFixed(0) ?? 'N/A'}',
+                ),
                 if (product.stockDisponible > 0) ...[
                   const Divider(height: 16),
-                  _buildProductInfoRow('Stock', '${product.stockDisponible} unidades'),
+                  _buildProductInfoRow(
+                    'Stock',
+                    '${product.stockDisponible} unidades',
+                  ),
                 ],
               ],
             ),
@@ -1370,32 +1520,37 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
         ),
         Text(
           value,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
         ),
       ],
     );
   }
 
   void _generateCode() {
-    final timestamp = DateTime.now().millisecondsSinceEpoch.toString().substring(8);
-    final code = widget.prefilledProduct != null 
-        ? 'PROMO_${widget.prefilledProduct!.sku}_$timestamp'
-        : 'PROMO_$timestamp';
-    
+    final timestamp = DateTime.now().millisecondsSinceEpoch
+        .toString()
+        .substring(8);
+    final code =
+        widget.prefilledProduct != null
+            ? 'PROMO_${widget.prefilledProduct!.sku}_$timestamp'
+            : 'PROMO_$timestamp';
+
     setState(() {
       _codigoController.text = code;
     });
   }
 
+  String _formatDateForApi(DateTime date) {
+    return date.toLocal().toIso8601String();
+  }
+
   Future<void> _selectDate(BuildContext context, bool isStartDate) async {
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: isStartDate 
-          ? (_fechaInicio ?? DateTime.now())
-          : (_fechaFin ?? DateTime.now().add(const Duration(days: 30))),
+      initialDate:
+          isStartDate
+              ? (_fechaInicio ?? DateTime.now())
+              : (_fechaFin ?? DateTime.now().add(const Duration(days: 30))),
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
     );
