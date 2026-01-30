@@ -1,9 +1,31 @@
 {
-  "current_version": "1.8.6",
-  "build": 186,
+  "current_version": "1.8.7",
+  "build": 187,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.8.7",
+      "date": "2026-01-29",
+      "title": "🤖 Analista IA de Ventas (Beta)",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Tu nuevo copiloto para vender mejor",
+          "description": "Haz preguntas en lenguaje natural y recibe respuestas claras con oportunidades de mejora en segundos."
+        },
+        {
+          "type": "improvement",
+          "title": "Resultados fáciles de leer",
+          "description": "Los insights llegan con tablas y gráficas que puedes revisar al instante con tu equipo."
+        },
+        {
+          "type": "improvement",
+          "title": "Disponible en Plan Avanzado (beta)",
+          "description": "Lanzamiento en fase beta para afinar el analista contigo y seguir mejorando."
+        }
+      ]
+    },
     {
       "version": "1.8.6",
       "date": "2026-01-28",

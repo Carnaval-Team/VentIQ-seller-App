@@ -23,8 +23,6 @@ class CategoryGenerationResult {
 }
 
 class CategoryGenerationService {
-  static const String _baseUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models';
   static const int _maxCategories = 12;
   static const int _maxSubcategories = 12;
 
@@ -34,8 +32,8 @@ class CategoryGenerationService {
   CategoryGenerationService({
     CategoryService? categoryService,
     SubcategoryService? subcategoryService,
-  })  : _categoryService = categoryService ?? CategoryService(),
-        _subcategoryService = subcategoryService ?? SubcategoryService();
+  }) : _categoryService = categoryService ?? CategoryService(),
+       _subcategoryService = subcategoryService ?? SubcategoryService();
 
   String? validatePrompt(String prompt) {
     final trimmed = prompt.trim();
@@ -49,7 +47,7 @@ class CategoryGenerationService {
 
     final hasCategoryKeyword =
         RegExp(r'categor', caseSensitive: false).hasMatch(trimmed) ||
-            RegExp(r'subcategor', caseSensitive: false).hasMatch(trimmed);
+        RegExp(r'subcategor', caseSensitive: false).hasMatch(trimmed);
     if (!hasCategoryKeyword) {
       return 'El prompt debe estar relacionado con categorías o subcategorías.';
     }
@@ -63,38 +61,44 @@ class CategoryGenerationService {
       throw Exception(validationError);
     }
 
-    if (GeminiConfig.apiKey.isEmpty) {
+    final config = await GeminiConfig.load();
+    if (!config.hasApiKey) {
       throw Exception(
-        'Configura GEMINI_API_KEY con --dart-define para usar la IA.',
+        'Configura api_key en la tabla config_asistant_model para usar la IA.',
       );
     }
 
-    final requestBody = {
-      'contents': [
-        {
-          'role': 'user',
-          'parts': [
-            {
-              'text': _buildPrompt(prompt.trim()),
-            }
-          ],
-        }
-      ],
-      'generationConfig': {
-        'temperature': 0.4,
-        'maxOutputTokens': 1200,
-        'response_mime_type': 'application/json',
-      },
-    };
+    final requestBody = config.applyAuthToBody(
+      config.isMuleRouter
+          ? {
+            'model': config.model,
+            'messages': [
+              {'role': 'system', 'content': 'You are a helpful assistant.'},
+              {'role': 'user', 'content': _buildPrompt(prompt.trim())},
+            ],
+          }
+          : {
+            'contents': [
+              {
+                'role': 'user',
+                'parts': [
+                  {'text': _buildPrompt(prompt.trim())},
+                ],
+              },
+            ],
+            'generationConfig': {
+              'temperature': 0.4,
+              'maxOutputTokens': 1200,
+              'response_mime_type': 'application/json',
+            },
+          },
+    );
+
+    final uri = config.buildUri(endpoint: 'generateContent');
+    final headers = config.buildHeaders();
 
     final response = await http
-        .post(
-          Uri.parse(
-            '$_baseUrl/${GeminiConfig.model}:generateContent?key=${GeminiConfig.apiKey}',
-          ),
-          headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode(requestBody),
-        )
+        .post(uri, headers: headers, body: jsonEncode(requestBody))
         .timeout(const Duration(seconds: 35));
 
     if (response.statusCode != 200) {
@@ -221,6 +225,17 @@ $prompt''';
 
   String _extractResponseText(dynamic data) {
     if (data is Map<String, dynamic>) {
+      final choices = data['choices'];
+      if (choices is List && choices.isNotEmpty) {
+        final message = choices.first['message'];
+        if (message is Map<String, dynamic>) {
+          final content = message['content'];
+          if (content != null) {
+            return content.toString();
+          }
+        }
+      }
+
       final candidates = data['candidates'];
       if (candidates is List && candidates.isNotEmpty) {
         final content = candidates.first['content'];

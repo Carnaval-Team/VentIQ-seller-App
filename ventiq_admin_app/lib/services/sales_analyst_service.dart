@@ -8,10 +8,7 @@ import '../models/sales_analyst_models.dart';
 import 'sales_service.dart';
 
 class SalesAnalystService {
-  static const String _baseUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models';
-
-  String get initialMessage => 'What do you want to know about your sales?';
+  String get initialMessage => 'Que quieres saber acerca de tus ventas?';
 
   String? validateQuestion(String question) {
     final trimmed = question.trim();
@@ -126,38 +123,46 @@ class SalesAnalystService {
       throw Exception(validation);
     }
 
-    if (GeminiConfig.apiKey.isEmpty) {
+    final config = await GeminiConfig.load();
+    if (!config.hasApiKey) {
       throw Exception(
-        'Configura GEMINI_API_KEY con --dart-define para usar la IA.',
+        'Configura api_key en la tabla config_asistant_model para usar la IA.',
       );
     }
 
     final prompt = _buildPrompt(question, context);
 
-    final requestBody = {
-      'contents': [
-        {
-          'role': 'user',
-          'parts': [
-            {'text': prompt},
-          ],
-        },
-      ],
-      'generationConfig': {
-        'temperature': 0.35,
-        'maxOutputTokens': 1400,
-        'response_mime_type': 'application/json',
-      },
-    };
+    final requestBody = config.applyAuthToBody(
+      config.isMuleRouter
+          ? {
+            'model': config.model,
+            'messages': [
+              {'role': 'system', 'content': 'You are a helpful assistant.'},
+              {'role': 'user', 'content': prompt},
+            ],
+          }
+          : {
+            'contents': [
+              {
+                'role': 'user',
+                'parts': [
+                  {'text': prompt},
+                ],
+              },
+            ],
+            'generationConfig': {
+              'temperature': 0.35,
+              'maxOutputTokens': 1400,
+              'response_mime_type': 'application/json',
+            },
+          },
+    );
+
+    final uri = config.buildUri(endpoint: 'generateContent');
+    final headers = config.buildHeaders();
 
     final response = await http
-        .post(
-          Uri.parse(
-            '$_baseUrl/${GeminiConfig.model}:generateContent?key=${GeminiConfig.apiKey}',
-          ),
-          headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode(requestBody),
-        )
+        .post(uri, headers: headers, body: jsonEncode(requestBody))
         .timeout(const Duration(seconds: 40));
 
     if (response.statusCode != 200) {
@@ -230,6 +235,17 @@ $question''';
 
   String _extractResponseText(dynamic data) {
     if (data is Map<String, dynamic>) {
+      final choices = data['choices'];
+      if (choices is List && choices.isNotEmpty) {
+        final message = choices.first['message'];
+        if (message is Map<String, dynamic>) {
+          final content = message['content'];
+          if (content != null) {
+            return content.toString();
+          }
+        }
+      }
+
       final candidates = data['candidates'];
       if (candidates is List && candidates.isNotEmpty) {
         final content = candidates.first['content'];

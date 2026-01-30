@@ -19,6 +19,7 @@ import '../models/sales.dart';
 import '../models/sales_analyst_models.dart';
 import '../services/sales_service.dart';
 import '../services/sales_analyst_controller.dart';
+import '../services/subscription_service.dart';
 import '../services/user_preferences_service.dart';
 
 // Importación condicional para descargas en web
@@ -55,6 +56,7 @@ class _SalesScreenState extends State<SalesScreen>
   List<ProductAnalysis> _productAnalysis = [];
   bool _isLoadingAnalysis = false;
   late final SalesAnalystController _analystController;
+  final SubscriptionService _subscriptionService = SubscriptionService();
   final TextEditingController _analystQuestionController =
       TextEditingController();
   final ScrollController _analystScrollController = ScrollController();
@@ -66,6 +68,8 @@ class _SalesScreenState extends State<SalesScreen>
     '¿Cómo evolucionaron las ventas en el rango?',
   ];
   int _analystMessageCount = 0;
+  bool _hasAdvancedPlan = false;
+  bool _isLoadingAdvancedPlan = true;
 
   // Generación de PDF
   Future<void> _pickPdfDateRange(BuildContext context) async {
@@ -1208,6 +1212,7 @@ class _SalesScreenState extends State<SalesScreen>
     _analystController = SalesAnalystController();
     _analystController.addListener(_handleAnalystUpdates);
     _analystMessageCount = _analystController.messages.length;
+    _loadAdvancedPlanStatus();
     _initializeDateRange();
     _loadWarehouses();
     _loadSalesData();
@@ -1234,11 +1239,13 @@ class _SalesScreenState extends State<SalesScreen>
           _loadProductAnalysis();
           break;
         case 4: // Analyst
-          if (!_isLoadingAnalysis && _productAnalysis.isEmpty) {
-            _loadProductAnalysis();
-          }
-          if (!_isLoadingSuppliers && _supplierReports.isEmpty) {
-            _loadSupplierReports();
+          if (_hasAdvancedPlan) {
+            if (!_isLoadingAnalysis && _productAnalysis.isEmpty) {
+              _loadProductAnalysis();
+            }
+            if (!_isLoadingSuppliers && _supplierReports.isEmpty) {
+              _loadSupplierReports();
+            }
           }
           break;
       }
@@ -1281,7 +1288,41 @@ class _SalesScreenState extends State<SalesScreen>
     setState(() => _isLoading = true);
     _loadProductSalesData();
     _loadVendorReports();
+    _loadAdvancedPlanStatus();
     // El análisis de productos se carga solo cuando se selecciona el tab de análisis
+  }
+
+  Future<void> _loadAdvancedPlanStatus() async {
+    if (!mounted) return;
+    setState(() => _isLoadingAdvancedPlan = true);
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      if (storeId == null) {
+        if (mounted) {
+          setState(() {
+            _hasAdvancedPlan = false;
+            _isLoadingAdvancedPlan = false;
+          });
+        }
+        return;
+      }
+
+      final hasPlan = await _subscriptionService.hasAdvancedPlan(storeId);
+      if (mounted) {
+        setState(() {
+          _hasAdvancedPlan = hasPlan;
+          _isLoadingAdvancedPlan = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _hasAdvancedPlan = false;
+          _isLoadingAdvancedPlan = false;
+        });
+      }
+      debugPrint('❌ Error verificando plan avanzado: $e');
+    }
   }
 
   void _loadProductSalesData() async {
@@ -1531,12 +1572,34 @@ class _SalesScreenState extends State<SalesScreen>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           indicatorColor: Colors.white,
-          tabs: const [
-            Tab(text: 'Tiempo Real', icon: Icon(Icons.timeline, size: 18)),
-            Tab(text: 'TPVs', icon: Icon(Icons.point_of_sale, size: 18)),
-            Tab(text: 'Proveedores', icon: Icon(Icons.inventory, size: 18)),
-            Tab(text: 'Análisis', icon: Icon(Icons.analytics, size: 18)),
-            Tab(text: 'Analista', icon: Icon(Icons.smart_toy, size: 18)),
+          tabs: [
+            const Tab(
+              text: 'Tiempo Real',
+              icon: Icon(Icons.timeline, size: 18),
+            ),
+            const Tab(text: 'TPVs', icon: Icon(Icons.point_of_sale, size: 18)),
+            const Tab(
+              text: 'Proveedores',
+              icon: Icon(Icons.inventory, size: 18),
+            ),
+            const Tab(text: 'Análisis', icon: Icon(Icons.analytics, size: 18)),
+            Tab(
+              text: _hasAdvancedPlan ? 'Analista' : 'Analista (Avanzado)',
+              icon:
+                  _isLoadingAdvancedPlan
+                      ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                      : Icon(
+                        _hasAdvancedPlan ? Icons.smart_toy : Icons.lock,
+                        size: 18,
+                      ),
+            ),
           ],
         ),
       ),
@@ -1550,7 +1613,7 @@ class _SalesScreenState extends State<SalesScreen>
                   _buildTPVsTab(),
                   _buildSuppliersTab(),
                   _buildAnalyticsTab(),
-                  _buildAnalystTab(),
+                  _buildAnalystGateTab(),
                 ],
               ),
       floatingActionButton: _buildGeneratePdfFab(),
@@ -2006,6 +2069,115 @@ class _SalesScreenState extends State<SalesScreen>
         ),
         _buildAnalystComposer(),
       ],
+    );
+  }
+
+  Widget _buildAnalystGateTab() {
+    if (_isLoadingAdvancedPlan) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
+      );
+    }
+
+    if (_hasAdvancedPlan) {
+      return _buildAnalystTab();
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.lock,
+                    color: AppColors.primary,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Analista IA disponible solo en Plan Avanzado',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Desbloquea recomendaciones, insights y proyecciones inteligentes con tu información de ventas.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: const [
+                    _AnalystFeatureChip(
+                      icon: Icons.lightbulb_outline,
+                      label: 'Insights rápidos',
+                    ),
+                    _AnalystFeatureChip(
+                      icon: Icons.trending_up,
+                      label: 'Tendencias',
+                    ),
+                    _AnalystFeatureChip(
+                      icon: Icons.table_chart_outlined,
+                      label: 'Tablas claras',
+                    ),
+                    _AnalystFeatureChip(
+                      icon: Icons.auto_graph,
+                      label: 'Gráficas dinámicas',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/subscription-detail');
+                    },
+                    icon: const Icon(Icons.workspace_premium),
+                    label: const Text('Ver Plan Avanzado'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -7497,5 +7669,35 @@ class _SalesScreenState extends State<SalesScreen>
         Navigator.pushNamed(context, '/settings');
         break;
     }
+  }
+}
+
+class _AnalystFeatureChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _AnalystFeatureChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.primary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
   }
 }
