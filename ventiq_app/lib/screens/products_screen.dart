@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
@@ -378,15 +379,20 @@ class _ProductsScreenState extends State<ProductsScreen> {
             ),
           const NotificationWidget(),
           IconButton(
-            icon: const Icon(Icons.local_shipping, color: Colors.white, size: 28),
+            icon: const Icon(
+              Icons.local_shipping,
+              color: Colors.white,
+              size: 28,
+            ),
             onPressed: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => AssignSupplierScreen(
-                    categoryId: widget.categoryId,
-                    categoryName: widget.categoryName,
-                  ),
+                  builder:
+                      (context) => AssignSupplierScreen(
+                        categoryId: widget.categoryId,
+                        categoryName: widget.categoryName,
+                      ),
                 ),
               );
             },
@@ -708,7 +714,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
 }
 
 // Nueva clase para las secciones de subcategorías al estilo Google Play Store
-class _SubcategorySection extends StatelessWidget {
+class _SubcategorySection extends StatefulWidget {
   final String title;
   final List<Product> products;
   final Color categoryColor;
@@ -724,6 +730,81 @@ class _SubcategorySection extends StatelessWidget {
   });
 
   @override
+  State<_SubcategorySection> createState() => _SubcategorySectionState();
+}
+
+class _SubcategorySectionState extends State<_SubcategorySection> {
+  final ScrollController _scrollController = ScrollController();
+  final FocusNode _scrollFocusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _scrollFocusNode.dispose();
+    super.dispose();
+  }
+
+  double _scrollStep(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    return (width * 0.85) + 16;
+  }
+
+  void _scrollBy(double offset) {
+    if (!_scrollController.hasClients) return;
+
+    final maxScrollExtent = _scrollController.position.maxScrollExtent;
+    final targetOffset = (_scrollController.offset + offset).clamp(
+      0.0,
+      maxScrollExtent,
+    );
+
+    _scrollController.animateTo(
+      targetOffset,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, RawKeyEvent event) {
+    if (!kIsWeb) {
+      return KeyEventResult.ignored;
+    }
+
+    if (event is! RawKeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      _scrollBy(_scrollStep(context));
+      return KeyEventResult.handled;
+    }
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      _scrollBy(-_scrollStep(context));
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
+  }
+
+  Widget _buildScrollButton({
+    required IconData icon,
+    required VoidCallback onPressed,
+    required String tooltip,
+  }) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 2,
+      child: IconButton(
+        icon: Icon(icon, color: widget.categoryColor),
+        tooltip: tooltip,
+        onPressed: onPressed,
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -735,7 +816,7 @@ class _SubcategorySection extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                title,
+                widget.title,
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w600,
@@ -759,13 +840,15 @@ class _SubcategorySection extends StatelessWidget {
           ),
         ),
         // Lista horizontal de productos optimizada para espaciado
-        _buildProductsList(),
+        _buildProductsList(context),
         const SizedBox(height: 24), // Espaciado entre secciones
       ],
     );
   }
 
-  Widget _buildProductsList() {
+  Widget _buildProductsList(BuildContext context) {
+    final products = widget.products;
+
     // Si hay 3 o menos productos, mostrar en una sola columna sin espacios extra
     if (products.length <= 3) {
       return Container(
@@ -782,9 +865,9 @@ class _SubcategorySection extends StatelessWidget {
                   ),
                   child: _PlayStoreProductCard(
                     product: product,
-                    categoryColor: categoryColor,
-                    promotionData: promotionData,
-                    isLimitDataUsageEnabled: isLimitDataUsageEnabled,
+                    categoryColor: widget.categoryColor,
+                    promotionData: widget.promotionData,
+                    isLimitDataUsageEnabled: widget.isLimitDataUsageEnabled,
                   ),
                 );
               }).toList(),
@@ -792,112 +875,113 @@ class _SubcategorySection extends StatelessWidget {
       );
     }
 
-    // Para más de 3 productos, usar el layout horizontal original
+    final listView = ListView.builder(
+      controller: _scrollController,
+      scrollDirection: Axis.horizontal,
+      padding: EdgeInsets.symmetric(horizontal: kIsWeb ? 56 : 16),
+      physics: const BouncingScrollPhysics(),
+      cacheExtent: kIsWeb ? 200 : 300,
+      addAutomaticKeepAlives: kIsWeb,
+      addRepaintBoundaries: kIsWeb,
+      itemCount:
+          (products.length / 3).ceil(), // Número de columnas de 3 productos
+      itemBuilder: (context, columnIndex) {
+        // Calcular productos para esta columna
+        final startIndex = columnIndex * 3;
+        final endIndex = (startIndex + 3).clamp(0, products.length);
+        final columnProducts = products.sublist(startIndex, endIndex);
+
+        return Container(
+          width: MediaQuery.of(context).size.width * 0.85, // 85% del ancho
+          margin: const EdgeInsets.only(right: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children:
+                columnProducts.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final product = entry.value;
+                  return Container(
+                    margin: EdgeInsets.only(
+                      bottom:
+                          index < columnProducts.length - 1
+                              ? 6
+                              : 0, // Solo espaciado entre cards, no al final
+                    ),
+                    child: _PlayStoreProductCard(
+                      product: product,
+                      categoryColor: widget.categoryColor,
+                      promotionData: widget.promotionData,
+                      isLimitDataUsageEnabled: widget.isLimitDataUsageEnabled,
+                    ),
+                  );
+                }).toList(),
+          ),
+        );
+      },
+    );
+
+    final listContent =
+        kIsWeb
+            ? ScrollConfiguration(
+              behavior: WebScrollBehavior(),
+              child: listView,
+            )
+            : listView;
+
+    final focusableList = Focus(
+      focusNode: _scrollFocusNode,
+      canRequestFocus: kIsWeb,
+      skipTraversal: !kIsWeb,
+      onKey: _handleKeyEvent,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTapDown: (_) {
+          if (kIsWeb) {
+            _scrollFocusNode.requestFocus();
+          }
+        },
+        child: listContent,
+      ),
+    );
+
+    if (!kIsWeb) {
+      return SizedBox(
+        height:
+            228, // Altura optimizada: 3 productos (70px) + espaciado (6px entre cards) = 3*70 + 2*6 = 222px + padding
+        child: focusableList,
+      );
+    }
+
     return SizedBox(
       height:
           228, // Altura optimizada: 3 productos (70px) + espaciado (6px entre cards) = 3*70 + 2*6 = 222px + padding
-      child:
-          kIsWeb
-              ? ScrollConfiguration(
-                behavior: WebScrollBehavior(),
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  physics:
-                      const BouncingScrollPhysics(), // Mejor física de scroll
-                  cacheExtent: 200, // Cache para mejor rendimiento
-                  itemCount:
-                      (products.length / 3)
-                          .ceil(), // Número de columnas de 3 productos
-                  itemBuilder: (context, columnIndex) {
-                    // Calcular productos para esta columna
-                    final startIndex = columnIndex * 3;
-                    final endIndex = (startIndex + 3).clamp(0, products.length);
-                    final columnProducts = products.sublist(
-                      startIndex,
-                      endIndex,
-                    );
-
-                    return Container(
-                      width:
-                          MediaQuery.of(context).size.width *
-                          0.85, // 85% del ancho
-                      margin: const EdgeInsets.only(right: 16),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children:
-                            columnProducts.asMap().entries.map((entry) {
-                              final index = entry.key;
-                              final product = entry.value;
-                              return Container(
-                                margin: EdgeInsets.only(
-                                  bottom:
-                                      index < columnProducts.length - 1
-                                          ? 6
-                                          : 0, // Solo espaciado entre cards, no al final
-                                ),
-                                child: _PlayStoreProductCard(
-                                  product: product,
-                                  categoryColor: categoryColor,
-                                  promotionData: promotionData,
-                                  isLimitDataUsageEnabled:
-                                      isLimitDataUsageEnabled,
-                                ),
-                              );
-                            }).toList(),
-                      ),
-                    );
-                  },
-                ),
-              )
-              : ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                physics:
-                    const BouncingScrollPhysics(), // Mejor física de scroll
-                cacheExtent: 300, // Cache más grande para móviles
-                addAutomaticKeepAlives: false, // Optimización de memoria
-                addRepaintBoundaries: false, // Reduce repaints innecesarios
-                itemCount:
-                    (products.length / 3)
-                        .ceil(), // Número de columnas de 3 productos
-                itemBuilder: (context, columnIndex) {
-                  // Calcular productos para esta columna
-                  final startIndex = columnIndex * 3;
-                  final endIndex = (startIndex + 3).clamp(0, products.length);
-                  final columnProducts = products.sublist(startIndex, endIndex);
-
-                  return Container(
-                    width:
-                        MediaQuery.of(context).size.width *
-                        0.85, // 85% del ancho
-                    margin: const EdgeInsets.only(right: 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children:
-                          columnProducts.asMap().entries.map((entry) {
-                            final index = entry.key;
-                            final product = entry.value;
-                            return Container(
-                              margin: EdgeInsets.only(
-                                bottom:
-                                    index < columnProducts.length - 1
-                                        ? 6
-                                        : 0, // Solo espaciado entre cards, no al final
-                              ),
-                              child: _PlayStoreProductCard(
-                                product: product,
-                                categoryColor: categoryColor,
-                                promotionData: promotionData,
-                                isLimitDataUsageEnabled:
-                                    isLimitDataUsageEnabled,
-                              ),
-                            );
-                          }).toList(),
-                    ),
-                  );
-                },
+      child: Stack(
+        children: [
+          Positioned.fill(child: focusableList),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: _buildScrollButton(
+                icon: Icons.chevron_left,
+                tooltip: 'Mover productos a la izquierda',
+                onPressed: () => _scrollBy(-_scrollStep(context)),
               ),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: _buildScrollButton(
+                icon: Icons.chevron_right,
+                tooltip: 'Mover productos a la derecha',
+                onPressed: () => _scrollBy(_scrollStep(context)),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

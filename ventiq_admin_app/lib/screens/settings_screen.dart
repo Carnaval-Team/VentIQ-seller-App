@@ -140,7 +140,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         children: [
           GlobalConfigTabView(key: _globalConfigTabKey),
           _buildStoreDataTab(),
-          CategoriesTabView(key: _categoriesTabKey),
+          CategoriesTabView(key: _categoriesTabKey, canEdit: _canEditSettings),
           VariantsTabView(key: _variantsTabKey),
           PresentationsTabView(key: _presentationsTabKey),
           UnitsTabView(key: _unitsTabKey),

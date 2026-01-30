@@ -237,6 +237,132 @@ class OrderService {
     }
   }
 
+  Future<Map<String, dynamic>> moveSalePaymentAmount({
+    required int operationId,
+    required int fromPaymentMethodId,
+    required int toPaymentMethodId,
+    required double amount,
+  }) async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final isOfflineModeEnabled = await userPrefs.isOfflineModeEnabled();
+      if (isOfflineModeEnabled) {
+        return {
+          'success': false,
+          'error':
+              'No se puede ajustar el desglose en modo offline. Conéctate para continuar.',
+        };
+      }
+
+      if (fromPaymentMethodId == toPaymentMethodId) {
+        return {
+          'success': false,
+          'error':
+              'Selecciona un método de pago diferente para mover el monto.',
+        };
+      }
+
+      if (amount <= 0) {
+        return {
+          'success': false,
+          'error': 'El monto a mover debe ser mayor que 0.',
+        };
+      }
+
+      final userId = await userPrefs.getUserId();
+      if (userId == null) {
+        return {
+          'success': false,
+          'error': 'No se encontró el usuario para registrar el ajuste.',
+        };
+      }
+
+      final List<dynamic>? pagosResponse = await Supabase.instance.client
+          .from('app_dat_pago_venta')
+          .select('id, id_medio_pago, monto')
+          .eq('id_operacion_venta', operationId);
+
+      if (pagosResponse == null || pagosResponse.isEmpty) {
+        return {
+          'success': false,
+          'error': 'No se encontraron pagos asociados a la operación.',
+        };
+      }
+
+      final pagos = List<Map<String, dynamic>>.from(pagosResponse);
+      final sourceIndex = pagos.indexWhere(
+        (pago) => pago['id_medio_pago'] == fromPaymentMethodId,
+      );
+
+      if (sourceIndex == -1) {
+        return {'success': false, 'error': 'El pago origen no fue encontrado.'};
+      }
+
+      final sourcePago = pagos[sourceIndex];
+      final sourceAmount = (sourcePago['monto'] as num).toDouble();
+
+      if (amount > sourceAmount) {
+        return {
+          'success': false,
+          'error':
+              'El monto a mover no puede ser mayor al saldo del método origen.',
+        };
+      }
+
+      final targetPago = pagos.firstWhere(
+        (pago) => pago['id_medio_pago'] == toPaymentMethodId,
+        orElse: () => {},
+      );
+
+      final newSourceAmount = sourceAmount - amount;
+      final bool removeSource = newSourceAmount <= 0.0001;
+
+      if (removeSource) {
+        await Supabase.instance.client
+            .from('app_dat_pago_venta')
+            .delete()
+            .eq('id', sourcePago['id']);
+      } else {
+        await Supabase.instance.client
+            .from('app_dat_pago_venta')
+            .update({'monto': newSourceAmount})
+            .eq('id', sourcePago['id']);
+      }
+
+      if (targetPago.isNotEmpty) {
+        final targetAmount = (targetPago['monto'] as num).toDouble();
+        await Supabase.instance.client
+            .from('app_dat_pago_venta')
+            .update({'monto': targetAmount + amount})
+            .eq('id', targetPago['id']);
+      } else {
+        final tipoPago = toPaymentMethodId == 1 ? 1 : 2;
+        await Supabase.instance.client.from('app_dat_pago_venta').insert({
+          'id_operacion_venta': operationId,
+          'id_medio_pago': toPaymentMethodId,
+          'monto': amount,
+          'tipo_pago': tipoPago,
+          'referencia_pago':
+              'Ajuste App Vendedor - ${DateTime.now().millisecondsSinceEpoch}',
+          'creado_por': userId,
+        });
+      }
+
+      return {
+        'success': true,
+        'sourceAmount': sourceAmount,
+        'newSourceAmount': newSourceAmount.clamp(0, double.maxFinite),
+        'movedAmount': amount,
+      };
+    } catch (e) {
+      print('❌ Error ajustando desglose de pagos: $e');
+      return {
+        'success': false,
+        'error': 'Error al ajustar el desglose: ${e.toString()}',
+      };
+    }
+  }
+
   // Actualizar método de pago de un item
   void updateItemPaymentMethod(String itemId, PaymentMethod? paymentMethod) {
     if (_currentOrder == null) return;

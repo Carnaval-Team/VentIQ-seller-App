@@ -11,7 +11,9 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
+import '../models/payment_method.dart';
 import '../services/order_service.dart';
+import '../services/payment_method_service.dart';
 import '../services/printer_manager.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
@@ -1260,345 +1262,395 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   void _showOrderDetails(Order order) {
+    int paymentBreakdownRefreshKey = 0;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder:
-          (context) => DraggableScrollableSheet(
-            initialChildSize: 0.7,
-            maxChildSize: 0.9,
-            minChildSize: 0.5,
-            builder:
-                (context, scrollController) => Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(20),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      // Handle
-                      Container(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
+          (context) => StatefulBuilder(
+            builder: (context, setModalState) {
+              void refreshPaymentBreakdown() {
+                setModalState(() {
+                  paymentBreakdownRefreshKey += 1;
+                });
+              }
+
+              return DraggableScrollableSheet(
+                initialChildSize: 0.7,
+                maxChildSize: 0.9,
+                minChildSize: 0.5,
+                builder:
+                    (context, scrollController) => Container(
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(20),
                         ),
                       ),
-                      // Header
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Detalles de ${order.id}',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1F2937),
-                                ),
-                              ),
+                      child: Column(
+                        children: [
+                          // Handle
+                          Container(
+                            margin: const EdgeInsets.symmetric(vertical: 8),
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(2),
                             ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(context),
-                              icon: const Icon(Icons.close),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      // Content
-                      Expanded(
-                        child: ListView(
-                          controller: scrollController,
-                          padding: const EdgeInsets.all(16),
-                          children: [
-                            // Información general
-                            _buildDetailRow(
-                              'Estado:',
-                              order.status.displayName,
-                            ),
-                            _buildDetailRow(
-                              'Fecha:',
-                              _formatDate(order.fechaCreacion),
-                            ),
-                            _buildDetailRow(
-                              'Total productos:',
-                              '${order.totalItems}',
-                            ),
-                            Builder(
-                              builder: (_) {
-                                final discountData = _getDiscountData(order);
-                                final hasDiscount =
-                                    discountData['hasDiscount'] as bool;
-                                final displayTotal =
-                                    discountData['finalTotal'] as double? ??
-                                    order.total;
-                                final originalTotal =
-                                    discountData['originalTotal'] as double? ??
-                                    displayTotal;
-                                final saved =
-                                    discountData['saved'] as double? ?? 0;
-                                final label =
-                                    discountData['label'] as String? ?? '';
-
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _buildDetailRow(
-                                      'Total:',
-                                      '\$${displayTotal.toStringAsFixed(2)}',
-                                    ),
-                                    if (hasDiscount) ...[
-                                      const SizedBox(height: 4),
-                                      _buildDetailRow(
-                                        'Antes:',
-                                        '\$${originalTotal.toStringAsFixed(2)}',
-                                      ),
-                                      const SizedBox(height: 2),
-                                      _buildDetailRow(
-                                        'Descuento:',
-                                        '$label · -\$${saved.toStringAsFixed(2)}',
-                                      ),
-                                    ],
-                                  ],
-                                );
-                              },
-                            ),
-
-                            // Desglose de pagos
-                            if (order.operationId != null) ...[
-                              const SizedBox(height: 16),
-                              _buildPaymentBreakdown(order.operationId!),
-                            ],
-
-                            // Estado Carnaval (si aplica)
-                            if (_getCarnavalOrderId(order.notas) != null) ...[
-                              const SizedBox(height: 16),
-                              FutureBuilder<String?>(
-                                future: _orderService.getCarnavalOrderStatus(
-                                  _getCarnavalOrderId(order.notas)!,
-                                ),
-                                builder: (context, snapshot) {
-                                  if (snapshot.connectionState ==
-                                      ConnectionState.waiting) {
-                                    return _buildDetailRow(
-                                      'Estado Carnaval:',
-                                      'Cargando...',
-                                    );
-                                  }
-                                  if (snapshot.hasData) {
-                                    return Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 8,
-                                        horizontal: 12,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.purple.withOpacity(0.05),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: Colors.purple.withOpacity(0.2),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          const Text(
-                                            'Estado en Carnaval:',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.purple,
-                                            ),
-                                          ),
-                                          Text(
-                                            snapshot.data!,
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.purple,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  }
-                                  return const SizedBox.shrink();
-                                },
-                              ),
-                            ],
-
-                            // Datos del cliente
-                            if (order.buyerName != null ||
-                                order.buyerPhone != null) ...[
-                              const SizedBox(height: 16),
-                              const Text(
-                                'Datos del Cliente:',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1F2937),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              if (order.buyerName != null)
-                                _buildDetailRow('Nombre:', order.buyerName!),
-                              if (order.buyerPhone != null)
-                                _buildDetailRow('Teléfono:', order.buyerPhone!),
-                              if (order.extraContacts != null &&
-                                  order.extraContacts!.isNotEmpty)
-                                _buildDetailRow(
-                                  'Contactos extra:',
-                                  order.extraContacts!,
-                                ),
-                              // if (order.paymentMethod != null)
-                              //   _buildDetailRow(
-                              //     'Método de pago:',
-                              //     order.paymentMethod!,
-                              //   ),
-                            ],
-
-                            const SizedBox(height: 16),
-                            const Text(
-                              'Productos:',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            // Lista de productos (filtrar productos con precio 0)
-                            ...order.items
-                                .where((item) => item.subtotal > 0)
-                                .map(
-                                  (item) => Container(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[50],
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: Colors.grey[200]!,
-                                      ),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          item.nombre,
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                            color: Color(0xFF1F2937),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              'Cantidad: ${item.cantidad} • ${item.ubicacionAlmacen}',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey[600],
-                                              ),
-                                            ),
-                                            Text(
-                                              '\$${item.subtotal.toStringAsFixed(2)}',
-                                              style: const TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w600,
-                                                color: Color(0xFF4A90E2),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        // Mostrar ingredientes si existen
-                                        if (item.ingredientes != null &&
-                                            item.ingredientes!.isNotEmpty) ...[
-                                          const SizedBox(height: 8),
-                                          Container(
-                                            padding: const EdgeInsets.all(8),
-                                            decoration: BoxDecoration(
-                                              color: Colors.orange[50],
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                              border: Border.all(
-                                                color: Colors.orange[200]!,
-                                                width: 1,
-                                              ),
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons.restaurant,
-                                                      size: 14,
-                                                      color: Colors.orange[700],
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      'Ingredientes utilizados:',
-                                                      style: TextStyle(
-                                                        fontSize: 12,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color:
-                                                            Colors.orange[700],
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 4),
-                                                ...item.ingredientes!.map((
-                                                  ingrediente,
-                                                ) {
-                                                  return Padding(
-                                                    padding:
-                                                        const EdgeInsets.only(
-                                                          left: 18,
-                                                          bottom: 2,
-                                                        ),
-                                                    child: Text(
-                                                      '• ${ingrediente['nombre_ingrediente']} - ${ingrediente['cantidad_vendida']} ${ingrediente['unidad_medida'] ?? 'unidades'}',
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        color: Colors.grey[700],
-                                                      ),
-                                                    ),
-                                                  );
-                                                }).toList(),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ],
+                          ),
+                          // Header
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Detalles de ${order.id}',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF1F2937),
                                     ),
                                   ),
                                 ),
+                                IconButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  icon: const Icon(Icons.close),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Divider(height: 1),
+                          // Content
+                          Expanded(
+                            child: ListView(
+                              controller: scrollController,
+                              padding: const EdgeInsets.all(16),
+                              children: [
+                                // Información general
+                                _buildDetailRow(
+                                  'Estado:',
+                                  order.status.displayName,
+                                ),
+                                _buildDetailRow(
+                                  'Fecha:',
+                                  _formatDate(order.fechaCreacion),
+                                ),
+                                _buildDetailRow(
+                                  'Total productos:',
+                                  '${order.totalItems}',
+                                ),
+                                Builder(
+                                  builder: (_) {
+                                    final discountData = _getDiscountData(
+                                      order,
+                                    );
+                                    final hasDiscount =
+                                        discountData['hasDiscount'] as bool;
+                                    final displayTotal =
+                                        discountData['finalTotal'] as double? ??
+                                        order.total;
+                                    final originalTotal =
+                                        discountData['originalTotal']
+                                            as double? ??
+                                        displayTotal;
+                                    final saved =
+                                        discountData['saved'] as double? ?? 0;
+                                    final label =
+                                        discountData['label'] as String? ?? '';
 
-                            // Botones de acción
-                            const SizedBox(height: 24),
-                            _buildActionButtons(order),
-                          ],
-                        ),
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        _buildDetailRow(
+                                          'Total:',
+                                          '\$${displayTotal.toStringAsFixed(2)}',
+                                        ),
+                                        if (hasDiscount) ...[
+                                          const SizedBox(height: 4),
+                                          _buildDetailRow(
+                                            'Antes:',
+                                            '\$${originalTotal.toStringAsFixed(2)}',
+                                          ),
+                                          const SizedBox(height: 2),
+                                          _buildDetailRow(
+                                            'Descuento:',
+                                            '$label · -\$${saved.toStringAsFixed(2)}',
+                                          ),
+                                        ],
+                                      ],
+                                    );
+                                  },
+                                ),
+
+                                // Desglose de pagos
+                                if (order.operationId != null) ...[
+                                  const SizedBox(height: 16),
+                                  _buildPaymentBreakdown(
+                                    order,
+                                    refreshKey: paymentBreakdownRefreshKey,
+                                    onPaymentUpdated: refreshPaymentBreakdown,
+                                  ),
+                                ],
+
+                                // Estado Carnaval (si aplica)
+                                if (_getCarnavalOrderId(order.notas) !=
+                                    null) ...[
+                                  const SizedBox(height: 16),
+                                  FutureBuilder<String?>(
+                                    future: _orderService
+                                        .getCarnavalOrderStatus(
+                                          _getCarnavalOrderId(order.notas)!,
+                                        ),
+                                    builder: (context, snapshot) {
+                                      if (snapshot.connectionState ==
+                                          ConnectionState.waiting) {
+                                        return _buildDetailRow(
+                                          'Estado Carnaval:',
+                                          'Cargando...',
+                                        );
+                                      }
+                                      if (snapshot.hasData) {
+                                        return Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 8,
+                                            horizontal: 12,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.purple.withOpacity(
+                                              0.05,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.purple.withOpacity(
+                                                0.2,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text(
+                                                'Estado en Carnaval:',
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.purple,
+                                                ),
+                                              ),
+                                              Text(
+                                                snapshot.data!,
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.purple,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }
+                                      return const SizedBox.shrink();
+                                    },
+                                  ),
+                                ],
+
+                                // Datos del cliente
+                                if (order.buyerName != null ||
+                                    order.buyerPhone != null) ...[
+                                  const SizedBox(height: 16),
+                                  const Text(
+                                    'Datos del Cliente:',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF1F2937),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  if (order.buyerName != null)
+                                    _buildDetailRow(
+                                      'Nombre:',
+                                      order.buyerName!,
+                                    ),
+                                  if (order.buyerPhone != null)
+                                    _buildDetailRow(
+                                      'Teléfono:',
+                                      order.buyerPhone!,
+                                    ),
+                                  if (order.extraContacts != null &&
+                                      order.extraContacts!.isNotEmpty)
+                                    _buildDetailRow(
+                                      'Contactos extra:',
+                                      order.extraContacts!,
+                                    ),
+                                  // if (order.paymentMethod != null)
+                                  //   _buildDetailRow(
+                                  //     'Método de pago:',
+                                  //     order.paymentMethod!,
+                                  //   ),
+                                ],
+
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'Productos:',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF1F2937),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                // Lista de productos (filtrar productos con precio 0)
+                                ...order.items
+                                    .where((item) => item.subtotal > 0)
+                                    .map(
+                                      (item) => Container(
+                                        margin: const EdgeInsets.only(
+                                          bottom: 8,
+                                        ),
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey[50],
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.grey[200]!,
+                                          ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              item.nombre,
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                                color: Color(0xFF1F2937),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment
+                                                      .spaceBetween,
+                                              children: [
+                                                Text(
+                                                  'Cantidad: ${item.cantidad} • ${item.ubicacionAlmacen}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey[600],
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '\$${item.subtotal.toStringAsFixed(2)}',
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFF4A90E2),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            // Mostrar ingredientes si existen
+                                            if (item.ingredientes != null &&
+                                                item
+                                                    .ingredientes!
+                                                    .isNotEmpty) ...[
+                                              const SizedBox(height: 8),
+                                              Container(
+                                                padding: const EdgeInsets.all(
+                                                  8,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.orange[50],
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                  border: Border.all(
+                                                    color: Colors.orange[200]!,
+                                                    width: 1,
+                                                  ),
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Row(
+                                                      children: [
+                                                        Icon(
+                                                          Icons.restaurant,
+                                                          size: 14,
+                                                          color:
+                                                              Colors
+                                                                  .orange[700],
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 4,
+                                                        ),
+                                                        Text(
+                                                          'Ingredientes utilizados:',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            color:
+                                                                Colors
+                                                                    .orange[700],
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    ...item.ingredientes!.map((
+                                                      ingrediente,
+                                                    ) {
+                                                      return Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              left: 18,
+                                                              bottom: 2,
+                                                            ),
+                                                        child: Text(
+                                                          '• ${ingrediente['nombre_ingrediente']} - ${ingrediente['cantidad_vendida']} ${ingrediente['unidad_medida'] ?? 'unidades'}',
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            color:
+                                                                Colors
+                                                                    .grey[700],
+                                                          ),
+                                                        ),
+                                                      );
+                                                    }).toList(),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+
+                                // Botones de acción
+                                const SizedBox(height: 24),
+                                _buildActionButtons(order),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+              );
+            },
           ),
     );
   }
@@ -1971,15 +2023,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
-  Widget _buildPaymentBreakdown(int operationId) {
+  Widget _buildPaymentBreakdown(
+    Order order, {
+    int refreshKey = 0,
+    VoidCallback? onPaymentUpdated,
+  }) {
+    final operationId = order.operationId;
+    if (operationId == null) return const SizedBox.shrink();
+
     return FutureBuilder<List<Map<String, dynamic>>>(
+      key: ValueKey('payment-breakdown-$refreshKey'),
       future: _orderService.getSalePayments(operationId),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
+        final payments = snapshot.data ?? [];
+        final canEdit = _canEditPaymentBreakdown(order) && payments.isNotEmpty;
+
+        Widget header = Row(
+          children: [
+            const Expanded(
+              child: Text(
                 'Desglose de Pagos:',
                 style: TextStyle(
                   fontSize: 16,
@@ -1987,6 +2049,37 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   color: Color(0xFF1F2937),
                 ),
               ),
+            ),
+            if (canEdit)
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFC7D2FE)),
+                ),
+                child: IconButton(
+                  tooltip: 'Editar desglose de pagos',
+                  icon: const Icon(
+                    Icons.edit,
+                    size: 18,
+                    color: Color(0xFF4F46E5),
+                  ),
+                  onPressed:
+                      () => _showPaymentBreakdownEditor(
+                        order,
+                        payments,
+                        onUpdated: onPaymentUpdated,
+                      ),
+                ),
+              ),
+          ],
+        );
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              header,
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -2011,18 +2104,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
           );
         }
 
-        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+        if (snapshot.hasError || payments.isEmpty) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Desglose de Pagos:',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1F2937),
-                ),
-              ),
+              header,
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -2044,18 +2130,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
           );
         }
 
-        final payments = snapshot.data!;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Desglose de Pagos:',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1F2937),
-              ),
-            ),
+            header,
             const SizedBox(height: 8),
             ...payments.map(
               (payment) => Container(
@@ -2068,7 +2146,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 ),
                 child: Row(
                   children: [
-                    // Icono del método de pago
                     Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
@@ -2082,13 +2159,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    // Información del pago
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _getCustomPaymentMethodName(payment),
+                            _resolvePaymentMethodName(payment),
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
@@ -2111,7 +2187,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ],
                       ),
                     ),
-                    // Monto y, si aplica, importe sin descuento
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
@@ -2147,6 +2222,757 @@ class _OrdersScreenState extends State<OrdersScreen> {
         );
       },
     );
+  }
+
+  bool _canEditPaymentBreakdown(Order order) {
+    return _isPendingForDiscount(order);
+  }
+
+  int _resolvePaymentMethodId(Map<String, dynamic> payment) {
+    final id = payment['medio_pago_id'] ?? payment['id_medio_pago'];
+    if (id is num) return id.toInt();
+    return int.tryParse(id?.toString() ?? '') ?? 0;
+  }
+
+  String _resolvePaymentMethodName(Map<String, dynamic> payment) {
+    final name =
+        payment['medio_pago_denominacion'] ??
+        payment['medio_pago_nombre'] ??
+        payment['denominacion'];
+    if (name is String && name.trim().isNotEmpty) {
+      return name;
+    }
+    return _getCustomPaymentMethodName(payment);
+  }
+
+  double _resolvePaymentAmount(Map<String, dynamic> payment) {
+    final amount = payment['monto'];
+    if (amount is num) return amount.toDouble();
+    return double.tryParse(amount?.toString() ?? '') ?? 0.0;
+  }
+
+  Color _getPaymentMethodColorFromMethod(PaymentMethod method) {
+    if (method.esEfectivo) {
+      return Colors.green;
+    } else if (method.esDigital) {
+      return Colors.blue;
+    }
+    return Colors.orange;
+  }
+
+  Future<List<PaymentMethod>> _loadPaymentMethodsForEdit() async {
+    final isOfflineModeEnabled =
+        await _userPreferencesService.isOfflineModeEnabled();
+    if (isOfflineModeEnabled) {
+      final paymentMethodsData =
+          await _userPreferencesService.getPaymentMethodsOffline();
+      return paymentMethodsData
+          .map((data) => PaymentMethod.fromJson(data))
+          .toList();
+    }
+    return PaymentMethodService.getActivePaymentMethods();
+  }
+
+  Future<void> _showPaymentBreakdownEditor(
+    Order order,
+    List<Map<String, dynamic>> payments, {
+    VoidCallback? onUpdated,
+  }) async {
+    final operationId = order.operationId;
+    if (operationId == null) return;
+
+    final isOfflineModeEnabled =
+        await _userPreferencesService.isOfflineModeEnabled();
+    if (isOfflineModeEnabled) {
+      _showErrorDialog(
+        'Modo offline',
+        'Para editar el desglose de pagos necesitas conexión.',
+      );
+      return;
+    }
+
+    final amountController = TextEditingController();
+    Map<String, dynamic>? selectedSource;
+    PaymentMethod? selectedTarget;
+    bool isSaving = false;
+    String? errorMessage;
+    Future<List<PaymentMethod>>? paymentMethodsFuture;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.82,
+              minChildSize: 0.5,
+              maxChildSize: 0.95,
+              builder: (context, scrollController) {
+                return Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 12,
+                        offset: Offset(0, -4),
+                      ),
+                    ],
+                  ),
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    padding: EdgeInsets.only(
+                      left: 20,
+                      right: 20,
+                      top: 16,
+                      bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 42,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Editar desglose de pagos',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Mueve un monto desde un método existente hacia otro.',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        FutureBuilder<List<PaymentMethod>>(
+                          future:
+                              paymentMethodsFuture ??=
+                                  _loadPaymentMethodsForEdit(),
+                          builder: (context, methodsSnapshot) {
+                            if (methodsSnapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.grey[200]!),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                    SizedBox(width: 12),
+                                    Text('Cargando métodos de pago...'),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            if (!methodsSnapshot.hasData ||
+                                methodsSnapshot.data!.isEmpty) {
+                              return Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.red[50],
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.red[200]!),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      Icons.warning_amber,
+                                      color: Colors.red[400],
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'No pudimos cargar los métodos de pago.',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          const Text(
+                                            'Revisa tu conexión y vuelve a intentarlo.',
+                                          ),
+                                          const SizedBox(height: 10),
+                                          OutlinedButton(
+                                            onPressed: () {
+                                              setModalState(() {
+                                                paymentMethodsFuture =
+                                                    _loadPaymentMethodsForEdit();
+                                              });
+                                            },
+                                            child: const Text('Reintentar'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            final methods = methodsSnapshot.data!;
+                            final sourceAmount =
+                                selectedSource == null
+                                    ? 0.0
+                                    : _resolvePaymentAmount(selectedSource!);
+                            final amountToMove =
+                                double.tryParse(amountController.text) ?? 0.0;
+                            final sourceId =
+                                selectedSource == null
+                                    ? null
+                                    : _resolvePaymentMethodId(selectedSource!);
+                            final isAmountValid =
+                                amountToMove > 0 &&
+                                amountToMove <= sourceAmount;
+                            final canSave =
+                                selectedSource != null &&
+                                selectedTarget != null &&
+                                isAmountValid &&
+                                !isSaving;
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Origen',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF111827),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Wrap(
+                                  spacing: 12,
+                                  runSpacing: 12,
+                                  children:
+                                      payments.map((payment) {
+                                        final isSelected = identical(
+                                          payment,
+                                          selectedSource,
+                                        );
+                                        final accentColor =
+                                            _getPaymentMethodColor(payment);
+                                        final paymentAmount =
+                                            _resolvePaymentAmount(payment);
+                                        return GestureDetector(
+                                          onTap: () {
+                                            setModalState(() {
+                                              selectedSource = payment;
+                                              errorMessage = null;
+                                              final currentAmount =
+                                                  double.tryParse(
+                                                    amountController.text,
+                                                  ) ??
+                                                  0.0;
+                                              if (currentAmount <= 0 ||
+                                                  currentAmount >
+                                                      paymentAmount) {
+                                                amountController
+                                                    .text = paymentAmount
+                                                    .toStringAsFixed(2);
+                                              }
+                                              if (selectedTarget != null &&
+                                                  selectedTarget!.id ==
+                                                      _resolvePaymentMethodId(
+                                                        payment,
+                                                      )) {
+                                                selectedTarget = null;
+                                              }
+                                            });
+                                          },
+                                          child: AnimatedContainer(
+                                            duration: const Duration(
+                                              milliseconds: 180,
+                                            ),
+                                            padding: const EdgeInsets.all(12),
+                                            constraints: const BoxConstraints(
+                                              minWidth: 150,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  isSelected
+                                                      ? accentColor.withOpacity(
+                                                        0.12,
+                                                      )
+                                                      : Colors.white,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color:
+                                                    isSelected
+                                                        ? accentColor
+                                                        : Colors.grey[200]!,
+                                                width: 1.2,
+                                              ),
+                                              boxShadow: [
+                                                if (isSelected)
+                                                  BoxShadow(
+                                                    color: accentColor
+                                                        .withOpacity(0.2),
+                                                    blurRadius: 8,
+                                                    offset: const Offset(0, 4),
+                                                  ),
+                                              ],
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.all(
+                                                            6,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color: accentColor,
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              8,
+                                                            ),
+                                                      ),
+                                                      child: Icon(
+                                                        _getPaymentMethodIcon(
+                                                          payment,
+                                                        ),
+                                                        size: 16,
+                                                        color: Colors.white,
+                                                      ),
+                                                    ),
+                                                    const Spacer(),
+                                                    if (isSelected)
+                                                      const Icon(
+                                                        Icons.check_circle,
+                                                        color: Color(
+                                                          0xFF10B981,
+                                                        ),
+                                                        size: 18,
+                                                      ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 10),
+                                                Text(
+                                                  _resolvePaymentMethodName(
+                                                    payment,
+                                                  ),
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFF1F2937),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  'Disponible: \$${paymentAmount.toStringAsFixed(2)}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey[600],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                ),
+                                const SizedBox(height: 20),
+                                const Text(
+                                  'Destino',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF111827),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Wrap(
+                                  spacing: 12,
+                                  runSpacing: 12,
+                                  children:
+                                      methods.map((method) {
+                                        final isDisabled =
+                                            sourceId != null &&
+                                            method.id == sourceId;
+                                        final isSelected =
+                                            method == selectedTarget;
+                                        final accentColor =
+                                            _getPaymentMethodColorFromMethod(
+                                              method,
+                                            );
+                                        return GestureDetector(
+                                          onTap:
+                                              isDisabled
+                                                  ? null
+                                                  : () {
+                                                    setModalState(() {
+                                                      selectedTarget = method;
+                                                      errorMessage = null;
+                                                    });
+                                                  },
+                                          child: AnimatedContainer(
+                                            duration: const Duration(
+                                              milliseconds: 180,
+                                            ),
+                                            padding: const EdgeInsets.all(12),
+                                            constraints: const BoxConstraints(
+                                              minWidth: 150,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  isDisabled
+                                                      ? Colors.grey[100]
+                                                      : isSelected
+                                                      ? accentColor.withOpacity(
+                                                        0.12,
+                                                      )
+                                                      : Colors.white,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color:
+                                                    isSelected
+                                                        ? accentColor
+                                                        : Colors.grey[200]!,
+                                                width: 1.2,
+                                              ),
+                                              boxShadow: [
+                                                if (isSelected)
+                                                  BoxShadow(
+                                                    color: accentColor
+                                                        .withOpacity(0.2),
+                                                    blurRadius: 8,
+                                                    offset: const Offset(0, 4),
+                                                  ),
+                                              ],
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.all(
+                                                            6,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            isDisabled
+                                                                ? Colors
+                                                                    .grey[300]
+                                                                : accentColor,
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              8,
+                                                            ),
+                                                      ),
+                                                      child: Icon(
+                                                        method.typeIcon,
+                                                        size: 16,
+                                                        color: Colors.white,
+                                                      ),
+                                                    ),
+                                                    const Spacer(),
+                                                    if (isSelected)
+                                                      const Icon(
+                                                        Icons.check_circle,
+                                                        color: Color(
+                                                          0xFF10B981,
+                                                        ),
+                                                        size: 18,
+                                                      ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 10),
+                                                Text(
+                                                  method.denominacion,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                    color:
+                                                        isDisabled
+                                                            ? Colors.grey[400]
+                                                            : const Color(
+                                                              0xFF1F2937,
+                                                            ),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  isDisabled
+                                                      ? 'Selecciona otro origen'
+                                                      : 'Mover aquí',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey[600],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                ),
+                                const SizedBox(height: 20),
+                                TextFormField(
+                                  controller: amountController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'^\d+\.?\d{0,2}'),
+                                    ),
+                                  ],
+                                  onChanged: (_) {
+                                    setModalState(() {
+                                      errorMessage = null;
+                                    });
+                                  },
+                                  decoration: InputDecoration(
+                                    labelText: 'Monto a mover',
+                                    prefixText: '\$',
+                                    helperText:
+                                        selectedSource == null
+                                            ? 'Selecciona un origen primero'
+                                            : 'Máximo disponible: \$${sourceAmount.toStringAsFixed(2)}',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF8FAFC),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: const Color(0xFFE2E8F0),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          const Text('Monto a transferir'),
+                                          Text(
+                                            '\$${amountToMove.toStringAsFixed(2)}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFF2563EB),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          const Text('Origen'),
+                                          Text(
+                                            selectedSource == null
+                                                ? '--'
+                                                : _resolvePaymentMethodName(
+                                                  selectedSource!,
+                                                ),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          const Text('Destino'),
+                                          Text(
+                                            selectedTarget?.denominacion ??
+                                                '--',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (!isAmountValid &&
+                                    selectedSource != null &&
+                                    amountToMove > 0)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Text(
+                                      'El monto supera el disponible del método origen.',
+                                      style: TextStyle(
+                                        color: Colors.red[400],
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                if (errorMessage != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Text(
+                                      errorMessage!,
+                                      style: TextStyle(
+                                        color: Colors.red[400],
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                const SizedBox(height: 20),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton(
+                                        onPressed:
+                                            isSaving
+                                                ? null
+                                                : () => Navigator.pop(context),
+                                        style: OutlinedButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 14,
+                                          ),
+                                          side: const BorderSide(
+                                            color: Color(0xFFE2E8F0),
+                                          ),
+                                        ),
+                                        child: const Text('Cancelar'),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed:
+                                            canSave
+                                                ? () async {
+                                                  setModalState(() {
+                                                    isSaving = true;
+                                                    errorMessage = null;
+                                                  });
+                                                  final result = await _orderService
+                                                      .moveSalePaymentAmount(
+                                                        operationId:
+                                                            operationId,
+                                                        fromPaymentMethodId:
+                                                            _resolvePaymentMethodId(
+                                                              selectedSource!,
+                                                            ),
+                                                        toPaymentMethodId:
+                                                            selectedTarget!.id,
+                                                        amount: amountToMove,
+                                                      );
+                                                  if (!mounted) return;
+                                                  if (result['success'] ==
+                                                      true) {
+                                                    Navigator.pop(context);
+                                                    onUpdated?.call();
+                                                    setState(() {});
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text(
+                                                          'Desglose actualizado correctamente',
+                                                        ),
+                                                        backgroundColor:
+                                                            Colors.green,
+                                                      ),
+                                                    );
+                                                  } else {
+                                                    setModalState(() {
+                                                      isSaving = false;
+                                                      errorMessage =
+                                                          result['error'] ??
+                                                          'No se pudo actualizar el desglose.';
+                                                    });
+                                                  }
+                                                }
+                                                : null,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(
+                                            0xFF4A90E2,
+                                          ),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 14,
+                                          ),
+                                        ),
+                                        child:
+                                            isSaving
+                                                ? const SizedBox(
+                                                  width: 20,
+                                                  height: 20,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.white,
+                                                      ),
+                                                )
+                                                : const Text('Guardar cambio'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+
+    amountController.dispose();
   }
 
   Color _getPaymentMethodColor(Map<String, dynamic> payment) {

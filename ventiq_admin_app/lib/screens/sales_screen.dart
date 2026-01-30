@@ -16,7 +16,10 @@ import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../models/sales.dart';
+import '../models/sales_analyst_models.dart';
 import '../services/sales_service.dart';
+import '../services/sales_analyst_controller.dart';
+import '../services/subscription_service.dart';
 import '../services/user_preferences_service.dart';
 
 // Importación condicional para descargas en web
@@ -52,6 +55,21 @@ class _SalesScreenState extends State<SalesScreen>
   bool _isLoadingMetrics = false;
   List<ProductAnalysis> _productAnalysis = [];
   bool _isLoadingAnalysis = false;
+  late final SalesAnalystController _analystController;
+  final SubscriptionService _subscriptionService = SubscriptionService();
+  final TextEditingController _analystQuestionController =
+      TextEditingController();
+  final ScrollController _analystScrollController = ScrollController();
+  final FocusNode _analystFocusNode = FocusNode();
+  final List<String> _analystSuggestions = [
+    '¿Cuáles productos dejan más ganancia?',
+    'Muéstrame las ventas por proveedor.',
+    'Top 5 productos más vendidos del período.',
+    '¿Cómo evolucionaron las ventas en el rango?',
+  ];
+  int _analystMessageCount = 0;
+  bool _hasAdvancedPlan = false;
+  bool _isLoadingAdvancedPlan = true;
 
   // Generación de PDF
   Future<void> _pickPdfDateRange(BuildContext context) async {
@@ -162,6 +180,9 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Widget _buildGeneratePdfFab() {
+    if (_tabController.index == 4) {
+      return const SizedBox.shrink();
+    }
     // Un solo botón con opciones según el tab activo
     bool isLoading = false;
     bool isPdfAction = false;
@@ -1186,8 +1207,12 @@ class _SalesScreenState extends State<SalesScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _tabController.addListener(_onTabChanged);
+    _analystController = SalesAnalystController();
+    _analystController.addListener(_handleAnalystUpdates);
+    _analystMessageCount = _analystController.messages.length;
+    _loadAdvancedPlanStatus();
     _initializeDateRange();
     _loadWarehouses();
     _loadSalesData();
@@ -1213,13 +1238,49 @@ class _SalesScreenState extends State<SalesScreen>
         case 3: // Analysis
           _loadProductAnalysis();
           break;
+        case 4: // Analyst
+          if (_hasAdvancedPlan) {
+            if (!_isLoadingAnalysis && _productAnalysis.isEmpty) {
+              _loadProductAnalysis();
+            }
+            if (!_isLoadingSuppliers && _supplierReports.isEmpty) {
+              _loadSupplierReports();
+            }
+          }
+          break;
       }
     }
+  }
+
+  void _handleAnalystUpdates() {
+    if (!mounted) return;
+    final messageCount = _analystController.messages.length;
+    if (messageCount != _analystMessageCount) {
+      _analystMessageCount = messageCount;
+      _scrollAnalystToBottom();
+    }
+  }
+
+  void _scrollAnalystToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_analystScrollController.hasClients) return;
+      final target = _analystScrollController.position.maxScrollExtent + 120;
+      _analystScrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _analystController.removeListener(_handleAnalystUpdates);
+    _analystController.dispose();
+    _analystQuestionController.dispose();
+    _analystScrollController.dispose();
+    _analystFocusNode.dispose();
     super.dispose();
   }
 
@@ -1227,7 +1288,41 @@ class _SalesScreenState extends State<SalesScreen>
     setState(() => _isLoading = true);
     _loadProductSalesData();
     _loadVendorReports();
+    _loadAdvancedPlanStatus();
     // El análisis de productos se carga solo cuando se selecciona el tab de análisis
+  }
+
+  Future<void> _loadAdvancedPlanStatus() async {
+    if (!mounted) return;
+    setState(() => _isLoadingAdvancedPlan = true);
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      if (storeId == null) {
+        if (mounted) {
+          setState(() {
+            _hasAdvancedPlan = false;
+            _isLoadingAdvancedPlan = false;
+          });
+        }
+        return;
+      }
+
+      final hasPlan = await _subscriptionService.hasAdvancedPlan(storeId);
+      if (mounted) {
+        setState(() {
+          _hasAdvancedPlan = hasPlan;
+          _isLoadingAdvancedPlan = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _hasAdvancedPlan = false;
+          _isLoadingAdvancedPlan = false;
+        });
+      }
+      debugPrint('❌ Error verificando plan avanzado: $e');
+    }
   }
 
   void _loadProductSalesData() async {
@@ -1477,11 +1572,34 @@ class _SalesScreenState extends State<SalesScreen>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           indicatorColor: Colors.white,
-          tabs: const [
-            Tab(text: 'Tiempo Real', icon: Icon(Icons.timeline, size: 18)),
-            Tab(text: 'TPVs', icon: Icon(Icons.point_of_sale, size: 18)),
-            Tab(text: 'Proveedores', icon: Icon(Icons.inventory, size: 18)),
-            Tab(text: 'Análisis', icon: Icon(Icons.analytics, size: 18)),
+          tabs: [
+            const Tab(
+              text: 'Tiempo Real',
+              icon: Icon(Icons.timeline, size: 18),
+            ),
+            const Tab(text: 'TPVs', icon: Icon(Icons.point_of_sale, size: 18)),
+            const Tab(
+              text: 'Proveedores',
+              icon: Icon(Icons.inventory, size: 18),
+            ),
+            const Tab(text: 'Análisis', icon: Icon(Icons.analytics, size: 18)),
+            Tab(
+              text: _hasAdvancedPlan ? 'Analista' : 'Analista (Avanzado)',
+              icon:
+                  _isLoadingAdvancedPlan
+                      ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                      : Icon(
+                        _hasAdvancedPlan ? Icons.smart_toy : Icons.lock,
+                        size: 18,
+                      ),
+            ),
           ],
         ),
       ),
@@ -1495,6 +1613,7 @@ class _SalesScreenState extends State<SalesScreen>
                   _buildTPVsTab(),
                   _buildSuppliersTab(),
                   _buildAnalyticsTab(),
+                  _buildAnalystGateTab(),
                 ],
               ),
       floatingActionButton: _buildGeneratePdfFab(),
@@ -1927,6 +2046,977 @@ class _SalesScreenState extends State<SalesScreen>
         ],
       ),
     );
+  }
+
+  Widget _buildAnalystTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: _buildAnalystHeader(),
+        ),
+        Expanded(
+          child: AnimatedBuilder(
+            animation: _analystController,
+            builder: (context, _) {
+              return _buildAnalystConversation(
+                context,
+                _analystController.messages,
+                _analystController.isLoading,
+              );
+            },
+          ),
+        ),
+        _buildAnalystComposer(),
+      ],
+    );
+  }
+
+  Widget _buildAnalystGateTab() {
+    if (_isLoadingAdvancedPlan) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
+      );
+    }
+
+    if (_hasAdvancedPlan) {
+      return _buildAnalystTab();
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.lock,
+                    color: AppColors.primary,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Analista IA disponible solo en Plan Avanzado',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Desbloquea recomendaciones, insights y proyecciones inteligentes con tu información de ventas.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: const [
+                    _AnalystFeatureChip(
+                      icon: Icons.lightbulb_outline,
+                      label: 'Insights rápidos',
+                    ),
+                    _AnalystFeatureChip(
+                      icon: Icons.trending_up,
+                      label: 'Tendencias',
+                    ),
+                    _AnalystFeatureChip(
+                      icon: Icons.table_chart_outlined,
+                      label: 'Tablas claras',
+                    ),
+                    _AnalystFeatureChip(
+                      icon: Icons.auto_graph,
+                      label: 'Gráficas dinámicas',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/subscription-detail');
+                    },
+                    icon: const Icon(Icons.workspace_premium),
+                    label: const Text('Ver Plan Avanzado'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalystHeader() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: AppColors.primaryGradient,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.smart_toy, color: Colors.white, size: 22),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Analista IA de Ventas',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _resetAnalystConversation,
+                icon: const Icon(Icons.refresh, color: Colors.white, size: 16),
+                label: const Text(
+                  'Nuevo chat',
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Pregunta sobre ventas, proveedores, TPVs o tendencias. La IA usa tus datos actuales para responder.',
+            style: TextStyle(color: Colors.white70, height: 1.3, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildAnalystInfoChip(Icons.date_range, _formatDateRangeLabel()),
+              _buildAnalystInfoChip(
+                Icons.attach_money,
+                _formatCurrency(_totalSales),
+              ),
+              _buildAnalystInfoChip(
+                Icons.inventory_2,
+                '${_totalProductsSold} productos',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalystInfoChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalystConversation(
+    BuildContext context,
+    List<SalesAnalystMessage> messages,
+    bool isLoading,
+  ) {
+    return ListView(
+      controller: _analystScrollController,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      children: [
+        if (messages.length <= 1) _buildAnalystSuggestions(),
+        ...messages.map(
+          (message) => _buildAnalystMessageBubble(context, message),
+        ),
+        if (isLoading) _buildAnalystTypingIndicator(),
+      ],
+    );
+  }
+
+  Widget _buildAnalystSuggestions() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.auto_awesome, size: 16, color: AppColors.primary),
+              SizedBox(width: 6),
+              Text(
+                'Ideas rápidas',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children:
+                _analystSuggestions
+                    .map(
+                      (suggestion) => ActionChip(
+                        label: Text(
+                          suggestion,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        backgroundColor: AppColors.primary.withOpacity(0.08),
+                        onPressed:
+                            _analystController.isLoading
+                                ? null
+                                : () => _sendAnalystQuestion(suggestion),
+                      ),
+                    )
+                    .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalystMessageBubble(
+    BuildContext context,
+    SalesAnalystMessage message,
+  ) {
+    final isUser = message.isUser;
+    final bubbleColor =
+        message.isError
+            ? AppColors.error.withOpacity(0.08)
+            : isUser
+            ? AppColors.primary
+            : Colors.white;
+    final textColor = isUser ? Colors.white : AppColors.textPrimary;
+    final borderColor = message.isError ? AppColors.error : AppColors.border;
+    final maxWidth = MediaQuery.of(context).size.width * 0.75;
+
+    return Column(
+      crossAxisAlignment:
+          isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        Align(
+          alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: bubbleColor,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: borderColor, width: 1),
+                boxShadow:
+                    isUser
+                        ? null
+                        : [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+              ),
+              child: Text(
+                message.text,
+                style: TextStyle(color: textColor, height: 1.4, fontSize: 13),
+              ),
+            ),
+          ),
+        ),
+        if (!isUser && message.response?.hasStructuredContent == true) ...[
+          const SizedBox(height: 8),
+          _buildAnalystResponseSections(message.response!),
+        ],
+        const SizedBox(height: 12),
+      ],
+    );
+  }
+
+  Widget _buildAnalystTypingIndicator() {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 8),
+            Text('Analizando...'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnalystResponseSections(SalesAnalystResponse response) {
+    final sections = <Widget>[];
+
+    if (response.cards.isNotEmpty) {
+      sections.add(_buildAnalystCardsSection(response.cards));
+    }
+    if (response.insights.isNotEmpty) {
+      sections.add(
+        _buildAnalystBulletSection(
+          'Insights',
+          response.insights,
+          icon: Icons.lightbulb_outline,
+        ),
+      );
+    }
+    if (response.formulas.isNotEmpty) {
+      sections.add(
+        _buildAnalystBulletSection(
+          'Fórmulas',
+          response.formulas,
+          icon: Icons.calculate_outlined,
+          isFormula: true,
+        ),
+      );
+    }
+    if (response.projections.isNotEmpty) {
+      sections.add(
+        _buildAnalystBulletSection(
+          'Proyecciones',
+          response.projections,
+          icon: Icons.trending_up,
+        ),
+      );
+    }
+    if (response.recommendations.isNotEmpty) {
+      sections.add(
+        _buildAnalystBulletSection(
+          'Recomendaciones',
+          response.recommendations,
+          icon: Icons.task_alt,
+        ),
+      );
+    }
+
+    for (final table in response.tables) {
+      sections.add(_buildAnalystTableSection(table));
+    }
+    for (final chart in response.charts) {
+      sections.add(_buildAnalystChartSection(chart));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children:
+          sections
+              .map(
+                (section) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: section,
+                ),
+              )
+              .toList(),
+    );
+  }
+
+  Widget _buildAnalystSection({
+    required String title,
+    required Widget child,
+    IconData? icon,
+    Color? accent,
+  }) {
+    final accentColor = accent ?? AppColors.primary;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 16, color: accentColor),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: accentColor,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalystCardsSection(List<SalesAnalystCard> cards) {
+    return _buildAnalystSection(
+      title: 'Indicadores',
+      icon: Icons.insights,
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        children: cards.map(_buildAnalystMetricCard).toList(),
+      ),
+    );
+  }
+
+  Widget _buildAnalystMetricCard(SalesAnalystCard card) {
+    final toneColor = _toneColor(card.tone);
+    return Container(
+      width: 150,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: toneColor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: toneColor.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            card.title,
+            style: TextStyle(
+              fontSize: 12,
+              color: toneColor,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            card.value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: toneColor,
+            ),
+          ),
+          if (card.subtitle.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              card.subtitle,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalystBulletSection(
+    String title,
+    List<String> items, {
+    IconData? icon,
+    bool isFormula = false,
+  }) {
+    return _buildAnalystSection(
+      title: title,
+      icon: icon,
+      accent: isFormula ? AppColors.info : null,
+      child: Column(
+        children:
+            items
+                .map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          margin: const EdgeInsets.only(top: 6),
+                          decoration: BoxDecoration(
+                            color:
+                                isFormula ? AppColors.info : AppColors.primary,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            item,
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.4,
+                              fontFamily: isFormula ? 'Courier' : null,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+                .toList(),
+      ),
+    );
+  }
+
+  Widget _buildAnalystTableSection(SalesAnalystTable table) {
+    return _buildAnalystSection(
+      title: table.title,
+      icon: Icons.table_chart_outlined,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          columnSpacing: 12,
+          headingTextStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+          columns:
+              table.columns
+                  .map((column) => DataColumn(label: Text(column)))
+                  .toList(),
+          rows:
+              table.rows.map((row) {
+                final cells = List<String>.generate(
+                  table.columns.length,
+                  (index) => index < row.length ? row[index] : '',
+                );
+                return DataRow(
+                  cells:
+                      cells
+                          .map(
+                            (cell) => DataCell(
+                              Text(cell, style: const TextStyle(fontSize: 12)),
+                            ),
+                          )
+                          .toList(),
+                );
+              }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnalystChartSection(SalesAnalystChart chart) {
+    return _buildAnalystSection(
+      title: chart.title.isNotEmpty ? chart.title : 'Gráfico',
+      icon: Icons.bar_chart,
+      child: _buildAnalystChart(chart),
+    );
+  }
+
+  Widget _buildAnalystChart(SalesAnalystChart chart) {
+    if (chart.labels.isEmpty || chart.series.isEmpty) {
+      return const Text(
+        'No hay datos suficientes para graficar.',
+        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+      );
+    }
+
+    final type = chart.type.toLowerCase();
+    if (type == 'line') {
+      return _buildAnalystLineChart(chart);
+    }
+    if (type == 'pie') {
+      return _buildAnalystPieChart(chart);
+    }
+    return _buildAnalystBarChart(chart);
+  }
+
+  Widget _buildAnalystBarChart(SalesAnalystChart chart) {
+    final values = chart.series.first.values;
+    final length =
+        chart.labels.length < values.length
+            ? chart.labels.length
+            : values.length;
+    if (length == 0) {
+      return const SizedBox.shrink();
+    }
+    final maxValue = values
+        .take(length)
+        .fold<double>(0, (max, value) => value > max ? value : max);
+
+    return SizedBox(
+      height: 220,
+      child: BarChart(
+        BarChartData(
+          maxY: maxValue == 0 ? 1 : maxValue * 1.2,
+          gridData: FlGridData(show: true, drawVerticalLine: false),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 36,
+                interval: maxValue == 0 ? 1 : (maxValue / 4).ceilToDouble(),
+              ),
+            ),
+            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final index = value.toInt();
+                  if (index < 0 || index >= length) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      chart.labels[index],
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          barGroups: List.generate(
+            length,
+            (index) => BarChartGroupData(
+              x: index,
+              barRods: [
+                BarChartRodData(
+                  toY: values[index],
+                  width: 14,
+                  borderRadius: BorderRadius.circular(6),
+                  color: AppColors.primary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnalystLineChart(SalesAnalystChart chart) {
+    final values = chart.series.first.values;
+    final length =
+        chart.labels.length < values.length
+            ? chart.labels.length
+            : values.length;
+    if (length == 0) {
+      return const SizedBox.shrink();
+    }
+    final maxValue = values
+        .take(length)
+        .fold<double>(0, (max, value) => value > max ? value : max);
+
+    return SizedBox(
+      height: 220,
+      child: LineChart(
+        LineChartData(
+          maxY: maxValue == 0 ? 1 : maxValue * 1.2,
+          gridData: FlGridData(show: true, drawVerticalLine: false),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 36,
+                interval: maxValue == 0 ? 1 : (maxValue / 4).ceilToDouble(),
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final index = value.toInt();
+                  if (index < 0 || index >= length) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      chart.labels[index],
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          lineBarsData: [
+            LineChartBarData(
+              spots: List.generate(
+                length,
+                (index) => FlSpot(index.toDouble(), values[index]),
+              ),
+              isCurved: true,
+              color: AppColors.primary,
+              barWidth: 3,
+              dotData: FlDotData(show: false),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnalystPieChart(SalesAnalystChart chart) {
+    final values = chart.series.first.values;
+    final length =
+        chart.labels.length < values.length
+            ? chart.labels.length
+            : values.length;
+    if (length == 0) {
+      return const SizedBox.shrink();
+    }
+
+    final colors = [
+      AppColors.primary,
+      AppColors.success,
+      AppColors.warning,
+      AppColors.info,
+      Colors.purple,
+      Colors.teal,
+    ];
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 200,
+          child: PieChart(
+            PieChartData(
+              sectionsSpace: 2,
+              centerSpaceRadius: 32,
+              sections: List.generate(
+                length,
+                (index) => PieChartSectionData(
+                  color: colors[index % colors.length],
+                  value: values[index],
+                  title: '${values[index].toStringAsFixed(0)}',
+                  radius: 45,
+                  titleStyle: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: List.generate(
+            length,
+            (index) => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: colors[index % colors.length],
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(chart.labels[index], style: const TextStyle(fontSize: 11)),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAnalystComposer() {
+    return AnimatedBuilder(
+      animation: _analystController,
+      builder: (context, _) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: AppColors.border)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _analystQuestionController,
+                  focusNode: _analystFocusNode,
+                  minLines: 1,
+                  maxLines: 3,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted:
+                      _analystController.isLoading
+                          ? null
+                          : (_) => _sendAnalystQuestion(),
+                  decoration: InputDecoration(
+                    hintText: 'Ej: ¿Qué proveedor genera más ganancias?',
+                    filled: true,
+                    fillColor: AppColors.background,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.border),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton(
+                onPressed:
+                    _analystController.isLoading
+                        ? null
+                        : () => _sendAnalystQuestion(),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.all(14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  backgroundColor: AppColors.primary,
+                ),
+                child:
+                    _analystController.isLoading
+                        ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                        : const Icon(Icons.send, color: Colors.white, size: 18),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _sendAnalystQuestion([String? suggestion]) async {
+    final question = (suggestion ?? _analystQuestionController.text).trim();
+    final context = _buildAnalystContextSnapshot();
+    _analystQuestionController.clear();
+    _analystFocusNode.requestFocus();
+    await _analystController.sendQuestion(question: question, context: context);
+  }
+
+  void _resetAnalystConversation() {
+    _analystController.resetConversation();
+    _analystQuestionController.clear();
+    _analystFocusNode.requestFocus();
+    _scrollAnalystToBottom();
+  }
+
+  SalesAnalystContextSnapshot _buildAnalystContextSnapshot() {
+    return SalesAnalystContextSnapshot(
+      startDate: _startDate,
+      endDate: _endDate,
+      totalSales: _totalSales,
+      totalProductsSold: _totalProductsSold,
+      productSalesReports: _productSalesReports,
+      vendorReports: _vendorReports,
+      supplierReports: _supplierReports,
+      selectedTpv: _selectedTPV,
+      selectedWarehouseId: _selectedWarehouseId,
+      selectedWarehouseName: _selectedWarehouseName,
+      productAnalysis: _productAnalysis,
+    );
+  }
+
+  String _formatCurrency(double value) {
+    return NumberFormat.currency(locale: 'es', symbol: '\$').format(value);
+  }
+
+  Color _toneColor(String tone) {
+    switch (tone.toLowerCase()) {
+      case 'success':
+        return AppColors.success;
+      case 'warning':
+        return AppColors.warning;
+      case 'danger':
+        return AppColors.error;
+      default:
+        return AppColors.info;
+    }
   }
 
   Widget _buildSummaryColumn(String label, double value, Color color) {
@@ -6579,5 +7669,35 @@ class _SalesScreenState extends State<SalesScreen>
         Navigator.pushNamed(context, '/settings');
         break;
     }
+  }
+}
+
+class _AnalystFeatureChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _AnalystFeatureChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.primary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
   }
 }

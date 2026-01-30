@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 /// Servicio para monitorear el estado de conectividad de la aplicación
@@ -12,39 +13,42 @@ class ConnectivityService {
 
   final Connectivity _connectivity = Connectivity();
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
-  
+
   // Stream controllers para notificar cambios
-  final StreamController<bool> _connectionStatusController = StreamController<bool>.broadcast();
-  final StreamController<ConnectivityEvent> _connectivityEventController = StreamController<ConnectivityEvent>.broadcast();
-  
+  final StreamController<bool> _connectionStatusController =
+      StreamController<bool>.broadcast();
+  final StreamController<ConnectivityEvent> _connectivityEventController =
+      StreamController<ConnectivityEvent>.broadcast();
+
   // Estado actual
   bool _isConnected = true;
   bool _isMonitoring = false;
   DateTime? _lastConnectionLost;
   DateTime? _lastConnectionRestored;
-  
+
   // Configuración
   static const Duration _checkInterval = Duration(seconds: 30);
   static const Duration _timeoutDuration = Duration(seconds: 60);
   static const String _testUrl = 'https://www.fast.com';
-  
+
   Timer? _periodicCheckTimer;
 
   /// Stream que emite el estado de conexión (true = conectado, false = desconectado)
   Stream<bool> get connectionStatusStream => _connectionStatusController.stream;
-  
+
   /// Stream que emite eventos de conectividad con detalles
-  Stream<ConnectivityEvent> get connectivityEventStream => _connectivityEventController.stream;
-  
+  Stream<ConnectivityEvent> get connectivityEventStream =>
+      _connectivityEventController.stream;
+
   /// Estado actual de conexión
   bool get isConnected => _isConnected;
-  
+
   /// Indica si el servicio está monitoreando
   bool get isMonitoring => _isMonitoring;
-  
+
   /// Última vez que se perdió la conexión
   DateTime? get lastConnectionLost => _lastConnectionLost;
-  
+
   /// Última vez que se restauró la conexión
   DateTime? get lastConnectionRestored => _lastConnectionRestored;
 
@@ -84,7 +88,7 @@ class ConnectivityService {
 
     await _connectivitySubscription?.cancel();
     _connectivitySubscription = null;
-    
+
     _periodicCheckTimer?.cancel();
     _periodicCheckTimer = null;
 
@@ -96,16 +100,21 @@ class ConnectivityService {
     try {
       final connectivityResults = await _connectivity.checkConnectivity();
       print('📡 Estado inicial de conectividad: $connectivityResults');
-      
+
       // Verificar si hay alguna conexión disponible
-      final hasConnection = connectivityResults.any((result) => result != ConnectivityResult.none);
-      
+      final hasConnection = connectivityResults.any(
+        (result) => result != ConnectivityResult.none,
+      );
+
       if (!hasConnection) {
         await _updateConnectionStatus(false, 'Sin conexión de red');
       } else {
         // Verificar conectividad real a internet
         final hasInternet = await _hasInternetConnection();
-        await _updateConnectionStatus(hasInternet, hasInternet ? 'Conectado a internet' : 'Sin acceso a internet');
+        await _updateConnectionStatus(
+          hasInternet,
+          hasInternet ? 'Conectado a internet' : 'Sin acceso a internet',
+        );
       }
     } catch (e) {
       print('❌ Error verificando conectividad inicial: $e');
@@ -118,32 +127,44 @@ class ConnectivityService {
     print('📡 Cambio de conectividad detectado: $results');
 
     // Verificar si hay alguna conexión disponible
-    final hasConnection = results.any((result) => result != ConnectivityResult.none);
-    
+    final hasConnection = results.any(
+      (result) => result != ConnectivityResult.none,
+    );
+
     if (!hasConnection) {
       await _updateConnectionStatus(false, 'Conexión de red perdida');
     } else {
       // Verificar si realmente hay acceso a internet
       print('🔍 Verificando acceso real a internet...');
       final hasInternet = await _hasInternetConnection();
-      
+
       if (hasInternet) {
         await _updateConnectionStatus(true, 'Conexión a internet restaurada');
       } else {
-        await _updateConnectionStatus(false, 'Red disponible pero sin acceso a internet');
+        await _updateConnectionStatus(
+          false,
+          'Red disponible pero sin acceso a internet',
+        );
       }
     }
   }
 
   /// Verificar si hay conexión real a internet
   Future<bool> _hasInternetConnection() async {
+    if (kIsWeb) {
+      print('🌐 Web detectada - Asumiendo conexión activa');
+      return true;
+    }
+
     try {
-      final response = await http.get(
-        Uri.parse(_testUrl),
-      ).timeout(_timeoutDuration);
-      
+      final response = await http
+          .get(Uri.parse(_testUrl))
+          .timeout(_timeoutDuration);
+
       final hasConnection = response.statusCode == 200;
-      print('🌐 Verificación de internet: ${hasConnection ? "✅ Conectado" : "❌ Sin acceso"}');
+      print(
+        '🌐 Verificación de internet: ${hasConnection ? "✅ Conectado" : "❌ Sin acceso"}',
+      );
       return hasConnection;
     } catch (e) {
       print('🌐 Sin acceso a internet: $e');
@@ -155,36 +176,41 @@ class ConnectivityService {
   Future<void> _updateConnectionStatus(bool isConnected, String reason) async {
     final wasConnected = _isConnected;
     _isConnected = isConnected;
-    
+
     final now = DateTime.now();
-    
+
     if (wasConnected && !isConnected) {
       // Se perdió la conexión
       _lastConnectionLost = now;
       print('📵 CONEXIÓN PERDIDA: $reason');
-      
-      _connectivityEventController.add(ConnectivityEvent(
-        type: ConnectivityEventType.connectionLost,
-        timestamp: now,
-        reason: reason,
-      ));
+
+      _connectivityEventController.add(
+        ConnectivityEvent(
+          type: ConnectivityEventType.connectionLost,
+          timestamp: now,
+          reason: reason,
+        ),
+      );
     } else if (!wasConnected && isConnected) {
       // Se restauró la conexión
       _lastConnectionRestored = now;
-      final downtime = _lastConnectionLost != null 
-          ? now.difference(_lastConnectionLost!).inSeconds 
-          : 0;
-      
+      final downtime =
+          _lastConnectionLost != null
+              ? now.difference(_lastConnectionLost!).inSeconds
+              : 0;
+
       print('📶 CONEXIÓN RESTAURADA: $reason (desconectado por ${downtime}s)');
-      
-      _connectivityEventController.add(ConnectivityEvent(
-        type: ConnectivityEventType.connectionRestored,
-        timestamp: now,
-        reason: reason,
-        downtimeSeconds: downtime,
-      ));
+
+      _connectivityEventController.add(
+        ConnectivityEvent(
+          type: ConnectivityEventType.connectionRestored,
+          timestamp: now,
+          reason: reason,
+          downtimeSeconds: downtime,
+        ),
+      );
     }
-    
+
     // Emitir cambio de estado
     _connectionStatusController.add(isConnected);
   }
@@ -194,20 +220,24 @@ class ConnectivityService {
     _periodicCheckTimer?.cancel();
     _periodicCheckTimer = Timer.periodic(_checkInterval, (_) async {
       if (!_isMonitoring) return;
-      
+
       try {
         final connectivityResults = await _connectivity.checkConnectivity();
-        
+
         // Verificar si hay alguna conexión disponible
-        final hasConnection = connectivityResults.any((result) => result != ConnectivityResult.none);
-        
+        final hasConnection = connectivityResults.any(
+          (result) => result != ConnectivityResult.none,
+        );
+
         if (hasConnection) {
           final hasInternet = await _hasInternetConnection();
-          
+
           if (_isConnected != hasInternet) {
             await _updateConnectionStatus(
-              hasInternet, 
-              hasInternet ? 'Conexión verificada periódicamente' : 'Pérdida de internet detectada periódicamente'
+              hasInternet,
+              hasInternet
+                  ? 'Conexión verificada periódicamente'
+                  : 'Pérdida de internet detectada periódicamente',
             );
           }
         }
@@ -221,14 +251,16 @@ class ConnectivityService {
   Future<bool> checkConnectivity() async {
     try {
       final connectivityResults = await _connectivity.checkConnectivity();
-      
+
       // Verificar si hay alguna conexión disponible
-      final hasConnection = connectivityResults.any((result) => result != ConnectivityResult.none);
-      
+      final hasConnection = connectivityResults.any(
+        (result) => result != ConnectivityResult.none,
+      );
+
       if (!hasConnection) {
         return false;
       }
-      
+
       return await _hasInternetConnection();
     } catch (e) {
       print('❌ Error verificando conectividad: $e');
@@ -240,12 +272,13 @@ class ConnectivityService {
   Future<ConnectivityInfo> getConnectivityInfo() async {
     final connectivityResults = await _connectivity.checkConnectivity();
     final hasInternet = await _hasInternetConnection();
-    
+
     // Tomar el primer resultado disponible o none si la lista está vacía
-    final primaryResult = connectivityResults.isNotEmpty 
-        ? connectivityResults.first 
-        : ConnectivityResult.none;
-    
+    final primaryResult =
+        connectivityResults.isNotEmpty
+            ? connectivityResults.first
+            : ConnectivityResult.none;
+
     return ConnectivityInfo(
       connectivityResult: primaryResult,
       hasInternet: hasInternet,
@@ -264,10 +297,7 @@ class ConnectivityService {
 }
 
 /// Tipos de eventos de conectividad
-enum ConnectivityEventType {
-  connectionLost,
-  connectionRestored,
-}
+enum ConnectivityEventType { connectionLost, connectionRestored }
 
 /// Evento de conectividad con detalles
 class ConnectivityEvent {
