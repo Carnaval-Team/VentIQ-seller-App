@@ -1,13 +1,13 @@
 {
-  "current_version": "1.8.7",
-  "build": 187,
+  "current_version": "1.8.8",
+  "build": 188,
 
   "app_name": "ventiq_admin",
   "changelogs": [
     {
-      "version": "1.8.7",
-      "date": "2026-01-29",
-      "title": "🤖 Analista IA de Ventas (Beta)",
+      "version": "1.8.8",
+      "date": "2026-01-30",
+      "title": "🤖 Analista IA de Ventas (Beta) y mejora en las promos de productos",
       "changes": [
         {
           "type": "feature",
