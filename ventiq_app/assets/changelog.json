@@ -1,9 +1,26 @@
 {
-  "current_version": "1.9.6",
-  "build": 806,
+  "current_version": "1.9.7",
+  "build": 807,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.9.7",
+      "date": "2026-01-30",
+      "title": "Web más cómoda y sin interrupciones",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Conexión estable en la versión web",
+          "description": "En la web la app asume conexión activa para evitar errores al comprobar internet."
+        },
+        {
+          "type": "improvement",
+          "title": "Catálogo más fácil de mover en web",
+          "description": "Cada subcategoría tiene botones para mover productos a la izquierda o derecha, y también puedes usar las flechas del teclado."
+        }
+      ]
+    },
     {
       "version": "1.9.6",
       "date": "2026-01-29",
