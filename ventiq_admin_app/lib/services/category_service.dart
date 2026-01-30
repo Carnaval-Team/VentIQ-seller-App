@@ -15,25 +15,23 @@ class CategoryService {
   Future<List<Category>> getCategoriesByStore() async {
     try {
       print('🏪 Iniciando carga de categorías desde Supabase...');
-      
+
       // Obtener ID de tienda desde preferencias
       final idTienda = await _userPrefs.getIdTienda();
       if (idTienda == null) {
         throw Exception('No se encontró ID de tienda en preferencias');
       }
-      
+
       print('🏪 ID Tienda: $idTienda');
-      
+
       // Llamar al RPC get_categorias_by_tienda_complete
       final response = await _supabase.rpc(
         'get_categorias_by_tienda_complete',
-        params: {
-          'p_id_tienda': idTienda,
-        },
+        params: {'p_id_tienda': idTienda},
       );
 
       print('📦 Respuesta RPC recibida: ${response?.length ?? 0} categorías');
-      
+
       if (response == null) {
         print('⚠️ Respuesta nula del RPC');
         return [];
@@ -43,17 +41,19 @@ class CategoryService {
       final List<Category> categories = [];
       for (final item in response) {
         try {
-          print('📝 Procesando categoría: ${item['denominacion']} (ID: ${item['id']})');
-          
+          print(
+            '📝 Procesando categoría: ${item['denominacion']} (ID: ${item['id']})',
+          );
+
           // Generar color basado en el nombre para consistencia visual
           final color = _generateColorFromName(item['denominacion'] ?? '');
-          
+
           final category = Category.fromJson({
             ...item,
             'color': color,
             'icon': _getIconFromName(item['denominacion'] ?? ''),
           });
-          
+
           categories.add(category);
         } catch (e) {
           print('❌ Error procesando categoría ${item['id']}: $e');
@@ -62,10 +62,9 @@ class CategoryService {
 
       print('✅ Categorías procesadas exitosamente: ${categories.length}');
       return categories;
-      
     } catch (e) {
       print('❌ Error obteniendo categorías: $e');
-      
+
       // Fallback a datos mock en caso de error
       print('🔄 Usando datos mock como fallback');
       return _getMockCategories();
@@ -86,7 +85,7 @@ class CategoryService {
       '#EC4899', // Rosa
       '#6B7280', // Gris
     ];
-    
+
     final hash = name.hashCode.abs();
     return colors[hash % colors.length];
   }
@@ -94,7 +93,7 @@ class CategoryService {
   /// Obtiene un ícono basado en el nombre de la categoría
   String _getIconFromName(String name) {
     final lowerName = name.toLowerCase();
-    
+
     if (lowerName.contains('alimento') || lowerName.contains('comida')) {
       return 'restaurant';
     } else if (lowerName.contains('bebida')) {
@@ -105,13 +104,15 @@ class CategoryService {
       return 'home';
     } else if (lowerName.contains('limpieza')) {
       return 'cleaning_services';
-    } else if (lowerName.contains('cuidado') || lowerName.contains('personal')) {
+    } else if (lowerName.contains('cuidado') ||
+        lowerName.contains('personal')) {
       return 'face';
     } else if (lowerName.contains('juguete')) {
       return 'toys';
     } else if (lowerName.contains('textil') || lowerName.contains('ropa')) {
       return 'checkroom';
-    } else if (lowerName.contains('ferretería') || lowerName.contains('herramienta')) {
+    } else if (lowerName.contains('ferretería') ||
+        lowerName.contains('herramienta')) {
       return 'build';
     } else if (lowerName.contains('jardín')) {
       return 'local_florist';
@@ -162,13 +163,13 @@ class CategoryService {
   /// Buscar categorías por texto
   Future<List<Category>> searchCategories(String query) async {
     final allCategories = await getCategoriesByStore();
-    
+
     if (query.isEmpty) return allCategories;
-    
+
     return allCategories.where((category) {
       return category.name.toLowerCase().contains(query.toLowerCase()) ||
-             category.description.toLowerCase().contains(query.toLowerCase()) ||
-             category.skuCodigo.toLowerCase().contains(query.toLowerCase());
+          category.description.toLowerCase().contains(query.toLowerCase()) ||
+          category.skuCodigo.toLowerCase().contains(query.toLowerCase());
     }).toList();
   }
 
@@ -189,18 +190,22 @@ class CategoryService {
   }
 
   /// Sube una imagen al bucket de Supabase Storage
-  Future<String?> _uploadCategoryImage(Uint8List imageBytes, String fileName) async {
+  Future<String?> _uploadCategoryImage(
+    Uint8List imageBytes,
+    String fileName,
+  ) async {
     try {
       print('📤 Subiendo imagen: $fileName');
-      
+
       // Generar nombre único para evitar conflictos
-      final uniqueFileName = '${DateTime.now().millisecondsSinceEpoch}_$fileName';
-      
+      final uniqueFileName =
+          '${DateTime.now().millisecondsSinceEpoch}_$fileName';
+
       // Subir imagen al bucket 'images_back' con opciones específicas
       final response = await _supabase.storage
           .from('images_back')
           .uploadBinary(
-            uniqueFileName, 
+            uniqueFileName,
             imageBytes,
             fileOptions: const FileOptions(
               cacheControl: '3600',
@@ -221,13 +226,13 @@ class CategoryService {
       return imageUrl;
     } catch (e) {
       print('❌ Error al subir imagen: $e');
-      
+
       // Si falla con RLS, intentar crear la categoría sin imagen
       if (e.toString().contains('row-level security policy')) {
         print('⚠️ Error de permisos RLS - continuando sin imagen');
         return null;
       }
-      
+
       return null;
     }
   }
@@ -241,54 +246,74 @@ class CategoryService {
     String? imageFileName,
     bool visibleVendedor = true,
   }) async {
+    final categoryId = await createCategoryWithId(
+      denominacion: denominacion,
+      descripcion: descripcion,
+      skuCodigo: skuCodigo,
+      imageBytes: imageBytes,
+      imageFileName: imageFileName,
+      visibleVendedor: visibleVendedor,
+    );
+
+    return categoryId != null;
+  }
+
+  /// Crea una nueva categoría y retorna su ID
+  Future<int?> createCategoryWithId({
+    required String denominacion,
+    required String descripcion,
+    required String skuCodigo,
+    Uint8List? imageBytes,
+    String? imageFileName,
+    bool visibleVendedor = true,
+  }) async {
     try {
       print('🆕 Creando nueva categoría: $denominacion');
-      
-      // Obtener ID de tienda
+
       final idTienda = await _userPrefs.getIdTienda();
       if (idTienda == null) {
         throw Exception('No se encontró ID de tienda');
       }
 
       String? imageUrl;
-      
-      // Subir imagen si se proporciona
+
       if (imageBytes != null && imageFileName != null) {
         imageUrl = await _uploadCategoryImage(imageBytes, imageFileName);
-        // Continuar aunque falle la subida de imagen (RLS policy issue)
         if (imageUrl == null) {
           print('⚠️ Continuando sin imagen debido a restricciones de permisos');
         }
       }
 
-      // Insertar categoría en app_dat_categoria
-      final categoryResponse = await _supabase
-          .from('app_dat_categoria')
-          .insert({
-            'denominacion': denominacion,
-            'descripcion': descripcion,
-            'sku_codigo': skuCodigo,
-            'image': imageUrl,
-            'visible_vendedor': visibleVendedor,
-          })
-          .select()
-          .single();
+      final categoryResponse =
+          await _supabase
+              .from('app_dat_categoria')
+              .insert({
+                'denominacion': denominacion,
+                'descripcion': descripcion,
+                'sku_codigo': skuCodigo,
+                'image': imageUrl,
+                'visible_vendedor': visibleVendedor,
+              })
+              .select()
+              .single();
 
-      print('✅ Categoría creada con ID: ${categoryResponse['id']}');
+      final categoryId = categoryResponse['id'] as int?;
+      if (categoryId == null) {
+        throw Exception('No se recibió el ID de la categoría');
+      }
 
-      // Insertar relación categoría-tienda en app_dat_categoria_tienda
-      await _supabase
-          .from('app_dat_categoria_tienda')
-          .insert({
-            'id_categoria': categoryResponse['id'],
-            'id_tienda': idTienda,
-          });
+      print('✅ Categoría creada con ID: $categoryId');
+
+      await _supabase.from('app_dat_categoria_tienda').insert({
+        'id_categoria': categoryId,
+        'id_tienda': idTienda,
+      });
 
       print('✅ Relación categoría-tienda creada exitosamente');
-      return true;
+      return categoryId;
     } catch (e) {
       print('❌ Error al crear categoría: $e');
-      return false;
+      return null;
     }
   }
 
@@ -304,9 +329,9 @@ class CategoryService {
   }) async {
     try {
       print('✏️ Actualizando categoría ID: $categoryId');
-      
+
       String? imageUrl;
-      
+
       // Subir nueva imagen si se proporciona
       if (imageBytes != null && imageFileName != null) {
         imageUrl = await _uploadCategoryImage(imageBytes, imageFileName);
@@ -349,11 +374,11 @@ class CategoryService {
   /// Verifica si una categoría tiene subcategorías
   Future<bool> categoryHasSubcategories(int categoryId) async {
     try {
-      final subcategories = await _supabase
-          .rpc('get_subcategorias_by_categoria', params: {
-        'p_id_categoria': categoryId,
-      });
-      
+      final subcategories = await _supabase.rpc(
+        'get_subcategorias_by_categoria',
+        params: {'p_id_categoria': categoryId},
+      );
+
       return subcategories != null && subcategories.isNotEmpty;
     } catch (e) {
       print('❌ Error verificando subcategorías: $e');
@@ -365,17 +390,18 @@ class CategoryService {
   Future<Map<String, dynamic>> deleteCategory(int categoryId) async {
     try {
       print('🗑️ Eliminando categoría ID: $categoryId');
-      
+
       // Verificar si tiene subcategorías
       final hasSubcategories = await categoryHasSubcategories(categoryId);
       if (hasSubcategories) {
         return {
           'success': false,
           'error': 'subcategories_exist',
-          'message': 'No se puede eliminar la categoría porque tiene subcategorías asociadas. Elimine primero las subcategorías.'
+          'message':
+              'No se puede eliminar la categoría porque tiene subcategorías asociadas. Elimine primero las subcategorías.',
         };
       }
-      
+
       // Obtener ID de tienda
       final idTienda = await _userPrefs.getIdTienda();
       if (idTienda == null) {
@@ -397,25 +423,21 @@ class CategoryService {
 
       // Si no tiene otras relaciones, eliminar la categoría completamente
       if (otherRelations.isEmpty) {
-        await _supabase
-            .from('app_dat_categoria')
-            .delete()
-            .eq('id', categoryId);
+        await _supabase.from('app_dat_categoria').delete().eq('id', categoryId);
         print('✅ Categoría eliminada completamente');
       } else {
-        print('✅ Relación categoría-tienda eliminada (categoría mantiene otras relaciones)');
+        print(
+          '✅ Relación categoría-tienda eliminada (categoría mantiene otras relaciones)',
+        );
       }
 
-      return {
-        'success': true,
-        'message': 'Categoría eliminada exitosamente'
-      };
+      return {'success': true, 'message': 'Categoría eliminada exitosamente'};
     } catch (e) {
       print('❌ Error al eliminar categoría: $e');
       return {
         'success': false,
         'error': 'database_error',
-        'message': 'Error al eliminar la categoría: $e'
+        'message': 'Error al eliminar la categoría: $e',
       };
     }
   }

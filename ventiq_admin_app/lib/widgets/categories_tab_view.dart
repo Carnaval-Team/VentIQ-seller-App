@@ -3,12 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../config/app_colors.dart';
 import '../models/category.dart';
+import '../models/category_generation_plan.dart';
 import '../models/subcategory.dart';
+import '../services/category_generation_service.dart';
 import '../services/category_service.dart';
 import '../services/subcategory_service.dart';
 
 class CategoriesTabView extends StatefulWidget {
-  const CategoriesTabView({super.key});
+  final bool canEdit;
+
+  const CategoriesTabView({super.key, this.canEdit = true});
 
   @override
   State<CategoriesTabView> createState() => _CategoriesTabViewState();
@@ -39,19 +43,20 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
     if (mounted) {
       setState(() => _isLoading = true);
     }
-    
+
     try {
       final categories = await _categoryService.getCategoriesByStore();
       print('📦 Categorías cargadas: ${categories.length}');
-      
+
       if (mounted) {
         setState(() {
           _categories = categories;
           _isLoading = false;
         });
-        
+
         // Limpiar filtros si no hay categorías para mostrar el estado vacío correcto
-        if (categories.isEmpty && (_searchQuery.isNotEmpty || _selectedLevel != 'Todos')) {
+        if (categories.isEmpty &&
+            (_searchQuery.isNotEmpty || _selectedLevel != 'Todos')) {
           print('🔄 Limpiando filtros porque no hay categorías');
           setState(() {
             _searchQuery = '';
@@ -67,7 +72,7 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
           _categories = []; // Asegurar que la lista esté vacía en caso de error
           _isLoading = false;
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error cargando categorías: $e'),
@@ -85,25 +90,30 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
 
   List<Category> get _filteredCategories {
     return _categories.where((category) {
-      final matchesSearch = _searchQuery.isEmpty ||
-          category.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          category.description.toLowerCase().contains(_searchQuery.toLowerCase());
-      
-      final matchesLevel = _selectedLevel == 'Todos' || 
-          (_selectedLevel == 'Principal' && category.level == 1) ||
-          (_selectedLevel == 'Subcategoría' && category.level == 2);
-      
-      return matchesSearch && matchesLevel;
-    }).toList()..sort((a, b) {
-      if (_sortBy == 'Nombre') {
-        return a.name.compareTo(b.name);
-      } else if (_sortBy == 'Productos') {
-        return b.productCount.compareTo(a.productCount);
-      } else if (_sortBy == 'Fecha') {
-        return b.createdAt.compareTo(a.createdAt);
-      }
-      return 0;
-    });
+        final matchesSearch =
+            _searchQuery.isEmpty ||
+            category.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+            category.description.toLowerCase().contains(
+              _searchQuery.toLowerCase(),
+            );
+
+        final matchesLevel =
+            _selectedLevel == 'Todos' ||
+            (_selectedLevel == 'Principal' && category.level == 1) ||
+            (_selectedLevel == 'Subcategoría' && category.level == 2);
+
+        return matchesSearch && matchesLevel;
+      }).toList()
+      ..sort((a, b) {
+        if (_sortBy == 'Nombre') {
+          return a.name.compareTo(b.name);
+        } else if (_sortBy == 'Productos') {
+          return b.productCount.compareTo(a.productCount);
+        } else if (_sortBy == 'Fecha') {
+          return b.createdAt.compareTo(a.createdAt);
+        }
+        return 0;
+      });
   }
 
   @override
@@ -115,38 +125,65 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
           children: [
             CircularProgressIndicator(color: AppColors.primary),
             SizedBox(height: 16),
-            Text('Cargando categorías...', style: TextStyle(color: AppColors.textSecondary)),
+            Text(
+              'Cargando categorías...',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
           ],
         ),
       );
     }
 
-    return Column(
+    return Stack(
       children: [
-        _buildSearchAndFilters(),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _loadCategories,
-            color: AppColors.primary,
-            child: _filteredCategories.isEmpty
-                ? _buildEmptyState()
-                : GridView.builder(
-                    padding: const EdgeInsets.all(16),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 0.85,
-                    ),
-                    itemCount: _filteredCategories.length,
-                    itemBuilder: (context, index) {
-                      final category = _filteredCategories[index];
-                      return _buildCategoryCard(category);
-                    },
-                  ),
-          ),
+        Column(
+          children: [
+            _buildSearchAndFilters(),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _loadCategories,
+                color: AppColors.primary,
+                child:
+                    _filteredCategories.isEmpty
+                        ? _buildEmptyState()
+                        : GridView.builder(
+                          padding: const EdgeInsets.all(16),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                                childAspectRatio: 0.85,
+                              ),
+                          itemCount: _filteredCategories.length,
+                          itemBuilder: (context, index) {
+                            final category = _filteredCategories[index];
+                            return _buildCategoryCard(category);
+                          },
+                        ),
+              ),
+            ),
+          ],
         ),
+        if (widget.canEdit) _buildAiFloatingButton(),
       ],
+    );
+  }
+
+  Widget _buildAiFloatingButton() {
+    return Positioned(
+      right: 88,
+      bottom: 16,
+      child: Tooltip(
+        message: 'Generar categorías con IA',
+        child: FloatingActionButton(
+          heroTag: 'aiCategoryFab',
+          mini: true,
+          backgroundColor: AppColors.primary,
+          onPressed: _showAiCategoryGeneratorDialog,
+          child: const Icon(Icons.auto_awesome, color: Colors.white),
+        ),
+      ),
     );
   }
 
@@ -164,15 +201,16 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
             decoration: InputDecoration(
               hintText: 'Buscar categorías...',
               prefixIcon: const Icon(Icons.search, color: AppColors.primary),
-              suffixIcon: _searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _searchQuery = '');
-                      },
-                    )
-                  : null,
+              suffixIcon:
+                  _searchQuery.isNotEmpty
+                      ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                      : null,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: const BorderSide(color: AppColors.border),
@@ -192,11 +230,17 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
                   value: _selectedLevel,
                   decoration: InputDecoration(
                     labelText: 'Nivel',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
-                  items: ['Todos', 'Principal', 'Subcategoría'].map((level) {
-                    return DropdownMenuItem(value: level, child: Text(level));
-                  }).toList(),
+                  items:
+                      ['Todos', 'Principal', 'Subcategoría'].map((level) {
+                        return DropdownMenuItem(
+                          value: level,
+                          child: Text(level),
+                        );
+                      }).toList(),
                   onChanged: (value) => setState(() => _selectedLevel = value!),
                 ),
               ),
@@ -206,11 +250,14 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
                   value: _sortBy,
                   decoration: InputDecoration(
                     labelText: 'Ordenar por',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
-                  items: ['Nombre', 'Productos', 'Fecha'].map((sort) {
-                    return DropdownMenuItem(value: sort, child: Text(sort));
-                  }).toList(),
+                  items:
+                      ['Nombre', 'Productos', 'Fecha'].map((sort) {
+                        return DropdownMenuItem(value: sort, child: Text(sort));
+                      }).toList(),
                   onChanged: (value) => setState(() => _sortBy = value!),
                 ),
               ),
@@ -223,7 +270,7 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
 
   Widget _buildCategoryCard(Category category) {
     final color = Color(int.parse(category.color.replaceFirst('#', '0xFF')));
-    
+
     return Card(
       elevation: 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -237,10 +284,7 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                color.withOpacity(0.1),
-                color.withOpacity(0.05),
-              ],
+              colors: [color.withOpacity(0.1), color.withOpacity(0.05)],
             ),
           ),
           child: Column(
@@ -258,49 +302,62 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(20),
-                      child: category.image != null && category.image!.isNotEmpty
-                          ? Image.network(
-                              category.image!,
-                              width: 40,
-                              height: 40,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Icon(
-                                  _getCategoryIcon(category.icon),
-                                  color: color,
-                                  size: 24,
-                                );
-                              },
-                              loadingBuilder: (context, child, loadingProgress) {
-                                if (loadingProgress == null) return child;
-                                return Center(
-                                  child: SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      value: loadingProgress.expectedTotalBytes != null
-                                          ? loadingProgress.cumulativeBytesLoaded /
-                                              loadingProgress.expectedTotalBytes!
-                                          : null,
-                                      strokeWidth: 2,
-                                      color: color,
+                      child:
+                          category.image != null && category.image!.isNotEmpty
+                              ? Image.network(
+                                category.image!,
+                                width: 40,
+                                height: 40,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Icon(
+                                    _getCategoryIcon(category.icon),
+                                    color: color,
+                                    size: 24,
+                                  );
+                                },
+                                loadingBuilder: (
+                                  context,
+                                  child,
+                                  loadingProgress,
+                                ) {
+                                  if (loadingProgress == null) return child;
+                                  return Center(
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        value:
+                                            loadingProgress
+                                                        .expectedTotalBytes !=
+                                                    null
+                                                ? loadingProgress
+                                                        .cumulativeBytesLoaded /
+                                                    loadingProgress
+                                                        .expectedTotalBytes!
+                                                : null,
+                                        strokeWidth: 2,
+                                        color: color,
+                                      ),
                                     ),
-                                  ),
-                                );
-                              },
-                            )
-                          : Icon(
-                              _getCategoryIcon(category.icon),
-                              color: color,
-                              size: 24,
-                            ),
+                                  );
+                                },
+                              )
+                              : Icon(
+                                _getCategoryIcon(category.icon),
+                                color: color,
+                                size: 24,
+                              ),
                     ),
                   ),
                   Row(
                     children: [
                       if (category.level > 1)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.orange.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
@@ -318,7 +375,10 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
                         const SizedBox(width: 4),
                       if (!category.visibleVendedor)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.red.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
@@ -407,19 +467,19 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
     // Verificar si realmente no hay categorías o si es por filtros
     final hasCategories = _categories.isNotEmpty;
     final isFiltered = _searchQuery.isNotEmpty || _selectedLevel != 'Todos';
-    
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            hasCategories ? Icons.search_off : Icons.category_outlined, 
-            size: 64, 
-            color: AppColors.textSecondary
+            hasCategories ? Icons.search_off : Icons.category_outlined,
+            size: 64,
+            color: AppColors.textSecondary,
           ),
           const SizedBox(height: 16),
           Text(
-            hasCategories && isFiltered 
+            hasCategories && isFiltered
                 ? 'No se encontraron categorías con los filtros aplicados'
                 : 'No hay categorías disponibles',
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
@@ -442,7 +502,10 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
               ),
             ),
           ],
@@ -453,14 +516,22 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
 
   IconData _getCategoryIcon(String iconName) {
     switch (iconName) {
-      case 'local_drink': return Icons.local_drink;
-      case 'restaurant': return Icons.restaurant;
-      case 'fastfood': return Icons.fastfood;
-      case 'devices': return Icons.devices;
-      case 'home': return Icons.home;
-      case 'cleaning_services': return Icons.cleaning_services;
-      case 'face': return Icons.face;
-      default: return Icons.category;
+      case 'local_drink':
+        return Icons.local_drink;
+      case 'restaurant':
+        return Icons.restaurant;
+      case 'fastfood':
+        return Icons.fastfood;
+      case 'devices':
+        return Icons.devices;
+      case 'home':
+        return Icons.home;
+      case 'cleaning_services':
+        return Icons.cleaning_services;
+      case 'face':
+        return Icons.face;
+      default:
+        return Icons.category;
     }
   }
 
@@ -469,78 +540,483 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        maxChildSize: 0.9,
-        minChildSize: 0.5,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(20),
-            ),
-          ),
-          child: Column(
-            children: [
-              // Handle
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Detalles de ${category.name}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
+      builder:
+          (context) => DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            maxChildSize: 0.9,
+            minChildSize: 0.5,
+            builder:
+                (context, scrollController) => Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      // Handle
+                      Container(
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Detalles de ${category.name}',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      // Content
+                      Expanded(
+                        child: _CategoryDetailView(
+                          category: category,
+                          scrollController: scrollController,
+                          onCategoryUpdated: () {
+                            Navigator.pop(context); // Close modal
+                            _loadCategories(); // Refresh categories list
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const Divider(height: 1),
-              // Content
-              Expanded(
-                child: _CategoryDetailView(
-                  category: category,
-                  scrollController: scrollController,
-                  onCategoryUpdated: () {
-                    Navigator.pop(context); // Close modal
-                    _loadCategories(); // Refresh categories list
-                  },
-                ),
-              ),
-            ],
           ),
-        ),
-      ),
     );
   }
 
   void showAddCategoryDialog() {
     showDialog(
       context: context,
-      builder: (context) => _AddCategoryDialog(
-        onCategoryAdded: () {
-          _loadCategories(); // Recargar categorías después de agregar
-        },
+      builder:
+          (context) => _AddCategoryDialog(
+            onCategoryAdded: () {
+              _loadCategories(); // Recargar categorías después de agregar
+            },
+          ),
+    );
+  }
+
+  Future<void> _showAiCategoryGeneratorDialog() async {
+    final result = await showDialog<CategoryGenerationResult>(
+      context: context,
+      builder: (context) => const _AiCategoryGeneratorDialog(),
+    );
+
+    if (result == null) {
+      return;
+    }
+
+    await _loadCategories();
+    if (!mounted) return;
+
+    final summary =
+        'Se crearon ${result.createdCategories} categorías y ${result.createdSubcategories} subcategorías.';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(summary),
+        backgroundColor: result.hasErrors ? Colors.orange : Colors.green,
+      ),
+    );
+
+    if (result.hasErrors) {
+      final details = result.errors.take(3).join(' | ');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Detalles: $details'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+}
+
+class _AiCategoryGeneratorDialog extends StatefulWidget {
+  const _AiCategoryGeneratorDialog();
+
+  @override
+  State<_AiCategoryGeneratorDialog> createState() =>
+      _AiCategoryGeneratorDialogState();
+}
+
+class _AiCategoryGeneratorDialogState
+    extends State<_AiCategoryGeneratorDialog> {
+  final TextEditingController _promptController = TextEditingController();
+  final CategoryGenerationService _generationService =
+      CategoryGenerationService();
+
+  CategoryGenerationPlan? _plan;
+  String? _errorMessage;
+  bool _isGenerating = false;
+  bool _isCreating = false;
+
+  @override
+  void dispose() {
+    _promptController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _generatePreview() async {
+    FocusScope.of(context).unfocus();
+
+    final prompt = _promptController.text.trim();
+    final validationError = _generationService.validatePrompt(prompt);
+
+    if (validationError != null) {
+      setState(() {
+        _errorMessage = validationError;
+        _plan = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _isGenerating = true;
+      _errorMessage = null;
+      _plan = null;
+    });
+
+    try {
+      final plan = await _generationService.generatePlan(prompt);
+      if (!mounted) return;
+      setState(() {
+        _plan = plan;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isGenerating = false;
+      });
+    }
+  }
+
+  Future<void> _confirmCreation() async {
+    if (_plan == null || _plan!.isEmpty) {
+      setState(() {
+        _errorMessage = 'Genera una vista previa válida antes de confirmar.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isCreating = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final result = await _generationService.createCategories(_plan!);
+      if (!mounted) return;
+      Navigator.pop(context, result);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Error al crear categorías: $e';
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isCreating = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: const [
+          Icon(Icons.auto_awesome, color: AppColors.primary),
+          SizedBox(width: 8),
+          Text('Generar categorías'),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Describe el tipo de tienda y las categorías que quieres crear.',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _promptController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                labelText: 'Prompt de categorías',
+                hintText:
+                    'Ej: Categorías y subcategorías para una tienda de mascotas',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isGenerating ? null : _generatePreview,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+                icon:
+                    _isGenerating
+                        ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                        : const Icon(Icons.preview),
+                label: Text(
+                  _isGenerating ? 'Generando...' : 'Generar vista previa',
+                ),
+              ),
+            ),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.withOpacity(0.2)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            _buildPreviewSection(),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isCreating ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed:
+              _isCreating || _plan == null ? null : () => _confirmCreation(),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+          ),
+          child:
+              _isCreating
+                  ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                  : const Text('Crear categorías'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPreviewSection() {
+    final categories = _plan?.categories ?? [];
+
+    if (categories.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.grey.withOpacity(0.2)),
+        ),
+        child: const Column(
+          children: [
+            Icon(Icons.auto_awesome_outlined, color: AppColors.textSecondary),
+            SizedBox(height: 8),
+            Text(
+              'La vista previa aparecerá aquí',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Vista previa',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        ...categories.map(_buildPreviewCategoryCard).toList(),
+      ],
+    );
+  }
+
+  Widget _buildPreviewCategoryCard(CategoryGenerationCategory category) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  category.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              _buildVisibilityChip(category.visibleVendedor),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            category.description,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _buildSkuChip(category.skuCodigo),
+              Chip(
+                label: Text(
+                  '${category.subcategories.length} subcategorías',
+                  style: const TextStyle(fontSize: 11),
+                ),
+                backgroundColor: AppColors.primary.withOpacity(0.08),
+              ),
+            ],
+          ),
+          if (category.subcategories.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children:
+                  category.subcategories
+                      .map(
+                        (subcategory) => Chip(
+                          label: Text(
+                            '${subcategory.name} (${subcategory.skuCodigo})',
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          backgroundColor: Colors.grey.withOpacity(0.12),
+                        ),
+                      )
+                      .toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSkuChip(String sku) {
+    return Chip(
+      label: Text('SKU: $sku', style: const TextStyle(fontSize: 11)),
+      backgroundColor: Colors.blue.withOpacity(0.12),
+    );
+  }
+
+  Widget _buildVisibilityChip(bool visible) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color:
+            visible
+                ? Colors.green.withOpacity(0.12)
+                : Colors.red.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            visible ? Icons.visibility : Icons.visibility_off,
+            size: 12,
+            color: visible ? Colors.green : Colors.red,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            visible ? 'Visible' : 'Oculta',
+            style: TextStyle(
+              fontSize: 11,
+              color: visible ? Colors.green : Colors.red,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -549,9 +1025,7 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
 class _AddCategoryDialog extends StatefulWidget {
   final VoidCallback onCategoryAdded;
 
-  const _AddCategoryDialog({
-    required this.onCategoryAdded,
-  });
+  const _AddCategoryDialog({required this.onCategoryAdded});
 
   @override
   State<_AddCategoryDialog> createState() => _AddCategoryDialogState();
@@ -563,7 +1037,7 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
   final _skuController = TextEditingController();
   final CategoryService _categoryService = CategoryService();
   final ImagePicker _imagePicker = ImagePicker();
-  
+
   Uint8List? _selectedImageBytes;
   String? _selectedImageName;
   bool _isLoading = false;
@@ -620,7 +1094,8 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
           if (mounted) {
             setState(() {
               _selectedImageBytes = bytes;
-              _selectedImageName = 'category_${DateTime.now().millisecondsSinceEpoch}.jpg';
+              _selectedImageName =
+                  'category_${DateTime.now().millisecondsSinceEpoch}.jpg';
             });
           }
         }
@@ -662,10 +1137,10 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
         if (mounted) {
           // Cerrar el diálogo primero
           Navigator.pop(context);
-          
+
           // Luego llamar al callback para actualizar la lista
           widget.onCategoryAdded();
-          
+
           // Finalmente mostrar el mensaje de éxito
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -687,10 +1162,7 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -719,7 +1191,7 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Campo Descripción
             TextField(
               controller: _descriptionController,
@@ -731,7 +1203,7 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
               maxLines: 2,
             ),
             const SizedBox(height: 16),
-            
+
             // Campo SKU
             TextField(
               controller: _skuController,
@@ -742,7 +1214,7 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Control de visibilidad para vendedores
             Container(
               padding: const EdgeInsets.all(12),
@@ -753,11 +1225,7 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
               ),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.visibility,
-                    color: Colors.blue,
-                    size: 20,
-                  ),
+                  Icon(Icons.visibility, color: Colors.blue, size: 20),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -771,7 +1239,7 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
                           ),
                         ),
                         Text(
-                          _visibleVendedor 
+                          _visibleVendedor
                               ? 'Los vendedores pueden ver esta categoría'
                               : 'Solo administradores pueden ver esta categoría',
                           style: TextStyle(
@@ -795,14 +1263,14 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Selector de imagen
             const Text(
               'Imagen de la categoría (opcional)',
               style: TextStyle(fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 8),
-            
+
             SizedBox(
               width: double.infinity,
               height: 120,
@@ -811,60 +1279,68 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
                   border: Border.all(color: Colors.grey.shade300),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: _selectedImageBytes != null
-                    ? Stack(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: SizedBox(
-                              width: double.infinity,
-                              height: 120,
-                              child: Image.memory(
-                                _selectedImageBytes!,
-                                fit: BoxFit.cover,
+                child:
+                    _selectedImageBytes != null
+                        ? Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: SizedBox(
+                                width: double.infinity,
+                                height: 120,
+                                child: Image.memory(
+                                  _selectedImageBytes!,
+                                  fit: BoxFit.cover,
+                                ),
                               ),
                             ),
-                          ),
-                          Positioned(
-                            top: 4,
-                            right: 4,
-                            child: Container(
-                              width: 32,
-                              height: 32,
-                              decoration: const BoxDecoration(
-                                color: Colors.black54,
-                                shape: BoxShape.circle,
-                              ),
-                              child: IconButton(
-                                padding: EdgeInsets.zero,
-                                iconSize: 16,
-                                onPressed: () {
-                                  setState(() {
-                                    _selectedImageBytes = null;
-                                    _selectedImageName = null;
-                                  });
-                                },
-                                icon: const Icon(Icons.close, color: Colors.white),
+                            Positioned(
+                              top: 4,
+                              right: 4,
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: const BoxDecoration(
+                                  color: Colors.black54,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: IconButton(
+                                  padding: EdgeInsets.zero,
+                                  iconSize: 16,
+                                  onPressed: () {
+                                    setState(() {
+                                      _selectedImageBytes = null;
+                                      _selectedImageName = null;
+                                    });
+                                  },
+                                  icon: const Icon(
+                                    Icons.close,
+                                    color: Colors.white,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      )
-                    : InkWell(
-                        onTap: _pickImage,
-                        child: const SizedBox(
-                          width: double.infinity,
-                          height: 120,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.add_photo_alternate, size: 40, color: Colors.grey),
-                              SizedBox(height: 8),
-                              Text('Toca para seleccionar imagen'),
-                            ],
+                          ],
+                        )
+                        : InkWell(
+                          onTap: _pickImage,
+                          child: const SizedBox(
+                            width: double.infinity,
+                            height: 120,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.add_photo_alternate,
+                                  size: 40,
+                                  color: Colors.grey,
+                                ),
+                                SizedBox(height: 8),
+                                Text('Toca para seleccionar imagen'),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
               ),
             ),
           ],
@@ -881,13 +1357,14 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
           ),
-          child: _isLoading
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Crear Categoría'),
+          child:
+              _isLoading
+                  ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                  : const Text('Crear Categoría'),
         ),
       ],
     );
@@ -912,7 +1389,7 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
   final _descriptionController = TextEditingController();
   final _skuController = TextEditingController();
   final CategoryService _categoryService = CategoryService();
-  
+
   bool _isLoading = false;
   bool _visibleVendedor = true;
 
@@ -960,12 +1437,12 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
         if (mounted) {
           // Cerrar el diálogo primero
           Navigator.pop(context);
-          
+
           // Usar Future.delayed para asegurar que la navegación se complete
           Future.delayed(const Duration(milliseconds: 100), () {
             if (mounted) {
               widget.onCategoryUpdated();
-              
+
               // Mostrar mensaje después del callback
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -989,10 +1466,7 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -1021,7 +1495,7 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Campo Descripción
             TextField(
               controller: _descriptionController,
@@ -1033,7 +1507,7 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
               maxLines: 2,
             ),
             const SizedBox(height: 16),
-            
+
             // Campo SKU
             TextField(
               controller: _skuController,
@@ -1044,7 +1518,7 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Control de visibilidad para vendedores
             Container(
               padding: const EdgeInsets.all(12),
@@ -1055,11 +1529,7 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
               ),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.visibility,
-                    color: Colors.blue,
-                    size: 20,
-                  ),
+                  Icon(Icons.visibility, color: Colors.blue, size: 20),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -1073,7 +1543,7 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
                           ),
                         ),
                         Text(
-                          _visibleVendedor 
+                          _visibleVendedor
                               ? 'Los vendedores pueden ver esta categoría'
                               : 'Solo administradores pueden ver esta categoría',
                           style: TextStyle(
@@ -1111,13 +1581,14 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
           ),
-          child: _isLoading
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Actualizar'),
+          child:
+              _isLoading
+                  ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                  : const Text('Actualizar'),
         ),
       ],
     );
@@ -1161,7 +1632,8 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
     }
 
     try {
-      final subcategories = await _subcategoryService.getSubcategoriesByCategory(widget.category.id);
+      final subcategories = await _subcategoryService
+          .getSubcategoriesByCategory(widget.category.id);
       if (mounted) {
         setState(() {
           _subcategories = subcategories;
@@ -1184,7 +1656,9 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
 
   @override
   Widget build(BuildContext context) {
-    final color = Color(int.parse(widget.category.color.replaceFirst('#', '0xFF')));
+    final color = Color(
+      int.parse(widget.category.color.replaceFirst('#', '0xFF')),
+    );
 
     return RefreshIndicator(
       onRefresh: _refreshSubcategories,
@@ -1195,15 +1669,15 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
           // Category Info Header
           _buildCategoryHeader(color),
           const SizedBox(height: 24),
-          
+
           // Add Subcategory Button
           _buildAddSubcategoryButton(color),
           const SizedBox(height: 16),
-          
+
           // Subcategories Section
           _buildSubcategoriesSection(),
           const SizedBox(height: 24),
-          
+
           // Category Actions
           _buildCategoryActions(color),
         ],
@@ -1228,20 +1702,29 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
               color: color.withOpacity(0.1),
               borderRadius: BorderRadius.circular(30),
             ),
-            child: widget.category.image != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(30),
-                    child: Image.network(
-                      widget.category.image!,
-                      width: 60,
-                      height: 60,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Icon(_getCategoryIcon(widget.category.icon), color: color, size: 30);
-                      },
+            child:
+                widget.category.image != null
+                    ? ClipRRect(
+                      borderRadius: BorderRadius.circular(30),
+                      child: Image.network(
+                        widget.category.image!,
+                        width: 60,
+                        height: 60,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Icon(
+                            _getCategoryIcon(widget.category.icon),
+                            color: color,
+                            size: 30,
+                          );
+                        },
+                      ),
+                    )
+                    : Icon(
+                      _getCategoryIcon(widget.category.icon),
+                      color: color,
+                      size: 30,
                     ),
-                  )
-                : Icon(_getCategoryIcon(widget.category.icon), color: color, size: 30),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -1269,23 +1752,25 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
                 Row(
                   children: [
                     Icon(
-                      widget.category.visibleVendedor 
-                          ? Icons.visibility 
+                      widget.category.visibleVendedor
+                          ? Icons.visibility
                           : Icons.visibility_off,
                       size: 16,
-                      color: widget.category.visibleVendedor 
-                          ? Colors.green 
-                          : Colors.red,
+                      color:
+                          widget.category.visibleVendedor
+                              ? Colors.green
+                              : Colors.red,
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      widget.category.visibleVendedor 
+                      widget.category.visibleVendedor
                           ? 'Visible para vendedores'
                           : 'Oculta para vendedores',
                       style: TextStyle(
-                        color: widget.category.visibleVendedor 
-                            ? Colors.green 
-                            : Colors.red,
+                        color:
+                            widget.category.visibleVendedor
+                                ? Colors.green
+                                : Colors.red,
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
@@ -1322,9 +1807,7 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
           backgroundColor: color,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       ),
     );
@@ -1405,7 +1888,11 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
             ),
             child: const Column(
               children: [
-                Icon(Icons.category_outlined, size: 48, color: AppColors.textSecondary),
+                Icon(
+                  Icons.category_outlined,
+                  size: 48,
+                  color: AppColors.textSecondary,
+                ),
                 SizedBox(height: 8),
                 Text(
                   'No hay subcategorías',
@@ -1427,7 +1914,9 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
             ),
           )
         else
-          ..._subcategories.map((subcategory) => _buildSubcategoryCard(subcategory)),
+          ..._subcategories.map(
+            (subcategory) => _buildSubcategoryCard(subcategory),
+          ),
       ],
     );
   }
@@ -1480,10 +1969,7 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
                   const SizedBox(height: 2),
                   Text(
                     'SKU: ${subcategory.skuCodigo}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                 ],
               ),
@@ -1516,11 +2002,7 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
                       color: Colors.blue.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: const Icon(
-                      Icons.edit,
-                      size: 16,
-                      color: Colors.blue,
-                    ),
+                    child: const Icon(Icons.edit, size: 16, color: Colors.blue),
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -1612,130 +2094,154 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
 
   IconData _getCategoryIcon(String iconName) {
     switch (iconName) {
-      case 'local_drink': return Icons.local_drink;
-      case 'restaurant': return Icons.restaurant;
-      case 'fastfood': return Icons.fastfood;
-      case 'devices': return Icons.devices;
-      case 'home': return Icons.home;
-      case 'cleaning_services': return Icons.cleaning_services;
-      case 'face': return Icons.face;
-      default: return Icons.category;
+      case 'local_drink':
+        return Icons.local_drink;
+      case 'restaurant':
+        return Icons.restaurant;
+      case 'fastfood':
+        return Icons.fastfood;
+      case 'devices':
+        return Icons.devices;
+      case 'home':
+        return Icons.home;
+      case 'cleaning_services':
+        return Icons.cleaning_services;
+      case 'face':
+        return Icons.face;
+      default:
+        return Icons.category;
     }
   }
 
   void _showAddSubcategoryDialog() {
     final nameController = TextEditingController();
     final skuController = TextEditingController();
-    
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Agregar Subcategoría'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre',
-                  prefixIcon: Icon(Icons.category_outlined),
-                  border: OutlineInputBorder(),
-                ),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Agregar Subcategoría'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre',
+                      prefixIcon: Icon(Icons.category_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: skuController,
+                    decoration: const InputDecoration(
+                      labelText: 'Código SKU',
+                      prefixIcon: Icon(Icons.qr_code),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: skuController,
-                decoration: const InputDecoration(
-                  labelText: 'Código SKU',
-                  prefixIcon: Icon(Icons.qr_code),
-                  border: OutlineInputBorder(),
-                ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed:
+                    () => _addSubcategory(
+                      nameController.text,
+                      skuController.text,
+                    ),
+                child: const Text('Agregar'),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () => _addSubcategory(nameController.text, skuController.text),
-            child: const Text('Agregar'),
-          ),
-        ],
-      ),
     );
   }
 
   void _showEditSubcategoryDialog(Subcategory subcategory) {
-    final nameController = TextEditingController(text: subcategory.denominacion);
+    final nameController = TextEditingController(
+      text: subcategory.denominacion,
+    );
     final skuController = TextEditingController(text: subcategory.skuCodigo);
-    
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Editar Subcategoría'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre',
-                  prefixIcon: Icon(Icons.category_outlined),
-                  border: OutlineInputBorder(),
-                ),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Editar Subcategoría'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre',
+                      prefixIcon: Icon(Icons.category_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: skuController,
+                    decoration: const InputDecoration(
+                      labelText: 'Código SKU',
+                      prefixIcon: Icon(Icons.qr_code),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: skuController,
-                decoration: const InputDecoration(
-                  labelText: 'Código SKU',
-                  prefixIcon: Icon(Icons.qr_code),
-                  border: OutlineInputBorder(),
-                ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed:
+                    () => _editSubcategory(
+                      subcategory,
+                      nameController.text,
+                      skuController.text,
+                    ),
+                child: const Text('Guardar'),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () => _editSubcategory(subcategory, nameController.text, skuController.text),
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
     );
   }
 
   void _showDeleteSubcategoryDialog(Subcategory subcategory) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Eliminar Subcategoría'),
-        content: Text('¿Estás seguro de que quieres eliminar "${subcategory.denominacion}"?\n\nEsta acción no se puede deshacer.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () => _deleteSubcategory(subcategory),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Eliminar Subcategoría'),
+            content: Text(
+              '¿Estás seguro de que quieres eliminar "${subcategory.denominacion}"?\n\nEsta acción no se puede deshacer.',
             ),
-            child: const Text('Eliminar'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => _deleteSubcategory(subcategory),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Eliminar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -1760,7 +2266,10 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
             SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
             ),
             SizedBox(width: 12),
             Text('Creando subcategoría...'),
@@ -1794,7 +2303,11 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
     }
   }
 
-  Future<void> _editSubcategory(Subcategory subcategory, String name, String skuCode) async {
+  Future<void> _editSubcategory(
+    Subcategory subcategory,
+    String name,
+    String skuCode,
+  ) async {
     if (name.trim().isEmpty || skuCode.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1815,7 +2328,10 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
             SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
             ),
             SizedBox(width: 12),
             Text('Actualizando subcategoría...'),
@@ -1860,7 +2376,10 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
             SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
             ),
             SizedBox(width: 12),
             Text('Eliminando subcategoría...'),
@@ -1883,11 +2402,11 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
     } else {
       String message = result['message'];
       Color backgroundColor = Colors.red;
-      
+
       if (result['error'] == 'products_exist') {
         backgroundColor = Colors.orange;
       }
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
@@ -1901,50 +2420,54 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
   void _showEditCategoryDialog() {
     showDialog(
       context: context,
-      builder: (context) => _EditCategoryDialog(
-        category: widget.category,
-        onCategoryUpdated: () {
-          // Trigger refresh in parent first
-          if (widget.onCategoryUpdated != null) {
-            widget.onCategoryUpdated!();
-          }
-          // Then close detail view
-          Navigator.pop(context); // Close detail view
-        },
-      ),
+      builder:
+          (context) => _EditCategoryDialog(
+            category: widget.category,
+            onCategoryUpdated: () {
+              // Trigger refresh in parent first
+              if (widget.onCategoryUpdated != null) {
+                widget.onCategoryUpdated!();
+              }
+              // Then close detail view
+              Navigator.pop(context); // Close detail view
+            },
+          ),
     );
   }
 
   void _showDeleteCategoryDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Eliminar Categoría'),
-        content: Text('¿Estás seguro de que deseas eliminar la categoría "${widget.category.name}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _deleteCategory();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Eliminar Categoría'),
+            content: Text(
+              '¿Estás seguro de que deseas eliminar la categoría "${widget.category.name}"?',
             ),
-            child: const Text('Eliminar'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await _deleteCategory();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Eliminar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   Future<void> _deleteCategory() async {
     final result = await _categoryService.deleteCategory(widget.category.id);
-    
+
     if (result['success']) {
       Navigator.pop(context); // Close detail view
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1960,11 +2483,11 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
     } else {
       String message = result['message'];
       Color backgroundColor = Colors.red;
-      
+
       if (result['error'] == 'subcategories_exist') {
         backgroundColor = Colors.orange;
       }
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
@@ -1978,15 +2501,16 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
   void _showChangeImageDialog() {
     showDialog(
       context: context,
-      builder: (context) => _ChangeImageDialog(
-        category: widget.category,
-        onImageUpdated: () {
-          // Trigger refresh in parent
-          if (widget.onCategoryUpdated != null) {
-            widget.onCategoryUpdated!();
-          }
-        },
-      ),
+      builder:
+          (context) => _ChangeImageDialog(
+            category: widget.category,
+            onImageUpdated: () {
+              // Trigger refresh in parent
+              if (widget.onCategoryUpdated != null) {
+                widget.onCategoryUpdated!();
+              }
+            },
+          ),
     );
   }
 }
@@ -2007,7 +2531,7 @@ class _ChangeImageDialog extends StatefulWidget {
 class _ChangeImageDialogState extends State<_ChangeImageDialog> {
   final CategoryService _categoryService = CategoryService();
   final ImagePicker _imagePicker = ImagePicker();
-  
+
   Uint8List? _selectedImageBytes;
   String? _currentImageUrl;
   bool _isLoading = false;
@@ -2055,7 +2579,7 @@ class _ChangeImageDialogState extends State<_ChangeImageDialog> {
           maxHeight: 800,
           imageQuality: 80,
         );
-        
+
         if (image != null) {
           final bytes = await image.readAsBytes();
           if (mounted) {
@@ -2097,20 +2621,21 @@ class _ChangeImageDialogState extends State<_ChangeImageDialog> {
         skuCodigo: widget.category.skuCodigo,
         visibleVendedor: widget.category.visibleVendedor,
         imageBytes: _selectedImageBytes,
-        imageFileName: _selectedImageBytes != null 
-            ? 'category_${widget.category.id}_${DateTime.now().millisecondsSinceEpoch}.jpg'
-            : null,
+        imageFileName:
+            _selectedImageBytes != null
+                ? 'category_${widget.category.id}_${DateTime.now().millisecondsSinceEpoch}.jpg'
+                : null,
       );
 
       if (success) {
         if (mounted) {
           // Cerrar el diálogo
           Navigator.pop(context);
-          
+
           // Usar Future.delayed para asegurar que la navegación se complete
           Future.delayed(const Duration(milliseconds: 100), () {
             widget.onImageUpdated();
-            
+
             // Mostrar mensaje de éxito
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -2133,10 +2658,7 @@ class _ChangeImageDialogState extends State<_ChangeImageDialog> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -2148,8 +2670,10 @@ class _ChangeImageDialogState extends State<_ChangeImageDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final color = Color(int.parse(widget.category.color.replaceFirst('#', '0xFF')));
-    
+    final color = Color(
+      int.parse(widget.category.color.replaceFirst('#', '0xFF')),
+    );
+
     return AlertDialog(
       title: Row(
         children: [
@@ -2171,13 +2695,10 @@ class _ChangeImageDialogState extends State<_ChangeImageDialog> {
           children: [
             Text(
               'Actualizar la imagen de "${widget.category.name}"',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             ),
             const SizedBox(height: 16),
-            
+
             // Vista previa de imagen
             Container(
               width: double.infinity,
@@ -2188,64 +2709,59 @@ class _ChangeImageDialogState extends State<_ChangeImageDialog> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: _selectedImageBytes != null
-                    ? Image.memory(
-                        _selectedImageBytes!,
-                        fit: BoxFit.cover,
-                      )
-                    : _currentImageUrl != null && _currentImageUrl!.isNotEmpty
+                child:
+                    _selectedImageBytes != null
+                        ? Image.memory(_selectedImageBytes!, fit: BoxFit.cover)
+                        : _currentImageUrl != null &&
+                            _currentImageUrl!.isNotEmpty
                         ? Image.network(
-                            _currentImageUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                color: Colors.grey[100],
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.broken_image,
-                                      color: Colors.grey,
-                                      size: 40,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Error al cargar imagen',
-                                      style: TextStyle(
-                                        color: Colors.grey[600],
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          )
-                        : Container(
-                            color: Colors.grey[100],
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.image,
-                                  color: Colors.grey,
-                                  size: 40,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Sin imagen',
-                                  style: TextStyle(
-                                    color: Colors.grey[600],
-                                    fontSize: 12,
+                          _currentImageUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: Colors.grey[100],
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.broken_image,
+                                    color: Colors.grey,
+                                    size: 40,
                                   ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Error al cargar imagen',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        )
+                        : Container(
+                          color: Colors.grey[100],
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.image, color: Colors.grey, size: 40),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Sin imagen',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
+                        ),
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Botones de acción
             Row(
               children: [
@@ -2253,20 +2769,26 @@ class _ChangeImageDialogState extends State<_ChangeImageDialog> {
                   child: OutlinedButton.icon(
                     onPressed: _isLoading ? null : _pickImage,
                     icon: const Icon(Icons.photo_library, size: 18),
-                    label: Text(_selectedImageBytes != null || _currentImageUrl != null 
-                        ? 'Cambiar imagen' 
-                        : 'Seleccionar imagen'),
+                    label: Text(
+                      _selectedImageBytes != null || _currentImageUrl != null
+                          ? 'Cambiar imagen'
+                          : 'Seleccionar imagen',
+                    ),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
                 ),
-                if (_selectedImageBytes != null || _currentImageUrl != null) ...[
+                if (_selectedImageBytes != null ||
+                    _currentImageUrl != null) ...[
                   const SizedBox(width: 8),
                   OutlinedButton.icon(
                     onPressed: _isLoading ? null : _removeImage,
                     icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                    label: const Text('Quitar', style: TextStyle(color: Colors.red)),
+                    label: const Text(
+                      'Quitar',
+                      style: TextStyle(color: Colors.red),
+                    ),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       side: const BorderSide(color: Colors.red),
@@ -2284,21 +2806,23 @@ class _ChangeImageDialogState extends State<_ChangeImageDialog> {
           child: const Text('Cancelar'),
         ),
         ElevatedButton(
-          onPressed: _isLoading || _selectedImageBytes == null ? null : _updateImage,
+          onPressed:
+              _isLoading || _selectedImageBytes == null ? null : _updateImage,
           style: ElevatedButton.styleFrom(
             backgroundColor: color,
             foregroundColor: Colors.white,
           ),
-          child: _isLoading
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : const Text('Actualizar Imagen'),
+          child:
+              _isLoading
+                  ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                  : const Text('Actualizar Imagen'),
         ),
       ],
     );
