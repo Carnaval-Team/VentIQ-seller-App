@@ -10,18 +10,18 @@ class SupplierService {
       print('📦 Obteniendo proveedores para tienda $idTienda...');
 
       final response = await _supabase
-          .from('app_dat_proveedor_tienda')
-          .select('id, nombre, id_tienda')
-          .eq('id_tienda', idTienda)
-          .order('nombre', ascending: true);
+          .from('app_dat_proveedor')
+          .select('id, denominacion, idtienda')
+          .eq('idtienda', idTienda)
+          .order('denominacion', ascending: true);
 
       print('✅ Proveedores obtenidos: ${response.length}');
 
       return (response as List<dynamic>)
           .map((json) => Supplier.fromJson(json as Map<String, dynamic>))
           .toList();
-    } catch (e) {
-      print('❌ Error obteniendo proveedores: $e');
+    } catch (e,st) {
+      print('❌ Error obteniendo proveedores: $e $st');
       rethrow;
     }
   }
@@ -67,8 +67,8 @@ class SupplierService {
       }
 
       final supplierResponse = await _supabase
-          .from('app_dat_proveedor_tienda')
-          .select('id, nombre, id_tienda')
+          .from('app_dat_proveedor')
+          .select('id, denominacion, idtienda')
           .eq('id', supplierId)
           .single();
 
