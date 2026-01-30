@@ -426,9 +426,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
       ),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar:
-          isMediumScreen
-              ? null
-              : AdminBottomNavigation(currentIndex: 0, onTap: _onBottomNavTap),
+          AdminBottomNavigation(currentIndex: 0, onTap: _onBottomNavTap),
       floatingActionButton: _buildSpeedDialFAB(),
     );
   }

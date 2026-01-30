@@ -96,10 +96,8 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
       }
     }
 
-    // Load promotion types if not provided or if we need fresh data
-    if (_promotionTypes.isEmpty || _isEditing) {
-      _loadPromotionTypes();
-    }
+    // Load promotion types (refresh in background when we already have data)
+    _loadPromotionTypes(showLoading: _promotionTypes.isEmpty || _isEditing);
 
     // Load available products
     _loadAvailableProducts();
@@ -146,7 +144,10 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     _descripcionController.text = promotion.descripcion ?? '';
     _codigoController.text = promotion.codigoPromocion;
     _valorDescuentoController.text = promotion.valorDescuento.toString();
-    _minCompraController.text = promotion.minCompra?.toString() ?? '';
+    _minCompraController.text =
+        promotion.minCompra != null
+            ? promotion.minCompra!.toStringAsFixed(0)
+            : '';
     _limiteUsosController.text = promotion.limiteUsos?.toString() ?? '';
     _selectedTipoPromocion = promotion.idTipoPromocion;
     _fechaInicio = promotion.fechaInicio.toLocal();
@@ -155,6 +156,8 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     _aplicaTodo = promotion.aplicaTodo ?? false;
     _requiereMedioPago = promotion.requiereMedioPago ?? false;
     _selectedMedioPago = promotion.idMedioPagoRequerido?.toString();
+
+    _applyPromotionTypeDefaults(_selectedTipoPromocion);
 
     print('📝 Formulario poblado con datos de promoción: ${promotion.nombre}');
     print('📝 Tipo de promoción seleccionado: $_selectedTipoPromocion');
@@ -238,14 +241,17 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     print('📝 SKU del producto: ${product.sku}');
   }
 
-  Future<void> _loadPromotionTypes() async {
+  Future<void> _loadPromotionTypes({bool showLoading = true}) async {
     setState(() {
-      _isLoadingTypes = true;
+      if (showLoading) {
+        _isLoadingTypes = true;
+      }
       _loadingError = null;
     });
 
     try {
       final types = await _promotionService.getPromotionTypes();
+      if (!mounted) return;
       setState(() {
         _promotionTypes = types;
         _isLoadingTypes = false;
@@ -258,9 +264,12 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
 
       print('✅ Cargados ${types.length} tipos de promoción');
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoadingTypes = false;
-        _loadingError = 'Error al cargar tipos de promoción: $e';
+        if (showLoading) {
+          _loadingError = 'Error al cargar tipos de promoción: $e';
+        }
       });
       print('❌ Error cargando tipos de promoción: $e');
       _showErrorSnackBar('Error al cargar tipos de promoción: $e');
@@ -273,17 +282,83 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     });
 
     try {
-      // Usar la tienda seleccionada si está disponible
-      if (_selectedStoreId != null) {
-        // Actualizar preferencias con la tienda seleccionada antes de cargar productos
-        final userPrefs = UserPreferencesService();
-        await userPrefs.updateSelectedStore(_selectedStoreId!);
-        print(
-          '🏪 Tienda actualizada en preferencias: $_selectedStoreName (ID: $_selectedStoreId)',
-        );
+      if (_selectedStoreId == null) {
+        await _storeService.initialize();
+        if (!mounted) return;
+        setState(() {
+          _selectedStoreId = _storeService.selectedStore?.id;
+          _selectedStoreName = _storeService.selectedStore?.denominacion;
+        });
       }
 
-      final products = await ProductService.getProductsByTienda();
+      final storeId = _selectedStoreId;
+      if (storeId == null) {
+        throw Exception('No se pudo obtener la tienda seleccionada');
+      }
+
+      final userPrefs = UserPreferencesService();
+      await userPrefs.updateSelectedStore(storeId);
+      print(
+        '🏪 Tienda actualizada en preferencias: $_selectedStoreName (ID: $storeId)',
+      );
+
+      final selectable = await _promotionService.listPromotionSelectableProducts(
+        storeId: storeId,
+      );
+      final fetchedIds = <int>{};
+      final futures = <Future<Product?>>[];
+
+      for (final item in selectable) {
+        final rawProductId = item['id_producto'] ?? item['idProducto'];
+        final productId = rawProductId is int
+            ? rawProductId
+            : int.tryParse(rawProductId?.toString() ?? '');
+        if (productId == null || fetchedIds.contains(productId)) {
+          continue;
+        }
+        fetchedIds.add(productId);
+        futures.add(() async {
+          try {
+            final product = await ProductService.getProductoCompletoById(
+              productId,
+            );
+            if (product == null) return null;
+
+            final rawCategoryId = item['id_categoria'] ?? item['idCategoria'];
+            final rawSubcategoryId =
+                item['id_sub_categoria'] ?? item['id_subcategoria'];
+            final categoryId = rawCategoryId?.toString();
+            final subcategoryId = rawSubcategoryId?.toString();
+
+            if (categoryId == null && subcategoryId == null) {
+              return product;
+            }
+
+            final selectedSubcategoria = subcategoryId == null
+                ? null
+                : {
+                  'id': int.tryParse(subcategoryId) ?? subcategoryId,
+                  'idcategoria': categoryId != null
+                      ? int.tryParse(categoryId) ?? categoryId
+                      : null,
+                };
+            final subcategorias = selectedSubcategoria == null
+                ? List<Map<String, dynamic>>.from(product.subcategorias)
+                : [selectedSubcategoria];
+
+            return product.copyWith(
+              categoryId: categoryId ?? product.categoryId,
+              subcategorias: subcategorias,
+            );
+          } catch (e) {
+            print('❌ Error cargando producto $productId: $e');
+            return null;
+          }
+        }());
+      }
+
+      final resolvedProducts = await Future.wait(futures);
+      final products = resolvedProducts.whereType<Product>().toList();
 
       setState(() {
         _availableProducts = products;
@@ -384,6 +459,7 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     });
 
     try {
+      final isTwoForOne = _isTwoForOnePromotionType(_selectedTipoPromocion);
       final promotionData = {
         'nombre': _nombreController.text.trim(),
         'descripcion':
@@ -394,9 +470,11 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
         'id_tipo_promocion': int.parse(_selectedTipoPromocion!),
         'valor_descuento': double.parse(_valorDescuentoController.text),
         'min_compra':
-            _minCompraController.text.isEmpty
-                ? null
-                : double.parse(_minCompraController.text),
+            isTwoForOne
+                ? 2
+                : _minCompraController.text.isEmpty
+                    ? null
+                    : int.parse(_minCompraController.text),
         'fecha_inicio': _formatDateForApi(_fechaInicio!),
         'fecha_fin': _fechaFin != null ? _formatDateForApi(_fechaFin!) : null,
         'estado': _estado,
@@ -540,8 +618,10 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
             children: [
               _buildBasicInfoSection(),
               const SizedBox(height: 24),
-              _buildDiscountSection(),
-              const SizedBox(height: 24),
+              if (_selectedTipoPromocion != null) ...[
+                _buildDiscountSection(),
+                const SizedBox(height: 24),
+              ],
               _buildDateSection(),
               const SizedBox(height: 24),
               _buildLimitsSection(),
@@ -729,6 +809,7 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
       onChanged: (value) {
         setState(() {
           _selectedTipoPromocion = value;
+          _applyPromotionTypeDefaults(value);
         });
       },
       validator: (value) {
@@ -794,7 +875,125 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     return tipoPromocion.denominacion.toLowerCase().contains('recargo');
   }
 
+  promo.PromotionType? _findPromotionType(String? tipoPromocionId) {
+    if (tipoPromocionId == null) {
+      return null;
+    }
+
+    for (final type in _promotionTypes) {
+      if (type.id == tipoPromocionId) {
+        return type;
+      }
+    }
+
+    return null;
+  }
+
+  bool _isTwoForOnePromotionType(String? tipoPromocionId) {
+    if (tipoPromocionId == null) {
+      return false;
+    }
+
+    if (tipoPromocionId == '3') {
+      return true;
+    }
+
+    final type = _findPromotionType(tipoPromocionId);
+    if (type == null) {
+      return false;
+    }
+
+    final text =
+        '${type.denominacion} ${type.descripcion ?? ''}'.toLowerCase();
+    return text.contains('2x1') ||
+        text.contains('2 x 1') ||
+        text.contains('dos por uno');
+  }
+
+  void _applyPromotionTypeDefaults(String? tipoPromocionId) {
+    if (_isTwoForOnePromotionType(tipoPromocionId)) {
+      _minCompraController.text = '2';
+    }
+  }
+
+  bool _isPercentagePromotionType(promo.PromotionType? type) {
+    if (type == null) {
+      return false;
+    }
+
+    final text =
+        '${type.denominacion} ${type.descripcion ?? ''}'.toLowerCase();
+    return text.contains('porcent') ||
+        text.contains('porcien') ||
+        text.contains('%');
+  }
+
+  bool _isFixedAmountPromotionType(promo.PromotionType? type) {
+    if (type == null) {
+      return false;
+    }
+
+    return !_isPercentagePromotionType(type);
+  }
+
+  bool _requiresUsageLimit(String? tipoPromocionId) {
+    if (tipoPromocionId == null) {
+      return false;
+    }
+
+    return tipoPromocionId == '10' || tipoPromocionId == '11';
+  }
+
   Widget _buildDiscountSection() {
+    final selectedType = _findPromotionType(_selectedTipoPromocion);
+    final isCharge =
+        _selectedTipoPromocion != null &&
+        _isChargePromotionType(_selectedTipoPromocion!);
+    final isTwoForOne = _isTwoForOnePromotionType(_selectedTipoPromocion);
+    final isPercentage = _isPercentagePromotionType(selectedType);
+    final isFixedAmount =
+        !isPercentage && _isFixedAmountPromotionType(selectedType);
+    final accentColor =
+        isCharge ? AppColors.promotionCharge : AppColors.promotionDiscount;
+    final accentBackground =
+        isCharge ? AppColors.promotionChargeBg : AppColors.promotionDiscountBg;
+    final titleTextColor = isCharge ? accentColor : null;
+    final chipTextColor = isCharge ? accentColor : null;
+    final sectionTitle =
+        isCharge ? 'Configuración de Recargo' : 'Configuración de Descuento';
+    final valueLabel = isPercentage
+        ? isCharge
+            ? 'Porcentaje de recargo *'
+            : 'Porcentaje de descuento *'
+        : isFixedAmount
+            ? isCharge
+                ? 'Monto de recargo *'
+                : 'Monto de descuento *'
+            : isCharge
+                ? 'Valor del recargo *'
+                : 'Valor del descuento *';
+    final valueIcon = isPercentage
+        ? Icons.percent
+        : isFixedAmount
+            ? Icons.attach_money
+            : Icons.tune;
+    final valueTypeLabel = isPercentage
+        ? 'Porcentual'
+        : isFixedAmount
+            ? 'Monto fijo'
+            : 'Valor directo';
+    final valueHelperText = isPercentage
+        ? 'Se aplica sobre el total de la venta'
+        : isFixedAmount
+            ? 'Monto fijo en moneda local'
+            : null;
+    final operationLabel = isCharge ? 'recargo' : 'descuento';
+    final valueNoun = isPercentage
+        ? 'porcentaje'
+        : isFixedAmount
+            ? 'monto'
+            : 'valor';
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -803,37 +1002,70 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.local_offer, color: AppColors.primary),
+                Icon(
+                  isCharge ? Icons.trending_up : Icons.local_offer,
+                  color: accentColor,
+                ),
                 const SizedBox(width: 8),
-                const Text(
-                  'Configuración de Descuento',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                Text(
+                  sectionTitle,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: titleTextColor,
+                  ),
                 ),
               ],
             ),
+            if (selectedType != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Chip(
+                  avatar: Icon(valueIcon, size: 16, color: accentColor),
+                  label: Text(
+                    valueTypeLabel,
+                    style: TextStyle(
+                      color: chipTextColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  backgroundColor: accentBackground,
+                  shape: StadiumBorder(
+                    side: BorderSide(
+                      color: accentColor.withOpacity(0.2),
+                    ),
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             TextFormField(
               controller: _valorDescuentoController,
-              decoration: const InputDecoration(
-                labelText: 'Valor del descuento (%) *',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.percent),
-                suffixText: '%',
+              decoration: InputDecoration(
+                labelText: valueLabel,
+                border: const OutlineInputBorder(),
+                prefixIcon: Icon(valueIcon),
+                helperText: valueHelperText,
               ),
-              keyboardType: TextInputType.number,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
               ],
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
-                  return 'El valor del descuento es requerido';
+                  return 'El $valueNoun del $operationLabel es requerido';
                 }
-                final double? discount = double.tryParse(value);
-                if (discount == null) {
+                final double? amount = double.tryParse(value);
+                if (amount == null) {
                   return 'Ingrese un valor válido';
                 }
-                if (discount <= 0 || discount > 100) {
-                  return 'El descuento debe estar entre 1% y 100%';
+                if (isPercentage) {
+                  if (amount <= 0 || amount > 100) {
+                    return 'El porcentaje debe estar entre 1% y 100%';
+                  }
+                } else if (amount <= 0) {
+                  return 'El $valueNoun debe ser mayor a 0';
                 }
                 return null;
               },
@@ -841,21 +1073,39 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
             const SizedBox(height: 16),
             TextFormField(
               controller: _minCompraController,
-              decoration: const InputDecoration(
-                labelText: 'Compra mínima',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.attach_money),
-                prefixText: '\$ ',
+              decoration: InputDecoration(
+                labelText: 'Compra mínima (cantidad de productos)',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.shopping_cart),
+                helperText:
+                    isTwoForOne
+                        ? 'Para 2x1 se fija automáticamente en 2'
+                        : null,
+                suffixIcon:
+                    isTwoForOne
+                        ? Icon(Icons.lock, color: accentColor)
+                        : null,
               ),
               keyboardType: TextInputType.number,
+              readOnly: isTwoForOne,
               inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                FilteringTextInputFormatter.digitsOnly,
               ],
               validator: (value) {
+                if (isTwoForOne) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'La compra mínima para 2x1 es 2';
+                  }
+                  final int? minPurchase = int.tryParse(value);
+                  if (minPurchase != 2) {
+                    return 'La compra mínima para 2x1 debe ser 2';
+                  }
+                  return null;
+                }
                 if (value != null && value.trim().isNotEmpty) {
-                  final double? minPurchase = double.tryParse(value);
+                  final int? minPurchase = int.tryParse(value);
                   if (minPurchase == null || minPurchase < 0) {
-                    return 'Ingrese un valor válido';
+                    return 'Ingrese una cantidad válida';
                   }
                 }
                 return null;
@@ -1078,6 +1328,8 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
   }
 
   Widget _buildLimitsSection() {
+    final requiresLimit = _requiresUsageLimit(_selectedTipoPromocion);
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1097,15 +1349,22 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
             const SizedBox(height: 16),
             TextFormField(
               controller: _limiteUsosController,
-              decoration: const InputDecoration(
-                labelText: 'Límite de usos',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.trending_up),
-                helperText: 'Dejar vacío para usos ilimitados',
+              decoration: InputDecoration(
+                labelText:
+                    requiresLimit ? 'Límite de usos *' : 'Límite de usos',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.trending_up),
+                helperText:
+                    requiresLimit
+                        ? 'Obligatorio para promociones por cantidad de productos'
+                        : 'Solo números enteros. Vacío para ilimitados',
               ),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               validator: (value) {
+                if (requiresLimit && (value == null || value.trim().isEmpty)) {
+                  return 'El límite de usos es obligatorio';
+                }
                 if (value != null && value.trim().isNotEmpty) {
                   final int? limit = int.tryParse(value);
                   if (limit == null || limit <= 0) {
