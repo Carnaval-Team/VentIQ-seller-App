@@ -1,10 +1,23 @@
-import 'package:flutter/material.dart';
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
-import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
+import 'package:permission_handler/permission_handler.dart';
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/order.dart';
+import '../services/user_preferences_service.dart';
+
+class _StorePrintInfo {
+  final String name;
+  final Uint8List? logoBytes;
+
+  const _StorePrintInfo({required this.name, this.logoBytes});
+}
 
 /// Custom scrolling text widget for long text that doesn't fit
 class ScrollingText extends StatefulWidget {
@@ -112,6 +125,11 @@ class BluetoothPrinterService {
   static final BluetoothPrinterService _instance = BluetoothPrinterService._internal();
   factory BluetoothPrinterService() => _instance;
   BluetoothPrinterService._internal();
+
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
+  _StorePrintInfo? _storePrintInfoCache;
+  Future<_StorePrintInfo>? _storePrintInfoFuture;
 
   List<BluetoothInfo> _pairedDevices = [];
   List<BluetoothInfo> _discoveredDevices = [];
@@ -472,10 +490,12 @@ class BluetoothPrinterService {
       // Create ESC/POS profile
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
+      final storeInfo = await _getStorePrintInfo();
 
       // ========== PRINT CUSTOMER RECEIPT FIRST ==========
       debugPrint('📄 Printing customer receipt...');
-      bool customerResult = await _printCustomerReceipt(generator, order);
+      bool customerResult =
+          await _printCustomerReceipt(generator, order, storeInfo);
       
       if (!customerResult) {
         debugPrint('❌ Customer receipt failed to print');
@@ -488,7 +508,8 @@ class BluetoothPrinterService {
       
       // ========== PRINT WAREHOUSE PICKING SLIP SEPARATELY ==========
       debugPrint('🏭 Printing warehouse picking slip...');
-      bool warehouseResult = await _printWarehouseSlip(generator, order);
+      bool warehouseResult =
+          await _printWarehouseSlip(generator, order, storeInfo);
       
       if (!warehouseResult) {
         debugPrint('❌ Warehouse slip failed to print');
@@ -505,11 +526,15 @@ class BluetoothPrinterService {
   }
 
   /// Print customer receipt as separate job
-  Future<bool> _printCustomerReceipt(Generator generator, Order order) async {
+  Future<bool> _printCustomerReceipt(
+    Generator generator,
+    Order order,
+    _StorePrintInfo storeInfo,
+  ) async {
     try {
       List<int> bytes = [];
       
-      bytes += _addCustomerReceipt(generator, order);
+      bytes += _addCustomerReceipt(generator, order, storeInfo);
       bytes += generator.emptyLines(1);
       bytes += generator.cut();
       
@@ -523,11 +548,15 @@ class BluetoothPrinterService {
   }
 
   /// Print warehouse slip as separate job
-  Future<bool> _printWarehouseSlip(Generator generator, Order order) async {
+  Future<bool> _printWarehouseSlip(
+    Generator generator,
+    Order order,
+    _StorePrintInfo storeInfo,
+  ) async {
     try {
       List<int> bytes = [];
       
-      bytes += _addWarehousePickingSlip(generator, order);
+      bytes += _addWarehousePickingSlip(generator, order, storeInfo);
       bytes += generator.emptyLines(1);
       bytes += generator.cut();
       
@@ -577,12 +606,115 @@ class BluetoothPrinterService {
     return result;
   }
 
+  Future<_StorePrintInfo> _getStorePrintInfo() async {
+    if (_storePrintInfoCache != null) {
+      return _storePrintInfoCache!;
+    }
+
+    _storePrintInfoFuture ??= _loadStorePrintInfo();
+    _storePrintInfoCache = await _storePrintInfoFuture!;
+    return _storePrintInfoCache!;
+  }
+
+  Future<_StorePrintInfo> _loadStorePrintInfo() async {
+    try {
+      final storeId = await _userPreferencesService.getIdTienda();
+      Map<String, dynamic>? storeData;
+
+      if (storeId != null) {
+        storeData =
+            await Supabase.instance.client
+                .from('app_dat_tienda')
+                .select('denominacion, imagen_url')
+                .eq('id', storeId)
+                .maybeSingle();
+      }
+
+      final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+      final storeLogoUrl = storeData?['imagen_url'] as String?;
+      final logoBytes = await _downloadImageBytes(storeLogoUrl);
+
+      return _StorePrintInfo(name: storeName, logoBytes: logoBytes);
+    } catch (e) {
+      debugPrint(
+        '⚠️ No se pudo cargar datos de tienda para impresión Bluetooth: $e',
+      );
+      return const _StorePrintInfo(name: 'VentIQ');
+    }
+  }
+
+  Future<Uint8List?> _downloadImageBytes(String? url) async {
+    if (url == null || url.isEmpty) return null;
+
+    const objectPrefix =
+        'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/images_back/';
+    const renderPrefix =
+        'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/render/image/public/images_back/';
+
+    final renderUrl = url.contains(objectPrefix)
+        ? '${url.replaceFirst(objectPrefix, renderPrefix)}?width=500&height=600'
+        : url;
+
+    try {
+      final response = await http.get(Uri.parse(renderUrl));
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('⚠️ No se pudo descargar imagen de tienda: $e');
+      return null;
+    }
+  }
+
+  img.Image? _decodeLogoImage(Uint8List? bytes) {
+    if (bytes == null || bytes.isEmpty) {
+      return null;
+    }
+    return img.decodeImage(bytes);
+  }
+
+  img.Image _resizeLogoForPrinter(img.Image image) {
+    const targetWidth = 240;
+    if (image.width <= targetWidth) {
+      return image;
+    }
+    return img.copyResize(image, width: targetWidth);
+  }
+
+  List<int> _addStoreHeader(Generator generator, _StorePrintInfo storeInfo) {
+    List<int> bytes = [];
+    final logoImage = _decodeLogoImage(storeInfo.logoBytes);
+
+    if (logoImage != null) {
+      final resized = _resizeLogoForPrinter(logoImage);
+      bytes += generator.imageRaster(resized, align: PosAlign.center);
+      bytes += generator.emptyLines(1);
+      bytes += generator.text(
+        storeInfo.name,
+        styles: const PosStyles(align: PosAlign.center),
+      );
+    } else {
+      bytes += generator.text(
+        storeInfo.name,
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+    }
+
+    bytes += generator.emptyLines(1);
+    return bytes;
+  }
+
   /// Add customer receipt section
-  List<int> _addCustomerReceipt(Generator generator, Order order) {
+  List<int> _addCustomerReceipt(
+    Generator generator,
+    Order order,
+    _StorePrintInfo storeInfo,
+  ) {
     List<int> bytes = [];
 
     // Header compacto
-    bytes += generator.text('INVENTTIA', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += _addStoreHeader(generator, storeInfo);
     bytes += generator.text('FACTURA', styles: PosStyles(align: PosAlign.center, bold: true));
     bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
 
@@ -643,13 +775,17 @@ class BluetoothPrinterService {
   }
 
   /// Add warehouse picking slip section
-  List<int> _addWarehousePickingSlip(Generator generator, Order order) {
+  List<int> _addWarehousePickingSlip(
+    Generator generator,
+    Order order,
+    _StorePrintInfo storeInfo,
+  ) {
     List<int> bytes = [];
 
     debugPrint('🏭 Creating warehouse picking slip for order ${order.id}');
     
     // Header compacto
-    bytes += generator.text('INVENTTIA', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += _addStoreHeader(generator, storeInfo);
     bytes += generator.text('GUIA ALMACEN', styles: PosStyles(align: PosAlign.center, bold: true));
     bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
     
@@ -689,7 +825,10 @@ class BluetoothPrinterService {
     bytes += generator.text('TOT: ${order.totalItems} prod - \$${order.total.toStringAsFixed(0)}', styles: PosStyles(align: PosAlign.left, bold: true));
 
     // Footer compacto
-    bytes += generator.text('INVENTTIA Almacen', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.text(
+      '${storeInfo.name} Almacen',
+      styles: const PosStyles(align: PosAlign.center),
+    );
     
     debugPrint('🏭 Warehouse picking slip completed (${bytes.length} bytes)');
     return bytes;
