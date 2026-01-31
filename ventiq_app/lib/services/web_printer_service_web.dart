@@ -1,12 +1,113 @@
+import 'dart:convert';
 import 'dart:html' as html;
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../models/order.dart';
 import '../services/user_preferences_service.dart';
+
+class _StorePrintInfo {
+  final String name;
+  final String? logoDataUrl;
+
+  const _StorePrintInfo({required this.name, this.logoDataUrl});
+}
 
 /// Implementación web del servicio de impresión
 class WebPrinterServiceImpl {
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
+  _StorePrintInfo? _storePrintInfoCache;
+  Future<_StorePrintInfo>? _storePrintInfoFuture;
+
+  Future<_StorePrintInfo> _getStorePrintInfo() async {
+    if (_storePrintInfoCache != null) {
+      return _storePrintInfoCache!;
+    }
+
+    _storePrintInfoFuture ??= _loadStorePrintInfo();
+    _storePrintInfoCache = await _storePrintInfoFuture!;
+    return _storePrintInfoCache!;
+  }
+
+  Future<_StorePrintInfo> _loadStorePrintInfo() async {
+    try {
+      final storeId = await _userPreferencesService.getIdTienda();
+      Map<String, dynamic>? storeData;
+
+      if (storeId != null) {
+        storeData =
+            await Supabase.instance.client
+                .from('app_dat_tienda')
+                .select('denominacion, imagen_url')
+                .eq('id', storeId)
+                .maybeSingle();
+      }
+
+      final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+      final storeLogoUrl = storeData?['imagen_url'] as String?;
+      final logoDataUrl = await _loadLogoDataUrl(storeLogoUrl);
+
+      return _StorePrintInfo(name: storeName, logoDataUrl: logoDataUrl);
+    } catch (e) {
+      print('⚠️ No se pudo cargar datos de tienda para impresión web: $e');
+      return const _StorePrintInfo(name: 'VentIQ');
+    }
+  }
+
+  Future<String?> _loadLogoDataUrl(String? logoUrl) async {
+    final bytes = await _downloadImageBytes(logoUrl);
+    if (bytes == null) {
+      return null;
+    }
+
+    final mimeType = _resolveLogoMimeType(logoUrl);
+    final base64Logo = base64Encode(bytes);
+    return 'data:$mimeType;base64,$base64Logo';
+  }
+
+  String _resolveLogoMimeType(String? logoUrl) {
+    final uri = logoUrl != null ? Uri.tryParse(logoUrl) : null;
+    final path = uri?.path.toLowerCase() ?? '';
+
+    if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
+      return 'image/jpeg';
+    }
+    if (path.endsWith('.webp')) {
+      return 'image/webp';
+    }
+    if (path.endsWith('.gif')) {
+      return 'image/gif';
+    }
+    return 'image/png';
+  }
+
+  Future<Uint8List?> _downloadImageBytes(String? url) async {
+    if (url == null || url.isEmpty) return null;
+
+    const objectPrefix =
+        'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/images_back/';
+    const renderPrefix =
+        'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/render/image/public/images_back/';
+
+    final renderUrl = url.contains(objectPrefix)
+        ? '${url.replaceFirst(objectPrefix, renderPrefix)}?width=500&height=600'
+        : url;
+
+    try {
+      final response = await http.get(Uri.parse(renderUrl));
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      }
+      return null;
+    } catch (e) {
+      print('⚠️ No se pudo descargar imagen de tienda: $e');
+      return null;
+    }
+  }
 
   /// Muestra diálogo de confirmación de impresión para web
   Future<bool> showPrintConfirmationDialog(
@@ -231,7 +332,14 @@ class WebPrinterServiceImpl {
     Order order, {
     String? copyLabel,
   }) async {
-    // Obtener datos del usuario y tienda (no necesarios para este formato simplificado)
+    final storeInfo = await _getStorePrintInfo();
+    final storeName = storeInfo.name;
+    final headerLogoHtml = storeInfo.logoDataUrl != null
+        ? '<img class="store-logo" src="${storeInfo.logoDataUrl}" alt="Logo $storeName" />'
+        : storeName;
+    final footerLogoHtml = storeInfo.logoDataUrl != null
+        ? '<img class="footer-logo" src="${storeInfo.logoDataUrl}" alt="Logo $storeName" />'
+        : '';
 
     // Fecha y hora actual
     final now = DateTime.now();
@@ -285,6 +393,20 @@ class WebPrinterServiceImpl {
             font-size: 24px;
             font-weight: bold;
             margin-bottom: 5px;
+        }
+        .store-logo {
+            max-width: 160px;
+            max-height: 80px;
+            object-fit: contain;
+            display: block;
+            margin: 0 auto 6px;
+        }
+        .footer-logo {
+            max-width: 120px;
+            max-height: 60px;
+            object-fit: contain;
+            display: block;
+            margin: 0 auto 6px;
         }
         .system-name {
             font-size: 14px;
@@ -356,8 +478,8 @@ class WebPrinterServiceImpl {
 </head>
 <body>
     <div class="header">
-        <div class="store-name">INVENTTIA</div>
-        <div class="system-name">Sistema de Ventas</div>
+        <div class="store-name">$headerLogoHtml</div>
+        <div class="system-name">$storeName</div>
         <div class="invoice-title">FACTURA DE VENTA</div>
         $copyLabelHtml
         <div class="separator">================================</div>
@@ -384,7 +506,7 @@ class WebPrinterServiceImpl {
 
     <div class="footer">
         <div>¡Gracias por su compra!</div>
-        <div>INVENTTIA - Sistema de Ventas</div>
+        <div>$storeName</div>
     </div>
 
     ${order.notas != null && order.notas!.isNotEmpty ? '<div class="notes">Notas: ${order.notas}</div>' : ''}
@@ -416,6 +538,15 @@ class WebPrinterServiceImpl {
 
   /// Genera el HTML de la guía de picking para el almacenero
   Future<String> _generateWarehousePickingSlipHtml(Order order) async {
+    final storeInfo = await _getStorePrintInfo();
+    final storeName = storeInfo.name;
+    final headerLogoHtml = storeInfo.logoDataUrl != null
+        ? '<img class="store-logo" src="${storeInfo.logoDataUrl}" alt="Logo $storeName" />'
+        : storeName;
+    final footerLogoHtml = storeInfo.logoDataUrl != null
+        ? '<img class="footer-logo" src="${storeInfo.logoDataUrl}" alt="Logo $storeName" />'
+        : '';
+
     // Fecha y hora actual
     final now = DateTime.now();
     final dateStr =
@@ -472,6 +603,24 @@ class WebPrinterServiceImpl {
         .store-name {
             font-size: 24px;
             font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .store-logo {
+            max-width: 160px;
+            max-height: 80px;
+            object-fit: contain;
+            display: block;
+            margin: 0 auto 6px;
+        }
+        .footer-logo {
+            max-width: 120px;
+            max-height: 60px;
+            object-fit: contain;
+            display: block;
+            margin: 0 auto 6px;
+        }
+        .system-name {
+            font-size: 14px;
             margin-bottom: 5px;
         }
         .warehouse-title {
@@ -539,7 +688,8 @@ class WebPrinterServiceImpl {
 </head>
 <body>
     <div class="header">
-        <div class="store-name">INVENTTIA</div>
+        <div class="store-name">$headerLogoHtml</div>
+        <div class="system-name">$storeName</div>
         <div class="warehouse-title">COMPROBANTE DE ALMACEN</div>
         <div class="picking-title">GUIA DE PICKING</div>
         <div class="separator">================================</div>
@@ -566,7 +716,9 @@ class WebPrinterServiceImpl {
     </div>
 
     <div class="footer">
-        <div>INVENTTIA - Sistema de Almacen</div>
+        $footerLogoHtml
+        <div>$storeName</div>
+        <div>Sistema de Almacen</div>
     </div>
 
     <script>
