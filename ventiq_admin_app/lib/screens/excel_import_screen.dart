@@ -1187,6 +1187,22 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
                       style: TextStyle(fontSize: 12, color: Colors.blue),
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.05),
+                      border: Border.all(color: Colors.green.withOpacity(0.3)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      '✅ Almacenamiento de Precios:\n'
+                      '• Precio de Venta: Se guarda en CUP\n'
+                      '• Precio Costo: Se guarda en USD\n'
+                      '• Conversión: Se utiliza la tasa de cambio cargada anteriormente',
+                      style: TextStyle(fontSize: 12, color: Colors.green),
+                    ),
+                  ),
                   const SizedBox(height: 20),
                   // Dropdown para seleccionar moneda
                   DropdownButtonFormField<String>(
