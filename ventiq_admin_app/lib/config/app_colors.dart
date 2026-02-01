@@ -15,14 +15,14 @@ class AppColors {
   static const Color info = Color(0xFF4A90E2);
 
   // Colores específicos para promociones
-  static const Color promotionDiscount = Color(0xFF10B981); // Verde para descuentos
+  static const Color promotionDiscount = primary; // Azul para descuentos
   static const Color promotionCharge = Color(0xFFFF6B35); // Naranja para recargos
   static const Color promotionActive = Color(0xFF10B981); // Verde para activas
   static const Color promotionInactive = Color(0xFFFF6B35); // Naranja para inactivas
   static const Color promotionExpired = Color(0xFF6B7280); // Gris para vencidas
 
   // Colores de fondo con mejor contraste
-  static const Color promotionDiscountBg = Color(0xFFECFDF5); // Fondo verde claro
+  static const Color promotionDiscountBg = Color(0xFFE7F0FB); // Fondo azul claro
   static const Color promotionChargeBg = Color(0xFFFFF7ED); // Fondo naranja claro
   static const Color promotionActiveBg = Color(0xFFECFDF5); // Fondo verde claro
   static const Color promotionInactiveBg = Color(0xFFFFF7ED); // Fondo naranja claro

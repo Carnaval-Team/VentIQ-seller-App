@@ -9,11 +9,15 @@ import '../services/product_service.dart';
 import '../services/currency_service.dart';
 import '../services/permissions_service.dart';
 import '../services/image_picker_service.dart';
+import '../services/subscription_service.dart';
+import '../services/user_preferences_service.dart';
 import 'add_product_screen.dart';
 import 'product_detail_screen.dart';
 import 'excel_import_screen.dart';
+import '../models/ai_product_models.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
+import '../widgets/ai_product_generator_sheet.dart';
 import '../utils/navigation_guard.dart';
 
 class ProductsScreen extends StatefulWidget {
@@ -21,6 +25,40 @@ class ProductsScreen extends StatefulWidget {
 
   @override
   State<ProductsScreen> createState() => _ProductsScreenState();
+}
+
+class _AiPlanFeatureChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _AiPlanFeatureChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.primary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.primary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ProductsScreenState extends State<ProductsScreen> {
@@ -33,9 +71,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
   List<Map<String, dynamic>> _categories = [];
   int? _selectedCategoryId;
   final PermissionsService _permissionsService = PermissionsService();
+  final SubscriptionService _subscriptionService = SubscriptionService();
   bool _canCreateProduct = false;
   bool _canEditProduct = false;
   bool _canDeleteProduct = false;
+  bool _hasAdvancedPlan = false;
+  bool _isLoadingAdvancedPlan = true;
 
   @override
   void initState() {
@@ -43,6 +84,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
     _checkPermissions();
     _loadCategories();
     _loadProducts();
+    _loadAdvancedPlanStatus();
   }
 
   void _checkPermissions() async {
@@ -110,6 +152,35 @@ class _ProductsScreenState extends State<ProductsScreen> {
     }
   }
 
+  Future<void> _loadAdvancedPlanStatus() async {
+    setState(() => _isLoadingAdvancedPlan = true);
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      if (storeId == null) {
+        if (!mounted) return;
+        setState(() {
+          _hasAdvancedPlan = false;
+          _isLoadingAdvancedPlan = false;
+        });
+        return;
+      }
+
+      final hasPlan = await _subscriptionService.hasAdvancedPlan(storeId);
+      if (!mounted) return;
+      setState(() {
+        _hasAdvancedPlan = hasPlan;
+        _isLoadingAdvancedPlan = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _hasAdvancedPlan = false;
+        _isLoadingAdvancedPlan = false;
+      });
+      debugPrint('❌ Error verificando plan avanzado: $e');
+    }
+  }
+
   void _loadCategories() async {
     try {
       final categorias = await ProductService.getCategorias();
@@ -142,6 +213,29 @@ class _ProductsScreenState extends State<ProductsScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          if (_canCreateProduct)
+            IconButton(
+              icon:
+                  _isLoadingAdvancedPlan
+                      ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                      : Icon(
+                        _hasAdvancedPlan ? Icons.auto_awesome : Icons.lock,
+                        color: Colors.white,
+                      ),
+              onPressed:
+                  _isLoadingAdvancedPlan ? null : _showAiProductGenerator,
+              tooltip:
+                  _hasAdvancedPlan
+                      ? 'Generar productos con IA'
+                      : 'Plan Avanzado requerido',
+            ),
           if (_canCreateProduct)
             IconButton(
               icon: const Icon(Icons.add, color: Colors.white),
@@ -189,6 +283,171 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 child: const Icon(Icons.add, color: Colors.white),
               )
               : null,
+    );
+  }
+
+  Future<void> _showAiProductGenerator() async {
+    final canCreate = await _permissionsService.canPerformAction(
+      'product.create',
+    );
+    if (!canCreate) {
+      if (mounted) {
+        NavigationGuard.showActionDeniedMessage(
+          context,
+          'Crear producto con IA',
+        );
+      }
+      return;
+    }
+
+    if (!_hasAdvancedPlan) {
+      _showAdvancedPlanRequiredSheet();
+      return;
+    }
+
+    final result = await showModalBottomSheet<AiProductCreationResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder:
+          (context) => AiProductGeneratorSheet(
+            onProductsCreated: () {
+              _loadProducts();
+            },
+          ),
+    );
+
+    if (!mounted || result == null) {
+      return;
+    }
+
+    if (result.createdCount > 0) {
+      _loadProducts();
+      final message = 'Se crearon ${result.createdCount} productos.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: result.hasErrors ? Colors.orange : AppColors.success,
+        ),
+      );
+    }
+
+    if (result.hasErrors) {
+      final details = result.errors.take(3).join(' | ');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Detalles: $details'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  void _showAdvancedPlanRequiredSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.55,
+          minChildSize: 0.4,
+          maxChildSize: 0.75,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 48,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.lock,
+                      color: AppColors.primary,
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Generador IA disponible solo en Plan Avanzado',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Desbloquea la creación masiva de productos con IA, validación automática y vista previa editable.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: const [
+                      _AiPlanFeatureChip(
+                        icon: Icons.auto_awesome,
+                        label: 'Productos automáticos',
+                      ),
+                      _AiPlanFeatureChip(
+                        icon: Icons.preview,
+                        label: 'Vista previa editable',
+                      ),
+                      _AiPlanFeatureChip(
+                        icon: Icons.check_circle_outline,
+                        label: 'Validación inteligente',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.pushNamed(context, '/subscription-detail');
+                      },
+                      icon: const Icon(Icons.workspace_premium),
+                      label: const Text('Ver Plan Avanzado'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -796,19 +1055,20 @@ class _ProductsScreenState extends State<ProductsScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => AddProductScreen(
-          onProductSaved: () {
-            // Recargar la lista de productos después de crear
-            print('🔄 Producto creado, recargando lista...');
-            _loadProducts();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Producto creado exitosamente'),
-                backgroundColor: AppColors.success,
-              ),
-            );
-          },
-        ),
+        builder:
+            (context) => AddProductScreen(
+              onProductSaved: () {
+                // Recargar la lista de productos después de crear
+                print('🔄 Producto creado, recargando lista...');
+                _loadProducts();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Producto creado exitosamente'),
+                    backgroundColor: AppColors.success,
+                  ),
+                );
+              },
+            ),
       ),
     );
   }

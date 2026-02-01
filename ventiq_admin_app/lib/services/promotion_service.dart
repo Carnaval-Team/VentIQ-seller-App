@@ -41,9 +41,9 @@ class PromotionService {
         '📢 Parámetros: search=$search, estado=$estado, tipo=$tipoPromocion',
       );
 
-      // Llamar a la función RPC fn_listar_promociones
+      // Llamar a la función RPC fn_listar_promociones2
       final response = await _supabase.rpc(
-        'fn_listar_promociones',
+        'fn_listar_promociones2',
         params: {
           'p_id_tienda': storeIdInt,
           'p_activas':
@@ -553,13 +553,38 @@ class PromotionService {
       print('📝 Agregando ${products.length} productos a promoción: $promotionId');
 
       for (final product in products) {
+        final categoryId = int.tryParse(product.categoryId);
+        Map<String, dynamic>? matchedSubcategory;
+        if (product.subcategorias.isNotEmpty) {
+          matchedSubcategory = product.subcategorias.firstWhere(
+            (subcat) {
+              final subcatCategoryId =
+                  subcat['idcategoria'] ?? subcat['id_categoria'];
+              if (categoryId == null || subcatCategoryId == null) {
+                return true;
+              }
+              return subcatCategoryId.toString() == categoryId.toString();
+            },
+            orElse: () => product.subcategorias.first,
+          );
+        }
+
+        final rawSubcategoryId = matchedSubcategory == null
+            ? null
+            : (matchedSubcategory['id'] ??
+                matchedSubcategory['id_sub_categoria'] ??
+                matchedSubcategory['id_subcategoria']);
+        final subcategoryId = rawSubcategoryId == null
+            ? null
+            : int.tryParse(rawSubcategoryId.toString());
+
         final response = await _supabase.rpc(
           'fn_agregar_producto_promocion',
           params: {
             'p_id_promocion': int.parse(promotionId),
             'p_id_producto': int.parse(product.id),
-            'p_id_categoria': null,
-            'p_id_subcategoria': null,
+            'p_id_categoria': categoryId,
+            'p_id_subcategoria': subcategoryId,
             'p_uuid_usuario': userId,
           },
         );
@@ -780,6 +805,35 @@ class PromotionService {
       8,
     );
     return '${prefix ?? 'PROMO'}$random';
+  }
+
+  /// Obtiene los productos disponibles para seleccionar en promociones
+  Future<List<Map<String, dynamic>>> listPromotionSelectableProducts({
+    required int storeId,
+  }) async {
+    try {
+      print('📦 Listando productos disponibles para promociones: $storeId');
+
+      final response = await _supabase.rpc(
+        'fn_listar_productos_para_promociones',
+        params: {
+          'p_id_tienda': storeId,
+        },
+      );
+
+      print('📦 Respuesta listando productos para promociones: $response');
+
+      if (response == null) {
+        print('⚠️ Respuesta nula al listar productos para promociones');
+        return [];
+      }
+
+      final List<dynamic> data = response is List ? response : [];
+      return data.cast<Map<String, dynamic>>();
+    } catch (e) {
+      print('❌ Error listando productos para promociones: $e');
+      return [];
+    }
   }
 
   /// Obtiene los productos afectados por una promoción específica

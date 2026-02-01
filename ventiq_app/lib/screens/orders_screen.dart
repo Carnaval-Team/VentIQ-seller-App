@@ -17,6 +17,7 @@ import '../services/payment_method_service.dart';
 import '../services/printer_manager.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
+import '../services/currency_service.dart';
 import '../utils/platform_utils.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
@@ -44,18 +45,41 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool _allowDiscountOnVendedor = false;
   bool _isGeneratingCustomerInvoice = false;
   bool _allowPrintPendingOrders = false;
+  double _usdRate = 0.0;
+  bool _isLoadingUsdRate = false;
 
   @override
   void initState() {
     super.initState();
     _filteredOrders = _orderService.orders;
     _searchController.addListener(_onSearchChanged);
+    _loadUsdRate();
     // Cargar órdenes desde Supabase y órdenes pendientes offline
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadOrdersFromSupabase();
       _loadDiscountPermission();
       _loadPrintPendingPermission();
     });
+  }
+
+  Future<void> _loadUsdRate() async {
+    setState(() {
+      _isLoadingUsdRate = true;
+    });
+
+    try {
+      final rate = await CurrencyService.getUsdRate();
+      setState(() {
+        _usdRate = rate;
+        _isLoadingUsdRate = false;
+      });
+    } catch (e) {
+      print('❌ Error loading USD rate: $e');
+      setState(() {
+        _usdRate = 420.0;
+        _isLoadingUsdRate = false;
+      });
+    }
   }
 
   Future<void> _loadDiscountPermission() async {
@@ -2130,6 +2154,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
           );
         }
 
+        final totalPaid = payments.fold<double>(
+          0.0,
+          (sum, payment) => sum + _resolvePaymentAmount(payment),
+        );
+        final double? usdTotal =
+            _usdRate > 0 ? totalPaid / _usdRate : null;
+        final usdLabel =
+            _usdRate > 0
+                ? 'Total USD (USD ${_usdRate.toStringAsFixed(0)})'
+                : 'Total USD';
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2216,6 +2251,69 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     ),
                   ],
                 ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Total pagos',
+                        style: TextStyle(
+                          color: Colors.grey[700],
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '\$${totalPaid.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          color: Color(0xFF1F2937),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        usdLabel,
+                        style: TextStyle(
+                          color: Colors.grey[700],
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (_isLoadingUsdRate)
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFF4A90E2),
+                          ),
+                        )
+                      else
+                        Text(
+                          usdTotal == null
+                              ? 'N/D'
+                              : '\$${usdTotal.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: Color(0xFF4A90E2),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ],

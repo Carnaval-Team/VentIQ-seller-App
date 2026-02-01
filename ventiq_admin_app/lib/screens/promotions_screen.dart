@@ -140,16 +140,23 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
 
   Future<void> _refreshPromotions() async {
     try {
-      final newPromotions = await _promotionService.listPromotions(
-        search: _searchController.text.isEmpty ? null : _searchController.text,
-        estado: _selectedStatus,
-        tipoPromocion: _selectedType,
-        page: 1,
-        limit: _pageSize,
-      );
+      final results = await Future.wait([
+        _promotionService.listPromotions(
+          search:
+              _searchController.text.isEmpty ? null : _searchController.text,
+          estado: _selectedStatus,
+          tipoPromocion: _selectedType,
+          page: 1,
+          limit: _pageSize,
+        ),
+        _promotionService.getPromotionTypes(),
+      ]);
+      final newPromotions = results[0] as List<Promotion>;
+      final newTypes = results[1] as List<PromotionType>;
 
       setState(() {
         _promotions = newPromotions;
+        _promotionTypes = newTypes;
         _currentPage = 1;
         _hasMoreData = newPromotions.length >= _pageSize;
       });
