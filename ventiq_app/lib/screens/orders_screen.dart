@@ -47,6 +47,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool _allowPrintPendingOrders = false;
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
+  bool _isOfflineMode = false;
 
   @override
   void initState() {
@@ -545,6 +546,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled =
           await _userPreferencesService.isOfflineModeEnabled();
+      _isOfflineMode = isOfflineModeEnabled;
 
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline - Preservando cambios locales y recargando...');
@@ -659,6 +661,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         setState(() {
           _filteredOrders = _orderService.orders;
           _isLoading = false;
+          _isOfflineMode = isOfflineModeEnabled;
         });
       }
     } catch (e) {
@@ -1130,6 +1133,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       discountData['originalTotal'] as double? ?? displayTotal;
                   final saved = discountData['saved'] as double? ?? 0;
                   final label = discountData['label'] as String?;
+                  final double? usdTotal =
+                      _usdRate > 0 ? displayTotal / _usdRate : null;
+                  final usdLabel =
+                      _usdRate > 0
+                          ? 'USD (USD ${_usdRate.toStringAsFixed(0)})'
+                          : 'USD';
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1169,6 +1178,37 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            usdLabel,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (_isLoadingUsdRate)
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          else
+                            Text(
+                              usdTotal == null
+                                  ? 'N/D'
+                                  : '\$${usdTotal.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF4A90E2),
+                              ),
+                            ),
+                        ],
+                      ),
                     ],
                   );
                 },
@@ -2047,63 +2087,52 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
+  List<Map<String, dynamic>> _getLocalPaymentBreakdown(Order order) {
+    final rawPayments = order.pagos;
+    if (rawPayments == null) return [];
+    return rawPayments
+        .whereType<Map>()
+        .map((payment) => Map<String, dynamic>.from(payment))
+        .toList();
+  }
+
   Widget _buildPaymentBreakdown(
     Order order, {
     int refreshKey = 0,
     VoidCallback? onPaymentUpdated,
   }) {
     final operationId = order.operationId;
-    if (operationId == null) return const SizedBox.shrink();
+    final localPayments = _getLocalPaymentBreakdown(order);
+
+    if (_isOfflineMode || operationId == null) {
+      return _buildPaymentBreakdownContent(
+        order,
+        localPayments,
+        canEdit: false,
+        onPaymentUpdated: onPaymentUpdated,
+      );
+    }
 
     return FutureBuilder<List<Map<String, dynamic>>>(
       key: ValueKey('payment-breakdown-$refreshKey'),
       future: _orderService.getSalePayments(operationId),
       builder: (context, snapshot) {
         final payments = snapshot.data ?? [];
-        final canEdit = _canEditPaymentBreakdown(order) && payments.isNotEmpty;
-
-        Widget header = Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Desglose de Pagos:',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1F2937),
-                ),
-              ),
-            ),
-            if (canEdit)
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEEF2FF),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFC7D2FE)),
-                ),
-                child: IconButton(
-                  tooltip: 'Editar desglose de pagos',
-                  icon: const Icon(
-                    Icons.edit,
-                    size: 18,
-                    color: Color(0xFF4F46E5),
-                  ),
-                  onPressed:
-                      () => _showPaymentBreakdownEditor(
-                        order,
-                        payments,
-                        onUpdated: onPaymentUpdated,
-                      ),
-                ),
-              ),
-          ],
-        );
+        final canEdit =
+            !_isOfflineMode &&
+            _canEditPaymentBreakdown(order) &&
+            payments.isNotEmpty;
 
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              header,
+              _buildPaymentBreakdownHeader(
+                order,
+                const <Map<String, dynamic>>[],
+                canEdit: false,
+                onPaymentUpdated: onPaymentUpdated,
+              ),
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -2128,197 +2157,256 @@ class _OrdersScreenState extends State<OrdersScreen> {
           );
         }
 
-        if (snapshot.hasError || payments.isEmpty) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              header,
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey[200]!),
-                ),
-                child: const Text(
-                  'No hay información de pagos disponible',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ),
-            ],
-          );
-        }
-
-        final totalPaid = payments.fold<double>(
-          0.0,
-          (sum, payment) => sum + _resolvePaymentAmount(payment),
+        return _buildPaymentBreakdownContent(
+          order,
+          payments,
+          canEdit: canEdit,
+          onPaymentUpdated: onPaymentUpdated,
+          forceEmptyState: snapshot.hasError,
         );
-        final double? usdTotal =
-            _usdRate > 0 ? totalPaid / _usdRate : null;
-        final usdLabel =
-            _usdRate > 0
-                ? 'Total USD (USD ${_usdRate.toStringAsFixed(0)})'
-                : 'Total USD';
+      },
+    );
+  }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            header,
-            const SizedBox(height: 8),
-            ...payments.map(
-              (payment) => Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue[200]!),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: _getPaymentMethodColor(payment),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Icon(
-                        _getPaymentMethodIcon(payment),
-                        size: 16,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _resolvePaymentMethodName(payment),
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF1F2937),
-                            ),
-                          ),
-                          if (payment['referencia_pago'] != null &&
-                              payment['referencia_pago']
-                                  .toString()
-                                  .isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              'Ref: ${payment['referencia_pago']}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          '\$${(payment['monto'] ?? 0.0).toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF4A90E2),
-                          ),
-                        ),
-                        if (payment['importe_sin_descuento'] != null &&
-                            (payment['importe_sin_descuento'] as num)
-                                    .toDouble() !=
-                                (payment['monto'] ?? 0.0).toDouble()) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            'Antes: \$${(payment['importe_sin_descuento'] as num).toDouble().toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
+  Widget _buildPaymentBreakdownHeader(
+    Order order,
+    List<Map<String, dynamic>> payments, {
+    required bool canEdit,
+    VoidCallback? onPaymentUpdated,
+  }) {
+    return Row(
+      children: [
+        const Expanded(
+          child: Text(
+            'Desglose de Pagos:',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1F2937),
+            ),
+          ),
+        ),
+        if (canEdit)
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFEEF2FF),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFC7D2FE)),
+            ),
+            child: IconButton(
+              tooltip: 'Editar desglose de pagos',
+              icon: const Icon(Icons.edit, size: 18, color: Color(0xFF4F46E5)),
+              onPressed:
+                  () => _showPaymentBreakdownEditor(
+                    order,
+                    payments,
+                    onUpdated: onPaymentUpdated,
+                  ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildPaymentBreakdownContent(
+    Order order,
+    List<Map<String, dynamic>> payments, {
+    required bool canEdit,
+    VoidCallback? onPaymentUpdated,
+    bool forceEmptyState = false,
+  }) {
+    final header = _buildPaymentBreakdownHeader(
+      order,
+      payments,
+      canEdit: canEdit,
+      onPaymentUpdated: onPaymentUpdated,
+    );
+
+    if (forceEmptyState || payments.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          header,
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: const Text(
+              'No hay información de pagos disponible',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey,
+                fontStyle: FontStyle.italic,
               ),
             ),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey[200]!),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          ),
+        ],
+      );
+    }
+
+    final totalPaid = payments.fold<double>(
+      0.0,
+      (sum, payment) => sum + _resolvePaymentAmount(payment),
+    );
+    final double? usdTotal = _usdRate > 0 ? totalPaid / _usdRate : null;
+    final usdLabel =
+        _usdRate > 0
+            ? 'Total USD (USD ${_usdRate.toStringAsFixed(0)})'
+            : 'Total USD';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        header,
+        const SizedBox(height: 8),
+        ...payments.map(
+          (payment) => Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue[200]!),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: _getPaymentMethodColor(payment),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(
+                    _getPaymentMethodIcon(payment),
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Total pagos',
-                        style: TextStyle(
-                          color: Colors.grey[700],
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        '\$${totalPaid.toStringAsFixed(2)}',
+                        _resolvePaymentMethodName(payment),
                         style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
                           color: Color(0xFF1F2937),
-                          fontWeight: FontWeight.w700,
                         ),
                       ),
+                      if (payment['referencia_pago'] != null &&
+                          payment['referencia_pago'].toString().isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Ref: ${payment['referencia_pago']}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '\$${_resolvePaymentAmount(payment).toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF4A90E2),
+                      ),
+                    ),
+                    if (_resolveOriginalPaymentAmount(payment) != null &&
+                        _resolveOriginalPaymentAmount(payment) !=
+                            _resolvePaymentAmount(payment)) ...[
+                      const SizedBox(height: 2),
                       Text(
-                        usdLabel,
-                        style: TextStyle(
-                          color: Colors.grey[700],
-                          fontWeight: FontWeight.w600,
+                        'Antes: \$${_resolveOriginalPaymentAmount(payment)!.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                          fontStyle: FontStyle.italic,
                         ),
                       ),
-                      if (_isLoadingUsdRate)
-                        const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Color(0xFF4A90E2),
-                          ),
-                        )
-                      else
-                        Text(
-                          usdTotal == null
-                              ? 'N/D'
-                              : '\$${usdTotal.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            color: Color(0xFF4A90E2),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
                     ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Total pagos',
+                    style: TextStyle(
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    '\$${totalPaid.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Color(0xFF1F2937),
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
-        );
-      },
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    usdLabel,
+                    style: TextStyle(
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (_isLoadingUsdRate)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFF4A90E2),
+                      ),
+                    )
+                  else
+                    Text(
+                      usdTotal == null
+                          ? 'N/D'
+                          : '\$${usdTotal.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        color: Color(0xFF4A90E2),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -2336,7 +2424,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final name =
         payment['medio_pago_denominacion'] ??
         payment['medio_pago_nombre'] ??
-        payment['denominacion'];
+        payment['denominacion'] ??
+        payment['metodo_pago'] ??
+        payment['medio_pago'];
     if (name is String && name.trim().isNotEmpty) {
       return name;
     }
@@ -2344,9 +2434,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   double _resolvePaymentAmount(Map<String, dynamic> payment) {
-    final amount = payment['monto'];
+    final amount =
+        payment['monto'] ?? payment['total'] ?? payment['monto_total'];
     if (amount is num) return amount.toDouble();
     return double.tryParse(amount?.toString() ?? '') ?? 0.0;
+  }
+
+  double? _resolveOriginalPaymentAmount(Map<String, dynamic> payment) {
+    final original =
+        payment['importe_sin_descuento'] ??
+        payment['total_sin_descuento'] ??
+        payment['monto_sin_descuento'];
+    if (original == null) return null;
+    if (original is num) return original.toDouble();
+    return double.tryParse(original.toString());
   }
 
   Color _getPaymentMethodColorFromMethod(PaymentMethod method) {
@@ -3074,8 +3175,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Color _getPaymentMethodColor(Map<String, dynamic> payment) {
-    final esEfectivo = payment['medio_pago_es_efectivo'] ?? false;
-    final esDigital = payment['medio_pago_es_digital'] ?? false;
+    final esEfectivo =
+        (payment['medio_pago_es_efectivo'] ?? payment['es_efectivo']) == true;
+    final esDigital =
+        (payment['medio_pago_es_digital'] ?? payment['es_digital']) == true;
 
     if (esEfectivo) {
       return Colors.green;
@@ -3087,8 +3190,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   IconData _getPaymentMethodIcon(Map<String, dynamic> payment) {
-    final esEfectivo = payment['medio_pago_es_efectivo'] ?? false;
-    final esDigital = payment['medio_pago_es_digital'] ?? false;
+    final esEfectivo =
+        (payment['medio_pago_es_efectivo'] ?? payment['es_efectivo']) == true;
+    final esDigital =
+        (payment['medio_pago_es_digital'] ?? payment['es_digital']) == true;
 
     if (esEfectivo) {
       return Icons.payments;
@@ -3101,7 +3206,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   /// Verificar si la orden tiene pagos en efectivo
   Future<bool> _hasEffectivoPayment(Order order) async {
-    if (order.operationId == null) return false;
+    if (_isOfflineMode || order.operationId == null) {
+      final localPayments = _getLocalPaymentBreakdown(order);
+      return localPayments.any(
+        (payment) =>
+            (payment['medio_pago_es_efectivo'] ?? payment['es_efectivo']) ==
+            true,
+      );
+    }
 
     try {
       final payments = await _orderService.getSalePayments(order.operationId!);
@@ -3978,10 +4090,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   // Personalizar nombres de métodos de pago para el desglose
   String _getCustomPaymentMethodName(Map<String, dynamic> payment) {
-    final mediopagoId = payment['medio_pago_id'];
+    final mediopagoId =
+        payment['medio_pago_id'] ??
+        payment['id_medio_pago'] ??
+        payment['tipo_pago'];
+    final esEfectivo =
+        (payment['medio_pago_es_efectivo'] ?? payment['es_efectivo']) == true;
+    final esDigital =
+        (payment['medio_pago_es_digital'] ?? payment['es_digital']) == true;
 
-    if (mediopagoId == 1) {
+    if (mediopagoId == 1 || esEfectivo) {
       return 'Dinero en efectivo';
+    } else if (esDigital) {
+      return 'Pago digital';
     } else {
       return 'Transferencia';
     }

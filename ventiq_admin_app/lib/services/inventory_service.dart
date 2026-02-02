@@ -2744,20 +2744,29 @@ class InventoryService {
       print('   - uuid: $uuid');
 
       // Insert record in app_dat_estado_operacion with estado = 3 (cancelado)
-      final response =
-          await _supabase
-              .from('app_dat_estado_operacion')
-              .insert({
-                'id_operacion': idOperacion,
-                'estado': 3, // 3 = Cancelado
-                'uuid': uuid,
-                'comentario':
-                    comentario.isEmpty
-                        ? 'Operación cancelada desde la app'
-                        : comentario,
-              })
-              .select()
-              .single();
+      // final response =
+      //     await _supabase
+      //         .from('app_dat_estado_operacion')
+      //         .insert({
+      //           'id_operacion': idOperacion,
+      //           'estado': 3, // 3 = Cancelado
+      //           'uuid': uuid,
+      //           'comentario':
+      //               comentario.isEmpty
+      //                   ? 'Operación cancelada desde la app'
+      //                   : comentario,
+      //         })
+      //         .select()
+      //         .single();
+
+      final response = await _supabase.rpc(
+        'fn_registrar_cambio_estado_operacion',
+        params: {
+          'p_id_operacion': idOperacion,
+          'p_nuevo_estado': 4,
+          'p_uuid_usuario': uuid,
+        },
+      );
 
       print('✅ Operación $idOperacion cancelada exitosamente');
       print('📦 Respuesta insert: $response');

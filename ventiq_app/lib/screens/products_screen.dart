@@ -6,7 +6,7 @@ import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/currency_service.dart';
-import '../utils/price_utils.dart';
+import '../utils/promotion_rules.dart';
 import 'product_details_screen.dart';
 import 'barcode_scanner_screen.dart';
 import 'assign_supplier_screen.dart';
@@ -1063,7 +1063,12 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
   }
 
   Map<String, double> _calculatePromotionPrices() {
-    if (widget.promotionData == null) {
+    final activePromotion = PromotionRules.pickPromotionForDisplay(
+      productPromotions: null,
+      globalPromotion: widget.promotionData,
+    );
+
+    if (activePromotion == null) {
       print('🎯 No promotion data available');
       return {
         'precio_venta': widget.product.precio,
@@ -1071,18 +1076,15 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
       };
     }
 
-    final valorDescuento = widget.promotionData!['valor_descuento'] as double?;
-    final tipoDescuento = widget.promotionData!['tipo_descuento'] as int?;
-
-    print(
-      '🎯 Promotion calculation: valor=$valorDescuento, tipo=$tipoDescuento',
+    final basePrice = PromotionRules.resolveBasePrice(
+      unitPrice: widget.product.precio,
+      basePrice: widget.product.precio,
+      promotion: activePromotion,
     );
 
-    final originalPrice = widget.product.precio;
-    final promotionPrices = PriceUtils.calculatePromotionPrices(
-      originalPrice,
-      valorDescuento,
-      tipoDescuento,
+    final promotionPrices = PromotionRules.calculatePromotionPrices(
+      basePrice: basePrice,
+      promotion: activePromotion,
     );
 
     print('🎯 Promotion prices: $promotionPrices');
@@ -1095,9 +1097,11 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
     final promotionPrices = _calculatePromotionPrices();
     final precioVenta = promotionPrices['precio_venta']!;
     final precioOferta = promotionPrices['precio_oferta']!;
-    final hasPromotion = PriceUtils.hasActivePromotion(
-      widget.promotionData?['tipo_descuento'],
+    final activePromotion = PromotionRules.pickPromotionForDisplay(
+      productPromotions: null,
+      globalPromotion: widget.promotionData,
     );
+    final hasPromotion = activePromotion != null;
 
     return GestureDetector(
       onTap: () {

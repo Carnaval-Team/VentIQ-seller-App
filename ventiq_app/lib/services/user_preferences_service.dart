@@ -38,6 +38,13 @@ class UserPreferencesService {
   static const String _promotionCodeKey = 'promotion_code';
   static const String _promotionValueKey = 'promotion_value';
   static const String _promotionTypeKey = 'promotion_type';
+  static const String _promotionTypeIdKey = 'promotion_type_id';
+  static const String _promotionMinCompraKey = 'promotion_min_compra';
+  static const String _promotionAplicaTodoKey = 'promotion_aplica_todo';
+  static const String _promotionRequiereMedioPagoKey =
+      'promotion_requiere_medio_pago';
+  static const String _promotionIdMedioPagoRequeridoKey =
+      'promotion_id_medio_pago_requerido';
   static const String _productPromotionsKey = 'product_promotions';
 
   // Data usage keys
@@ -434,6 +441,11 @@ class UserPreferencesService {
     String? codigoPromocion,
     double? valorDescuento,
     int? tipoDescuento,
+    int? idTipoPromocion,
+    double? minCompra,
+    bool? aplicaTodo,
+    bool? requiereMedioPago,
+    int? idMedioPagoRequerido,
   }) async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -460,6 +472,39 @@ class UserPreferencesService {
     } else {
       await prefs.remove(_promotionTypeKey);
     }
+
+    if (idTipoPromocion != null) {
+      await prefs.setInt(_promotionTypeIdKey, idTipoPromocion);
+    } else {
+      await prefs.remove(_promotionTypeIdKey);
+    }
+
+    if (minCompra != null) {
+      await prefs.setDouble(_promotionMinCompraKey, minCompra);
+    } else {
+      await prefs.remove(_promotionMinCompraKey);
+    }
+
+    if (aplicaTodo != null) {
+      await prefs.setBool(_promotionAplicaTodoKey, aplicaTodo);
+    } else {
+      await prefs.remove(_promotionAplicaTodoKey);
+    }
+
+    if (requiereMedioPago != null) {
+      await prefs.setBool(_promotionRequiereMedioPagoKey, requiereMedioPago);
+    } else {
+      await prefs.remove(_promotionRequiereMedioPagoKey);
+    }
+
+    if (idMedioPagoRequerido != null) {
+      await prefs.setInt(
+        _promotionIdMedioPagoRequeridoKey,
+        idMedioPagoRequerido,
+      );
+    } else {
+      await prefs.remove(_promotionIdMedioPagoRequeridoKey);
+    }
   }
 
   Future<Map<String, dynamic>?> getPromotionData() async {
@@ -468,6 +513,13 @@ class UserPreferencesService {
     final codigoPromocion = prefs.getString(_promotionCodeKey);
     final valorDescuento = prefs.getDouble(_promotionValueKey);
     final tipoDescuento = prefs.getInt(_promotionTypeKey);
+    final idTipoPromocion = prefs.getInt(_promotionTypeIdKey);
+    final minCompra = prefs.getDouble(_promotionMinCompraKey);
+    final aplicaTodo = prefs.getBool(_promotionAplicaTodoKey);
+    final requiereMedioPago = prefs.getBool(_promotionRequiereMedioPagoKey);
+    final idMedioPagoRequerido = prefs.getInt(
+      _promotionIdMedioPagoRequeridoKey,
+    );
 
     if (idPromocion != null && codigoPromocion != null) {
       return {
@@ -475,6 +527,11 @@ class UserPreferencesService {
         'codigo_promocion': codigoPromocion,
         'valor_descuento': valorDescuento,
         'tipo_descuento': tipoDescuento, // 1 = porcentual, 2 = valor fijo
+        'id_tipo_promocion': idTipoPromocion,
+        'min_compra': minCompra,
+        'aplica_todo': aplicaTodo,
+        'requiere_medio_pago': requiereMedioPago,
+        'id_medio_pago_requerido': idMedioPagoRequerido,
       };
     }
     return null;
@@ -486,6 +543,11 @@ class UserPreferencesService {
     await prefs.remove(_promotionCodeKey);
     await prefs.remove(_promotionValueKey);
     await prefs.remove(_promotionTypeKey);
+    await prefs.remove(_promotionTypeIdKey);
+    await prefs.remove(_promotionMinCompraKey);
+    await prefs.remove(_promotionAplicaTodoKey);
+    await prefs.remove(_promotionRequiereMedioPagoKey);
+    await prefs.remove(_promotionIdMedioPagoRequeridoKey);
   }
 
   /// Guardar promociones de un producto específico

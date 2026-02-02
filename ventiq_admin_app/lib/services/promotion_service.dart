@@ -849,7 +849,7 @@ class PromotionService {
       
       // Llamar a la función RPC para obtener productos de la promoción
       final response = await _supabase.rpc(
-        'fn_listar_productos_promocion',
+        'listar_productos_promocion',
         params: {
           'p_id_promocion': promotionIdInt,
         },

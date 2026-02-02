@@ -1,9 +1,31 @@
 {
-  "current_version": "1.8.8",
-  "build": 188,
+  "current_version": "1.9.0",
+  "build": 190,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.9.0",
+      "date": "2026-02-02",
+      "title": "✨ Nuevos productos con IA y costos más claros",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Crea productos con IA en minutos",
+          "description": "Describe lo que necesitas y obtén una vista previa lista para revisar antes de generar tus productos."
+        },
+        {
+          "type": "improvement",
+          "title": "Costo USD más transparente",
+          "description": "La IA ahora sugiere el costo en USD por presentación para que tengas márgenes más claros desde el inicio."
+        },
+        {
+          "type": "improvement",
+          "title": "Edición rápida y sin sorpresas",
+          "description": "Ajusta nombre, precio y costo desde la vista previa para publicar exactamente lo que quieres."
+        }
+      ]
+    },
     {
       "version": "1.8.8",
       "date": "2026-01-30",
