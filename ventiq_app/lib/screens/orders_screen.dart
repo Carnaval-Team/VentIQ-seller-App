@@ -1130,6 +1130,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       discountData['originalTotal'] as double? ?? displayTotal;
                   final saved = discountData['saved'] as double? ?? 0;
                   final label = discountData['label'] as String?;
+                  final double? usdTotal =
+                      _usdRate > 0 ? displayTotal / _usdRate : null;
+                  final usdLabel =
+                      _usdRate > 0
+                          ? 'USD (USD ${_usdRate.toStringAsFixed(0)})'
+                          : 'USD';
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1169,6 +1175,37 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            usdLabel,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (_isLoadingUsdRate)
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          else
+                            Text(
+                              usdTotal == null
+                                  ? 'N/D'
+                                  : '\$${usdTotal.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF4A90E2),
+                              ),
+                            ),
+                        ],
+                      ),
                     ],
                   );
                 },
@@ -2158,8 +2195,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           0.0,
           (sum, payment) => sum + _resolvePaymentAmount(payment),
         );
-        final double? usdTotal =
-            _usdRate > 0 ? totalPaid / _usdRate : null;
+        final double? usdTotal = _usdRate > 0 ? totalPaid / _usdRate : null;
         final usdLabel =
             _usdRate > 0
                 ? 'Total USD (USD ${_usdRate.toStringAsFixed(0)})'

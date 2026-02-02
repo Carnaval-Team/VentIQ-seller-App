@@ -1,6 +1,7 @@
 import 'product.dart';
 import 'payment_method.dart';
 import '../utils/price_utils.dart';
+import '../utils/promotion_rules.dart';
 
 class Order {
   final String id;
@@ -178,23 +179,38 @@ class OrderItem {
       }
     }
 
+    if (!PromotionRules.isPaymentMethodCompatible(
+      promotionData!,
+      paymentMethod?.id,
+    )) {
+      if (paymentMethod?.id == 1) {
+        return precioUnitario;
+      }
+      return precioBase ?? precioUnitario;
+    }
+
     // Con promociones, calcular precios según tipo y método de pago
     final valorDescuento = promotionData!['valor_descuento'] as double?;
     final tipoDescuento = promotionData!['tipo_descuento'] as int?;
 
+    final basePrice = PromotionRules.resolveBasePrice(
+      unitPrice: precioUnitario,
+      basePrice: precioBase,
+      promotion: promotionData,
+    );
+
     final prices = PriceUtils.calculatePromotionPrices(
-      precioBase ?? precioUnitario,
+      basePrice,
       valorDescuento,
       tipoDescuento,
     );
 
     // Para efectivo (id: 1), usar precio_oferta (el menor)
     // Para otros métodos, usar precio_venta (el mayor)
-    if (paymentMethod?.id == 1) {
-      return prices['precio_oferta']!;
-    } else {
-      return prices['precio_venta']!;
-    }
+    return PromotionRules.selectPriceForPayment(
+      prices: prices,
+      paymentMethodId: paymentMethod?.id,
+    );
   }
 
   String get nombre {

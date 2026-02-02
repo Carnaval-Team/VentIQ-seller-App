@@ -652,7 +652,7 @@ class BluetoothPrinterService {
         'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/render/image/public/images_back/';
 
     final renderUrl = url.contains(objectPrefix)
-        ? '${url.replaceFirst(objectPrefix, renderPrefix)}?width=500&height=600'
+        ? '${url.replaceFirst(objectPrefix, renderPrefix)}?width=128&height=128'
         : url;
 
     try {

@@ -7,6 +7,7 @@ import '../services/product_detail_service.dart';
 import '../services/promotion_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
+import '../utils/promotion_rules.dart';
 
 class FluidProductDetailsWidget extends StatefulWidget {
   final Product product;
@@ -48,7 +49,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
 
   // Promotion data
   Map<String, dynamic>? _globalPromotionData;
-  Map<String, dynamic>? _productPromotionData;
+  List<Map<String, dynamic>>? _productPromotionData;
 
   @override
   void initState() {
@@ -236,7 +237,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
         setState(() {
           _globalPromotionData = globalPromotion;
           _productPromotionData =
-              productPromotions.isNotEmpty ? productPromotions.first : null;
+              productPromotions.isNotEmpty ? productPromotions : null;
         });
       }
 
@@ -245,7 +246,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
         '  - Global: ${globalPromotion != null ? globalPromotion['codigo_promocion'] : 'No'}',
       );
       print(
-        '  - Producto: ${_productPromotionData != null ? _productPromotionData!['codigo_promocion'] : 'No'}',
+        '  - Producto: ${_productPromotionData != null ? _productPromotionData!.length : 0} promociones',
       );
     } catch (e) {
       print('❌ Error cargando promociones: $e');
@@ -261,25 +262,33 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
   /// Calcula el precio con descuento, priorizando promoción de producto sobre global
   Map<String, double> _calculatePromotionPrices(double originalPrice) {
     // Priorizar promoción específica del producto sobre promoción global
-    final activePromotion = _productPromotionData ?? _globalPromotionData;
+    final activePromotion = PromotionRules.pickPromotionForDisplay(
+      productPromotions: _productPromotionData,
+      globalPromotion: _globalPromotionData,
+    );
 
     if (activePromotion == null) {
       return {'precio_venta': originalPrice, 'precio_oferta': originalPrice};
     }
 
-    final valorDescuento = activePromotion['valor_descuento'] as double?;
-    final tipoDescuento = activePromotion['tipo_descuento'] as int?;
+    final basePrice = PromotionRules.resolveBasePrice(
+      unitPrice: originalPrice,
+      basePrice: originalPrice,
+      promotion: activePromotion,
+    );
 
-    return PriceUtils.calculatePromotionPrices(
-      originalPrice,
-      valorDescuento,
-      tipoDescuento,
+    return PromotionRules.calculatePromotionPrices(
+      basePrice: basePrice,
+      promotion: activePromotion,
     );
   }
 
   /// Obtiene información de la promoción activa
   Map<String, dynamic>? _getActivePromotion() {
-    return _productPromotionData ?? _globalPromotionData;
+    return PromotionRules.pickPromotionForDisplay(
+      productPromotions: _productPromotionData,
+      globalPromotion: _globalPromotionData,
+    );
   }
 
   /// Construye la sección de precio con promociones

@@ -10,7 +10,7 @@ class PromotionService {
   final _userPreferencesService = UserPreferencesService();
 
   /// Obtiene las promociones globales activas para la tienda
-  /// Primero busca en la tabla directa, si no encuentra usa fn_listar_promociones
+  /// Primero busca en la tabla directa, si no encuentra usa fn_listar_promociones2
   Future<Map<String, dynamic>?> getGlobalPromotion(int idTienda) async {
     try {
       print(
@@ -25,7 +25,7 @@ class PromotionService {
             await _supabase
                 .from('app_mkt_promociones')
                 .select(
-                  'id, codigo_promocion, nombre, descripcion, valor_descuento, id_tipo_promocion',
+                  'id, codigo_promocion, nombre, descripcion, valor_descuento, id_tipo_promocion, min_compra, aplica_todo, requiere_medio_pago, id_medio_pago_requerido',
                 )
                 .eq('id_tienda', idTienda)
                 .eq('aplica_todo', true)
@@ -57,17 +57,23 @@ class PromotionService {
             'tipo_promocion_nombre': _getTipoPromocionNombre(
               response['id_tipo_promocion'],
             ),
+            'id_tipo_promocion': response['id_tipo_promocion'],
+            'min_compra': (response['min_compra'] as num?)?.toDouble(),
+            'aplica_todo': response['aplica_todo'] as bool?,
+            'requiere_medio_pago': response['requiere_medio_pago'] as bool?,
+            'id_medio_pago_requerido':
+                response['id_medio_pago_requerido'] as int?,
           };
         }
       } catch (e) {
         print('ℹ️ No se encontró promoción directa, usando RPC: $e');
       }
 
-      // Segundo intento: usar fn_listar_promociones
-      print('🔄 Usando fn_listar_promociones para buscar promociones...');
+      // Segundo intento: usar fn_listar_promociones2
+      print('🔄 Usando fn_listar_promociones2 para buscar promociones...');
       final rpcResponse = await _supabase.rpc(
-        'fn_listar_promociones',
-        params: {'p_id_tienda': idTienda},
+        'fn_listar_promociones2',
+        params: {'p_id_tienda': idTienda, 'p_activas': true},
       );
 
       if (rpcResponse != null &&
@@ -82,6 +88,15 @@ class PromotionService {
         );
 
         if (globalPromotion != null) {
+          final tipoPromocionNombre =
+              globalPromotion['tipo_promocion'] as String?;
+          final idTipoPromocion =
+              (globalPromotion['id_tipo_promocion'] as num?)?.toInt();
+          final tipoDescuento =
+              tipoPromocionNombre != null
+                  ? _getTipoDescuentoFromNombre(tipoPromocionNombre)
+                  : (idTipoPromocion ?? 1);
+
           print('✅ Promoción global encontrada (RPC):');
           print('  - ID: ${globalPromotion['id']}');
           print('  - Código: ${globalPromotion['codigo_promocion']}');
@@ -99,10 +114,16 @@ class PromotionService {
                   globalPromotion['valor_descuento'].toString(),
                 ) ??
                 0.0,
-            'tipo_descuento': _getTipoDescuentoFromNombre(
-              globalPromotion['tipo_promocion'],
-            ),
-            'tipo_promocion_nombre': globalPromotion['tipo_promocion'],
+            'tipo_descuento': tipoDescuento,
+            'tipo_promocion_nombre':
+                tipoPromocionNombre ?? _getTipoPromocionNombre(idTipoPromocion),
+            'id_tipo_promocion': idTipoPromocion,
+            'min_compra': (globalPromotion['min_compra'] as num?)?.toDouble(),
+            'aplica_todo': globalPromotion['aplica_todo'] as bool?,
+            'requiere_medio_pago':
+                globalPromotion['requiere_medio_pago'] as bool?,
+            'id_medio_pago_requerido':
+                globalPromotion['id_medio_pago_requerido'] as int?,
           };
         }
       }
@@ -137,6 +158,13 @@ class PromotionService {
         final promotions = <Map<String, dynamic>>[];
 
         for (final promo in rpcResponse) {
+          final tipoPromocionNombre = promo['tipo_promocion'] as String?;
+          final idTipoPromocion = (promo['id_tipo_promocion'] as num?)?.toInt();
+          final tipoDescuento =
+              tipoPromocionNombre != null
+                  ? _getTipoDescuentoFromNombre(tipoPromocionNombre)
+                  : idTipoPromocion;
+
           final promotion = {
             'id_promocion': promo['id'] as int,
             'codigo_promocion': promo['codigo_promocion'] as String?,
@@ -144,10 +172,11 @@ class PromotionService {
             'descripcion': promo['descripcion'] as String?,
             'valor_descuento':
                 double.tryParse(promo['valor_descuento'].toString()) ?? 0.0,
-            'tipo_promocion_nombre': promo['tipo_promocion'] as String?,
-            'tipo_descuento': _getTipoDescuentoFromNombre(
-              promo['tipo_promocion'] as String?,
-            ),
+            'tipo_promocion_nombre': tipoPromocionNombre,
+            'tipo_descuento': tipoDescuento,
+            'id_tipo_promocion': idTipoPromocion,
+            'min_compra': (promo['min_compra'] as num?)?.toDouble(),
+            'aplica_todo': promo['aplica_todo'] as bool? ?? false,
             'precio_base':
                 double.tryParse(promo['precio_base'].toString()) ?? 0.0,
             'es_recargo': promo['es_recargo'] as bool? ?? false,
@@ -166,6 +195,9 @@ class PromotionService {
           );
           print(
             '     - ID medio pago: ${promotion['id_medio_pago_requerido']}',
+          );
+          print(
+            '     - ID tipo promo: ${promotion['id_tipo_promocion']}',
           );
         }
 
@@ -242,6 +274,11 @@ class PromotionService {
     String? codigoPromocion,
     double? valorDescuento,
     int? tipoDescuento,
+    int? idTipoPromocion,
+    double? minCompra,
+    bool? aplicaTodo,
+    bool? requiereMedioPago,
+    int? idMedioPagoRequerido,
   }) async {
     try {
       await _userPreferencesService.savePromotionData(
@@ -249,6 +286,11 @@ class PromotionService {
         codigoPromocion: codigoPromocion,
         valorDescuento: valorDescuento,
         tipoDescuento: tipoDescuento,
+        idTipoPromocion: idTipoPromocion,
+        minCompra: minCompra,
+        aplicaTodo: aplicaTodo,
+        requiereMedioPago: requiereMedioPago,
+        idMedioPagoRequerido: idMedioPagoRequerido,
       );
 
       if (idPromocion != null && codigoPromocion != null) {

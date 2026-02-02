@@ -7,6 +7,7 @@ import '../services/user_preferences_service.dart';
 import '../services/price_change_service.dart';
 import '../services/currency_service.dart';
 import '../utils/price_utils.dart';
+import '../utils/promotion_rules.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/elaborated_product_chip.dart';
 import '../utils/connection_error_handler.dart';
@@ -886,22 +887,24 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   /// Para display purposes, usa la primera promoción de la lista (aplicación real en checkout)
   Map<String, double> _calculatePromotionPrices(double originalPrice) {
     // Priorizar promoción específica del producto sobre promoción global
-    final activePromotion =
-        (_productPromotionData != null && _productPromotionData!.isNotEmpty)
-            ? _productPromotionData!.first
-            : _globalPromotionData;
+    final activePromotion = PromotionRules.pickPromotionForDisplay(
+      productPromotions: _productPromotionData,
+      globalPromotion: _globalPromotionData,
+    );
 
     if (activePromotion == null) {
       return {'precio_venta': originalPrice, 'precio_oferta': originalPrice};
     }
 
-    final valorDescuento = activePromotion['valor_descuento'] as double?;
-    final tipoDescuento = activePromotion['tipo_descuento'] as int?;
+    final basePrice = PromotionRules.resolveBasePrice(
+      unitPrice: originalPrice,
+      basePrice: originalPrice,
+      promotion: activePromotion,
+    );
 
-    return PriceUtils.calculatePromotionPrices(
-      originalPrice,
-      valorDescuento,
-      tipoDescuento,
+    return PromotionRules.calculatePromotionPrices(
+      basePrice: basePrice,
+      promotion: activePromotion,
     );
   }
 
@@ -920,10 +923,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   /// Obtiene información de la promoción activa
   /// Para display purposes, retorna primera promoción (aplicación real en checkout)
   Map<String, dynamic>? _getActivePromotion() {
-    if (_productPromotionData != null && _productPromotionData!.isNotEmpty) {
-      return _productPromotionData!.first;
-    }
-    return _globalPromotionData;
+    return PromotionRules.pickPromotionForDisplay(
+      productPromotions: _productPromotionData,
+      globalPromotion: _globalPromotionData,
+    );
   }
 
   Widget _buildPriceSection(
