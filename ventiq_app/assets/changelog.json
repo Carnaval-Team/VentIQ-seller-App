@@ -1,9 +1,36 @@
 {
-  "current_version": "1.9.7",
-  "build": 807,
+  "current_version": "1.9.8",
+  "build": 808,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.9.7",
+      "date": "2026-01-30",
+      "title": "💸Nuevas mejoras web ,modo offlie y promociones!",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Conexión estable en la versión web",
+          "description": "En la web la app asume conexión activa para evitar errores al comprobar internet."
+        },
+        {
+          "type": "improvement",
+          "title": "Catálogo más fácil de mover en web",
+          "description": "Cada subcategoría tiene botones para mover productos a la izquierda o derecha, y también puedes usar las flechas del teclado."
+        },
+        {
+          "type": "improvement",
+          "title": "Arreglo del contador de billetes en modo offline",
+          "description": "Ahora el contador de billetes se actualiza correctamente en modo offline."
+        },
+        {
+          "type": "improvement",
+          "title": "Arreglo de Promociones",
+          "description": "Ahora las promociones se aplican correctamente en modo offline y desde el admin se pueden crear nuevos tipos de promociones."
+        }
+      ]
+    },
     {
       "version": "1.9.7",
       "date": "2026-01-30",
