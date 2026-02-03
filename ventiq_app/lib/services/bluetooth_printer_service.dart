@@ -734,7 +734,7 @@ class BluetoothPrinterService {
 
     final renderUrl =
         url.contains(objectPrefix)
-            ? '${url.replaceFirst(objectPrefix, renderPrefix)}?width=128&height=128'
+            ? '${url.replaceFirst(objectPrefix, renderPrefix)}?width=32&height=32'
             : url;
 
     try {
