@@ -91,7 +91,7 @@ class PromotionRules {
     }
 
     if (isQuantityGreaterPromotionType(promotion)) {
-      return quantity > minCompra;
+      return quantity >= minCompra;
     }
 
     if (requiresExactMinCompra(promotion)) {
