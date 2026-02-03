@@ -1291,6 +1291,32 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                                 DateTime.parse(operation['created_at']),
                               ),
                             ),
+                            // Mostrar almacén para operaciones de recepción y extracción
+                            if (tipoOperacion.contains('recepción') || tipoOperacion.contains('recepcion') || 
+                                tipoOperacion.contains('extracción') || tipoOperacion.contains('extraccion') ||
+                                tipoOperacion.contains('reception') || tipoOperacion.contains('extraction') ||
+                                tipoOperacion.contains('productos')) ...[
+                              FutureBuilder<String>(
+                                future: InventoryService.getWarehouseFromOperation(
+                                  operation['id'],
+                                  operation['tipo_operacion_nombre'] ?? '',
+                                ),
+                                builder: (context, snapshot) {
+                                  if (snapshot.connectionState == ConnectionState.waiting) {
+                                    return _buildModalDetailRow(
+                                      'Almacén:',
+                                      'Cargando...',
+                                    );
+                                  }
+                                  
+                                  final almacen = snapshot.data ?? 'N/A';
+                                  return _buildModalDetailRow(
+                                    'Almacén:',
+                                    almacen,
+                                  );
+                                },
+                              ),
+                            ],
                             _buildModalDetailRow(
                               'Total:',
                               '\$${_calculateTotalPrice(operation).toStringAsFixed(2)}',
@@ -1491,6 +1517,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         final diferencia = detail['diferencia'] ?? 0;
         final productoNombre = detail['producto_nombre'] ?? 'Producto';
         final ubicacion = detail['ubicacion'] ?? 'N/A';
+        final almacen = detail['almacen'] ?? 'N/A';
 
         // Determinar color según si es aumento o disminución
         final isIncrease = (diferencia as num) >= 0;
@@ -1518,16 +1545,39 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               ),
               const SizedBox(height: 8),
               
+              // Almacén
+              Row(
+                children: [
+                  const Icon(Icons.warehouse, size: 16, color: Colors.orange),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      almacen,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              
               // Ubicación
               Row(
                 children: [
                   const Icon(Icons.location_on, size: 16, color: Colors.grey),
                   const SizedBox(width: 4),
-                  Text(
-                    ubicacion,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
+                  Expanded(
+                    child: Text(
+                      ubicacion,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],

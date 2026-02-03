@@ -335,6 +335,79 @@ class InventoryService {
     }
   }
 
+  /// Get warehouse name from operation (reception or extraction)
+  static Future<String> getWarehouseFromOperation(int operationId, String operationType) async {
+    try {
+      print('🔍 Obteniendo almacén para operación $operationId (tipo: $operationType)...');
+
+      final typeLC = operationType.toLowerCase();
+      String tableName = '';
+      
+      // Detectar si es recepción (con todas las variantes posibles)
+      if (typeLC.contains('recepción') || typeLC.contains('recepcion') || 
+          typeLC.contains('reception') || typeLC.contains('received') ||
+          typeLC.contains('recibido')) {
+        tableName = 'app_dat_recepcion_productos';
+        print('   → Detectado como RECEPCIÓN');
+      } 
+      // Detectar si es extracción (con todas las variantes posibles)
+      else if (typeLC.contains('extracción') || typeLC.contains('extraccion') || 
+               typeLC.contains('extraction') || typeLC.contains('extracted') ||
+               typeLC.contains('extraído')) {
+        tableName = 'app_dat_extraccion_productos';
+        print('   → Detectado como EXTRACCIÓN');
+      } 
+      else {
+        print('   → Tipo no reconocido: $operationType');
+        return 'N/A';
+      }
+
+      // Get the first id_ubicacion from the operation
+      print('   📊 Buscando en tabla: $tableName');
+      final response = await _supabase
+          .from(tableName)
+          .select('id_ubicacion')
+          .eq('id_operacion', operationId)
+          .limit(1);
+
+      print('   📋 Registros encontrados: ${response.length}');
+      if (response.isEmpty) {
+        print('⚠️ No se encontraron registros en $tableName para operación $operationId');
+        return 'N/A';
+      }
+
+      final idUbicacion = response[0]['id_ubicacion'];
+      print('   📍 ID Ubicación: $idUbicacion');
+      if (idUbicacion == null) {
+        print('⚠️ id_ubicacion es null para operación $operationId');
+        return 'N/A';
+      }
+
+      // Get the warehouse name from app_dat_layout_almacen -> app_dat_almacen
+      print('   🔗 Buscando almacén para ubicación $idUbicacion');
+      final layoutResponse = await _supabase
+          .from('app_dat_layout_almacen')
+          .select('''
+            id_almacen,
+            app_dat_almacen:id_almacen (
+              denominacion
+            )
+          ''')
+          .eq('id', idUbicacion)
+          .single();
+
+      final almacen = layoutResponse['app_dat_almacen'];
+      final almacenNombre = almacen?['denominacion'] ?? 'N/A';
+      
+      print('✅ Almacén obtenido: $almacenNombre');
+      return almacenNombre;
+    } catch (e) {
+      print('⚠️ Error al obtener almacén: $e');
+      print('   Stack trace: ${e.toString()}');
+      return 'N/A';
+    }
+  }
+
   /// Get adjustment details from app_dat_ajuste_inventario
   static Future<Map<String, dynamic>> getAdjustmentDetails(int operationId) async {
     try {
@@ -363,22 +436,31 @@ class InventoryService {
 
       print('✅ Detalles de ajuste obtenidos: ${response.length} registros');
 
-      // Get location names for all adjustments
+      // Get location names and warehouse for all adjustments
       final details = <Map<String, dynamic>>[];
       for (final item in response as List) {
         final producto = item['app_dat_producto'];
         final idUbicacion = item['id_ubicacion'];
         
-        // Get location name
+        // Get location name and warehouse
         String ubicacionNombre = 'N/A';
+        String almacenNombre = 'N/A';
         if (idUbicacion != null) {
           try {
             final locationResponse = await _supabase
                 .from('app_dat_layout_almacen')
-                .select('denominacion')
+                .select('''
+                  denominacion,
+                  id_almacen,
+                  app_dat_almacen:id_almacen (
+                    denominacion
+                  )
+                ''')
                 .eq('id', idUbicacion)
                 .single();
             ubicacionNombre = locationResponse['denominacion'] ?? 'N/A';
+            final almacen = locationResponse['app_dat_almacen'];
+            almacenNombre = almacen?['denominacion'] ?? 'N/A';
           } catch (e) {
             print('⚠️ No se pudo obtener ubicación $idUbicacion: $e');
           }
@@ -396,6 +478,7 @@ class InventoryService {
             'sku': producto?['sku'],
           },
           'ubicacion': ubicacionNombre,
+          'almacen': almacenNombre,
           'created_at': item['created_at'],
         });
       }
