@@ -46,6 +46,9 @@ class PromotionService {
           print(
             '  - Tipo Descuento: ${response['id_tipo_promocion']} (1=%, 2=fijo)',
           );
+          print(
+            '  - Min Compra: ${response['min_compra']}',
+          );
 
           return {
             'id_promocion': response['id'],
@@ -58,7 +61,7 @@ class PromotionService {
               response['id_tipo_promocion'],
             ),
             'id_tipo_promocion': response['id_tipo_promocion'],
-            'min_compra': (response['min_compra'] as num?)?.toDouble(),
+            'min_compra': _parseMinCompraValue(response['min_compra']),
             'aplica_todo': response['aplica_todo'] as bool?,
             'requiere_medio_pago': response['requiere_medio_pago'] as bool?,
             'id_medio_pago_requerido':
@@ -103,7 +106,9 @@ class PromotionService {
           print('  - Nombre: ${globalPromotion['nombre']}');
           print('  - Valor Descuento: ${globalPromotion['valor_descuento']}');
           print('  - Tipo Promoción: ${globalPromotion['tipo_promocion']}');
-
+      print(
+            '  - Min Compra: ${globalPromotion['min_compra']}',
+          );
           return {
             'id_promocion': globalPromotion['id'],
             'codigo_promocion': globalPromotion['codigo_promocion'],
@@ -118,7 +123,7 @@ class PromotionService {
             'tipo_promocion_nombre':
                 tipoPromocionNombre ?? _getTipoPromocionNombre(idTipoPromocion),
             'id_tipo_promocion': idTipoPromocion,
-            'min_compra': (globalPromotion['min_compra'] as num?)?.toDouble(),
+            'min_compra': _parseMinCompraValue(globalPromotion['min_compra']),
             'aplica_todo': globalPromotion['aplica_todo'] as bool?,
             'requiere_medio_pago':
                 globalPromotion['requiere_medio_pago'] as bool?,
@@ -175,7 +180,7 @@ class PromotionService {
             'tipo_promocion_nombre': tipoPromocionNombre,
             'tipo_descuento': tipoDescuento,
             'id_tipo_promocion': idTipoPromocion,
-            'min_compra': (promo['min_compra'] as num?)?.toDouble(),
+            'min_compra': _parseMinCompraValue(promo['min_compra']),
             'aplica_todo': promo['aplica_todo'] as bool? ?? false,
             'precio_base':
                 double.tryParse(promo['precio_base'].toString()) ?? 0.0,
@@ -196,10 +201,12 @@ class PromotionService {
           print(
             '     - ID medio pago: ${promotion['id_medio_pago_requerido']}',
           );
-          print(
-            '     - ID tipo promo: ${promotion['id_tipo_promocion']}',
+          print('     - ID tipo promo: ${promotion['id_tipo_promocion']}');
+        print(
+            '  - Min Compra producto: ${promotion['min_compra']}',
           );
         }
+        
 
         return promotions;
       }
@@ -323,5 +330,23 @@ class PromotionService {
     } catch (e) {
       print('❌ Error limpiando promoción: $e');
     }
+  }
+
+  double? _parseMinCompraValue(dynamic value) {
+    print('Minimo de compra: $value');
+    if (value == null) {
+      return null;
+    }
+
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    if (value is String) {
+      final normalized = value.replaceAll(',', '.');
+      return double.tryParse(normalized);
+    }
+
+    return null;
   }
 }

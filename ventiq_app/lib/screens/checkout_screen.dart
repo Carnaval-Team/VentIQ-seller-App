@@ -204,6 +204,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       productPromotions: productPromotions,
       globalPromotion: _globalPromotionData,
       paymentMethodId: paymentMethodId,
+      quantity: item.cantidad,
     );
 
     // Si no hay promoción aplicable, es un caso de precio base

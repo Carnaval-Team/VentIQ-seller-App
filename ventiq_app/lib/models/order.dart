@@ -179,6 +179,16 @@ class OrderItem {
       }
     }
 
+    if (!PromotionRules.isMinimumPurchaseMet(
+      promotionData!,
+      quantity: cantidad,
+    )) {
+      if (paymentMethod?.id == 1) {
+        return precioUnitario;
+      }
+      return precioBase ?? precioUnitario;
+    }
+
     if (!PromotionRules.isPaymentMethodCompatible(
       promotionData!,
       paymentMethod?.id,

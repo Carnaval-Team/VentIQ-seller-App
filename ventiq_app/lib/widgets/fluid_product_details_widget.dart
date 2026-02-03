@@ -265,6 +265,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
     final activePromotion = PromotionRules.pickPromotionForDisplay(
       productPromotions: _productPromotionData,
       globalPromotion: _globalPromotionData,
+      quantity: _getTotalEquivalentUnits(),
     );
 
     if (activePromotion == null) {
@@ -288,7 +289,22 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
     return PromotionRules.pickPromotionForDisplay(
       productPromotions: _productPromotionData,
       globalPromotion: _globalPromotionData,
+      quantity: _getTotalEquivalentUnits(),
     );
+  }
+
+  int _getTotalEquivalentUnits() {
+    final conversionFactor = _selectedPresentation?.cantidad ?? 1.0;
+
+    if (_currentProduct?.variantes.isNotEmpty ?? false) {
+      int total = 0;
+      for (final quantity in _variantQuantities.values) {
+        total += (quantity * conversionFactor).round();
+      }
+      return total;
+    }
+
+    return (_selectedQuantity * conversionFactor).round();
   }
 
   /// Construye la sección de precio con promociones

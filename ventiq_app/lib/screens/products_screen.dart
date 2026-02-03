@@ -1066,6 +1066,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
     final activePromotion = PromotionRules.pickPromotionForDisplay(
       productPromotions: null,
       globalPromotion: widget.promotionData,
+      quantity: 1,
     );
 
     if (activePromotion == null) {
@@ -1100,6 +1101,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
     final activePromotion = PromotionRules.pickPromotionForDisplay(
       productPromotions: null,
       globalPromotion: widget.promotionData,
+      quantity: 1,
     );
     final hasPromotion = activePromotion != null;
 

@@ -890,6 +890,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     final activePromotion = PromotionRules.pickPromotionForDisplay(
       productPromotions: _productPromotionData,
       globalPromotion: _globalPromotionData,
+      quantity: _getTotalEquivalentUnits(),
     );
 
     if (activePromotion == null) {
@@ -926,6 +927,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     return PromotionRules.pickPromotionForDisplay(
       productPromotions: _productPromotionData,
       globalPromotion: _globalPromotionData,
+      quantity: _getTotalEquivalentUnits(),
     );
   }
 
