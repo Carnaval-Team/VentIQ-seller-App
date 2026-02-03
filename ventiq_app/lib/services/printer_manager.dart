@@ -13,18 +13,24 @@ class PrinterManager {
   final BluetoothPrinterService _bluetoothService = BluetoothPrinterService();
   final WiFiPrinterService _wifiService = WiFiPrinterService();
   final WebPrinterService _webService = WebPrinterService();
-  
+
   // Tipo de impresora seleccionada en móvil
   String _mobileprinterType = 'bluetooth'; // 'bluetooth' o 'wifi'
 
   /// Muestra el diálogo de confirmación de impresión apropiado para la plataforma
-  Future<bool> showPrintConfirmationDialog(BuildContext context, Order order) async {
+  Future<bool> showPrintConfirmationDialog(
+    BuildContext context,
+    Order order,
+  ) async {
     if (PlatformUtils.isWeb) {
       // En web, usar el diálogo específico para impresión web
       return await showWebPrintDialog(context, order);
     } else {
       // En móvil, usar el diálogo de Bluetooth existente
-      return await _bluetoothService.showPrintConfirmationDialog(context, order);
+      return await _bluetoothService.showPrintConfirmationDialog(
+        context,
+        order,
+      );
     }
   }
 
@@ -45,8 +51,390 @@ class PrinterManager {
     }
   }
 
+  /// Imprime múltiples órdenes en una sola impresión (solo ticket cliente)
+  Future<PrintResult> printCustomerReceiptsBatch(
+    BuildContext context,
+    List<Order> orders,
+  ) async {
+    if (orders.isEmpty) {
+      return PrintResult(
+        success: false,
+        message: 'No hay órdenes para imprimir',
+        platform: PlatformUtils.isWeb ? 'Web' : 'Mobile',
+      );
+    }
+
+    final shouldPrint = await _showBulkPrintConfirmationDialog(
+      context,
+      orders.length,
+    );
+    if (!shouldPrint) {
+      return PrintResult(
+        success: false,
+        message: 'Impresión cancelada por el usuario',
+        platform: PlatformUtils.isWeb ? 'Web' : 'Mobile',
+      );
+    }
+
+    try {
+      if (PlatformUtils.isWeb) {
+        return await _printCustomerReceiptsWeb(context, orders);
+      } else {
+        return await _printCustomerReceiptsMobile(context, orders);
+      }
+    } catch (e) {
+      return PrintResult(
+        success: false,
+        message: 'Error durante la impresión: $e',
+        platform: PlatformUtils.isWeb ? 'Web' : 'Mobile',
+      );
+    }
+  }
+
+  Future<bool> _showBulkPrintConfirmationDialog(
+    BuildContext context,
+    int orderCount,
+  ) async {
+    return await showDialog<bool>(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                title: Row(
+                  children: [
+                    Icon(Icons.print, color: const Color(0xFF4A90E2)),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Imprimir todas las órdenes',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                    ),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Se imprimirán $orderCount órdenes en una sola impresión.',
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'Solo se imprimirá el ticket del cliente (no se incluye guía de almacén).',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancelar'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () => Navigator.pop(context, true),
+                    icon: const Icon(Icons.print),
+                    label: const Text('Imprimir'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4A90E2),
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+        ) ??
+        false;
+  }
+
+  Future<PrintResult> _printCustomerReceiptsWeb(
+    BuildContext context,
+    List<Order> orders,
+  ) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (context) => const AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                  SizedBox(height: 16),
+                  Text('Preparando impresión...'),
+                ],
+              ),
+            ),
+      );
+
+      final printed = await _webService.printCustomerReceiptsBatch(orders);
+
+      Navigator.pop(context);
+
+      return PrintResult(
+        success: printed,
+        message:
+            printed
+                ? 'Órdenes enviadas a impresión correctamente'
+                : 'Error al enviar órdenes a impresión',
+        platform: 'Web',
+        details:
+            printed
+                ? 'Se abrió el diálogo de impresión del navegador'
+                : 'No se pudo generar la impresión',
+      );
+    } catch (e) {
+      try {
+        Navigator.pop(context);
+      } catch (_) {}
+
+      return PrintResult(
+        success: false,
+        message: 'Error en impresión web: $e',
+        platform: 'Web',
+      );
+    }
+  }
+
+  Future<PrintResult> _printCustomerReceiptsMobile(
+    BuildContext context,
+    List<Order> orders,
+  ) async {
+    try {
+      final printerType = await _showPrinterTypeDialog(context);
+      if (printerType == null) {
+        return PrintResult(
+          success: false,
+          message: 'Impresión cancelada por el usuario',
+          platform: 'Mobile',
+        );
+      }
+
+      _mobileprinterType = printerType;
+
+      if (printerType == 'bluetooth') {
+        return await _printCustomerReceiptsViaBluetoothMobile(context, orders);
+      } else {
+        return await _printCustomerReceiptsViaWiFiMobile(context, orders);
+      }
+    } catch (e) {
+      try {
+        Navigator.pop(context);
+      } catch (_) {}
+
+      return PrintResult(
+        success: false,
+        message: 'Error en impresión móvil: $e',
+        platform: 'Mobile',
+      );
+    }
+  }
+
+  Future<PrintResult> _printCustomerReceiptsViaBluetoothMobile(
+    BuildContext context,
+    List<Order> orders,
+  ) async {
+    try {
+      final selectedDevice = await _bluetoothService.showDeviceSelectionDialog(
+        context,
+      );
+      if (selectedDevice == null) {
+        return PrintResult(
+          success: false,
+          message: 'No se seleccionó dispositivo Bluetooth',
+          platform: 'Mobile',
+        );
+      }
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (context) => const AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                  SizedBox(height: 16),
+                  Text('Conectando a impresora Bluetooth...'),
+                ],
+              ),
+            ),
+      );
+
+      final connected = await _bluetoothService.connectToDevice(selectedDevice);
+      if (!connected) {
+        Navigator.pop(context);
+        return PrintResult(
+          success: false,
+          message: 'No se pudo conectar a la impresora Bluetooth',
+          platform: 'Mobile',
+          details: 'Verifica que la impresora esté encendida y en rango',
+        );
+      }
+
+      Navigator.pop(context);
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (context) => AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                  SizedBox(height: 16),
+                  Text('Imprimiendo ${orders.length} órdenes...'),
+                ],
+              ),
+            ),
+      );
+
+      final printed = await _bluetoothService.printCustomerReceiptsBatch(
+        orders,
+      );
+
+      Navigator.pop(context);
+      await _bluetoothService.disconnect();
+
+      return PrintResult(
+        success: printed,
+        message:
+            printed
+                ? 'Órdenes impresas correctamente via Bluetooth'
+                : 'Error al imprimir órdenes via Bluetooth',
+        platform: 'Mobile',
+        details:
+            printed
+                ? 'Impresión completada en impresora Bluetooth'
+                : 'Verifica la conexión con la impresora',
+      );
+    } catch (e) {
+      try {
+        Navigator.pop(context);
+      } catch (_) {}
+      try {
+        await _bluetoothService.disconnect();
+      } catch (_) {}
+
+      return PrintResult(
+        success: false,
+        message: 'Error en impresión Bluetooth: $e',
+        platform: 'Mobile',
+      );
+    }
+  }
+
+  Future<PrintResult> _printCustomerReceiptsViaWiFiMobile(
+    BuildContext context,
+    List<Order> orders,
+  ) async {
+    try {
+      final selectedPrinter = await _wifiService.showPrinterSelectionDialog(
+        context,
+      );
+      if (selectedPrinter == null) {
+        return PrintResult(
+          success: false,
+          message: 'No se seleccionó impresora WiFi',
+          platform: 'Mobile',
+        );
+      }
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (context) => const AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF10B981)),
+                  SizedBox(height: 16),
+                  Text('Conectando a impresora WiFi...'),
+                ],
+              ),
+            ),
+      );
+
+      final connected = await _wifiService.connectToPrinter(
+        selectedPrinter['ip'],
+        port: selectedPrinter['port'] ?? 9100,
+      );
+      if (!connected) {
+        Navigator.pop(context);
+        return PrintResult(
+          success: false,
+          message: 'No se pudo conectar a la impresora WiFi',
+          platform: 'Mobile',
+          details: 'Verifica la dirección IP y que la impresora esté encendida',
+        );
+      }
+
+      Navigator.pop(context);
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (context) => AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF10B981)),
+                  SizedBox(height: 16),
+                  Text('Imprimiendo ${orders.length} órdenes...'),
+                ],
+              ),
+            ),
+      );
+
+      final printed = await _wifiService.printCustomerReceiptsBatch(orders);
+
+      Navigator.pop(context);
+      await _wifiService.disconnect();
+
+      return PrintResult(
+        success: printed,
+        message:
+            printed
+                ? 'Órdenes impresas correctamente via WiFi'
+                : 'Error al imprimir órdenes via WiFi',
+        platform: 'Mobile',
+        details:
+            printed
+                ? 'Impresión completada en impresora WiFi'
+                : 'Verifica la conexión con la impresora',
+      );
+    } catch (e) {
+      try {
+        Navigator.pop(context);
+      } catch (_) {}
+      try {
+        await _wifiService.disconnect();
+      } catch (_) {}
+
+      return PrintResult(
+        success: false,
+        message: 'Error en impresión WiFi: $e',
+        platform: 'Mobile',
+      );
+    }
+  }
+
   /// Impresión para plataforma web (impresoras de red/USB)
-  Future<PrintResult> _printInvoiceWeb(BuildContext context, Order order) async {
+  Future<PrintResult> _printInvoiceWeb(
+    BuildContext context,
+    Order order,
+  ) async {
     try {
       // Mostrar diálogo de confirmación específico para web
       bool shouldPrint = await showWebPrintDialog(context, order);
@@ -62,16 +450,17 @@ class PrinterManager {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF4A90E2)),
-              SizedBox(height: 16),
-              Text('Preparando impresión...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                  SizedBox(height: 16),
+                  Text('Preparando impresión...'),
+                ],
+              ),
+            ),
       );
 
       // Imprimir usando el servicio web
@@ -82,15 +471,16 @@ class PrinterManager {
 
       return PrintResult(
         success: printed,
-        message: printed 
-          ? 'Factura enviada a impresión correctamente'
-          : 'Error al enviar factura a impresión',
+        message:
+            printed
+                ? 'Factura enviada a impresión correctamente'
+                : 'Error al enviar factura a impresión',
         platform: 'Web',
-        details: printed 
-          ? 'Se abrió el diálogo de impresión del navegador'
-          : 'No se pudo generar la factura para impresión',
+        details:
+            printed
+                ? 'Se abrió el diálogo de impresión del navegador'
+                : 'No se pudo generar la factura para impresión',
       );
-
     } catch (e) {
       // Cerrar diálogo de progreso si está abierto
       try {
@@ -106,7 +496,10 @@ class PrinterManager {
   }
 
   /// Impresión para plataforma móvil (Bluetooth o WiFi)
-  Future<PrintResult> _printInvoiceMobile(BuildContext context, Order order) async {
+  Future<PrintResult> _printInvoiceMobile(
+    BuildContext context,
+    Order order,
+  ) async {
     try {
       // Mostrar diálogo de selección de tipo de impresora
       final printerType = await _showPrinterTypeDialog(context);
@@ -143,59 +536,66 @@ class PrinterManager {
   Future<String?> _showPrinterTypeDialog(BuildContext context) async {
     return showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.print, color: const Color(0xFF4A90E2)),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Tipo de Impresora',
-                style: Theme.of(context).textTheme.titleLarge,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.print, color: const Color(0xFF4A90E2)),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Tipo de Impresora',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('¿Qué tipo de impresora deseas usar?'),
+                SizedBox(height: 16),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancelar'),
               ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('¿Qué tipo de impresora deseas usar?'),
-            SizedBox(height: 16),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancelar'),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.pop(context, 'bluetooth'),
+                icon: Icon(Icons.bluetooth),
+                label: Text('Bluetooth'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4A90E2),
+                  foregroundColor: Colors.white,
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.pop(context, 'wifi'),
+                icon: Icon(Icons.router),
+                label: Text('WiFi'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
           ),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(context, 'bluetooth'),
-            icon: Icon(Icons.bluetooth),
-            label: Text('Bluetooth'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4A90E2),
-              foregroundColor: Colors.white,
-            ),
-          ),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(context, 'wifi'),
-            icon: Icon(Icons.router),
-            label: Text('WiFi'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF10B981),
-              foregroundColor: Colors.white,
-            ),
-          ),
-        ],
-      ),
     );
   }
 
   /// Impresión via Bluetooth en móvil
-  Future<PrintResult> _printViaBluetoothMobile(BuildContext context, Order order) async {
+  Future<PrintResult> _printViaBluetoothMobile(
+    BuildContext context,
+    Order order,
+  ) async {
     try {
       // Mostrar diálogo de confirmación de Bluetooth
-      bool shouldPrint = await _bluetoothService.showPrintConfirmationDialog(context, order);
+      bool shouldPrint = await _bluetoothService.showPrintConfirmationDialog(
+        context,
+        order,
+      );
       if (!shouldPrint) {
         return PrintResult(
           success: false,
@@ -205,7 +605,9 @@ class PrinterManager {
       }
 
       // Mostrar diálogo de selección de dispositivo Bluetooth
-      var selectedDevice = await _bluetoothService.showDeviceSelectionDialog(context);
+      var selectedDevice = await _bluetoothService.showDeviceSelectionDialog(
+        context,
+      );
       if (selectedDevice == null) {
         return PrintResult(
           success: false,
@@ -218,16 +620,17 @@ class PrinterManager {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF4A90E2)),
-              SizedBox(height: 16),
-              Text('Conectando a impresora Bluetooth...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                  SizedBox(height: 16),
+                  Text('Conectando a impresora Bluetooth...'),
+                ],
+              ),
+            ),
       );
 
       // Conectar a la impresora Bluetooth
@@ -247,16 +650,17 @@ class PrinterManager {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF4A90E2)),
-              SizedBox(height: 16),
-              Text('Imprimiendo factura...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                  SizedBox(height: 16),
+                  Text('Imprimiendo factura...'),
+                ],
+              ),
+            ),
       );
 
       // Imprimir la factura
@@ -270,15 +674,16 @@ class PrinterManager {
 
       return PrintResult(
         success: printed,
-        message: printed 
-          ? 'Factura impresa correctamente via Bluetooth'
-          : 'Error al imprimir factura via Bluetooth',
+        message:
+            printed
+                ? 'Factura impresa correctamente via Bluetooth'
+                : 'Error al imprimir factura via Bluetooth',
         platform: 'Mobile',
-        details: printed 
-          ? 'Impresión completada en impresora Bluetooth'
-          : 'Verifica la conexión con la impresora',
+        details:
+            printed
+                ? 'Impresión completada en impresora Bluetooth'
+                : 'Verifica la conexión con la impresora',
       );
-
     } catch (e) {
       // Cerrar diálogo de progreso si está abierto
       try {
@@ -299,10 +704,16 @@ class PrinterManager {
   }
 
   /// Impresión via WiFi en móvil
-  Future<PrintResult> _printViaWiFiMobile(BuildContext context, Order order) async {
+  Future<PrintResult> _printViaWiFiMobile(
+    BuildContext context,
+    Order order,
+  ) async {
     try {
       // Mostrar diálogo de confirmación de WiFi
-      bool shouldPrint = await _wifiService.showPrintConfirmationDialog(context, order);
+      bool shouldPrint = await _wifiService.showPrintConfirmationDialog(
+        context,
+        order,
+      );
       if (!shouldPrint) {
         return PrintResult(
           success: false,
@@ -313,7 +724,9 @@ class PrinterManager {
 
       // Mostrar diálogo de selección/entrada de impresora WiFi
       // El diálogo maneja la búsqueda automática internamente
-      final selectedPrinter = await _wifiService.showPrinterSelectionDialog(context);
+      final selectedPrinter = await _wifiService.showPrinterSelectionDialog(
+        context,
+      );
       if (selectedPrinter == null) {
         return PrintResult(
           success: false,
@@ -322,22 +735,25 @@ class PrinterManager {
         );
       }
 
-      debugPrint('✅ Impresora WiFi seleccionada: ${selectedPrinter['ip']}:${selectedPrinter['port']}');
+      debugPrint(
+        '✅ Impresora WiFi seleccionada: ${selectedPrinter['ip']}:${selectedPrinter['port']}',
+      );
 
       // Mostrar diálogo de progreso
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF10B981)),
-              SizedBox(height: 16),
-              Text('Conectando a impresora WiFi...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF10B981)),
+                  SizedBox(height: 16),
+                  Text('Conectando a impresora WiFi...'),
+                ],
+              ),
+            ),
       );
 
       // Conectar a la impresora WiFi
@@ -360,16 +776,17 @@ class PrinterManager {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF10B981)),
-              SizedBox(height: 16),
-              Text('Imprimiendo factura...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF10B981)),
+                  SizedBox(height: 16),
+                  Text('Imprimiendo factura...'),
+                ],
+              ),
+            ),
       );
 
       // Imprimir la factura
@@ -383,15 +800,16 @@ class PrinterManager {
 
       return PrintResult(
         success: printed,
-        message: printed 
-          ? 'Factura impresa correctamente via WiFi'
-          : 'Error al imprimir factura via WiFi',
+        message:
+            printed
+                ? 'Factura impresa correctamente via WiFi'
+                : 'Error al imprimir factura via WiFi',
         platform: 'Mobile',
-        details: printed 
-          ? 'Impresión completada en impresora WiFi'
-          : 'Verifica la conexión con la impresora',
+        details:
+            printed
+                ? 'Impresión completada en impresora WiFi'
+                : 'Verifica la conexión con la impresora',
       );
-
     } catch (e) {
       // Cerrar diálogo de progreso si está abierto
       try {
@@ -424,7 +842,8 @@ class PrinterManager {
         'supports_usb_printers': false,
         'supports_bluetooth_printers': true,
         'supports_wifi_printers': true,
-        'description': 'Impresión via Bluetooth o WiFi a impresoras térmicas compatibles.',
+        'description':
+            'Impresión via Bluetooth o WiFi a impresoras térmicas compatibles.',
       };
     }
   }

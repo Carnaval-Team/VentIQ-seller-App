@@ -214,10 +214,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     // Aplicar promoción
-    final valorDescuento =
-        applicablePromotion['valor_descuento'] as double? ?? 0.0;
-    final tipoDescuento = applicablePromotion['tipo_descuento'] as int? ?? 1;
-    final esRecargo = applicablePromotion['es_recargo'] as bool? ?? false;
+    final esRecargo = PromotionRules.isRecargoPromotionType(
+      applicablePromotion,
+    );
 
     final precioBase = PromotionRules.resolveBasePrice(
       unitPrice: item.precioUnitario,
@@ -225,15 +224,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       promotion: applicablePromotion,
     );
 
-    final prices = PriceUtils.calculatePromotionPrices(
-      precioBase,
-      valorDescuento,
-      tipoDescuento,
+    final prices = PromotionRules.calculatePromotionPrices(
+      basePrice: precioBase,
+      promotion: applicablePromotion,
     );
 
     final precioFinal = PromotionRules.selectPriceForPayment(
       prices: prices,
       paymentMethodId: paymentMethodId,
+      promotion: applicablePromotion,
     );
 
     final itemTotal = precioFinal * item.cantidad;

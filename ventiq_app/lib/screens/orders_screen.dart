@@ -44,6 +44,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool _isLoading = true;
   bool _allowDiscountOnVendedor = false;
   bool _isGeneratingCustomerInvoice = false;
+  bool _isPrintingAllOrders = false;
   bool _allowPrintPendingOrders = false;
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
@@ -755,6 +756,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
         centerTitle: true,
         actions: [
           const NotificationWidget(),
+          if (_isPrintingAllOrders)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.print_outlined),
+              onPressed: _printAllOrders,
+              tooltip: 'Imprimir todas las órdenes',
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _refreshOrders,
@@ -4086,6 +4105,68 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Future<void> _printOrder(Order order) async {
     // Usar el mismo método unificado para impresión manual
     await _printOrderWithManager(order);
+  }
+
+  /// Imprimir todas las órdenes en una sola impresión (solo ticket cliente)
+  Future<void> _printAllOrders() async {
+    if (_isPrintingAllOrders) return;
+
+    final isPrintEnabled = await _userPreferencesService.isPrintEnabled();
+    if (!isPrintEnabled) {
+      _showErrorDialog(
+        'Impresión deshabilitada',
+        'Habilita la impresión en Configuración para usar esta opción.',
+      );
+      return;
+    }
+
+    final ordersToPrint =
+        _orderService.orders
+            .where((order) => _canPrintOrder(order))
+            .where((order) => order.items.isNotEmpty)
+            .toList();
+
+    if (ordersToPrint.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay órdenes disponibles para imprimir.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isPrintingAllOrders = true;
+    });
+
+    try {
+      final result = await _printerManager.printCustomerReceiptsBatch(
+        context,
+        ordersToPrint,
+      );
+
+      if (result.success) {
+        _showSuccessDialog('¡Impresión lista!', result.message);
+        print('✅ ${result.message} (${result.platform})');
+      } else {
+        _showErrorDialog('Error de Impresión', result.message);
+        print('❌ ${result.message} (${result.platform})');
+      }
+
+      if (result.details != null) {
+        print('ℹ️ Detalles: ${result.details}');
+      }
+    } catch (e) {
+      _showErrorDialog('Error', 'Ocurrió un error durante la impresión: $e');
+      print('❌ Error en _printAllOrders: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPrintingAllOrders = false;
+        });
+      }
+    }
   }
 
   // Personalizar nombres de métodos de pago para el desglose

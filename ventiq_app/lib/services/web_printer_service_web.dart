@@ -93,9 +93,10 @@ class WebPrinterServiceImpl {
     const renderPrefix =
         'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/render/image/public/images_back/';
 
-    final renderUrl = url.contains(objectPrefix)
-        ? '${url.replaceFirst(objectPrefix, renderPrefix)}?width=500&height=600'
-        : url;
+    final renderUrl =
+        url.contains(objectPrefix)
+            ? '${url.replaceFirst(objectPrefix, renderPrefix)}?width=500&height=600'
+            : url;
 
     try {
       final response = await http.get(Uri.parse(renderUrl));
@@ -256,6 +257,38 @@ class WebPrinterServiceImpl {
     }
   }
 
+  /// Imprime múltiples recibos del cliente en una sola impresión
+  Future<bool> printCustomerReceiptsBatch(List<Order> orders) async {
+    if (orders.isEmpty) {
+      print('⚠️ No hay órdenes para impresión por lote');
+      return false;
+    }
+
+    try {
+      print('🖨️ Iniciando impresión web por lote (${orders.length} órdenes)');
+
+      final batchHtml = await _generateCustomerTicketsBatchHtml(orders);
+      final blob = html.Blob([batchHtml], 'text/html');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+
+      html.window.open(url, '_blank');
+
+      Future.delayed(Duration(milliseconds: 100), () {
+        try {
+          html.Url.revokeObjectUrl(url);
+        } catch (e) {
+          print('❌ Error al limpiar URL del lote: $e');
+        }
+      });
+
+      print('✅ Recibos de cliente por lote enviados a impresión web');
+      return true;
+    } catch (e) {
+      print('❌ Error imprimiendo recibos por lote: $e');
+      return false;
+    }
+  }
+
   /// Imprime el ticket del cliente (o copia del vendedor)
   Future<bool> _printCustomerTicket(Order order, {String? copyLabel}) async {
     try {
@@ -334,12 +367,14 @@ class WebPrinterServiceImpl {
   }) async {
     final storeInfo = await _getStorePrintInfo();
     final storeName = storeInfo.name;
-    final headerLogoHtml = storeInfo.logoDataUrl != null
-        ? '<img class="store-logo" src="${storeInfo.logoDataUrl}" alt="Logo $storeName" />'
-        : storeName;
-    final footerLogoHtml = storeInfo.logoDataUrl != null
-        ? '<img class="footer-logo" src="${storeInfo.logoDataUrl}" alt="Logo $storeName" />'
-        : '';
+    final headerLogoHtml =
+        storeInfo.logoDataUrl != null
+            ? '<img class="store-logo" src="${storeInfo.logoDataUrl}" alt="Logo $storeName" />'
+            : storeName;
+    final footerLogoHtml =
+        storeInfo.logoDataUrl != null
+            ? '<img class="footer-logo" src="${storeInfo.logoDataUrl}" alt="Logo $storeName" />'
+            : '';
 
     // Fecha y hora actual
     final now = DateTime.now();
@@ -385,9 +420,13 @@ class WebPrinterServiceImpl {
             max-width: 400px;
             text-align: center;
         }
-        .header {
+        .batch-header {
             text-align: center;
             margin-bottom: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 16px;
         }
         .store-name {
             font-size: 24px;
@@ -413,6 +452,11 @@ class WebPrinterServiceImpl {
             margin-bottom: 5px;
         }
         .invoice-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .batch-title {
             font-size: 16px;
             font-weight: bold;
             margin-bottom: 10px;
@@ -487,6 +531,8 @@ class WebPrinterServiceImpl {
 
     <div class="info-section">
         <div class="info-line">ORDEN: ${order.id}</div>
+        ${order.sellerName != null && order.sellerName!.isNotEmpty ? '<div class="info-line">VENDEDOR: ${order.sellerName}</div>' : ''}
+        ${order.tpvName != null && order.tpvName!.isNotEmpty ? '<div class="info-line">TPV: ${order.tpvName}</div>' : ''}
         ${order.buyerName != null && order.buyerName!.isNotEmpty ? '<div class="info-line">CLIENTE: ${order.buyerName}</div>' : ''}
         ${order.buyerPhone != null && order.buyerPhone!.isNotEmpty ? '<div class="info-line">TELEFONO: ${order.buyerPhone}</div>' : ''}
         <div class="info-line">FECHA: $dateStr $timeStr</div>
@@ -536,16 +582,225 @@ class WebPrinterServiceImpl {
     ''';
   }
 
+  Future<String> _generateCustomerTicketsBatchHtml(List<Order> orders) async {
+    final storeInfo = await _getStorePrintInfo();
+    final storeName = storeInfo.name;
+    final headerLogoHtml =
+        storeInfo.logoDataUrl != null
+            ? '<img class="store-logo" src="${storeInfo.logoDataUrl}" alt="Logo $storeName" />'
+            : storeName;
+
+    final now = DateTime.now();
+    final dateStr =
+        '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+    final timeStr =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+    final ticketsHtml = orders
+        .map((order) {
+          final productRows = order.items
+              .where((item) => item.subtotal > 0)
+              .map((item) {
+                final itemTotal = item.cantidad * item.precioUnitario;
+                return '''
+        <div class="product-line">${item.cantidad}x ${item.nombre}</div>
+        <div class="product-price">\$${item.precioUnitario.toStringAsFixed(0)} c/u = \$${itemTotal.toStringAsFixed(0)}</div>
+          ''';
+              })
+              .join('');
+
+          final notesHtml =
+              order.notas != null && order.notas!.isNotEmpty
+                  ? '<div class="notes">Notas: ${order.notas}</div>'
+                  : '';
+
+          return '''
+    <section class="ticket">
+      <div class="header">
+        <div class="invoice-title">FACTURA DE VENTA</div>
+        <div class="separator">================================</div>
+      </div>
+
+      <div class="info-section">
+        <div class="info-line">ORDEN: ${order.id}</div>
+        ${order.sellerName != null && order.sellerName!.isNotEmpty ? '<div class="info-line">VENDEDOR: ${order.sellerName}</div>' : ''}
+        ${order.tpvName != null && order.tpvName!.isNotEmpty ? '<div class="info-line">TPV: ${order.tpvName}</div>' : ''}
+        ${order.buyerName != null && order.buyerName!.isNotEmpty ? '<div class="info-line">CLIENTE: ${order.buyerName}</div>' : ''}
+        ${order.buyerPhone != null && order.buyerPhone!.isNotEmpty ? '<div class="info-line">TELEFONO: ${order.buyerPhone}</div>' : ''}
+        <div class="info-line">FECHA: $dateStr $timeStr</div>
+        <div class="info-line">PAGO: ${order.paymentMethod ?? 'Completado'}</div>
+      </div>
+
+      <div class="products-header">PRODUCTOS:</div>
+      <div class="separator">--------------------------------</div>
+
+      $productRows
+
+      <div class="totals-section">
+        <div class="separator">--------------------------------</div>
+        <div class="total-line">SUBTOTAL: \$${order.total.toStringAsFixed(0)}</div>
+        <div class="final-total">TOTAL: \$${order.total.toStringAsFixed(0)}</div>
+      </div>
+
+      <div class="footer">
+        <div>¡Gracias por su compra!</div>
+        <div>$storeName</div>
+      </div>
+
+      $notesHtml
+    </section>
+      ''';
+        })
+        .join('<div class="ticket-divider"></div>');
+
+    return '''
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Facturas por lote</title>
+    <style>
+        @media print {
+            body { margin: 0; }
+            .no-print { display: none; }
+        }
+        body {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.2;
+            margin: 20px auto;
+            color: #000;
+            max-width: 400px;
+            text-align: center;
+        }
+        .ticket {
+            margin-bottom: 18px;
+        }
+        .ticket-divider {
+            border-top: 2px dashed #000;
+            margin: 16px 0;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .store-name {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .store-logo {
+            max-width: 160px;
+            max-height: 80px;
+            object-fit: contain;
+            display: block;
+            margin: 0 auto 6px;
+        }
+        .system-name {
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+        .invoice-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .separator {
+            text-align: center;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .info-section {
+            text-align: left;
+            margin: 15px 0;
+        }
+        .info-line {
+            margin: 3px 0;
+            font-weight: bold;
+        }
+        .products-header {
+            text-align: left;
+            font-weight: bold;
+            margin: 15px 0 5px 0;
+        }
+        .product-line {
+            text-align: left;
+            margin: 2px 0;
+        }
+        .product-price {
+            text-align: right;
+            margin: 2px 0;
+        }
+        .totals-section {
+            margin: 15px 0;
+        }
+        .total-line {
+            text-align: right;
+            margin: 3px 0;
+            font-weight: bold;
+        }
+        .final-total {
+            font-size: 18px;
+            font-weight: bold;
+            text-align: right;
+            margin: 5px 0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .notes {
+            text-align: left;
+            margin: 15px 0;
+        }
+        @media print {
+            body { margin: 0; font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="batch-header">
+        <div class="store-name">$headerLogoHtml</div>
+        <div class="system-name">$storeName</div>
+        <div class="batch-title">FACTURAS POR LOTE</div>
+        <div class="separator">================================</div>
+    </div>
+
+    $ticketsHtml
+
+    <script>
+        window.onload = function() {
+            setTimeout(function() {
+                window.print();
+                setTimeout(function() {
+                    window.close();
+                }, 1000);
+            }, 800);
+        };
+
+        window.onafterprint = function() {
+            setTimeout(function() {
+                window.close();
+            }, 500);
+        };
+    </script>
+</body>
+</html>
+    ''';
+  }
+
   /// Genera el HTML de la guía de picking para el almacenero
   Future<String> _generateWarehousePickingSlipHtml(Order order) async {
     final storeInfo = await _getStorePrintInfo();
     final storeName = storeInfo.name;
-    final headerLogoHtml = storeInfo.logoDataUrl != null
-        ? '<img class="store-logo" src="${storeInfo.logoDataUrl}" alt="Logo $storeName" />'
-        : storeName;
-    final footerLogoHtml = storeInfo.logoDataUrl != null
-        ? '<img class="footer-logo" src="${storeInfo.logoDataUrl}" alt="Logo $storeName" />'
-        : '';
+    final headerLogoHtml =
+        storeInfo.logoDataUrl != null
+            ? '<img class="store-logo" src="${storeInfo.logoDataUrl}" alt="Logo $storeName" />'
+            : storeName;
+    final footerLogoHtml =
+        storeInfo.logoDataUrl != null
+            ? '<img class="footer-logo" src="${storeInfo.logoDataUrl}" alt="Logo $storeName" />'
+            : '';
 
     // Fecha y hora actual
     final now = DateTime.now();

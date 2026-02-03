@@ -1208,6 +1208,8 @@ class OrderService {
               supabaseOrder['detalles']['pagos']
                   as List<dynamic>?, // ✅ Agregar campo pagos
           descuento: descuento,
+          sellerName: supabaseOrder['usuario_nombre']?.toString(),
+          tpvName: supabaseOrder['tpv_nombre']?.toString(),
         );
 
         _orders.add(order);
