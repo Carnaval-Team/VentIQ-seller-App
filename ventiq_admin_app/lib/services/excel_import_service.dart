@@ -444,7 +444,9 @@ class ExcelImportService {
       // Lista para almacenar productos importados con stock
       final List<Map<String, dynamic>> productosConStock = [];
 
-      // Procesar en lotes
+      // ✅ OPTIMIZACIÓN: Procesar en lotes usando RPC bulk_import_productos_excel
+      print('🚀 Usando importación masiva optimizada (RPC bulk_import_productos_excel)');
+      
       for (
         int batchStart = 0;
         batchStart < totalRows;
@@ -456,6 +458,10 @@ class ExcelImportService {
                 : batchStart + maxBatchSize;
 
         final batch = dataRows.sublist(batchStart, batchEnd);
+        
+        // Preparar datos para RPC masivo
+        final List<Map<String, dynamic>> productosParaBulk = [];
+        final Map<int, Map<String, dynamic>> rowDataMap = {};
 
         for (int i = 0; i < batch.length; i++) {
           final rowIndex = batchStart + i;
@@ -515,238 +521,143 @@ class ExcelImportService {
               productData['precio_venta_original_cup'] = precioVentaOriginal;
             }
 
-            // ✅ VALIDAR SI EL PRODUCTO YA EXISTE POR NOMBRE
+            // Preparar producto para RPC masivo
             final denominacion = productData['denominacion'] as String;
-            final productoExistente = await ProductService.findProductByNameAndStore(
-              denominacion: denominacion,
-              idTienda: idTienda,
-            );
+            final nombreProveedor = productData.containsKey('proveedor') ? productData['proveedor']?.toString() : null;
             
-            int? productoId;
+            final productoParaBulk = {
+              'denominacion': denominacion,
+              'sku': productData['sku'],
+              'id_categoria': productData['id_categoria'],
+              'descripcion': productData['descripcion'],
+              'denominacion_corta': productData['denominacion_corta'],
+              'nombre_comercial': productData['nombre_comercial'],
+              'codigo_barras': productData['codigo_barras'],
+              'um': productData['um'],
+              'es_refrigerado': productData['es_refrigerado'],
+              'es_fragil': productData['es_fragil'],
+              'es_peligroso': productData['es_peligroso'],
+              'es_vendible': productData['es_vendible'],
+              'es_comprable': productData['es_comprable'],
+              'es_inventariable': productData['es_inventariable'],
+              'es_servicio': productData['es_servicio'],
+              'precio_venta_cup': productData['precio_venta_original_cup'],
+              'precio_costo_usd': productData['precio_costo'],
+              'nombre_proveedor': nombreProveedor,
+            };
             
-            if (productoExistente != null) {
-              // ✅ PRODUCTO EXISTENTE: Reutilizar
-              productoId = productoExistente['id'] as int;
-              
-              print('♻️ PRODUCTO EXISTENTE REUTILIZADO:');
-              print('   - ID: $productoId');
-              print('   - Nombre: $denominacion');
-              print('   - SKU existente: ${productoExistente['sku']}');
-              
-              // ✅ NUEVO: Actualizar precio de costo en presentación base si está disponible
-              if (productData.containsKey('precio_costo') && productData['precio_costo'] != null) {
-                try {
-                  final precioCosto = (productData['precio_costo'] as num?)?.toDouble() ?? 0.0;
-                  print('💰 Actualizando precio de costo para producto existente: \$${precioCosto.toStringAsFixed(2)}');
-                  
-                  // Actualizar el precio_promedio en la presentación base (id_presentacion = 1)
-                  await Supabase.instance.client
-                      .from('app_dat_producto_presentacion')
-                      .update({'precio_promedio': precioCosto})
-                      .eq('id_producto', productoId)
-                      .eq('id_presentacion', 1);
-                  
-                  print('✅ Precio de costo actualizado exitosamente');
-                } catch (e) {
-                  print('⚠️ Error actualizando precio de costo: $e');
-                  results.warnings.add(ImportWarning(
-                    row: rowIndex + 2,
-                    message: 'Error actualizando precio de costo del producto: $e',
-                    type: 'cost_price_update_error',
-                  ));
-                }
-              }
-              
-              // Agregar warning informativo
-              results.warnings.add(ImportWarning(
-                row: rowIndex + 2,
-                message: 'Producto "$denominacion" ya existe (ID: $productoId). Se reutilizó el producto existente.',
-                type: 'product_reused',
-              ));
-              
-              results.successCount++;
-              results.successfulProducts.add(
-                '$denominacion (Existente)',
-              );
-            } else {
-              // ✅ PRODUCTO NUEVO: Insertar
-              print('🆕 PRODUCTO NUEVO: Insertando "$denominacion"');
-              
-              // ✅ NUEVO: Buscar proveedor si está disponible
-              int? idProveedor;
-              if (productData.containsKey('proveedor') && productData['proveedor'] != null) {
-                final nombreProveedor = productData['proveedor'].toString().trim();
-                if (nombreProveedor.isNotEmpty) {
-                  try {
-                    print('🔍 Buscando proveedor: "$nombreProveedor"');
-                    // Buscar proveedor por nombre en la tienda
-                    final proveedoresResponse = await Supabase.instance.client
-                        .from('app_dat_proveedor')
-                        .select('id')
-                        .eq('idtienda', idTienda)
-                        .ilike('denominacion', '%$nombreProveedor%')
-                        .limit(1);
-                    
-                    if (proveedoresResponse.isNotEmpty) {
-                      idProveedor = proveedoresResponse.first['id'] as int;
-                      print('✅ Proveedor encontrado: ID=$idProveedor');
-                    } else {
-                      print('⚠️ Proveedor no encontrado: "$nombreProveedor"');
-                      results.warnings.add(ImportWarning(
-                        row: rowIndex + 2,
-                        message: 'Proveedor "$nombreProveedor" no encontrado en la tienda. Se dejará sin asignar.',
-                        type: 'provider_not_found',
-                      ));
-                    }
-                  } catch (e) {
-                    print('❌ Error buscando proveedor: $e');
-                    results.warnings.add(ImportWarning(
-                      row: rowIndex + 2,
-                      message: 'Error buscando proveedor: $e',
-                      type: 'provider_search_error',
-                    ));
-                  }
-                }
-              }
-              
-              // Agregar proveedor a productData si se encontró
-              if (idProveedor != null) {
-                productData['id_proveedor'] = idProveedor;
-              }
-              
-              // ✅ CRÍTICO: Preparar datos de precios con valor ORIGINAL en CUP
-              // precio_venta_cup SIEMPRE debe estar en CUP (valor original del Excel)
-              List<Map<String, dynamic>>? preciosData;
-              if (productData.containsKey('precio_venta_original_cup')) {
-                final precioVentaCup = (productData['precio_venta_original_cup'] as num?)?.toDouble() ?? 0.0;
-                print('💾 Guardando precio_venta_cup: $precioVentaCup CUP (valor original)');
-                preciosData = [
-                  {
-                    'precio_venta_cup': precioVentaCup,  // ✅ ORIGINAL en CUP
-                    'fecha_desde': DateTime.now().toIso8601String().substring(
-                      0,
-                      10,
-                    ),
-                    'es_activo': true,
-                  },
-                ];
-              }
-
-              // Preparar datos de subcategorías
-              List<Map<String, dynamic>>? subcategoriasData;
-              if (productData.containsKey('id_categoria')) {
-                subcategoriasData = [
-                  {
-                    'id_sub_categoria': productData['id_categoria'],
-                    'es_principal': true,
-                  },
-                ];
-              }
-              
-              // ✅ NUEVO: Preparar datos de presentación base con precio de costo EN USD
-              // El precio_costo ya fue convertido en productData en la sección anterior
-              // IMPORTANTE: precio_promedio SIEMPRE debe estar en USD
-              // ✅ VALIDACIÓN: Mismo criterio que en SQL
-              dynamic precioCostoFinal;
-              
-              if (productData.containsKey('precio_costo')) {
-                final precioCostoRaw = (productData['precio_costo'] as num?)?.toDouble();
-                
-                // ✅ MISMO CRITERIO QUE SQL:
-                // - No null
-                // - No string 'null'
-                // - Mayor a 0
-                if (precioCostoRaw != null && precioCostoRaw > 0) {
-                  precioCostoFinal = precioCostoRaw;
-                  print('💾 Guardando precio_promedio en USD: \$${precioCostoRaw.toStringAsFixed(2)}');
-                } else {
-                  precioCostoFinal = null;
-                  print('⚠️ precio_costo es null o <= 0, precio_promedio será null');
-                }
-              } else {
-                precioCostoFinal = null;
-                print('⚠️ No hay precio_costo en productData, precio_promedio será null');
-              }
-              
-              List<Map<String, dynamic>>? presentacionesData = [
-                {
-                  'id_presentacion': 1, // ID 1 = Presentación "Unidad"
-                  'cantidad': 1.0, // 1 unidad base = 1 unidad
-                  'es_base': true,
-                  'precio_promedio': precioCostoFinal, // En USD (puede ser null)
-                },
-              ];
-
-              // Insertar producto
-              print('\n📦 ===== DATOS FINALES ANTES DE INSERTAR =====');
-              print('📦 productData: $productData');
-              print('📦 preciosData: $preciosData');
-              print('📦 presentacionesData: $presentacionesData');
-              print('📦 subcategoriasData: $subcategoriasData');
-              
-              final insertResult = await ProductService.insertProductoCompleto(
-                productoData: productData,
-                preciosData: preciosData,
-                subcategoriasData: subcategoriasData,
-                presentacionesData: presentacionesData,
-              );
-              
-              print('\n📦 ===== RESULTADO DE INSERCIÓN =====');
-              print('🔍 Estructura completa de insertResult: $insertResult');
-              print('🔍 Claves disponibles: ${insertResult.keys.toList()}');
-              
-              // Intentar obtener el ID del producto de diferentes ubicaciones posibles
-              productoId = (insertResult['id_producto'] ?? 
-                                 insertResult['producto_id'] ?? 
-                                 insertResult['data']?['id_producto'] ??
-                                 insertResult['data']?['producto_id']) as int?;
-              
-              print('🎯 ID del producto obtenido: $productoId');
-
-              results.successCount++;
-              results.successfulProducts.add(
-                productData['denominacion'] ?? 'Producto ${rowIndex + 1}',
-              );
-            }
+            productosParaBulk.add(productoParaBulk);
             
-            // Si se importa con stock, guardar info del producto
-            print('🔍 Verificando si agregar producto a lista de stock (fila ${rowIndex + 2}):');
-            print('   - importWithStock: $importWithStock');
-            print('   - productoId: $productoId');
-            print('   - stockConfig: ${stockConfig != null ? "presente" : "null"}');
+            // Guardar datos de la fila para uso posterior (stock)
+            rowDataMap[rowIndex] = {
+              'row': row,
+              'productData': productData,
+            };
             
-            if (importWithStock && productoId != null && stockConfig != null) {
-              // ✅ NUEVO: Pasar precio_costo convertido a USD para recepción
-              final precioCostoParaRecepcion = (productData['precio_costo'] as num?)?.toDouble() ?? 0.0;
-              productosConStock.add({
-                'id_producto': productoId,
-                'row': row,
-                'rowIndex': rowIndex,
-                'precio_costo_usd': precioCostoParaRecepcion,  // ✅ NUEVO: Precio convertido a USD
-                'precio_venta_original_cup': precioVentaOriginal,  // ✅ NUEVO: Precio venta original en CUP
-              });
-              print('   ✅ Producto $productoId agregado a lista de stock (total: ${productosConStock.length})');
-            } else {
-              print('   ❌ NO agregado - Razones:');
-              if (!importWithStock) print('      - importWithStock es false');
-              if (productoId == null) print('      - productoId es null');
-              if (stockConfig == null) print('      - stockConfig es null');
-            }
           } catch (e) {
+            print('❌ Error preparando producto fila ${rowIndex + 2}: $e');
             results.errorCount++;
             results.errors.add(
               ImportError(
-                row:
-                    rowIndex +
-                    2, // +2 porque empezamos en fila 1 y saltamos header
+                row: rowIndex + 2,
                 message: e.toString(),
                 data: _extractRowData(row, headers),
               ),
             );
           }
-
-          // Reportar progreso
-          onProgress?.call(rowIndex + 1, totalRows);
+        }
+        
+        // ✅ LLAMAR RPC MASIVO para este lote
+        if (productosParaBulk.isNotEmpty) {
+          try {
+            print('\n🚀 Llamando bulk_import_productos_excel con ${productosParaBulk.length} productos...');
+            
+            final bulkResult = await Supabase.instance.client.rpc(
+              'bulk_import_productos_excel',
+              params: {
+                'p_id_tienda': idTienda,
+                'p_productos': productosParaBulk,
+              },
+            );
+            
+            print('📊 Resultado del RPC:');
+            print('   - Insertados: ${bulkResult['productos_insertados']}');
+            print('   - Actualizados: ${bulkResult['productos_actualizados']}');
+            print('   - Total procesados: ${bulkResult['total_procesados']}');
+            
+            final mapeo = bulkResult['mapeo'] as Map<String, dynamic>;
+            final erroresRpc = bulkResult['errores'] as List<dynamic>;
+            
+            // Actualizar contadores
+            results.successCount += (bulkResult['total_procesados'] as int);
+            
+            // Agregar productos exitosos
+            for (final entry in mapeo.entries) {
+              results.successfulProducts.add(entry.key);
+            }
+            
+            // Agregar errores del RPC
+            for (final error in erroresRpc) {
+              results.errors.add(
+                ImportError(
+                  row: 0,
+                  message: error['error'] ?? 'Error desconocido',
+                  data: {'denominacion': error['denominacion']},
+                ),
+              );
+              results.errorCount++;
+            }
+            
+            // ✅ Si se importa con stock, preparar lista de productos
+            if (importWithStock && stockConfig != null) {
+              for (final entry in mapeo.entries) {
+                final denominacion = entry.key;
+                final productoId = entry.value as int;
+                
+                // Buscar datos originales de la fila
+                final rowEntry = rowDataMap.entries.firstWhere(
+                  (e) => e.value['productData']['denominacion'] == denominacion,
+                  orElse: () => MapEntry(-1, {}),
+                );
+                
+                if (rowEntry.key != -1) {
+                  final rowIndex = rowEntry.key;
+                  final row = rowEntry.value['row'] as List<Data?>;
+                  final productData = rowEntry.value['productData'] as Map<String, dynamic>;
+                  
+                  final precioCostoParaRecepcion = (productData['precio_costo'] as num?)?.toDouble() ?? 0.0;
+                  final precioVentaOriginal = (productData['precio_venta_original_cup'] as num?)?.toDouble() ?? 0.0;
+                  
+                  productosConStock.add({
+                    'id_producto': productoId,
+                    'row': row,
+                    'rowIndex': rowIndex,
+                    'precio_costo_usd': precioCostoParaRecepcion,
+                    'precio_venta_original_cup': precioVentaOriginal,
+                  });
+                  
+                  print('   ✅ Producto $productoId agregado a lista de stock');
+                }
+              }
+            }
+            
+            // Reportar progreso
+            onProgress?.call(batchEnd, totalRows);
+            
+          } catch (e, stackTrace) {
+            print('❌ Error en RPC bulk_import_productos_excel: $e');
+            print('StackTrace: $stackTrace');
+            
+            // Si falla el RPC, agregar error general
+            results.errors.add(
+              ImportError(
+                row: 0,
+                message: 'Error en importación masiva: $e',
+                data: {'batch_size': productosParaBulk.length},
+              ),
+            );
+            results.errorCount += productosParaBulk.length;
+          }
         }
       }
 
@@ -1326,6 +1237,26 @@ class ExcelImportService {
     List<Map<String, dynamic>> productos = [];
     int productosDescartados = 0;
     
+    // ✅ OPTIMIZACIÓN: Obtener todas las presentaciones base en una sola llamada
+    print('🚀 Obteniendo presentaciones base con RPC bulk_get_presentaciones_base');
+    final idsProductos = productosConStock.map((p) => p['id_producto'] as int).toList();
+    
+    Map<String, dynamic> presentacionesMap = {};
+    try {
+      final presentacionesResult = await Supabase.instance.client.rpc(
+        'bulk_get_presentaciones_base',
+        params: {'p_ids_productos': idsProductos},
+      );
+      
+      if (presentacionesResult != null && presentacionesResult is Map) {
+        presentacionesMap = Map<String, dynamic>.from(presentacionesResult);
+        print('✅ Presentaciones obtenidas: ${presentacionesMap.length} productos');
+      }
+    } catch (e) {
+      print('⚠️ Error obteniendo presentaciones masivas: $e');
+      print('   Continuando con obtención individual como fallback...');
+    }
+    
     for (final productoInfo in productosConStock) {
       final productoId = productoInfo['id_producto'] as int;
       final row = productoInfo['row'] as List<Data?>;
@@ -1384,19 +1315,26 @@ class ExcelImportService {
       print('      - Precio: $precioValidacion ${precioValidacion > 0 ? "✅" : "❌ (debe ser > 0)"}');
       
       if (cantidad != null && cantidad > 0 && precioValidacion > 0) {
-        // Obtener el ID del registro de presentación base (PK de app_dat_producto_presentacion)
+        // ✅ OPTIMIZADO: Obtener presentación del mapa cargado masivamente
         int? idProductoPresentacion;
-        try {
-          final basePresentation = await ProductService.getBasePresentacion(productoId);
-          if (basePresentation != null) {
-            // getBasePresentacion retorna 'id_presentacion' que es el PK del registro
-            idProductoPresentacion = basePresentation['id_presentacion'] as int?;
-            print('  📦 ID presentación obtenido para producto $productoId: $idProductoPresentacion');
-          } else {
-            print('  ⚠️ Producto $productoId no tiene presentación base');
+        
+        final presentacionData = presentacionesMap[productoId.toString()];
+        if (presentacionData != null && presentacionData is Map) {
+          idProductoPresentacion = presentacionData['id_presentacion'] as int?;
+          print('  📦 ID presentación (desde cache): $idProductoPresentacion');
+        } else {
+          // Fallback: obtener individualmente si no está en el mapa
+          try {
+            final basePresentation = await ProductService.getBasePresentacion(productoId);
+            if (basePresentation != null) {
+              idProductoPresentacion = basePresentation['id_presentacion'] as int?;
+              print('  📦 ID presentación (fallback individual): $idProductoPresentacion');
+            } else {
+              print('  ⚠️ Producto $productoId no tiene presentación base');
+            }
+          } catch (e) {
+            print('  ❌ Error obteniendo presentación para producto $productoId: $e');
           }
-        } catch (e) {
-          print('  ❌ Error obteniendo presentación para producto $productoId: $e');
         }
         
         // ✅ NUEVO: Obtener precio_costo_usd y precio_venta_original_cup del producto
