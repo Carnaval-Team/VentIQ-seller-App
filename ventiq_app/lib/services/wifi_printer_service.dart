@@ -370,8 +370,24 @@ class WiFiPrinterService {
       final storeInfo = await _getStorePrintInfo();
       List<int> bytes = [];
 
+      bytes += _addStoreHeader(generator, storeInfo);
+      bytes += generator.text(
+        'FACTURAS POR LOTE',
+        styles: PosStyles(align: PosAlign.center, bold: true),
+      );
+      bytes += generator.text(
+        '----------------------------',
+        styles: PosStyles(align: PosAlign.center),
+      );
+      bytes += generator.emptyLines(1);
+
       for (int i = 0; i < orders.length; i++) {
-        bytes += _addCustomerReceipt(generator, orders[i], storeInfo);
+        bytes += _addCustomerReceipt(
+          generator,
+          orders[i],
+          storeInfo,
+          includeHeader: false,
+        );
         if (i < orders.length - 1) {
           bytes += _addDottedLineSeparator(generator);
         }
@@ -658,12 +674,15 @@ class WiFiPrinterService {
   List<int> _addCustomerReceipt(
     Generator generator,
     Order order,
-    _StorePrintInfo storeInfo,
-  ) {
+    _StorePrintInfo storeInfo, {
+    bool includeHeader = true,
+  }) {
     List<int> bytes = [];
 
     // Encabezado compacto
-    bytes += _addStoreHeader(generator, storeInfo);
+    if (includeHeader) {
+      bytes += _addStoreHeader(generator, storeInfo);
+    }
     bytes += generator.text(
       'FACTURA',
       styles: PosStyles(align: PosAlign.center, bold: true),
@@ -678,6 +697,28 @@ class WiFiPrinterService {
       'ORD: ${order.id.length > 20 ? order.id.substring(0, 20) : order.id}',
       styles: PosStyles(align: PosAlign.left, bold: true),
     );
+
+    final sellerName = order.sellerName;
+    if (sellerName != null && sellerName.isNotEmpty) {
+      final displayName =
+          sellerName.length > 26
+              ? '${sellerName.substring(0, 23)}...'
+              : sellerName;
+      bytes += generator.text(
+        'VEND: $displayName',
+        styles: PosStyles(align: PosAlign.left),
+      );
+    }
+
+    final tpvName = order.tpvName;
+    if (tpvName != null && tpvName.isNotEmpty) {
+      final displayName =
+          tpvName.length > 26 ? '${tpvName.substring(0, 23)}...' : tpvName;
+      bytes += generator.text(
+        'TPV: $displayName',
+        styles: PosStyles(align: PosAlign.left),
+      );
+    }
 
     if (order.buyerName != null && order.buyerName!.isNotEmpty) {
       bytes += generator.text(

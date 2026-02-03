@@ -420,9 +420,13 @@ class WebPrinterServiceImpl {
             max-width: 400px;
             text-align: center;
         }
-        .header {
+        .batch-header {
             text-align: center;
             margin-bottom: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 16px;
         }
         .store-name {
             font-size: 24px;
@@ -448,6 +452,11 @@ class WebPrinterServiceImpl {
             margin-bottom: 5px;
         }
         .invoice-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .batch-title {
             font-size: 16px;
             font-weight: bold;
             margin-bottom: 10px;
@@ -522,6 +531,8 @@ class WebPrinterServiceImpl {
 
     <div class="info-section">
         <div class="info-line">ORDEN: ${order.id}</div>
+        ${order.sellerName != null && order.sellerName!.isNotEmpty ? '<div class="info-line">VENDEDOR: ${order.sellerName}</div>' : ''}
+        ${order.tpvName != null && order.tpvName!.isNotEmpty ? '<div class="info-line">TPV: ${order.tpvName}</div>' : ''}
         ${order.buyerName != null && order.buyerName!.isNotEmpty ? '<div class="info-line">CLIENTE: ${order.buyerName}</div>' : ''}
         ${order.buyerPhone != null && order.buyerPhone!.isNotEmpty ? '<div class="info-line">TELEFONO: ${order.buyerPhone}</div>' : ''}
         <div class="info-line">FECHA: $dateStr $timeStr</div>
@@ -606,14 +617,14 @@ class WebPrinterServiceImpl {
           return '''
     <section class="ticket">
       <div class="header">
-        <div class="store-name">$headerLogoHtml</div>
-        <div class="system-name">$storeName</div>
         <div class="invoice-title">FACTURA DE VENTA</div>
         <div class="separator">================================</div>
       </div>
 
       <div class="info-section">
         <div class="info-line">ORDEN: ${order.id}</div>
+        ${order.sellerName != null && order.sellerName!.isNotEmpty ? '<div class="info-line">VENDEDOR: ${order.sellerName}</div>' : ''}
+        ${order.tpvName != null && order.tpvName!.isNotEmpty ? '<div class="info-line">TPV: ${order.tpvName}</div>' : ''}
         ${order.buyerName != null && order.buyerName!.isNotEmpty ? '<div class="info-line">CLIENTE: ${order.buyerName}</div>' : ''}
         ${order.buyerPhone != null && order.buyerPhone!.isNotEmpty ? '<div class="info-line">TELEFONO: ${order.buyerPhone}</div>' : ''}
         <div class="info-line">FECHA: $dateStr $timeStr</div>
@@ -748,6 +759,13 @@ class WebPrinterServiceImpl {
     </style>
 </head>
 <body>
+    <div class="batch-header">
+        <div class="store-name">$headerLogoHtml</div>
+        <div class="system-name">$storeName</div>
+        <div class="batch-title">FACTURAS POR LOTE</div>
+        <div class="separator">================================</div>
+    </div>
+
     $ticketsHtml
 
     <script>

@@ -16,6 +16,8 @@ class Order {
   final int? operationId;
   final List<dynamic>? pagos; // Lista de pagos de la orden
   final Map<String, dynamic>? descuento; // Descuento aplicado (si existe)
+  final String? sellerName;
+  final String? tpvName;
   bool isOfflineOrder; // Campo para marcar órdenes offline
 
   Order({
@@ -32,6 +34,8 @@ class Order {
     this.operationId,
     this.pagos,
     this.descuento,
+    this.sellerName,
+    this.tpvName,
     this.isOfflineOrder = false, // Por defecto false
   });
 
@@ -57,6 +61,8 @@ class Order {
     int? operationId,
     List<dynamic>? pagos,
     Map<String, dynamic>? descuento,
+    String? sellerName,
+    String? tpvName,
     bool? isOfflineOrder,
   }) {
     return Order(
@@ -73,6 +79,8 @@ class Order {
       operationId: operationId ?? this.operationId,
       pagos: pagos ?? this.pagos,
       descuento: descuento ?? this.descuento,
+      sellerName: sellerName ?? this.sellerName,
+      tpvName: tpvName ?? this.tpvName,
       isOfflineOrder: isOfflineOrder ?? this.isOfflineOrder,
     );
   }
@@ -93,6 +101,8 @@ class Order {
       'operationId': operationId,
       'pagos': pagos,
       'descuento': descuento,
+      'sellerName': sellerName,
+      'tpvName': tpvName,
       'isOfflineOrder': isOfflineOrder,
     };
   }
@@ -119,6 +129,8 @@ class Order {
       operationId: json['operationId'] as int?,
       pagos: json['pagos'] as List<dynamic>?,
       descuento: json['descuento'] as Map<String, dynamic>?,
+      sellerName: json['sellerName'] as String?,
+      tpvName: json['tpvName'] as String?,
       isOfflineOrder: json['isOfflineOrder'] as bool? ?? false,
     );
   }

@@ -1,9 +1,31 @@
 {
-  "current_version": "2.0.0",
-  "build": 810,
+  "current_version": "2.0.1",
+  "build": 811,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.0.1",
+      "date": "2026-02-03",
+      "title": "🖨️ Impresión masiva con tu marca",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Imprime todas tus órdenes de una vez",
+          "description": "Un solo clic y salen todos los tickets listos, sin repetir pasos."
+        },
+        {
+          "type": "improvement",
+          "title": "Tu logo abre cada lote",
+          "description": "La marca de tu tienda encabeza la impresión para un acabado más profesional."
+        },
+        {
+          "type": "improvement",
+          "title": "Tickets con responsable y punto de venta",
+          "description": "Cada comprobante incluye quién atendió y desde qué punto se realizó la venta."
+        }
+      ]
+    },
     {
       "version": "2.0.0",
       "date": "2026-02-03",
