@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../utils/promotion_rules.dart';
 import 'order_service.dart';
 
 class UserPreferencesService {
@@ -448,6 +449,11 @@ class UserPreferencesService {
     int? idMedioPagoRequerido,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    final resolvedTipoDescuento =
+        PromotionRules.resolveTipoDescuentoFromPromotionTypeId(
+          idTipoPromocion,
+        ) ??
+        tipoDescuento;
 
     if (idPromocion != null) {
       await prefs.setInt(_promotionIdKey, idPromocion);
@@ -467,8 +473,8 @@ class UserPreferencesService {
       await prefs.remove(_promotionValueKey);
     }
 
-    if (tipoDescuento != null) {
-      await prefs.setInt(_promotionTypeKey, tipoDescuento);
+    if (resolvedTipoDescuento != null) {
+      await prefs.setInt(_promotionTypeKey, resolvedTipoDescuento);
     } else {
       await prefs.remove(_promotionTypeKey);
     }
@@ -521,12 +527,19 @@ class UserPreferencesService {
       _promotionIdMedioPagoRequeridoKey,
     );
 
+    final resolvedTipoDescuento =
+        PromotionRules.resolveTipoDescuentoFromPromotionTypeId(
+          idTipoPromocion,
+        ) ??
+        tipoDescuento;
+
     if (idPromocion != null && codigoPromocion != null) {
       return {
         'id_promocion': idPromocion,
         'codigo_promocion': codigoPromocion,
         'valor_descuento': valorDescuento,
-        'tipo_descuento': tipoDescuento, // 1 = porcentual, 2 = valor fijo
+        'tipo_descuento':
+            resolvedTipoDescuento, // 1 = %, 2 = fijo, 3 = recargo %, 4 = recargo fijo
         'id_tipo_promocion': idTipoPromocion,
         'min_compra': minCompra,
         'aplica_todo': aplicaTodo,

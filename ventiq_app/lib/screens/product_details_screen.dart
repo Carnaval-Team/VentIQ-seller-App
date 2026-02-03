@@ -950,8 +950,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     final List<Widget> priceContent = [];
 
     if (hasPromotion && activePromotion != null) {
-      final tipoDescuento = activePromotion['tipo_descuento'] as int?;
-      final isRecargo = tipoDescuento == 3; // Recargo porcentual
+      final isRecargo = PromotionRules.isRecargoPromotionType(activePromotion);
 
       if (activePromotion['tipo_promocion_nombre'] != null)
         priceContent.add(
@@ -1087,8 +1086,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
     Widget priceWidget;
     if (hasPromotion && activePromotion != null) {
-      final tipoDescuento = activePromotion['tipo_descuento'] as int?;
-      final isRecargo = tipoDescuento == 3; // Recargo porcentual
+      final isRecargo = PromotionRules.isRecargoPromotionType(activePromotion);
 
       // Para recargo porcentual, mostrar el precio de venta (mayor)
       // Para descuentos, mostrar el precio de oferta (menor)
@@ -1872,7 +1870,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     final prices = _calculatePromotionPrices(price);
     final activePromotion = _getActivePromotion();
     final isRecargo =
-        activePromotion != null && activePromotion['tipo_descuento'] == 3;
+        activePromotion != null &&
+        PromotionRules.isRecargoPromotionType(activePromotion);
 
     // Siempre usar precio_oferta para mostrar en productos seleccionados
     final finalPrice = prices['precio_oferta']!;

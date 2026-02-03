@@ -318,8 +318,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
         prices['precio_venta'] != originalPrice;
 
     if (hasPromotion && activePromotion != null) {
-      final tipoDescuento = activePromotion['tipo_descuento'] as int?;
-      final isRecargo = tipoDescuento == 3; // Recargo porcentual
+      final isRecargo = PromotionRules.isRecargoPromotionType(activePromotion);
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -426,8 +425,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
         prices['precio_venta'] != originalPrice;
 
     if (hasPromotion && activePromotion != null) {
-      final tipoDescuento = activePromotion['tipo_descuento'] as int?;
-      final isRecargo = tipoDescuento == 3; // Recargo porcentual
+      final isRecargo = PromotionRules.isRecargoPromotionType(activePromotion);
 
       // Para recargo porcentual, mostrar el precio de venta (mayor)
       // Para descuentos, mostrar el precio de oferta (menor)

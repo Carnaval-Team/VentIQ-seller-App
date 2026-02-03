@@ -1,6 +1,5 @@
 import 'product.dart';
 import 'payment_method.dart';
-import '../utils/price_utils.dart';
 import '../utils/promotion_rules.dart';
 
 class Order {
@@ -199,20 +198,15 @@ class OrderItem {
       return precioBase ?? precioUnitario;
     }
 
-    // Con promociones, calcular precios según tipo y método de pago
-    final valorDescuento = promotionData!['valor_descuento'] as double?;
-    final tipoDescuento = promotionData!['tipo_descuento'] as int?;
-
     final basePrice = PromotionRules.resolveBasePrice(
       unitPrice: precioUnitario,
       basePrice: precioBase,
       promotion: promotionData,
     );
 
-    final prices = PriceUtils.calculatePromotionPrices(
-      basePrice,
-      valorDescuento,
-      tipoDescuento,
+    final prices = PromotionRules.calculatePromotionPrices(
+      basePrice: basePrice,
+      promotion: promotionData!,
     );
 
     // Para efectivo (id: 1), usar precio_oferta (el menor)
@@ -220,6 +214,7 @@ class OrderItem {
     return PromotionRules.selectPriceForPayment(
       prices: prices,
       paymentMethodId: paymentMethod?.id,
+      promotion: promotionData,
     );
   }
 

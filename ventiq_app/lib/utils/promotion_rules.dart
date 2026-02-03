@@ -2,11 +2,13 @@ import 'price_utils.dart';
 
 class PromotionRules {
   static const Set<int> _recargoPromotionTypes = {8, 9};
+  static const Set<int> _percentageDiscountPromotionTypes = {1, 10};
+  static const Set<int> _fixedDiscountPromotionTypes = {2, 3, 4, 5, 6, 7, 11};
   static const Set<int> _quantityGreaterPromotionTypes = {10, 11};
   static const Set<int> _twoForOnePromotionTypes = {3};
 
   static int normalizePaymentMethodId(int? paymentMethodId) {
-    if (paymentMethodId == 999) {
+    if (paymentMethodId == 999 || paymentMethodId == 99) {
       return 4;
     }
     return paymentMethodId ?? -1;
@@ -16,23 +18,25 @@ class PromotionRules {
     Map<String, dynamic> promotion,
     int? paymentMethodId,
   ) {
-    if (promotion['requiere_medio_pago'] != true) {
+    final requiresPayment =
+        promotion['requiere_medio_pago'] == true ||
+        promotion['id_medio_pago_requerido'] != null;
+
+    if (!requiresPayment) {
       return true;
     }
 
     final requiredPaymentId = promotion['id_medio_pago_requerido'] as int?;
     if (requiredPaymentId == null) {
-      if (isRecargoPromotionType(promotion)) {
-        return paymentMethodId == 1;
-      }
-      return true;
+      return false;
     }
 
     if (paymentMethodId == null) {
       return false;
     }
 
-    return normalizePaymentMethodId(paymentMethodId) == requiredPaymentId;
+    return normalizePaymentMethodId(paymentMethodId) ==
+        normalizePaymentMethodId(requiredPaymentId);
   }
 
   static bool isRecargoPromotionType(Map<String, dynamic> promotion) {
@@ -45,7 +49,57 @@ class PromotionRules {
       return true;
     }
 
-    return promotion['tipo_descuento'] == 3;
+    final tipoDescuento = resolvePromotionDiscountType(promotion);
+    return tipoDescuento == 3 || tipoDescuento == 4;
+  }
+
+  static int? resolveTipoDescuentoFromPromotionTypeId(int? promotionTypeId) {
+    if (promotionTypeId == null) {
+      return null;
+    }
+
+    if (promotionTypeId == 9) {
+      return 3;
+    }
+
+    if (promotionTypeId == 8) {
+      return 4;
+    }
+
+    if (_percentageDiscountPromotionTypes.contains(promotionTypeId)) {
+      return 1;
+    }
+
+    if (_fixedDiscountPromotionTypes.contains(promotionTypeId)) {
+      return 2;
+    }
+
+    return null;
+  }
+
+  static int? resolvePromotionDiscountType(Map<String, dynamic> promotion) {
+    final typeId = _parsePromotionTypeId(promotion);
+    final mappedById = resolveTipoDescuentoFromPromotionTypeId(typeId);
+    if (mappedById != null) {
+      return mappedById;
+    }
+
+    final rawTipo = promotion['tipo_descuento'];
+    if (rawTipo is int) {
+      return rawTipo;
+    }
+
+    if (rawTipo is num) {
+      return rawTipo.toInt();
+    }
+
+    if (rawTipo is String) {
+      return int.tryParse(rawTipo);
+    }
+
+    return _resolveTipoDescuentoFromName(
+      promotion['tipo_promocion_nombre'] as String?,
+    );
   }
 
   static bool isTwoForOnePromotionType(Map<String, dynamic> promotion) {
@@ -177,7 +231,7 @@ class PromotionRules {
     required Map<String, dynamic> promotion,
   }) {
     final valorDescuento = promotion['valor_descuento'] as double?;
-    final tipoDescuento = promotion['tipo_descuento'] as int?;
+    final tipoDescuento = resolvePromotionDiscountType(promotion);
 
     return PriceUtils.calculatePromotionPrices(
       basePrice,
@@ -189,7 +243,18 @@ class PromotionRules {
   static double selectPriceForPayment({
     required Map<String, double> prices,
     required int? paymentMethodId,
+    Map<String, dynamic>? promotion,
   }) {
+    final requiresPayment =
+        promotion != null &&
+        (promotion['requiere_medio_pago'] == true ||
+            promotion['id_medio_pago_requerido'] != null);
+
+    if (requiresPayment) {
+      final applyRecargo = isRecargoPromotionType(promotion);
+      return applyRecargo ? prices['precio_venta']! : prices['precio_oferta']!;
+    }
+
     return resolvePaymentType(paymentMethodId) == 1
         ? prices['precio_oferta']!
         : prices['precio_venta']!;
@@ -229,6 +294,23 @@ class PromotionRules {
     }
 
     return null;
+  }
+
+  static int? _resolveTipoDescuentoFromName(String? tipoNombre) {
+    switch (tipoNombre?.toLowerCase()) {
+      case 'descuento porcentual':
+      case 'descuento %':
+        return 1;
+      case 'descuento exacto':
+      case 'descuento fijo':
+        return 2;
+      case 'recargo porcentual':
+        return 3;
+      case 'recargo fijo':
+        return 4;
+      default:
+        return null;
+    }
   }
 
   static int? _parsePromotionTypeId(Map<String, dynamic> promotion) {
