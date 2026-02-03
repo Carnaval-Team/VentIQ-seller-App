@@ -160,8 +160,8 @@ class ConnectivityService {
       final response = await http
           .get(Uri.parse(_testUrl))
           .timeout(_timeoutDuration);
-
-      final hasConnection = response.statusCode == 200;
+      print(response.statusCode);
+      final hasConnection = response.statusCode > 0 ;
       print(
         '🌐 Verificación de internet: ${hasConnection ? "✅ Conectado" : "❌ Sin acceso"}',
       );
@@ -223,7 +223,7 @@ class ConnectivityService {
 
       try {
         final connectivityResults = await _connectivity.checkConnectivity();
-
+        print(connectivityResults);
         // Verificar si hay alguna conexión disponible
         final hasConnection = connectivityResults.any(
           (result) => result != ConnectivityResult.none,
@@ -251,11 +251,11 @@ class ConnectivityService {
   Future<bool> checkConnectivity() async {
     try {
       final connectivityResults = await _connectivity.checkConnectivity();
-
       // Verificar si hay alguna conexión disponible
       final hasConnection = connectivityResults.any(
         (result) => result != ConnectivityResult.none,
       );
+      print('has: $hasConnection');
 
       if (!hasConnection) {
         return false;
