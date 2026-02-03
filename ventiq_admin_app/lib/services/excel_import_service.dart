@@ -447,6 +447,12 @@ class ExcelImportService {
       // ✅ OPTIMIZACIÓN: Procesar en lotes usando RPC bulk_import_productos_excel
       print('🚀 Usando importación masiva optimizada (RPC bulk_import_productos_excel)');
       
+      // 📊 PROGRESS BAR: Dividir en fases
+      // Fase 1: Preparación de datos (0-25%)
+      // Fase 2: Llamada RPC (25-50%)
+      // Fase 3: Obtención de presentaciones (50-75%)
+      // Fase 4: Creación de recepción (75-100%)
+      
       for (
         int batchStart = 0;
         batchStart < totalRows;
@@ -466,6 +472,10 @@ class ExcelImportService {
         for (int i = 0; i < batch.length; i++) {
           final rowIndex = batchStart + i;
           final row = batch[i];
+          
+          // 📊 FASE 1: Reportar progreso de preparación (0-25%)
+          final progressPrep = ((rowIndex + 1) * 25) ~/ totalRows;
+          onProgress?.call(progressPrep, 100);
 
           try {
             final productData = _convertRowToProductData(
@@ -641,8 +651,11 @@ class ExcelImportService {
               }
             }
             
-            // Reportar progreso
-            onProgress?.call(batchEnd, totalRows);
+            // 📊 FASE 2: Reportar progreso RPC (25-50%)
+            final batchNumber = (batchStart ~/ maxBatchSize) + 1;
+            final totalBatches = (totalRows + maxBatchSize - 1) ~/ maxBatchSize;
+            final progressRpc = 25 + ((batchNumber * 25) ~/ totalBatches);
+            onProgress?.call(progressRpc, 100);
             
           } catch (e, stackTrace) {
             print('❌ Error en RPC bulk_import_productos_excel: $e');
@@ -661,6 +674,9 @@ class ExcelImportService {
         }
       }
 
+      // 📊 FASE 3: Reportar progreso obtención de presentaciones (50-75%)
+      onProgress?.call(75, 100);
+      
       // Crear recepción masiva si hay productos con stock
       print('🔍 Verificando creación de recepción masiva...');
       print('   - importWithStock: $importWithStock');
@@ -680,6 +696,8 @@ class ExcelImportService {
             exchangeRate: finalExchangeRate,
           );
           print('✅ Recepción masiva creada exitosamente');
+          // 📊 FASE 4: Reportar progreso recepción completada (100%)
+          onProgress?.call(100, 100);
         } catch (e, stackTrace) {
           print('❌ Error creando recepción masiva: $e');
           print('❌ StackTrace: $stackTrace');
@@ -690,12 +708,16 @@ class ExcelImportService {
               data: {},
             ),
           );
+          // 📊 FASE 4: Reportar progreso incluso con error (100%)
+          onProgress?.call(100, 100);
         }
       } else {
         print('⚠️ No se creará recepción masiva:');
         if (!importWithStock) print('   - importWithStock es false');
         if (productosConStock.isEmpty) print('   - productosConStock está vacío');
         if (stockConfig == null) print('   - stockConfig es null');
+        // 📊 FASE 4: Reportar progreso completado (100%) aunque no haya recepción
+        onProgress?.call(100, 100);
       }
 
       return results;
