@@ -273,18 +273,33 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 ),
                 const Divider(height: 1),
 
-                // TPVs (Puntos de Venta)
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.point_of_sale,
-                  title: 'TPVs',
-                  subtitle: 'Gestión de puntos de venta',
-                  onTap: () {
-                    Navigator.pop(context);
-                    NavigationGuard.navigateWithPermission(context, '/tpv-management');
+                // TPVs (Puntos de Venta) - NO para Almacenero
+                FutureBuilder<UserRole>(
+                  future: PermissionsService().getUserRole(),
+                  builder: (context, snapshot) {
+                    final userRole = snapshot.data ?? UserRole.none;
+                    final isAlmacenero = userRole == UserRole.almacenero;
+                    
+                    if (!isAlmacenero) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.point_of_sale,
+                            title: 'TPVs',
+                            subtitle: 'Gestión de puntos de venta',
+                            onTap: () {
+                              Navigator.pop(context);
+                              NavigationGuard.navigateWithPermission(context, '/tpv-management');
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
                   },
                 ),
-                const Divider(height: 1),
 
                 // Marketing (solo Gerente)
                 FutureBuilder<bool>(

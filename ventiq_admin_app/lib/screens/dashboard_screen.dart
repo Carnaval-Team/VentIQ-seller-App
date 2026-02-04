@@ -1135,58 +1135,70 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildQuickActionsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Accesos Rápidos',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 12),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 2.5,
+    return FutureBuilder<UserRole>(
+      future: _permissionsService.getUserRole(),
+      builder: (context, snapshot) {
+        final userRole = snapshot.data ?? UserRole.none;
+        final isAlmacenero = userRole == UserRole.almacenero;
+        
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildQuickActionCard(
-              'Productos',
-              Icons.inventory_2,
-              AppColors.primary,
-              () => NavigationGuard.navigateWithPermission(
-                context,
-                '/products-dashboard',
+            const Text(
+              'Accesos Rápidos',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
               ),
             ),
-            _buildQuickActionCard(
-              'Categorías',
-              Icons.category,
-              AppColors.success,
-              () =>
-                  NavigationGuard.navigateWithPermission(context, '/settings'),
-            ),
-            _buildQuickActionCard(
-              'Inventario',
-              Icons.warehouse,
-              AppColors.warning,
-              () =>
-                  NavigationGuard.navigateWithPermission(context, '/inventory'),
-            ),
-            _buildQuickActionCard(
-              'Ventas',
-              Icons.point_of_sale,
-              AppColors.info,
-              () => NavigationGuard.navigateWithPermission(context, '/sales'),
+            const SizedBox(height: 12),
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 2.5,
+              children: [
+                _buildQuickActionCard(
+                  'Productos',
+                  Icons.inventory_2,
+                  AppColors.primary,
+                  () => NavigationGuard.navigateWithPermission(
+                    context,
+                    '/products-dashboard',
+                  ),
+                ),
+                // Categorías - Solo para Gerente, Supervisor, Auditor (NO Almacenero)
+                if (!isAlmacenero)
+                  _buildQuickActionCard(
+                    'Categorías',
+                    Icons.category,
+                    AppColors.success,
+                    () =>
+                        NavigationGuard.navigateWithPermission(context, '/categories'),
+                  ),
+                _buildQuickActionCard(
+                  'Almacenes',
+                  Icons.store,
+                  AppColors.warning,
+                  () =>
+                      NavigationGuard.navigateWithPermission(context, '/warehouse'),
+                ),
+                // Ventas - Solo para Gerente, Supervisor, Auditor (NO Almacenero)
+                if (!isAlmacenero)
+                  _buildQuickActionCard(
+                    'Ventas',
+                    Icons.point_of_sale,
+                    AppColors.info,
+                    () => NavigationGuard.navigateWithPermission(context, '/sales'),
+                  ),
+              ],
             ),
           ],
-        ),
-      ],
+        );
+      },
     );
   }
 

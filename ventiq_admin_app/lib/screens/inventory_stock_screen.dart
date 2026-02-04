@@ -9,7 +9,14 @@ import 'inventory_reception_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class InventoryStockScreen extends StatefulWidget {
-  const InventoryStockScreen({super.key});
+  final bool isAlmacenero;
+  final int? assignedWarehouseId;
+
+  const InventoryStockScreen({
+    super.key,
+    this.isAlmacenero = false,
+    this.assignedWarehouseId,
+  });
 
   @override
   State<InventoryStockScreen> createState() => _InventoryStockScreenState();
@@ -49,6 +56,12 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     _scrollController.addListener(_scrollListener);
     _loadShowDescriptionConfig();
     _loadWarehouses();
+    
+    // Si es almacenero, establecer filtro por defecto
+    if (widget.isAlmacenero && widget.assignedWarehouseId != null) {
+      _selectedWarehouseId = widget.assignedWarehouseId;
+    }
+    
     _loadInventoryData();
   }
 
@@ -602,7 +615,9 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                                 ),
                               ),
                             )
-                            : null,
+                            : widget.isAlmacenero
+                                ? const Icon(Icons.lock, color: Colors.orange, size: 20)
+                                : null,
                   ),
                   isExpanded: true,
                   items: [
@@ -634,7 +649,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                     }).toList(),
                   ],
                   onChanged:
-                      _isLoadingWarehouses
+                      (_isLoadingWarehouses || widget.isAlmacenero)
                           ? null
                           : (value) {
                             setState(() {
@@ -649,6 +664,25 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                           },
                 ),
               ),
+              if (widget.isAlmacenero) ...[
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'Filtro bloqueado - Solo puedes ver tu almacén asignado',
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Icon(
+                      Icons.info_outline,
+                      size: 20,
+                      color: Colors.orange.shade700,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(width: 12),
               Expanded(
                 flex: 1,

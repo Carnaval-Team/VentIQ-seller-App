@@ -483,12 +483,18 @@ class PermissionsService {
     '/unified-dashboard': [UserRole.gerente, UserRole.auditor],
     '/dashboard-web': [UserRole.gerente, UserRole.auditor],
 
-    // Productos (Almacenero NO tiene acceso)
-    '/products': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+    // Productos (Almacenero tiene acceso solo lectura)
+    '/products': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.auditor,
+      UserRole.almacenero,
+    ],
     '/products-dashboard': [
       UserRole.gerente,
       UserRole.supervisor,
       UserRole.auditor,
+      UserRole.almacenero,
     ],
     '/add-product': [UserRole.gerente],
     '/categories': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],

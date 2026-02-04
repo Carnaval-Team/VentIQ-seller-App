@@ -77,14 +77,25 @@ class _ProductsScreenState extends State<ProductsScreen> {
   bool _canDeleteProduct = false;
   bool _hasAdvancedPlan = false;
   bool _isLoadingAdvancedPlan = true;
+  bool _isAlmacenero = false;
 
   @override
   void initState() {
     super.initState();
+    _checkUserRole();
     _checkPermissions();
     _loadCategories();
     _loadProducts();
     _loadAdvancedPlanStatus();
+  }
+
+  Future<void> _checkUserRole() async {
+    final role = await _permissionsService.getUserRole();
+    if (mounted) {
+      setState(() {
+        _isAlmacenero = role == UserRole.almacenero;
+      });
+    }
   }
 
   void _checkPermissions() async {
@@ -95,9 +106,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
       _permissionsService.canPerformAction('product.delete'),
     ]);
 
-    final canCreate = permissions[0];
-    final canEdit = permissions[1];
-    final canDelete = permissions[2];
+    final canCreate = permissions[0] && !_isAlmacenero;
+    final canEdit = permissions[1] && !_isAlmacenero;
+    final canDelete = permissions[2] && !_isAlmacenero;
 
     print('  • Crear producto: $canCreate');
     print('  • Editar producto: $canEdit');
@@ -200,13 +211,42 @@ class _ProductsScreenState extends State<ProductsScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text(
-          'Gestión de Productos',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-            fontSize: 20,
-          ),
+        title: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Gestión de Productos',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 20,
+              ),
+            ),
+            if (_isAlmacenero)
+              Container(
+                margin: const EdgeInsets.only(top: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade700,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.visibility, size: 12, color: Colors.white),
+                    SizedBox(width: 4),
+                    Text(
+                      'Solo Lectura',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ),
         centerTitle: true,
         backgroundColor: AppColors.primary,

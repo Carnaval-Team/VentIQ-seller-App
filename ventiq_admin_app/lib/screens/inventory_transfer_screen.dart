@@ -619,7 +619,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             const SizedBox(height: 16),
             _isLoadingWarehouses
                 ? const Center(child: CircularProgressIndicator())
-                : _buildWarehouseTree(isSource: true),
+                : _buildZoneDropdown(isSource: true),
             if (_selectedSourceLocation != null) ...[
               const SizedBox(height: 12),
               Container(
@@ -671,7 +671,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             const SizedBox(height: 16),
             _isLoadingWarehouses
                 ? const Center(child: CircularProgressIndicator())
-                : _buildWarehouseTree(isSource: false),
+                : _buildZoneDropdown(isSource: false),
             if (_selectedDestinationLocation != null) ...[
               const SizedBox(height: 12),
               Container(
@@ -928,55 +928,56 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  Widget _buildWarehouseTree({required bool isSource}) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        children:
-            _warehouses.map((warehouse) {
-              return ExpansionTile(
-                leading: Icon(Icons.warehouse, color: AppColors.primary),
-                title: Text(
-                  warehouse.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text('${warehouse.zones.length} zonas'),
-                children:
-                    warehouse.zones.map((zone) {
-                      final isSelected =
-                          isSource
-                              ? _selectedSourceLocation?.id == zone.id
-                              : _selectedDestinationLocation?.id == zone.id;
+  Widget _buildZoneDropdown({required bool isSource}) {
+    final List<Map<String, dynamic>> flatZones = [];
+    for (var warehouse in _warehouses) {
+      for (var zone in warehouse.zones) {
+        flatZones.add({'warehouse': warehouse.name, 'zone': zone});
+      }
+    }
 
-                      return ListTile(
-                        leading: Icon(
-                          Icons.layers,
-                          color: isSelected ? AppColors.primary : Colors.grey,
-                        ),
-                        title: Text(zone.name),
-                        subtitle:
-                            zone.code.isNotEmpty
-                                ? Text('Código: ${zone.code}')
-                                : null,
-                        selected: isSelected,
-                        onTap: () {
-                          setState(() {
-                            if (isSource) {
-                              _selectedSourceLocation = zone;
-                            } else {
-                              _selectedDestinationLocation = zone;
-                            }
-                          });
-                        },
-                      );
-                    }).toList(),
-              );
-            }).toList(),
+    final selectedZone = isSource
+        ? _selectedSourceLocation
+        : _selectedDestinationLocation;
+
+    return DropdownButtonFormField<WarehouseZone>(
+      value: selectedZone,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(),
+        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
+      hint: Text(isSource ? 'Seleccionar origen' : 'Seleccionar destino'),
+      items:
+          flatZones.map((item) {
+            final WarehouseZone zone = item['zone'];
+            final String warehouseName = item['warehouse'];
+            final String displayName = '$warehouseName - ${zone.name}';
+
+            return DropdownMenuItem<WarehouseZone>(
+              value: zone,
+              child: Text(
+                displayName,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14),
+              ),
+            );
+          }).toList(),
+      onChanged: (WarehouseZone? newZone) {
+        setState(() {
+          if (isSource) {
+            _selectedSourceLocation = newZone;
+          } else {
+            _selectedDestinationLocation = newZone;
+          }
+        });
+      },
     );
+  }
+
+  Widget _buildWarehouseTree({required bool isSource}) {
+    // Keeping this for reference or if needed later, but it's no longer used in the build method
+    return Container();
   }
 
   String _getWarehouseName(String warehouseId) {

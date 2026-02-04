@@ -1,9 +1,31 @@
 {
-  "current_version": "1.9.0",
-  "build": 190,
+  "current_version": "1.9.1",
+  "build": 191,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.9.1",
+      "date": "2026-02-03",
+      "title": "🔐 Permisos de UI y gestión para Rol Almacenero",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Nuevo rol Almacenero con permisos específicos",
+          "description": "Implementado rol Almacenero con acceso restringido a funcionalidades de gestión de almacenes e inventario."
+        },
+        {
+          "type": "improvement",
+          "title": "Acceso a Productos en modo solo lectura",
+          "description": "El almacenero puede ver productos pero no puede crear, editar o eliminar. Muestra badge 'Solo Lectura' en la pantalla de productos."
+        },
+        {
+          "type": "improvement",
+          "title": "Acceso a Inventario con filtro de almacén",
+          "description": "El almacenero solo ve el inventario de su almacén asignado. El filtro de almacén está bloqueado con ícono de candado."
+        }
+      ]
+    },
     {
       "version": "1.9.0",
       "date": "2026-02-02",
