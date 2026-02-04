@@ -1,13 +1,35 @@
 {
-  "current_version": "2.0.3",
-  "build": 813,
+  "current_version": "2.0.4",
+  "build": 814,
 
   "app_name": "ventiq_app",
   "changelogs": [
     {
+      "version": "2.0.4",
+      "date": "2026-02-04",
+      "title": "Tickets más claros y ventas sin sorpresas",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Tus tickets ahora hablan en USD",
+          "description": "Activa la opción y muestra CUP + USD en cada impresión para dar más claridad al cliente."
+        },
+        {
+          "type": "improvement",
+          "title": "Promos offline con etiquetas visibles",
+          "description": "Cuando no hay internet, las promos siguen mostrando su tipo para vender con confianza."
+        },
+        {
+          "type": "improvement",
+          "title": "Control total desde Configuración",
+          "description": "Enciende o apaga el USD en impresiones con un solo toque."
+        }
+      ]
+    },
+    {
       "version": "2.0.3",
       "date": "2026-02-03",
-      "title": "🔄 Sincronización más inteligente",
+      "title": "Sincronización más inteligente",
       "changes": [
         {
           "type": "improvement",
@@ -29,7 +51,7 @@
     {
       "version": "2.0.2",
       "date": "2026-02-03",
-      "title": "🖨️ Impresión masiva con tu marca",
+      "title": "Impresión masiva con tu marca",
       "changes": [
         {
           "type": "feature",
