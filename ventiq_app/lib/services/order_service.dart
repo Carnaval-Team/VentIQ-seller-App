@@ -1,6 +1,7 @@
 import '../models/order.dart';
 import '../models/product.dart';
 import '../models/payment_method.dart';
+import '../utils/promotion_rules.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import 'turno_service.dart'; // Import TurnoService
@@ -104,6 +105,55 @@ class OrderService {
 
       // Guardar automáticamente en persistencia
       _savePersistentPreorder();
+    }
+  }
+
+  /// Refrescar promociones desde cache offline para items sin datos de promoción
+  Future<void> refreshPromotionsFromCache({bool force = false}) async {
+    if (_currentOrder == null || _currentOrder!.items.isEmpty) {
+      return;
+    }
+
+    try {
+      final userPrefs = UserPreferencesService();
+      final globalPromotion = await userPrefs.getPromotionData();
+
+      final productIds =
+          _currentOrder!.items.map((item) => item.producto.id).toSet();
+      final Map<int, List<Map<String, dynamic>>> productPromotions = {};
+
+      for (final productId in productIds) {
+        final promotions = await userPrefs.getProductPromotions(productId);
+        if (promotions != null && promotions.isNotEmpty) {
+          productPromotions[productId] = promotions;
+        }
+      }
+
+      final updatedItems =
+          _currentOrder!.items.map((item) {
+            if (!force && item.promotionData != null) {
+              return item;
+            }
+
+            final productPromos = productPromotions[item.producto.id];
+            final activePromotion = PromotionRules.pickPromotionForDisplay(
+              productPromotions: productPromos,
+              globalPromotion: globalPromotion,
+              quantity: item.cantidad,
+            );
+
+            if (activePromotion == null) {
+              return force ? item.copyWith(promotionData: null) : item;
+            }
+
+            return item.copyWith(promotionData: activePromotion);
+          }).toList();
+
+      _currentOrder = _currentOrder!.copyWith(items: updatedItems);
+      _updateOrderTotal(_currentOrder!);
+      await _savePersistentPreorder();
+    } catch (e) {
+      print('❌ Error actualizando promociones offline: $e');
     }
   }
 

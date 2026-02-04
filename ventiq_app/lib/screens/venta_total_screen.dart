@@ -66,6 +66,23 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     return int.tryParse(value.toString()) ?? 0;
   }
 
+  bool _isExcludedPendingOrder(Map<String, dynamic> orderData) {
+    final rawStatus = orderData['estado'] ?? orderData['status'];
+
+    if (rawStatus is String) {
+      final normalized = rawStatus.toLowerCase();
+      return normalized == 'cancelada' || normalized == 'devuelta';
+    }
+
+    if (rawStatus is num) {
+      final statusIndex = rawStatus.toInt();
+      return statusIndex == OrderStatus.cancelada.index ||
+          statusIndex == OrderStatus.devuelta.index;
+    }
+
+    return false;
+  }
+
   Map<String, dynamic> _calculatePendingOrdersTotals(
     List<Map<String, dynamic>> pendingOrders,
   ) {
@@ -75,6 +92,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     int productosOffline = 0;
 
     for (final orderData in pendingOrders) {
+      if (_isExcludedPendingOrder(orderData)) {
+        continue;
+      }
       final total = _parseDouble(
         orderData['total'] ??
             orderData['total_operacion'] ??

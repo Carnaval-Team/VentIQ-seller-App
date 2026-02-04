@@ -503,6 +503,16 @@ class AutoSyncService {
   /// Sincronizar métodos de pago
   Future<List<Map<String, dynamic>>> _syncPaymentMethods() async {
     final paymentMethods = await PaymentMethodService.getActivePaymentMethods();
+
+    if (paymentMethods.isEmpty) {
+      final offlineData = await _userPreferencesService.getOfflineData();
+      final cached = offlineData?['payment_methods'];
+      if (cached is List) {
+        print('  ⚠️ Sin métodos de pago en línea - usando cache offline');
+        return List<Map<String, dynamic>>.from(cached);
+      }
+    }
+
     return paymentMethods.map((pm) => pm.toJson()).toList();
   }
 

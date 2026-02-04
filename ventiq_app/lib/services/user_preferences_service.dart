@@ -532,6 +532,10 @@ class UserPreferencesService {
           idTipoPromocion,
         ) ??
         tipoDescuento;
+    final tipoPromocionNombre = PromotionRules.resolveTipoPromocionNombre(
+      idTipoPromocion: idTipoPromocion,
+      tipoDescuento: resolvedTipoDescuento,
+    );
 
     if (idPromocion != null && codigoPromocion != null) {
       return {
@@ -540,6 +544,7 @@ class UserPreferencesService {
         'valor_descuento': valorDescuento,
         'tipo_descuento':
             resolvedTipoDescuento, // 1 = %, 2 = fijo, 3 = recargo %, 4 = recargo fijo
+        'tipo_promocion_nombre': tipoPromocionNombre,
         'id_tipo_promocion': idTipoPromocion,
         'min_compra': minCompra,
         'aplica_todo': aplicaTodo,

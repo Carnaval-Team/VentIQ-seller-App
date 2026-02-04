@@ -77,6 +77,44 @@ class PromotionRules {
     return null;
   }
 
+  static String resolveTipoPromocionNombre({
+    int? idTipoPromocion,
+    int? tipoDescuento,
+  }) {
+    if (idTipoPromocion != null) {
+      switch (idTipoPromocion) {
+        case 1:
+        case 10:
+          return 'Descuento porcentual';
+        case 2:
+        case 3:
+        case 4:
+        case 5:
+        case 6:
+        case 7:
+        case 11:
+          return 'Descuento exacto';
+        case 8:
+          return 'Recargo fijo';
+        case 9:
+          return 'Recargo porcentual';
+      }
+    }
+
+    switch (tipoDescuento) {
+      case 1:
+        return 'Descuento porcentual';
+      case 2:
+        return 'Descuento exacto';
+      case 3:
+        return 'Recargo porcentual';
+      case 4:
+        return 'Recargo fijo';
+    }
+
+    return 'Descuento porcentual';
+  }
+
   static int? resolvePromotionDiscountType(Map<String, dynamic> promotion) {
     final typeId = _parsePromotionTypeId(promotion);
     final mappedById = resolveTipoDescuentoFromPromotionTypeId(typeId);

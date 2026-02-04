@@ -1200,7 +1200,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (turnoInfo == null) return const SizedBox.shrink();
 
     final fechaApertura = turnoInfo['fecha_apertura'] as String?;
-    final efectivoInicial = turnoInfo['efectivo_inicial'] as double?;
+    final efectivoInicial = (turnoInfo['efectivo_inicial'] as num?)?.toDouble();
 
     String fechaFormateada = 'Fecha no disponible';
     if (fechaApertura != null) {
@@ -1211,7 +1211,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       } catch (e) {
         fechaFormateada = 'Fecha inválida';
       }
-    }
+}
 
     return ListTile(
       leading: Container(

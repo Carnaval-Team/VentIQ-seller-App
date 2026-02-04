@@ -25,7 +25,8 @@ class PreorderScreen extends StatefulWidget {
 class _PreorderScreenState extends State<PreorderScreen> {
   final OrderService _orderService = OrderService();
   final ProductDetailService _productDetailService = ProductDetailService();
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
   List<pm.PaymentMethod> _paymentMethods = [];
   bool _loadingPaymentMethods = false;
   bool _checkingShift = true;
@@ -39,11 +40,19 @@ class _PreorderScreenState extends State<PreorderScreen> {
     _loadPersistentPreorder();
     _checkOpenShift();
   }
-  
+
   /// Cargar preorden persistente al inicializar la pantalla
   Future<void> _loadPersistentPreorder() async {
     try {
       await _orderService.loadPersistentPreorder();
+      final isOfflineModeEnabled =
+          await _userPreferencesService.isOfflineModeEnabled();
+      if (isOfflineModeEnabled) {
+        await _orderService.refreshPromotionsFromCache();
+      }
+      if (mounted) {
+        setState(() {});
+      }
       print('📱 PreorderScreen: Preorden persistente cargada al inicializar');
     } catch (e) {
       print('❌ PreorderScreen: Error cargando preorden persistente: $e');
@@ -66,7 +75,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
       });
 
       if (_hasOpenShift) {
-        print('✅ PreorderScreen: Turno encontrado, cargando métodos de pago...');
+        print(
+          '✅ PreorderScreen: Turno encontrado, cargando métodos de pago...',
+        );
         _loadPaymentMethods();
       } else {
         print('❌ PreorderScreen: No hay turno abierto, mostrando diálogo...');
@@ -132,21 +143,30 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
     try {
       // Verificar si el modo offline está activado
-      final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
-      
+      final isOfflineModeEnabled =
+          await _userPreferencesService.isOfflineModeEnabled();
+
       List<pm.PaymentMethod> paymentMethods;
-      
+
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline - Cargando métodos de pago desde cache...');
-        final paymentMethodsData = await _userPreferencesService.getPaymentMethodsOffline();
-        paymentMethods = paymentMethodsData.map((data) => pm.PaymentMethod.fromJson(data)).toList();
-        print('✅ Métodos de pago cargados desde cache offline: ${paymentMethods.length}');
+        final paymentMethodsData =
+            await _userPreferencesService.getPaymentMethodsOffline();
+        paymentMethods =
+            paymentMethodsData
+                .map((data) => pm.PaymentMethod.fromJson(data))
+                .toList();
+        print(
+          '✅ Métodos de pago cargados desde cache offline: ${paymentMethods.length}',
+        );
       } else {
         print('🌐 Modo online - Cargando métodos de pago desde Supabase...');
         paymentMethods = await PaymentMethodService.getActivePaymentMethods();
-        print('✅ Métodos de pago cargados desde Supabase: ${paymentMethods.length}');
+        print(
+          '✅ Métodos de pago cargados desde Supabase: ${paymentMethods.length}',
+        );
       }
-      
+
       // Agregar método especial "Pago Regular (Efectivo)" hardcoded
       final pagoRegularEfectivo = pm.PaymentMethod(
         id: 999, // ID especial para diferenciarlo
@@ -156,10 +176,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
         esEfectivo: true,
         esActivo: true,
       );
-      
+
       // Agregar al inicio de la lista para que aparezca primero
       final methodsWithSpecial = [pagoRegularEfectivo, ...paymentMethods];
-      
+
       setState(() {
         _paymentMethods = methodsWithSpecial;
         _loadingPaymentMethods = false;
@@ -655,24 +675,37 @@ class _PreorderScreenState extends State<PreorderScreen> {
                     _paymentMethods.map((pm.PaymentMethod method) {
                       // Identificar si es el método especial "Pago Regular (Efectivo)"
                       final isSpecialCash = method.id == 999;
-                      
+
                       return DropdownMenuItem<pm.PaymentMethod>(
                         value: method,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 4,
+                            horizontal: 8,
+                          ),
                           decoration: BoxDecoration(
-                            color: isSpecialCash ? Colors.red.withOpacity(0.1) : null,
+                            color:
+                                isSpecialCash
+                                    ? Colors.red.withOpacity(0.1)
+                                    : null,
                             borderRadius: BorderRadius.circular(6),
-                            border: isSpecialCash 
-                                ? Border.all(color: Colors.red.withOpacity(0.3), width: 1)
-                                : null,
+                            border:
+                                isSpecialCash
+                                    ? Border.all(
+                                      color: Colors.red.withOpacity(0.3),
+                                      width: 1,
+                                    )
+                                    : null,
                           ),
                           child: Row(
                             children: [
                               Icon(
                                 method.typeIcon,
                                 size: 18,
-                                color: isSpecialCash ? Colors.red[700] : Colors.grey[600],
+                                color:
+                                    isSpecialCash
+                                        ? Colors.red[700]
+                                        : Colors.grey[600],
                               ),
                               const SizedBox(width: 8),
                               Expanded(
@@ -680,8 +713,14 @@ class _PreorderScreenState extends State<PreorderScreen> {
                                   method.displayName,
                                   style: TextStyle(
                                     fontSize: 14,
-                                    color: isSpecialCash ? Colors.red[700] : Colors.black87,
-                                    fontWeight: isSpecialCash ? FontWeight.w600 : FontWeight.normal,
+                                    color:
+                                        isSpecialCash
+                                            ? Colors.red[700]
+                                            : Colors.black87,
+                                    fontWeight:
+                                        isSpecialCash
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -689,7 +728,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                               if (isSpecialCash) ...[
                                 const SizedBox(width: 4),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.red,
                                     borderRadius: BorderRadius.circular(10),
@@ -821,15 +863,18 @@ class _PreorderScreenState extends State<PreorderScreen> {
     }
 
     // Verificar si el modo offline está activado
-    final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
-    
+    final isOfflineModeEnabled =
+        await _userPreferencesService.isOfflineModeEnabled();
+
     if (isOfflineModeEnabled) {
       // MODO OFFLINE: No elaborar productos, pero SÍ ir al checkout para capturar datos del cliente
-      print('🔌 Modo offline - Saltando elaboración pero continuando al checkout para datos del cliente');
-      
+      print(
+        '🔌 Modo offline - Saltando elaboración pero continuando al checkout para datos del cliente',
+      );
+
       // Marcar la orden como offline para que el checkout la maneje apropiadamente
       currentOrder.isOfflineOrder = true;
-      
+
       // Navigate to checkout screen (CRÍTICO: No saltarse el checkout en modo offline)
       Navigator.push(
         context,
@@ -842,9 +887,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
       });
     } else {
       // MODO ONLINE: Elaborar productos y continuar al checkout
-      print('🌐 Modo online - Procesando elaboración y continuando al checkout');
+      print(
+        '🌐 Modo online - Procesando elaboración y continuando al checkout',
+      );
       await _processElaboratedProducts(currentOrder);
-      
+
       // Navigate to checkout screen
       Navigator.push(
         context,
@@ -869,7 +916,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
       final productosElaborados = <Map<String, dynamic>>[];
       for (final item in order.items) {
         final productId = item.producto.id;
-        final isElaborated = await _productDetailService.isProductElaborated(productId);
+        final isElaborated = await _productDetailService.isProductElaborated(
+          productId,
+        );
         if (isElaborated) {
           productosElaborados.add({
             'id_producto': productId,
@@ -881,11 +930,15 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
       // Si no hay productos elaborados, salir temprano
       if (productosElaborados.isEmpty) {
-        debugPrint('✅ No hay productos elaborados en la orden - saltando proceso');
+        debugPrint(
+          '✅ No hay productos elaborados en la orden - saltando proceso',
+        );
         return;
       }
 
-      debugPrint('🔍 Productos elaborados encontrados: ${productosElaborados.length}');
+      debugPrint(
+        '🔍 Productos elaborados encontrados: ${productosElaborados.length}',
+      );
 
       // Show loading dialog
       showDialog(
@@ -897,7 +950,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.orange[600]!),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.orange[600]!,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 const Text(
@@ -916,25 +971,35 @@ class _PreorderScreenState extends State<PreorderScreen> {
       );
 
       // Verificar disponibilidad de ingredientes solo en modo ONLINE y si la configuración lo requiere
-      final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
-      
+      final isOfflineModeEnabled =
+          await _userPreferencesService.isOfflineModeEnabled();
+
       if (!isOfflineModeEnabled) {
         debugPrint('🌐 Modo online - Verificando configuración de tienda...');
-        
+
         // Obtener ID de tienda
         final idTienda = await _userPreferencesService.getIdTienda();
         if (idTienda != null) {
           // Verificar configuración de tienda
-          final permiteVenderSinDisponibilidad = await StoreConfigService.getPermiteVenderAunSinDisponibilidad(idTienda);
-          
+          final permiteVenderSinDisponibilidad =
+              await StoreConfigService.getPermiteVenderAunSinDisponibilidad(
+                idTienda,
+              );
+
           if (permiteVenderSinDisponibilidad) {
-            debugPrint('⚙️ Configuración permite vender sin disponibilidad - Saltando verificación de ingredientes');
+            debugPrint(
+              '⚙️ Configuración permite vender sin disponibilidad - Saltando verificación de ingredientes',
+            );
           } else {
-            debugPrint('⚙️ Configuración requiere verificar disponibilidad - Verificando ingredientes');
+            debugPrint(
+              '⚙️ Configuración requiere verificar disponibilidad - Verificando ingredientes',
+            );
             await _checkIngredientsAvailability(productosElaborados);
           }
         } else {
-          debugPrint('⚠️ No se pudo obtener ID de tienda - Verificando ingredientes por seguridad');
+          debugPrint(
+            '⚠️ No se pudo obtener ID de tienda - Verificando ingredientes por seguridad',
+          );
           await _checkIngredientsAvailability(productosElaborados);
         }
       } else {
@@ -942,35 +1007,52 @@ class _PreorderScreenState extends State<PreorderScreen> {
       }
 
       // Convert order items to the format expected by decomposition functions
-      final productos = order.items.map((item) {
-        // Use the product ID from the Product object, not the OrderItem ID
-        final productId = item.producto.id;
-        debugPrint('🔄 Convirtiendo OrderItem - ID: ${item.id}, ProductoID: $productId, Nombre: ${item.nombre}');
-        return {
-          'id_producto': productId,
-          'cantidad': item.cantidad,
-          'nombre': item.nombre,
-          'precio_unitario': item.precioUnitario,
-        };
-      }).where((producto) => producto['id_producto'] != 0).toList();
+      final productos =
+          order.items
+              .map((item) {
+                // Use the product ID from the Product object, not the OrderItem ID
+                final productId = item.producto.id;
+                debugPrint(
+                  '🔄 Convirtiendo OrderItem - ID: ${item.id}, ProductoID: $productId, Nombre: ${item.nombre}',
+                );
+                return {
+                  'id_producto': productId,
+                  'cantidad': item.cantidad,
+                  'nombre': item.nombre,
+                  'precio_unitario': item.precioUnitario,
+                };
+              })
+              .where((producto) => producto['id_producto'] != 0)
+              .toList();
 
-      debugPrint('🔄 Procesando ${productos.length} productos para elaboración');
-      
+      debugPrint(
+        '🔄 Procesando ${productos.length} productos para elaboración',
+      );
+
       // Log all products being processed
       for (final producto in productos) {
-        debugPrint('📋 Producto en orden: ID=${producto['id_producto']}, Nombre=${producto['nombre']}, Cantidad=${producto['cantidad']}');
+        debugPrint(
+          '📋 Producto en orden: ID=${producto['id_producto']}, Nombre=${producto['nombre']}, Cantidad=${producto['cantidad']}',
+        );
       }
 
       // Decompose elaborated products using the same logic as inventory service
-      final productosDescompuestos = await _decomposeElaboratedProducts(productos);
-      
-      debugPrint('✅ Descomposición completada: ${productosDescompuestos.length} productos finales');
-      
+      final productosDescompuestos = await _decomposeElaboratedProducts(
+        productos,
+      );
+
+      debugPrint(
+        '✅ Descomposición completada: ${productosDescompuestos.length} productos finales',
+      );
+
       // Update the order with decomposed products for inventory management
       await _updateOrderWithDecomposedProducts(order, productosDescompuestos);
-      
+
       // Show detailed results
-      final elaboratedCount = productosDescompuestos.where((p) => p['producto_elaborado'] != null).length;
+      final elaboratedCount =
+          productosDescompuestos
+              .where((p) => p['producto_elaborado'] != null)
+              .length;
       final simpleCount = productosDescompuestos.length - elaboratedCount;
 
       // Close loading dialog
@@ -994,18 +1076,18 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   ],
                 ),
                 if (elaboratedCount > 0) ...[
-                const SizedBox(height: 4),
-                Text(
-                  '🍽️ $elaboratedCount ingredientes de productos elaborados',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  Text(
+                    '🍽️ $elaboratedCount ingredientes de productos elaborados',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ],
                 if (simpleCount > 0) ...[
-                const SizedBox(height: 4),
-                Text(
-                  '📦 $simpleCount productos simples',
-                  style: const TextStyle(fontSize: 12),
-                ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '📦 $simpleCount productos simples',
+                    style: const TextStyle(fontSize: 12),
+                  ),
                 ],
               ],
             ),
@@ -1014,15 +1096,14 @@ class _PreorderScreenState extends State<PreorderScreen> {
           ),
         );
       }
-
     } catch (e) {
       // Close loading dialog if still open (solo si se mostró)
       if (Navigator.canPop(context)) {
         Navigator.of(context).pop();
       }
-      
+
       debugPrint('❌ Error procesando productos elaborados: $e');
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
@@ -1045,115 +1126,149 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
   /// Descompone productos elaborados recursivamente (similar a inventory_service.dart)
   Future<List<Map<String, dynamic>>> _decomposeElaboratedProducts(
-    List<Map<String, dynamic>> productos
+    List<Map<String, dynamic>> productos,
   ) async {
     final decomposedProducts = <Map<String, dynamic>>[];
-    
+
     debugPrint('🔄 Descomponiendo productos elaborados...');
-    
+
     for (final producto in productos) {
       final productId = producto['id_producto'] as int;
       final cantidadOriginal = (producto['cantidad'] as num).toDouble();
-      
+
       debugPrint('🔄 Procesando producto ID: $productId');
       debugPrint('🔄 Cantidad original: $cantidadOriginal');
       debugPrint('🔄 Nombre producto: ${producto['nombre']}');
-      
-      final isElaborated = await _productDetailService.isProductElaborated(productId);
-      debugPrint('🔄 Resultado isElaborated para producto $productId: $isElaborated');
-      
+
+      final isElaborated = await _productDetailService.isProductElaborated(
+        productId,
+      );
+      debugPrint(
+        '🔄 Resultado isElaborated para producto $productId: $isElaborated',
+      );
+
       if (isElaborated) {
         debugPrint('🔍 Producto $productId es elaborado');
-        
+
         final consolidatedIngredients = <int, double>{};
-        
-        await _decomposeRecursively(productId, cantidadOriginal, consolidatedIngredients);
-        
+
+        await _decomposeRecursively(
+          productId,
+          cantidadOriginal,
+          consolidatedIngredients,
+        );
+
         debugPrint('📦 Ingredientes consolidados:');
         for (final entry in consolidatedIngredients.entries) {
           debugPrint('   - ID: ${entry.key}, Cantidad: ${entry.value}');
         }
-        
+
         // Create decomposed products for each ingredient
         for (final entry in consolidatedIngredients.entries) {
           final ingredientId = entry.key;
           final cantidad = entry.value;
-          
+
           final ingredientProduct = Map<String, dynamic>.from(producto);
           ingredientProduct['id_producto'] = ingredientId;
           ingredientProduct['cantidad'] = cantidad;
           ingredientProduct['cantidad_original'] = cantidadOriginal;
           ingredientProduct['producto_elaborado'] = productId;
           ingredientProduct['conversion_applied'] = true;
-          
+
           decomposedProducts.add(ingredientProduct);
         }
       } else {
-        debugPrint('🔄 Producto $productId NO es elaborado - agregando como simple');
+        debugPrint(
+          '🔄 Producto $productId NO es elaborado - agregando como simple',
+        );
         // Add simple products as-is
         decomposedProducts.add(producto);
       }
     }
-    
-    debugPrint('✅ Descomposición completada: ${decomposedProducts.length} productos');
+
+    debugPrint(
+      '✅ Descomposición completada: ${decomposedProducts.length} productos',
+    );
     return decomposedProducts;
   }
 
   /// Descompone un producto elaborado recursivamente
   Future<void> _decomposeRecursively(
-    int productId, 
-    double quantity, 
-    Map<int, double> consolidatedIngredients
+    int productId,
+    double quantity,
+    Map<int, double> consolidatedIngredients,
   ) async {
     debugPrint('🔄 Descomponiendo producto $productId con cantidad $quantity');
-    
-    final ingredients = await _productDetailService.getProductIngredients(productId);
-    
+
+    final ingredients = await _productDetailService.getProductIngredients(
+      productId,
+    );
+
     if (ingredients.isEmpty) {
-      debugPrint('⚠️ Producto $productId sin ingredientes - tratando como simple');
+      debugPrint(
+        '⚠️ Producto $productId sin ingredientes - tratando como simple',
+      );
       _addToConsolidated(consolidatedIngredients, productId, quantity);
       return;
     }
-    
+
     for (final ingredient in ingredients) {
       final ingredientId = ingredient['producto_id'] as int;
-      final cantidadNecesaria = (ingredient['cantidad_necesaria'] as num).toDouble();
+      final cantidadNecesaria =
+          (ingredient['cantidad_necesaria'] as num).toDouble();
       final totalQuantity = cantidadNecesaria * quantity;
-      
-      final isElaborated = await _productDetailService.isProductElaborated(ingredientId);
-      
+
+      final isElaborated = await _productDetailService.isProductElaborated(
+        ingredientId,
+      );
+
       if (isElaborated) {
-        await _decomposeRecursively(ingredientId, totalQuantity, consolidatedIngredients);
+        await _decomposeRecursively(
+          ingredientId,
+          totalQuantity,
+          consolidatedIngredients,
+        );
       } else {
-        _addToConsolidated(consolidatedIngredients, ingredientId, totalQuantity);
+        _addToConsolidated(
+          consolidatedIngredients,
+          ingredientId,
+          totalQuantity,
+        );
       }
     }
   }
 
   /// Agrega cantidad a ingredientes consolidados
-  void _addToConsolidated(Map<int, double> consolidatedIngredients, int productId, double quantity) {
+  void _addToConsolidated(
+    Map<int, double> consolidatedIngredients,
+    int productId,
+    double quantity,
+  ) {
     if (consolidatedIngredients.containsKey(productId)) {
-      consolidatedIngredients[productId] = consolidatedIngredients[productId]! + quantity;
+      consolidatedIngredients[productId] =
+          consolidatedIngredients[productId]! + quantity;
     } else {
       consolidatedIngredients[productId] = quantity;
     }
-    debugPrint('📦 Consolidado: Producto $productId -> ${consolidatedIngredients[productId]}');
+    debugPrint(
+      '📦 Consolidado: Producto $productId -> ${consolidatedIngredients[productId]}',
+    );
   }
 
   /// Actualiza la orden con los productos descompuestos para manejo de inventario
   Future<void> _updateOrderWithDecomposedProducts(
-    Order order, 
-    List<Map<String, dynamic>> productosDescompuestos
+    Order order,
+    List<Map<String, dynamic>> productosDescompuestos,
   ) async {
     debugPrint('🔄 Actualizando orden con productos descompuestos...');
-    
+
     // Store the decomposed products in the order for later use by OrderService
     // This allows the OrderService to send both elaborated products (for sales record)
     // and their ingredients (for inventory deduction) to fn_registrar_venta
-    
+
     final elaboratedProductsData = <String, dynamic>{};
     final ingredientsData = <Map<String, dynamic>>[];
-    
+
     for (final producto in productosDescompuestos) {
       if (producto['producto_elaborado'] != null) {
         // This is an ingredient from an elaborated product
@@ -1163,7 +1278,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
           'producto_elaborado_id': producto['producto_elaborado'],
           'es_ingrediente': true,
         });
-        
+
         // Group by elaborated product
         final elaboratedId = producto['producto_elaborado'].toString();
         if (!elaboratedProductsData.containsKey(elaboratedId)) {
@@ -1179,29 +1294,32 @@ class _PreorderScreenState extends State<PreorderScreen> {
         });
       }
     }
-    
+
     // Store the decomposition data in the order for OrderService to use
     // This will be used when calling fn_registrar_venta
     for (final item in order.items) {
       final productId = item.producto.id;
       final elaboratedId = productId.toString();
-      
+
       if (elaboratedProductsData.containsKey(elaboratedId)) {
         // Add decomposition metadata to the order item
         final decompositionData = {
           'es_elaborado': true,
-          'ingredientes_descompuestos': elaboratedProductsData[elaboratedId]['ingredientes'],
+          'ingredientes_descompuestos':
+              elaboratedProductsData[elaboratedId]['ingredientes'],
           'requiere_descomposicion_inventario': true,
         };
-        
+
         // Store in inventoryData or create a new field for this
         final currentInventoryData = item.inventoryData ?? {};
         currentInventoryData['decomposition_data'] = decompositionData;
-        
-        debugPrint('📦 Producto elaborado ${item.nombre} actualizado con ${elaboratedProductsData[elaboratedId]['ingredientes'].length} ingredientes');
+
+        debugPrint(
+          '📦 Producto elaborado ${item.nombre} actualizado con ${elaboratedProductsData[elaboratedId]['ingredientes'].length} ingredientes',
+        );
       }
     }
-    
+
     debugPrint('✅ Orden actualizada con datos de descomposición');
   }
 
@@ -1324,30 +1442,46 @@ class _PreorderScreenState extends State<PreorderScreen> {
                     _paymentMethods.map((pm.PaymentMethod method) {
                       // Identificar si es el método especial "Pago Regular (Efectivo)"
                       final isSpecialCash = method.id == 999;
-                      
+
                       return DropdownMenuItem<pm.PaymentMethod>(
                         value: method,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 4,
+                            horizontal: 8,
+                          ),
                           decoration: BoxDecoration(
-                            color: isSpecialCash ? Colors.red.withOpacity(0.1) : null,
+                            color:
+                                isSpecialCash
+                                    ? Colors.red.withOpacity(0.1)
+                                    : null,
                             borderRadius: BorderRadius.circular(6),
-                            border: isSpecialCash 
-                                ? Border.all(color: Colors.red.withOpacity(0.3), width: 1)
-                                : null,
+                            border:
+                                isSpecialCash
+                                    ? Border.all(
+                                      color: Colors.red.withOpacity(0.3),
+                                      width: 1,
+                                    )
+                                    : null,
                           ),
                           child: Row(
                             children: [
                               Container(
                                 padding: const EdgeInsets.all(4),
                                 decoration: BoxDecoration(
-                                  color: isSpecialCash ? Colors.red.withOpacity(0.2) : Colors.grey[100],
+                                  color:
+                                      isSpecialCash
+                                          ? Colors.red.withOpacity(0.2)
+                                          : Colors.grey[100],
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Icon(
                                   method.typeIcon,
                                   size: 18,
-                                  color: isSpecialCash ? Colors.red[700] : const Color(0xFF4A90E2),
+                                  color:
+                                      isSpecialCash
+                                          ? Colors.red[700]
+                                          : const Color(0xFF4A90E2),
                                 ),
                               ),
                               const SizedBox(width: 10),
@@ -1357,7 +1491,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w500,
-                                    color: isSpecialCash ? Colors.red[700] : Colors.black87,
+                                    color:
+                                        isSpecialCash
+                                            ? Colors.red[700]
+                                            : Colors.black87,
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1365,7 +1502,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                               if (isSpecialCash) ...[
                                 const SizedBox(width: 4),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.red,
                                     borderRadius: BorderRadius.circular(10),
@@ -1453,7 +1593,6 @@ class _PreorderScreenState extends State<PreorderScreen> {
     });
   }
 
-
   /// Verifica la disponibilidad de ingredientes para productos elaborados
   Future<void> _checkIngredientsAvailability(
     List<Map<String, dynamic>> productosElaborados,
@@ -1467,18 +1606,24 @@ class _PreorderScreenState extends State<PreorderScreen> {
         final cantidadProducto = (producto['cantidad'] as num).toDouble();
         final nombreProducto = producto['nombre'] as String;
 
-        final ingredientes = await _productDetailService.getProductIngredients(productId);
+        final ingredientes = await _productDetailService.getProductIngredients(
+          productId,
+        );
 
         for (final ingrediente in ingredientes) {
-          final cantidadNecesaria = (ingrediente['cantidad_necesaria'] as num).toDouble();
-          final cantidadDisponible = ingrediente['cantidad_disponible'] as double?;
+          final cantidadNecesaria =
+              (ingrediente['cantidad_necesaria'] as num).toDouble();
+          final cantidadDisponible =
+              ingrediente['cantidad_disponible'] as double?;
           final nombreIngrediente = ingrediente['producto_nombre'] as String;
           final unidadMedida = ingrediente['unidad_medida'] as String;
 
           final cantidadTotalNecesaria = cantidadNecesaria * cantidadProducto;
 
           if (cantidadDisponible == null) {
-            debugPrint('⚠️ Ingrediente sin datos de inventario: $nombreIngrediente');
+            debugPrint(
+              '⚠️ Ingrediente sin datos de inventario: $nombreIngrediente',
+            );
             continue;
           }
 
@@ -1596,7 +1741,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                             Icon(
                               Icons.inventory_2,
                               size: 16,
-                              color: isError ? Colors.red[700] : Colors.orange[700],
+                              color:
+                                  isError
+                                      ? Colors.red[700]
+                                      : Colors.orange[700],
                             ),
                             const SizedBox(width: 6),
                             Expanded(
@@ -1605,7 +1753,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
-                                  color: isError ? Colors.red[900] : Colors.orange[900],
+                                  color:
+                                      isError
+                                          ? Colors.red[900]
+                                          : Colors.orange[900],
                                 ),
                               ),
                             ),
@@ -1632,7 +1783,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: isError ? Colors.red[700] : Colors.orange[700],
+                                color:
+                                    isError
+                                        ? Colors.red[700]
+                                        : Colors.orange[700],
                               ),
                             ),
                           ],

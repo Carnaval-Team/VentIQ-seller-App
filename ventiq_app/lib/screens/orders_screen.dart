@@ -1472,7 +1472,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 ),
 
                                 // Desglose de pagos
-                                if (order.operationId != null) ...[
+                                if (order.operationId != null ||
+                                    _getLocalPaymentBreakdown(
+                                      order,
+                                    ).isNotEmpty) ...[
                                   const SizedBox(height: 16),
                                   _buildPaymentBreakdown(
                                     order,

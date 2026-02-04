@@ -763,35 +763,47 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
   void _loadPromotionData() async {
     try {
-      // Obtener ID de tienda
-      final idTienda = await _userPreferencesService.getIdTienda();
-      if (idTienda == null) {
-        print('❌ No se pudo obtener ID de tienda para promociones');
-        return;
-      }
+      final isOfflineModeEnabled =
+          await _userPreferencesService.isOfflineModeEnabled();
 
-      // Cargar promoción global
-      final globalPromotion = await _promotionService.getGlobalPromotion(
-        idTienda,
-      );
+      Map<String, dynamic>? globalPromotion;
+      List<Map<String, dynamic>>? productPromotions;
 
-      // Cargar promociones específicas del producto usando el nuevo método
-      final productPromotions = await _promotionService.getProductPromotions(
-        currentProduct.id,
-      );
-
-      // Guardar promociones del producto en preferencias para acceso en checkout
-      if (productPromotions.isNotEmpty) {
-        await _userPreferencesService.saveProductPromotions(
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline - Cargando promociones desde cache...');
+        globalPromotion = await _userPreferencesService.getPromotionData();
+        productPromotions = await _userPreferencesService.getProductPromotions(
           currentProduct.id,
-          productPromotions,
         );
+      } else {
+        // Obtener ID de tienda
+        final idTienda = await _userPreferencesService.getIdTienda();
+        if (idTienda == null) {
+          print('❌ No se pudo obtener ID de tienda para promociones');
+          return;
+        }
+
+        // Cargar promoción global
+        globalPromotion = await _promotionService.getGlobalPromotion(idTienda);
+
+        // Cargar promociones específicas del producto usando el nuevo método
+        productPromotions = await _promotionService.getProductPromotions(
+          currentProduct.id,
+        );
+
+        // Guardar promociones del producto en preferencias para acceso en checkout
+        if (productPromotions.isNotEmpty) {
+          await _userPreferencesService.saveProductPromotions(
+            currentProduct.id,
+            productPromotions,
+          );
+        }
       }
 
       setState(() {
         _globalPromotionData = globalPromotion;
         _productPromotionData =
-            productPromotions.isNotEmpty ? productPromotions : null;
+            productPromotions?.isNotEmpty == true ? productPromotions : null;
       });
 
       print('🎯 Promociones cargadas:');
@@ -799,7 +811,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         '  - Global: ${globalPromotion != null ? globalPromotion['codigo_promocion'] : 'No'}',
       );
       print(
-        '  - Producto: ${productPromotions.isNotEmpty ? '${productPromotions.length} promociones' : 'No'}',
+        '  - Producto: ${productPromotions?.isNotEmpty == true ? '${productPromotions!.length} promociones' : 'No'}',
       );
     } catch (e) {
       print('❌ Error cargando promociones: $e');
