@@ -1,9 +1,31 @@
 {
-  "current_version": "2.0.2",
-  "build": 812,
+  "current_version": "2.0.3",
+  "build": 813,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.0.3",
+      "date": "2026-02-03",
+      "title": "🔄 Sincronización más inteligente",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Sincronización manual sin interrupciones",
+          "description": "Si la sincronización automática está activa, la app espera el momento correcto para proteger tus ventas."
+        },
+        {
+          "type": "feature",
+          "title": "Indicador de sincronización en Configuración",
+          "description": "Un vistazo rápido para saber si se está sincronizando o si todo quedó al día."
+        },
+        {
+          "type": "improvement",
+          "title": "Modo offline más protegido",
+          "description": "Al activar o desactivar el modo offline, la app valida el estado y cuida tus datos."
+        }
+      ]
+    },
     {
       "version": "2.0.2",
       "date": "2026-02-03",
@@ -29,7 +51,7 @@
     {
       "version": "2.0.0",
       "date": "2026-02-03",
-      "title": "💸Nuevas mejoras web ,modo offlie y promociones!",
+      "title": "Nuevas mejoras web ,modo offlie y promociones!",
       "changes": [
         {
           "type": "fix",

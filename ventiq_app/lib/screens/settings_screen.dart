@@ -17,7 +17,7 @@ import '../models/subscription.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
-import '../widgets/connection_status_widget.dart';
+import '../widgets/sync_status_chip.dart';
 import '../services/connectivity_service.dart';
 import 'dart:async';
 
@@ -434,48 +434,165 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  Future<void> _onOfflineModeChanged(bool value) async {
+  Future<SettingsIntegrationStatus?> _getIntegrationStatusSafe() async {
+    if (!_isSmartServicesInitialized) {
+      return null;
+    }
+
     try {
-      if (value) {
-        // Si se activa, mostrar diálogo de sincronización
-        await _showSyncDialog();
-      } else {
-        // Si se desactiva, notificar al servicio de integración
+      return await _integrationService.getStatus();
+    } catch (e) {
+      print('❌ Error obteniendo estado de sincronización: $e');
+      return null;
+    }
+  }
+
+  Future<bool> _isAutoSyncBusy({required bool blockWhenRunning}) async {
+    final status = await _getIntegrationStatusSafe();
+    if (status == null) return false;
+
+    final syncStats = status.smartOfflineStatus.syncStats;
+    final isSyncing = syncStats['isSyncing'] == true;
+    final isRunning = status.smartOfflineStatus.isAutoSyncRunning;
+
+    return isSyncing || (blockWhenRunning && isRunning);
+  }
+
+  void _showAutoSyncBlockedMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  Future<void> _activateOfflineMode() async {
+    try {
+      final hasOfflineData = await _userPreferencesService.hasOfflineData();
+
+      if (!hasOfflineData) {
+        final synced = await _forceSyncNow(blockWhenRunning: false);
+        if (!synced) {
+          if (mounted) {
+            setState(() {
+              _isOfflineModeEnabled = false;
+            });
+          }
+          return;
+        }
+      }
+
+      final isReady = await _userPreferencesService.hasOfflineData();
+      if (!isReady) {
+        _showAutoSyncBlockedMessage(
+          '⚠️ No hay datos offline disponibles. Sincroniza primero.',
+        );
+        if (mounted) {
+          setState(() {
+            _isOfflineModeEnabled = false;
+          });
+        }
+        return;
+      }
+
+      await _userPreferencesService.setOfflineMode(true);
+
+      if (_isSmartServicesInitialized) {
+        await _integrationService.handleOfflineModeChanged(true);
+      }
+
+      if (mounted) {
+        setState(() {
+          _isOfflineModeEnabled = true;
+        });
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🔌 Modo offline activado - Datos listos sin conexión'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      print('❌ Error activando modo offline: $e');
+      if (mounted) {
         setState(() {
           _isOfflineModeEnabled = false;
         });
-        await _userPreferencesService.setOfflineMode(false);
-
-        // Notificar al servicio de integración sobre el cambio manual
-        if (_isSmartServicesInitialized) {
-          await _integrationService.handleOfflineModeChanged(false);
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              '🌐 Modo offline desactivado - Sincronización automática iniciada',
-            ),
-            backgroundColor: Colors.blue,
-            duration: Duration(seconds: 3),
-          ),
-        );
       }
-    } catch (e) {
-      print('❌ Error cambiando modo offline: $e');
-
-      // Revertir el estado en caso de error
-      setState(() {
-        _isOfflineModeEnabled = !value;
-      });
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('❌ Error cambiando modo offline: $e'),
+          content: Text('❌ Error activando modo offline: $e'),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 4),
         ),
       );
+    }
+  }
+
+  Future<void> _deactivateOfflineMode() async {
+    try {
+      await _userPreferencesService.setOfflineMode(false);
+
+      if (_isSmartServicesInitialized) {
+        await _integrationService.handleOfflineModeChanged(false);
+      }
+
+      if (mounted) {
+        setState(() {
+          _isOfflineModeEnabled = false;
+        });
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            '🌐 Modo offline desactivado - Sincronización automática iniciada',
+          ),
+          backgroundColor: Colors.blue,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      print('❌ Error desactivando modo offline: $e');
+      if (mounted) {
+        setState(() {
+          _isOfflineModeEnabled = true;
+        });
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error desactivando modo offline: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onOfflineModeChanged(bool value) async {
+    final isBusy = await _isAutoSyncBusy(blockWhenRunning: false);
+    if (isBusy) {
+      _showAutoSyncBlockedMessage(
+        '🔄 Sincronización automática en progreso. Espera para cambiar el modo offline.',
+      );
+      if (mounted) {
+        setState(() {
+          _isOfflineModeEnabled = !value;
+        });
+      }
+      return;
+    }
+
+    if (value) {
+      await _activateOfflineMode();
+    } else {
+      await _deactivateOfflineMode();
     }
   }
 
@@ -562,7 +679,81 @@ class _SettingsScreenState extends State<SettingsScreen>
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: Center(
-                child: ConnectionStatusWidget(showDetails: true, compact: true),
+                child: GestureDetector(
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          _isOfflineModeEnabled
+                              ? '🔌 Modo offline activado - Trabajando con datos sincronizados'
+                              : '🌐 Modo online - Conectado al servidor',
+                        ),
+                        backgroundColor:
+                            _isOfflineModeEnabled
+                                ? Colors.grey[600]
+                                : Colors.green,
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color:
+                          _isOfflineModeEnabled
+                              ? Colors.grey[100]
+                              : Colors.green[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color:
+                            _isOfflineModeEnabled
+                                ? Colors.grey[400]!
+                                : Colors.green[400]!,
+                        width: 0.8,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 1,
+                          offset: const Offset(0, 0.5),
+                        ),
+                      ],
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _isOfflineModeEnabled
+                                ? Icons.cloud_off
+                                : Icons.cloud_done,
+                            size: 12,
+                            color:
+                                _isOfflineModeEnabled
+                                    ? Colors.grey[600]
+                                    : Colors.green[600],
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            _isOfflineModeEnabled ? 'Offline' : 'Online',
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                              color:
+                                  _isOfflineModeEnabled
+                                      ? Colors.grey[600]
+                                      : Colors.green[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           Builder(
@@ -575,166 +766,172 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      body: Stack(
         children: [
-          // Sección de cuenta
-          _buildSectionHeader('Cuenta'),
-          _buildSettingsCard([
-            _buildSettingsTile(
-              icon: Icons.person_outline,
-              title: 'Perfil de Usuario',
-              subtitle: 'Editar información personal',
-              onTap: () => _showComingSoon('Perfil de Usuario'),
-            ),
-            _buildDivider(),
-            _buildSettingsTile(
-              icon: Icons.lock_outline,
-              title: 'Cambiar Contraseña',
-              subtitle: 'Actualizar credenciales de acceso',
-              onTap: () => _showComingSoon('Cambiar Contraseña'),
-            ),
-          ]),
+          ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              // Sección de cuenta
+              _buildSectionHeader('Cuenta'),
+              _buildSettingsCard([
+                _buildSettingsTile(
+                  icon: Icons.person_outline,
+                  title: 'Perfil de Usuario',
+                  subtitle: 'Editar información personal',
+                  onTap: () => _showComingSoon('Perfil de Usuario'),
+                ),
+                _buildDivider(),
+                _buildSettingsTile(
+                  icon: Icons.lock_outline,
+                  title: 'Cambiar Contraseña',
+                  subtitle: 'Actualizar credenciales de acceso',
+                  onTap: () => _showComingSoon('Cambiar Contraseña'),
+                ),
+              ]),
 
-          const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-          // Sección de suscripción
-          _buildSubscriptionSection(),
+              // Sección de suscripción
+              _buildSubscriptionSection(),
 
-          // Sección de aplicación
-          _buildSectionHeader('Aplicación'),
-          _buildSettingsCard([
-            _buildSettingsTile(
-              icon: Icons.notifications_outlined,
-              title: 'Notificaciones',
-              subtitle: 'Configurar alertas y avisos',
-              onTap: () => _showComingSoon('Notificaciones'),
-            ),
-            _buildDivider(),
-            _buildPrintSettingsTile(),
-            _buildDivider(),
-            _buildSettingsTile(
-              icon: Icons.wifi,
-              title: 'Impresoras WiFi',
-              subtitle: 'Gestionar impresoras de red',
-              onTap: () => Navigator.pushNamed(context, '/wifi-printers'),
-            ),
-            _buildDivider(),
-            _buildStaticTextSettingsTile(),
-            _buildDivider(),
-            _buildFluidModeSettingsTile(),
-            _buildDivider(),
-            _buildSettingsTile(
-              icon: Icons.system_update_outlined,
-              title: 'Buscar Actualizaciones',
-              subtitle: 'Verificar si hay nuevas versiones',
-              onTap: () => _checkForUpdates(),
-            ),
-            _buildDivider(),
-            _buildSettingsTile(
-              icon: Icons.language_outlined,
-              title: 'Idioma',
-              subtitle: 'Español',
-              onTap: () => _showComingSoon('Idioma'),
-            ),
-            _buildDivider(),
-            _buildSettingsTile(
-              icon: Icons.dark_mode_outlined,
-              title: 'Tema',
-              subtitle: 'Claro',
-              onTap: () => _showComingSoon('Tema'),
-            ),
-          ]),
+              // Sección de aplicación
+              _buildSectionHeader('Aplicación'),
+              _buildSettingsCard([
+                _buildSettingsTile(
+                  icon: Icons.notifications_outlined,
+                  title: 'Notificaciones',
+                  subtitle: 'Configurar alertas y avisos',
+                  onTap: () => _showComingSoon('Notificaciones'),
+                ),
+                _buildDivider(),
+                _buildPrintSettingsTile(),
+                _buildDivider(),
+                _buildSettingsTile(
+                  icon: Icons.wifi,
+                  title: 'Impresoras WiFi',
+                  subtitle: 'Gestionar impresoras de red',
+                  onTap: () => Navigator.pushNamed(context, '/wifi-printers'),
+                ),
+                _buildDivider(),
+                _buildStaticTextSettingsTile(),
+                _buildDivider(),
+                _buildFluidModeSettingsTile(),
+                _buildDivider(),
+                _buildSettingsTile(
+                  icon: Icons.system_update_outlined,
+                  title: 'Buscar Actualizaciones',
+                  subtitle: 'Verificar si hay nuevas versiones',
+                  onTap: () => _checkForUpdates(),
+                ),
+                _buildDivider(),
+                _buildSettingsTile(
+                  icon: Icons.language_outlined,
+                  title: 'Idioma',
+                  subtitle: 'Español',
+                  onTap: () => _showComingSoon('Idioma'),
+                ),
+                _buildDivider(),
+                _buildSettingsTile(
+                  icon: Icons.dark_mode_outlined,
+                  title: 'Tema',
+                  subtitle: 'Claro',
+                  onTap: () => _showComingSoon('Tema'),
+                ),
+              ]),
 
-          const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-          // Sección de uso de datos
-          _buildSectionHeader('Uso de datos'),
-          _buildSettingsCard([
-            _buildDataUsageSettingsTile(),
-            _buildDivider(),
-            _buildOfflineModeSettingsTile(),
-            if (_isSmartServicesInitialized) ...[
-              _buildDivider(),
-              _buildSmartSyncStatusTile(),
+              // Sección de uso de datos
+              _buildSectionHeader('Uso de datos'),
+              _buildSettingsCard([
+                _buildDataUsageSettingsTile(),
+                _buildDivider(),
+                _buildOfflineModeSettingsTile(),
+                if (_isSmartServicesInitialized) ...[
+                  _buildDivider(),
+                  _buildSmartSyncStatusTile(),
+                ],
+              ]),
+
+              const SizedBox(height: 16),
+
+              // Sección de turno offline (solo si hay turno abierto offline)
+              if (_hasOfflineTurno) ...[
+                _buildSectionHeader('Turno Offline'),
+                _buildSettingsCard([_buildOfflineTurnoTile()]),
+                const SizedBox(height: 16),
+              ],
+
+              // Sección de datos
+              _buildSectionHeader('Datos'),
+              _buildSettingsCard([
+                _buildSettingsTile(
+                  icon: Icons.sync_outlined,
+                  title: 'Sincronización Manual',
+                  subtitle: 'Sincronizar datos offline pendientes',
+                  onTap: () => _showSyncDialog(),
+                ),
+                _buildDivider(),
+                if (_isSmartServicesInitialized)
+                  _buildSettingsTile(
+                    icon: Icons.sync_alt,
+                    title: 'Forzar Sincronización',
+                    subtitle: 'Sincronizar datos inmediatamente',
+                    onTap: () => _forceSyncNow(blockWhenRunning: false),
+                  ),
+                if (_isSmartServicesInitialized) _buildDivider(),
+                _buildSettingsTile(
+                  icon: Icons.storage_outlined,
+                  title: 'Almacenamiento',
+                  subtitle: 'Gestionar datos locales',
+                  onTap: () => _showStorageOptions(),
+                ),
+              ]),
+
+              const SizedBox(height: 16),
+
+              // Sección de ayuda
+              _buildSectionHeader('Ayuda y Soporte'),
+              _buildSettingsCard([
+                _buildSettingsTile(
+                  icon: Icons.help_outline,
+                  title: 'Centro de Ayuda',
+                  subtitle: 'Preguntas frecuentes y tutoriales',
+                  onTap: () => _showComingSoon('Centro de Ayuda'),
+                ),
+                _buildDivider(),
+                _buildSettingsTile(
+                  icon: Icons.privacy_tip_outlined,
+                  title: 'Política de Privacidad',
+                  subtitle: 'Términos y condiciones',
+                  onTap: () => _showComingSoon('Política de Privacidad'),
+                ),
+                _buildDivider(),
+                _buildSettingsTile(
+                  icon: Icons.download_outlined,
+                  title: 'Compartir Aplicación',
+                  subtitle: 'Código QR para descargar la app',
+                  onTap: () => _showDownloadDialog(),
+                ),
+                _buildDivider(),
+                _buildSettingsTile(
+                  icon: Icons.info_outline,
+                  title: 'Acerca de',
+                  subtitle: 'Inventtia $_appVersion',
+                  onTap: () => _showAboutDialog(),
+                ),
+              ]),
+
+              const SizedBox(height: 24),
+
+              // Botón de cerrar sesión
+              _buildLogoutButton(),
+
+              const SizedBox(height: 80), // Espacio para el bottom navigation
             ],
-          ]),
-
-          const SizedBox(height: 16),
-
-          // Sección de turno offline (solo si hay turno abierto offline)
-          if (_hasOfflineTurno) ...[
-            _buildSectionHeader('Turno Offline'),
-            _buildSettingsCard([_buildOfflineTurnoTile()]),
-            const SizedBox(height: 16),
-          ],
-
-          // Sección de datos
-          _buildSectionHeader('Datos'),
-          _buildSettingsCard([
-            _buildSettingsTile(
-              icon: Icons.sync_outlined,
-              title: 'Sincronización Manual',
-              subtitle: 'Sincronizar datos offline pendientes',
-              onTap: () => _showSyncDialog(),
-            ),
-            _buildDivider(),
-            if (_isSmartServicesInitialized)
-              _buildSettingsTile(
-                icon: Icons.sync_alt,
-                title: 'Forzar Sincronización',
-                subtitle: 'Sincronizar datos inmediatamente',
-                onTap: () => _forceSyncNow(),
-              ),
-            if (_isSmartServicesInitialized) _buildDivider(),
-            _buildSettingsTile(
-              icon: Icons.storage_outlined,
-              title: 'Almacenamiento',
-              subtitle: 'Gestionar datos locales',
-              onTap: () => _showStorageOptions(),
-            ),
-          ]),
-
-          const SizedBox(height: 16),
-
-          // Sección de ayuda
-          _buildSectionHeader('Ayuda y Soporte'),
-          _buildSettingsCard([
-            _buildSettingsTile(
-              icon: Icons.help_outline,
-              title: 'Centro de Ayuda',
-              subtitle: 'Preguntas frecuentes y tutoriales',
-              onTap: () => _showComingSoon('Centro de Ayuda'),
-            ),
-            _buildDivider(),
-            _buildSettingsTile(
-              icon: Icons.contact_support_outlined,
-              title: 'Contactar Soporte',
-              subtitle: 'Reportar problemas o sugerencias',
-              onTap: () => _showComingSoon('Contactar Soporte'),
-            ),
-            _buildDivider(),
-            _buildSettingsTile(
-              icon: Icons.download_outlined,
-              title: 'Compartir Aplicación',
-              subtitle: 'Código QR para descargar la app',
-              onTap: () => _showDownloadDialog(),
-            ),
-            _buildDivider(),
-            _buildSettingsTile(
-              icon: Icons.info_outline,
-              title: 'Acerca de',
-              subtitle: 'Inventtia $_appVersion',
-              onTap: () => _showAboutDialog(),
-            ),
-          ]),
-
-          const SizedBox(height: 24),
-
-          // Botón de cerrar sesión
-          _buildLogoutButton(),
-
-          const SizedBox(height: 80), // Espacio para el bottom navigation
+          ),
+          if (_isSmartServicesInitialized)
+            const Positioned(bottom: 80, left: 16, child: SyncStatusChip()),
         ],
       ),
       endDrawer: const AppDrawer(),
@@ -1103,6 +1300,28 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Future<void> _showSyncDialog() async {
+    final status = await _getIntegrationStatusSafe();
+    if (status != null) {
+      final isBusy = await _isAutoSyncBusy(blockWhenRunning: false);
+      if (isBusy) {
+        _showAutoSyncBlockedMessage(
+          '🔄 Sincronización automática en progreso. Espera para sincronizar manualmente.',
+        );
+        return;
+      }
+
+      final hasPendingAutoSync =
+          status.smartOfflineStatus.isConnected &&
+          status.isOfflineModeEnabled &&
+          status.smartOfflineStatus.wasOfflineModeManuallyEnabled == false;
+      if (hasPendingAutoSync) {
+        _showAutoSyncBlockedMessage(
+          '📶 Conexión restaurada. Desactiva el modo offline para completar la sincronización automática.',
+        );
+        return;
+      }
+    }
+
     // Verificar si hay datos offline para sincronizar
     final syncSummary = await _userPreferencesService.getOfflineSyncSummary();
     final hasPendingData =
@@ -1111,8 +1330,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         syncSummary['has_open_turno'] == true;
 
     if (!hasPendingData) {
-      // No hay datos pendientes - mostrar diálogo de descarga para offline
-      _showOfflineDownloadDialog();
+      await _startManualSync();
       return;
     }
 
@@ -1120,59 +1338,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     final shouldSync = await _showSyncConfirmationDialog(syncSummary);
     if (shouldSync == true) {
       // Iniciar sincronización
-      _startManualSync();
+      await _startManualSync();
     }
-  }
-
-  /// Mostrar diálogo de descarga para modo offline (cuando no hay datos pendientes)
-  void _showOfflineDownloadDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return _SyncDialog(
-          userPreferencesService: _userPreferencesService,
-          onSyncComplete: (bool success) async {
-            Navigator.of(context).pop();
-            if (success) {
-              setState(() {
-                _isOfflineModeEnabled = true;
-              });
-
-              // Notificar al servicio de integración sobre la activación manual
-              if (_isSmartServicesInitialized) {
-                try {
-                  await _integrationService.handleOfflineModeChanged(true);
-                } catch (e) {
-                  print('❌ Error notificando activación de modo offline: $e');
-                }
-              }
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    '✅ Datos sincronizados correctamente - Modo offline activado',
-                  ),
-                  backgroundColor: Colors.green,
-                  duration: Duration(seconds: 3),
-                ),
-              );
-            } else {
-              setState(() {
-                _isOfflineModeEnabled = false;
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('❌ Error al sincronizar datos'),
-                  backgroundColor: Colors.red,
-                  duration: Duration(seconds: 3),
-                ),
-              );
-            }
-          },
-        );
-      },
-    );
   }
 
   void _showComingSoon(String feature) {
@@ -1726,37 +1893,11 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   /// Iniciar sincronización manual
-  void _startManualSync() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder:
-          (context) => _ManualSyncDialog(
-            userPreferencesService: _userPreferencesService,
-            onSyncComplete: (success) {
-              Navigator.pop(context);
-              if (success) {
-                // Recargar configuraciones después de sincronización exitosa
-                if (mounted) {
-                  _loadSettings();
-                }
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('✅ Sincronización completada exitosamente'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('❌ Error en la sincronización'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            },
-          ),
-    );
+  Future<void> _startManualSync() async {
+    final synced = await _forceSyncNow(blockWhenRunning: false);
+    if (synced && mounted) {
+      await _loadSettings();
+    }
   }
 
   /// Mostrar QR a pantalla completa para facilitar el escaneo
@@ -2305,7 +2446,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ElevatedButton(
                   onPressed: () {
                     Navigator.pop(context);
-                    _forceSyncNow();
+                    _forceSyncNow(blockWhenRunning: false);
                   },
                   child: const Text('Sincronizar Ahora'),
                 ),
@@ -2336,7 +2477,30 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   /// Forzar sincronización inmediata
-  Future<void> _forceSyncNow() async {
+  Future<bool> _forceSyncNow({bool blockWhenRunning = true}) async {
+    final status = await _getIntegrationStatusSafe();
+
+    if (status != null) {
+      final isBusy = await _isAutoSyncBusy(blockWhenRunning: blockWhenRunning);
+      if (isBusy) {
+        _showAutoSyncBlockedMessage(
+          '🔄 Sincronización automática en curso. Intenta de nuevo en unos segundos.',
+        );
+        return false;
+      }
+
+      final hasPendingAutoSync =
+          status.smartOfflineStatus.isConnected &&
+          status.isOfflineModeEnabled &&
+          status.smartOfflineStatus.wasOfflineModeManuallyEnabled == false;
+      if (hasPendingAutoSync) {
+        _showAutoSyncBlockedMessage(
+          '📶 Conexión restaurada. Desactiva el modo offline para que la sincronización automática termine primero.',
+        );
+        return false;
+      }
+    }
+
     try {
       // Mostrar loading
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2369,6 +2533,8 @@ class _SettingsScreenState extends State<SettingsScreen>
           duration: Duration(seconds: 2),
         ),
       );
+
+      return true;
     } catch (e) {
       print('❌ Error forzando sincronización: $e');
 
@@ -2379,6 +2545,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           duration: const Duration(seconds: 4),
         ),
       );
+      return false;
     }
   }
 
