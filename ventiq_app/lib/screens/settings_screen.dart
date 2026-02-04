@@ -39,6 +39,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       SubscriptionGuardService();
 
   bool _isPrintEnabled = true; // Valor por defecto
+  bool _isPrintUsdEnabled = false; // Valor por defecto
   bool _isStaticTextEnabled = false; // Valor por defecto (marquee activo)
   bool _isLimitDataUsageEnabled = false; // Valor por defecto
   bool _isFluidModeEnabled =
@@ -187,6 +188,7 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Future<void> _loadSettings() async {
     final printEnabled = await _userPreferencesService.isPrintEnabled();
+    final printUsdEnabled = await _userPreferencesService.isPrintUsdEnabled();
     final staticTextEnabled =
         await _userPreferencesService.isStaticTextEnabled();
     final limitDataEnabled =
@@ -202,6 +204,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (mounted) {
       setState(() {
         _isPrintEnabled = printEnabled;
+        _isPrintUsdEnabled = printUsdEnabled;
         _isStaticTextEnabled = staticTextEnabled;
         _isLimitDataUsageEnabled = limitDataEnabled;
         // _isFluidModeEnabled permanece false - deshabilitado
@@ -385,6 +388,26 @@ class _SettingsScreenState extends State<SettingsScreen>
           value
               ? '✅ Impresión habilitada - Las órdenes se imprimirán automáticamente'
               : '❌ Impresión deshabilitada - Las órdenes no se imprimirán',
+        ),
+        backgroundColor: value ? Colors.green : Colors.orange,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _onPrintUsdSettingChanged(bool value) async {
+    setState(() {
+      _isPrintUsdEnabled = value;
+    });
+
+    await _userPreferencesService.setPrintUsdEnabled(value);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          value
+              ? '💵 USD habilitado en impresiones'
+              : '💵 USD deshabilitado en impresiones',
         ),
         backgroundColor: value ? Colors.green : Colors.orange,
         duration: const Duration(seconds: 2),
@@ -806,6 +829,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 _buildDivider(),
                 _buildPrintSettingsTile(),
                 _buildDivider(),
+                _buildPrintUsdSettingsTile(),
+                _buildDivider(),
                 _buildSettingsTile(
                   icon: Icons.wifi,
                   title: 'Impresoras WiFi',
@@ -997,6 +1022,43 @@ class _SettingsScreenState extends State<SettingsScreen>
       ),
       trailing: trailing ?? const Icon(Icons.chevron_right, color: Colors.grey),
       onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    );
+  }
+
+  Widget _buildPrintUsdSettingsTile() {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF10B981).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(
+          Icons.attach_money,
+          color: Color(0xFF10B981),
+          size: 20,
+        ),
+      ),
+      title: const Text(
+        'Mostrar USD en impresiones',
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFF1F2937),
+        ),
+      ),
+      subtitle: Text(
+        _isPrintUsdEnabled
+            ? 'Se mostrará CUP + USD en tickets y vales'
+            : 'Solo se mostrará CUP en tickets y vales',
+        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+      ),
+      trailing: Switch(
+        value: _isPrintUsdEnabled,
+        onChanged: _onPrintUsdSettingChanged,
+        activeColor: const Color(0xFF10B981),
+      ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
   }
@@ -1211,7 +1273,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       } catch (e) {
         fechaFormateada = 'Fecha inválida';
       }
-}
+    }
 
     return ListTile(
       leading: Container(

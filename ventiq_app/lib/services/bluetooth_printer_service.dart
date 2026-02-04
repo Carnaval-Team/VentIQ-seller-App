@@ -10,6 +10,7 @@ import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/order.dart';
+import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
 
 class _StorePrintInfo {
@@ -209,12 +210,15 @@ class BluetoothPrinterService {
       );
       bytes += generator.emptyLines(1);
 
+      final usdRate = await _getUsdRateForPrint();
+
       for (int i = 0; i < orders.length; i++) {
         bytes += _addCustomerReceipt(
           generator,
           orders[i],
           storeInfo,
           includeHeader: false,
+          usdRate: usdRate,
         );
         if (i < orders.length - 1) {
           bytes += _addDottedLineSeparator(generator);
@@ -611,9 +615,15 @@ class BluetoothPrinterService {
     _StorePrintInfo storeInfo,
   ) async {
     try {
+      final usdRate = await _getUsdRateForPrint();
       List<int> bytes = [];
 
-      bytes += _addCustomerReceipt(generator, order, storeInfo);
+      bytes += _addCustomerReceipt(
+        generator,
+        order,
+        storeInfo,
+        usdRate: usdRate,
+      );
       bytes += generator.emptyLines(1);
       bytes += generator.cut();
 
@@ -633,9 +643,15 @@ class BluetoothPrinterService {
     _StorePrintInfo storeInfo,
   ) async {
     try {
+      final usdRate = await _getUsdRateForPrint();
       List<int> bytes = [];
 
-      bytes += _addWarehousePickingSlip(generator, order, storeInfo);
+      bytes += _addWarehousePickingSlip(
+        generator,
+        order,
+        storeInfo,
+        usdRate: usdRate,
+      );
       bytes += generator.emptyLines(1);
       bytes += generator.cut();
 
@@ -695,6 +711,19 @@ class BluetoothPrinterService {
     _storePrintInfoFuture ??= _loadStorePrintInfo();
     _storePrintInfoCache = await _storePrintInfoFuture!;
     return _storePrintInfoCache!;
+  }
+
+  Future<double?> _getUsdRateForPrint() async {
+    final showUsd = await _userPreferencesService.isPrintUsdEnabled();
+    if (!showUsd) {
+      return null;
+    }
+
+    final usdRate = await CurrencyService.getUsdRate();
+    if (usdRate <= 0) {
+      return null;
+    }
+    return usdRate;
   }
 
   Future<_StorePrintInfo> _loadStorePrintInfo() async {
@@ -793,6 +822,7 @@ class BluetoothPrinterService {
     Order order,
     _StorePrintInfo storeInfo, {
     bool includeHeader = true,
+    double? usdRate,
   }) {
     List<int> bytes = [];
 
@@ -888,6 +918,13 @@ class BluetoothPrinterService {
       'TOTAL: \$${order.total.toStringAsFixed(0)}',
       styles: PosStyles(align: PosAlign.right, bold: true),
     );
+    if (usdRate != null && usdRate > 0) {
+      final usdTotal = order.total / usdRate;
+      bytes += generator.text(
+        'USD (${usdRate.toStringAsFixed(0)}): \$${usdTotal.toStringAsFixed(2)}',
+        styles: PosStyles(align: PosAlign.right),
+      );
+    }
 
     // Footer compacto
     bytes += generator.text(
@@ -932,8 +969,9 @@ class BluetoothPrinterService {
   List<int> _addWarehousePickingSlip(
     Generator generator,
     Order order,
-    _StorePrintInfo storeInfo,
-  ) {
+    _StorePrintInfo storeInfo, {
+    double? usdRate,
+  }) {
     List<int> bytes = [];
 
     debugPrint('🏭 Creating warehouse picking slip for order ${order.id}');
@@ -1009,6 +1047,13 @@ class BluetoothPrinterService {
       'TOT: ${order.totalItems} prod - \$${order.total.toStringAsFixed(0)}',
       styles: PosStyles(align: PosAlign.left, bold: true),
     );
+    if (usdRate != null && usdRate > 0) {
+      final usdTotal = order.total / usdRate;
+      bytes += generator.text(
+        'USD (${usdRate.toStringAsFixed(0)}): \$${usdTotal.toStringAsFixed(2)}',
+        styles: PosStyles(align: PosAlign.left),
+      );
+    }
 
     // Footer compacto
     bytes += generator.text(

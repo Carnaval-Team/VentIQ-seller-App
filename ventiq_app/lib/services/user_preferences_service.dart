@@ -639,6 +639,7 @@ class UserPreferencesService {
 
   // Print settings keys
   static const String _printEnabledKey = 'print_enabled';
+  static const String _printUsdEnabledKey = 'print_usd_enabled';
 
   // Static text settings keys
   static const String _staticTextEnabledKey = 'static_text_enabled';
@@ -685,6 +686,19 @@ class UserPreferencesService {
   Future<bool> isPrintEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_printEnabledKey) ?? true; // Por defecto habilitado
+  }
+
+  Future<void> setPrintUsdEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_printUsdEnabledKey, enabled);
+    print(
+      'UserPreferencesService: Mostrar USD en impresión actualizado: $enabled',
+    );
+  }
+
+  Future<bool> isPrintUsdEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_printUsdEnabledKey) ?? false;
   }
 
   // Static text settings methods

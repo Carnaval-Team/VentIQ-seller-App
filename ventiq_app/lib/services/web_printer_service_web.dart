@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/order.dart';
+import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
 
 class _StorePrintInfo {
@@ -31,6 +32,19 @@ class WebPrinterServiceImpl {
     _storePrintInfoFuture ??= _loadStorePrintInfo();
     _storePrintInfoCache = await _storePrintInfoFuture!;
     return _storePrintInfoCache!;
+  }
+
+  Future<double?> _getUsdRateForPrint() async {
+    final showUsd = await _userPreferencesService.isPrintUsdEnabled();
+    if (!showUsd) {
+      return null;
+    }
+
+    final usdRate = await CurrencyService.getUsdRate();
+    if (usdRate <= 0) {
+      return null;
+    }
+    return usdRate;
   }
 
   Future<_StorePrintInfo> _loadStorePrintInfo() async {
@@ -366,6 +380,7 @@ class WebPrinterServiceImpl {
     String? copyLabel,
   }) async {
     final storeInfo = await _getStorePrintInfo();
+    final usdRate = await _getUsdRateForPrint();
     final storeName = storeInfo.name;
     final headerLogoHtml =
         storeInfo.logoDataUrl != null
@@ -398,6 +413,11 @@ class WebPrinterServiceImpl {
     final copyLabelHtml =
         copyLabel != null && copyLabel.isNotEmpty
             ? '<div class="copy-label">$copyLabel</div>'
+            : '';
+
+    final usdTotalLine =
+        usdRate != null && usdRate > 0
+            ? '<div class="total-line">USD (${usdRate.toStringAsFixed(0)}): \$${(order.total / usdRate).toStringAsFixed(2)}</div>'
             : '';
 
     return '''
@@ -548,6 +568,7 @@ class WebPrinterServiceImpl {
         <div class="separator">--------------------------------</div>
         <div class="total-line">SUBTOTAL: \$${order.total.toStringAsFixed(0)}</div>
         <div class="final-total">TOTAL: \$${order.total.toStringAsFixed(0)}</div>
+        $usdTotalLine
     </div>
 
     <div class="footer">
@@ -584,6 +605,7 @@ class WebPrinterServiceImpl {
 
   Future<String> _generateCustomerTicketsBatchHtml(List<Order> orders) async {
     final storeInfo = await _getStorePrintInfo();
+    final usdRate = await _getUsdRateForPrint();
     final storeName = storeInfo.name;
     final headerLogoHtml =
         storeInfo.logoDataUrl != null
@@ -614,6 +636,11 @@ class WebPrinterServiceImpl {
                   ? '<div class="notes">Notas: ${order.notas}</div>'
                   : '';
 
+          final usdTotalLine =
+              usdRate != null && usdRate > 0
+                  ? '<div class="total-line">USD (${usdRate.toStringAsFixed(0)}): \$${(order.total / usdRate).toStringAsFixed(2)}</div>'
+                  : '';
+
           return '''
     <section class="ticket">
       <div class="header">
@@ -640,6 +667,7 @@ class WebPrinterServiceImpl {
         <div class="separator">--------------------------------</div>
         <div class="total-line">SUBTOTAL: \$${order.total.toStringAsFixed(0)}</div>
         <div class="final-total">TOTAL: \$${order.total.toStringAsFixed(0)}</div>
+        $usdTotalLine
       </div>
 
       <div class="footer">
@@ -792,6 +820,7 @@ class WebPrinterServiceImpl {
   /// Genera el HTML de la guía de picking para el almacenero
   Future<String> _generateWarehousePickingSlipHtml(Order order) async {
     final storeInfo = await _getStorePrintInfo();
+    final usdRate = await _getUsdRateForPrint();
     final storeName = storeInfo.name;
     final headerLogoHtml =
         storeInfo.logoDataUrl != null
@@ -830,6 +859,11 @@ class WebPrinterServiceImpl {
           ''';
         })
         .join('');
+
+    final usdTotalLine =
+        usdRate != null && usdRate > 0
+            ? '<div class="total-line">USD (${usdRate.toStringAsFixed(0)}): \$${(order.total / usdRate).toStringAsFixed(2)}</div>'
+            : '';
 
     return '''
 <!DOCTYPE html>
@@ -968,6 +1002,7 @@ class WebPrinterServiceImpl {
         <div class="separator">--------------------------------</div>
         <div class="total-line">TOTAL PRODUCTOS: ${order.totalItems}</div>
         <div class="total-line">VALOR TOTAL: \$${order.total.toStringAsFixed(0)}</div>
+        $usdTotalLine
     </div>
 
     <div class="footer">
