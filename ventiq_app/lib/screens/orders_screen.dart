@@ -19,6 +19,7 @@ import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/currency_service.dart';
 import '../utils/platform_utils.dart';
+import '../utils/connection_error_handler.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/sales_monitor_fab.dart';
@@ -667,6 +668,27 @@ class _OrdersScreenState extends State<OrdersScreen> {
       }
     } catch (e) {
       print('❌ Error cargando órdenes: $e');
+      final isConnectionError = ConnectionErrorHandler.isConnectionError(e);
+
+      if (isConnectionError) {
+        await _userPreferencesService.setOfflineMode(true);
+
+        if (!mounted) return;
+
+        setState(() {
+          _isOfflineMode = true;
+        });
+
+        ConnectionErrorHandler.showConnectionErrorSnackBar(
+          context: context,
+          error: e,
+          onRetry: _refreshOrders,
+        );
+
+        await _loadOrdersFromSupabase();
+        return;
+      }
+
       if (mounted) {
         setState(() {
           _isLoading = false;

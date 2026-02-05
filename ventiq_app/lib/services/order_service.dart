@@ -1045,8 +1045,10 @@ class OrderService {
         // Transformar respuesta de Supabase a modelo Order
         _transformSupabaseToOrders(response);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Error en listOrdersFromSupabase: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
     }
   }
 
