@@ -1177,7 +1177,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     Icons.category,
                     AppColors.success,
                     () =>
-                        NavigationGuard.navigateWithPermission(context, '/categories'),
+                        NavigationGuard.navigateWithPermission(context, '/settings'),
                   ),
                 _buildQuickActionCard(
                   'Almacenes',

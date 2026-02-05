@@ -1,9 +1,31 @@
 {
-  "current_version": "1.9.1",
-  "build": 191,
+  "current_version": "1.9.2",
+  "build": 192,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.9.2",
+      "date": "2026-02-05",
+      "title": "🎯 Precios siempre con el final perfecto",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Elige como quieres que se vean tus precios",
+          "description": "Ahora puedes definir el estilo de redondeo desde la configuración global: mantener el precio exacto, redondear al entero o subirlo cuando quieras asegurar margen."
+        },
+        {
+          "type": "improvement",
+          "title": "Finales atractivos para vender mas",
+          "description": "Activa precios a multiplo de 5 para que tus etiquetas se vean mas limpias y faciles de recordar (10, 15, 20, etc.)."
+        },
+        {
+          "type": "improvement",
+          "title": "Cambios claros y faciles de entender",
+          "description": "Cada opcion explica con ejemplos como quedara el precio, para que elijas lo que mejor funciona con tu negocio."
+        }
+      ]
+    },
     {
       "version": "1.9.1",
       "date": "2026-02-03",

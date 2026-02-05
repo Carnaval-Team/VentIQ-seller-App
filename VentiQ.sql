@@ -343,6 +343,8 @@ CREATE TABLE public.app_dat_configuracion_tienda (
   tpv_trabajador_encargado_carnaval jsonb,
   allow_discount_on_vendedor boolean NOT NULL DEFAULT false,
   permitir_imprimir_pendientes boolean,
+  metodo_redondeo_precio_venta text NOT NULL DEFAULT 'NO_REDONDEAR',
+  CONSTRAINT app_dat_configuracion_tienda_metodo_redondeo_check CHECK (metodo_redondeo_precio_venta = ANY (ARRAY['NO_REDONDEAR'::text, 'REDONDEAR_POR_DEFECTO'::text, 'REDONDEAR_POR_EXCESO'::text, 'REDONDEAR_A_MULT_5_POR_DEFECTO'::text, 'REDONDEAR_A_MULT_5_POR_EXCESO'::text])),
   CONSTRAINT app_dat_configuracion_tienda_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_configuracion_tienda_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
 );
