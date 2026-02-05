@@ -1,9 +1,41 @@
 {
-  "current_version": "2.0.4",
-  "build": 814,
+  "current_version": "2.0.5",
+  "build": 815,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.0.5",
+      "date": "2026-02-05",
+      "title": "Ventas sin cortes, siempre listas",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Órdenes listas aunque se caiga la conexión",
+          "description": "Si el internet falla mientras ves órdenes, la app entra en modo offline automáticamente y muestra tus ventas guardadas al instante."
+        },
+        {
+          "type": "improvement",
+          "title": "Transición online/offline más suave",
+          "description": "La experiencia se mantiene fluida para que sigas vendiendo sin interrupciones."
+        },
+        {
+          "type": "improvement",
+          "title": "Avisos claros y reintento fácil",
+          "description": "Te avisamos con un mensaje sencillo y puedes reintentar cuando vuelva la conexión."
+        },
+        {
+          "type": "fix",
+          "title": "Tus métodos de pago siempre listos, incluso sin internet",
+          "description": "Ahora la app asegura tus métodos de pago desde el primer momento para que puedas cobrar sin sorpresas."
+        },
+        {
+          "type": "fix",
+          "title": "Cobro continuo sin cortes",
+          "description": "La lista de métodos se mantiene disponible aunque la señal falle, para que la venta nunca se detenga."
+        }
+      ]
+    },
     {
       "version": "2.0.4",
       "date": "2026-02-04",
