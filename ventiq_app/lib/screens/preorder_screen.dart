@@ -146,26 +146,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
       final isOfflineModeEnabled =
           await _userPreferencesService.isOfflineModeEnabled();
 
-      List<pm.PaymentMethod> paymentMethods;
-
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline - Cargando métodos de pago desde cache...');
-        final paymentMethodsData =
-            await _userPreferencesService.getPaymentMethodsOffline();
-        paymentMethods =
-            paymentMethodsData
-                .map((data) => pm.PaymentMethod.fromJson(data))
-                .toList();
-        print(
-          '✅ Métodos de pago cargados desde cache offline: ${paymentMethods.length}',
-        );
-      } else {
-        print('🌐 Modo online - Cargando métodos de pago desde Supabase...');
-        paymentMethods = await PaymentMethodService.getActivePaymentMethods();
-        print(
-          '✅ Métodos de pago cargados desde Supabase: ${paymentMethods.length}',
-        );
-      }
+      final paymentMethods =
+          await PaymentMethodService.getPaymentMethodsWithCache(
+            isOfflineModeEnabled: isOfflineModeEnabled,
+          );
+      print('✅ Métodos de pago cargados: ${paymentMethods.length}');
 
       // Agregar método especial "Pago Regular (Efectivo)" hardcoded
       final pagoRegularEfectivo = pm.PaymentMethod(

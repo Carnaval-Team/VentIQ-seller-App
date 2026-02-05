@@ -173,7 +173,31 @@ class AutoSyncService {
       final Map<String, dynamic> syncedData = {};
       final List<String> syncedItems = [];
 
-      // 1. Sincronizar credenciales y datos del usuario
+      // 1. Sincronizar métodos de pago (prioritario para uso offline)
+      try {
+        _syncEventController.add(
+          AutoSyncEvent(
+            type: AutoSyncEventType.syncProgress,
+            timestamp: DateTime.now(),
+            message: 'Métodos de pago',
+          ),
+        );
+        final paymentMethods = await _syncPaymentMethods();
+        if (paymentMethods.isNotEmpty) {
+          syncedData['payment_methods'] = paymentMethods;
+          syncedItems.add('métodos de pago');
+          await _userPreferencesService.mergeOfflineData({
+            'payment_methods': paymentMethods,
+          });
+          print('  ✅ Métodos de pago sincronizados y guardados primero');
+        } else {
+          print('  ⚠️ Sin métodos de pago disponibles para guardar');
+        }
+      } catch (e) {
+        print('  ❌ Error sincronizando métodos de pago: $e');
+      }
+
+      // 2. Sincronizar credenciales y datos del usuario
       try {
         _syncEventController.add(
           AutoSyncEvent(
@@ -189,7 +213,7 @@ class AutoSyncService {
         print('  ❌ Error sincronizando credenciales: $e');
       }
 
-      // 2. Sincronizar promociones globales
+      // 3. Sincronizar promociones globales
       try {
         _syncEventController.add(
           AutoSyncEvent(
@@ -205,7 +229,7 @@ class AutoSyncService {
         print('  ❌ Error sincronizando promociones: $e');
       }
 
-      // 3. Sincronizar configuración de tienda
+      // 4. Sincronizar configuración de tienda
       try {
         _syncEventController.add(
           AutoSyncEvent(
@@ -219,22 +243,6 @@ class AutoSyncService {
         print('  ✅ Configuración de tienda sincronizada');
       } catch (e) {
         print('  ❌ Error sincronizando configuración de tienda: $e');
-      }
-
-      // 4. Sincronizar métodos de pago
-      try {
-        _syncEventController.add(
-          AutoSyncEvent(
-            type: AutoSyncEventType.syncProgress,
-            timestamp: DateTime.now(),
-            message: 'Métodos de pago',
-          ),
-        );
-        syncedData['payment_methods'] = await _syncPaymentMethods();
-        syncedItems.add('métodos de pago');
-        print('  ✅ Métodos de pago sincronizados');
-      } catch (e) {
-        print('  ❌ Error sincronizando métodos de pago: $e');
       }
 
       // 5. Sincronizar categorías (siempre en primera sincronización, luego cada 3 sincronizaciones)

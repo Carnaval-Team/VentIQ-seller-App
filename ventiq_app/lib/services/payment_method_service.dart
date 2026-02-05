@@ -1,8 +1,62 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/payment_method.dart';
+import 'user_preferences_service.dart';
 
 class PaymentMethodService {
   static final SupabaseClient _supabase = Supabase.instance.client;
+  static final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
+
+  /// Obtiene métodos de pago con soporte de cache offline
+  static Future<List<PaymentMethod>> getPaymentMethodsWithCache({
+    required bool isOfflineModeEnabled,
+    bool onlyEfectivo = false,
+  }) async {
+    if (isOfflineModeEnabled) {
+      final cachedMethods = await _loadCachedMethods();
+      if (cachedMethods.isNotEmpty) {
+        final filtered = _filterMethods(cachedMethods, onlyEfectivo);
+        print(
+          '🔌 Modo offline - Métodos de pago desde cache: ${filtered.length}',
+        );
+        return filtered;
+      }
+      print('⚠️ Modo offline sin métodos de pago en cache');
+      return [];
+    }
+
+    final onlineMethods = await getActivePaymentMethods();
+    if (onlineMethods.isNotEmpty) {
+      await _userPreferencesService.mergeOfflineData({
+        'payment_methods': onlineMethods.map((pm) => pm.toJson()).toList(),
+      });
+      print('💾 Métodos de pago actualizados en cache offline');
+      return _filterMethods(onlineMethods, onlyEfectivo);
+    }
+
+    final cachedMethods = await _loadCachedMethods();
+    if (cachedMethods.isNotEmpty) {
+      print('⚠️ Sin métodos de pago en línea - usando cache offline');
+      return _filterMethods(cachedMethods, onlyEfectivo);
+    }
+
+    print('⚠️ No hay métodos de pago disponibles');
+    return [];
+  }
+
+  static Future<List<PaymentMethod>> _loadCachedMethods() async {
+    final cached = await _userPreferencesService.getPaymentMethodsOffline();
+    if (cached.isEmpty) return [];
+    return cached.map((data) => PaymentMethod.fromJson(data)).toList();
+  }
+
+  static List<PaymentMethod> _filterMethods(
+    List<PaymentMethod> methods,
+    bool onlyEfectivo,
+  ) {
+    if (!onlyEfectivo) return methods;
+    return methods.where((method) => method.esEfectivo).toList();
+  }
 
   /// Obtiene todos los medios de pago activos
   static Future<List<PaymentMethod>> getActivePaymentMethods({
@@ -23,7 +77,7 @@ class PaymentMethodService {
             .from('app_nom_medio_pago')
             .select('*')
             .eq('es_activo', true)
-            .eq('id',1)
+            .eq('id', 1)
             .order('denominacion', ascending: true);
       }
       print('📊 Payment methods response: $response');

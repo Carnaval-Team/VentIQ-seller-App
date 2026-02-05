@@ -2650,6 +2650,7 @@ class _SyncDialogState extends State<_SyncDialog> {
 
   final List<Map<String, String>> _tasks = [
     {'name': 'Reautenticando usuario', 'key': 'reauth'},
+    {'name': 'Sincronizando métodos de pago', 'key': 'payment_methods'},
     {'name': 'Procesando operaciones pendientes', 'key': 'pending_operations'},
     {'name': 'Sincronizando órdenes pendientes', 'key': 'pending_orders'},
     {'name': 'Guardando credenciales', 'key': 'credentials'},
@@ -2657,7 +2658,6 @@ class _SyncDialogState extends State<_SyncDialog> {
     {'name': 'Sincronizando egresos', 'key': 'egresos'},
     {'name': 'Sincronizando configuración de tienda', 'key': 'store_config'},
     {'name': 'Sincronizando promociones globales', 'key': 'promotions'},
-    {'name': 'Sincronizando métodos de pago', 'key': 'payment_methods'},
     {'name': 'Descargando categorías', 'key': 'categories'},
     {'name': 'Descargando productos', 'key': 'products'},
     {'name': 'Sincronizando órdenes', 'key': 'orders'},
@@ -2722,7 +2722,13 @@ class _SyncDialogState extends State<_SyncDialog> {
               successfulSteps.add(task['name']!);
               break;
             case 'payment_methods':
-              offlineData['payment_methods'] = await _syncPaymentMethods();
+              final paymentMethods = await _syncPaymentMethods();
+              offlineData['payment_methods'] = paymentMethods;
+              if (paymentMethods.isNotEmpty) {
+                await widget.userPreferencesService.mergeOfflineData({
+                  'payment_methods': paymentMethods,
+                });
+              }
               successfulSteps.add(task['name']!);
               break;
             case 'categories':
@@ -2864,10 +2870,26 @@ class _SyncDialogState extends State<_SyncDialog> {
     try {
       final paymentMethods =
           await PaymentMethodService.getActivePaymentMethods();
-      final paymentMethodsList =
-          paymentMethods.map((pm) => pm.toJson()).toList();
-      print('✅ Métodos de pago sincronizados: ${paymentMethodsList.length}');
-      return paymentMethodsList;
+
+      if (paymentMethods.isNotEmpty) {
+        final paymentMethodsList =
+            paymentMethods.map((pm) => pm.toJson()).toList();
+        await widget.userPreferencesService.mergeOfflineData({
+          'payment_methods': paymentMethodsList,
+        });
+        print('✅ Métodos de pago sincronizados: ${paymentMethodsList.length}');
+        return paymentMethodsList;
+      }
+
+      final cached =
+          await widget.userPreferencesService.getPaymentMethodsOffline();
+      if (cached.isNotEmpty) {
+        print('⚠️ Sin métodos de pago en línea - usando cache offline');
+        return cached;
+      }
+
+      print('⚠️ No hay métodos de pago disponibles');
+      return [];
     } catch (e) {
       print('❌ Error sincronizando métodos de pago: $e');
       return [];
