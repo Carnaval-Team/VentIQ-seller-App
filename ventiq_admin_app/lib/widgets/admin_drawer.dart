@@ -76,17 +76,19 @@ class _AdminDrawerState extends State<AdminDrawer> {
   /// Cargar versión de la app desde changelog.json
   Future<void> _loadAppVersion() async {
     try {
-      final String changelogString = await rootBundle.loadString('assets/changelog.json');
+      final String changelogString = await rootBundle.loadString(
+        'assets/changelog.json',
+      );
       final Map<String, dynamic> changelog = json.decode(changelogString);
       final String version = changelog['current_version'] ?? '1.0.0';
       final int build = changelog['build'] ?? 100;
-      
+
       if (mounted) {
         setState(() {
           _appVersion = 'v$version';
         });
       }
-      
+
       print('✅ Versión de la app cargada: $_appVersion');
     } catch (e) {
       print('❌ Error cargando versión desde changelog.json: $e');
@@ -103,9 +105,9 @@ class _AdminDrawerState extends State<AdminDrawer> {
   /// Pero solo con plan Avanzado pueden crear contratos
   Future<bool> _hasConsignacionFeature() async {
     try {
-      // Todas las tiendas pueden acceder a consignaciones
-      // La restricción de crear contratos se valida en la pantalla
-      return true;
+      final storeId = await UserPreferencesService().getIdTienda();
+      if (storeId == null) return false;
+      return await SubscriptionService().hasProPlan(storeId);
     } catch (e) {
       print('❌ Error verificando función de consignación: $e');
       return false;
@@ -250,7 +252,10 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             subtitle: 'Control de stock',
                             onTap: () {
                               Navigator.pop(context);
-                              NavigationGuard.navigateWithPermission(context, '/inventory');
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/inventory',
+                              );
                             },
                           ),
                           const Divider(height: 1),
@@ -268,7 +273,10 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   subtitle: 'Gestión de almacenes',
                   onTap: () {
                     Navigator.pop(context);
-                    NavigationGuard.navigateWithPermission(context, '/warehouse');
+                    NavigationGuard.navigateWithPermission(
+                      context,
+                      '/warehouse',
+                    );
                   },
                 ),
                 const Divider(height: 1),
@@ -279,7 +287,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   builder: (context, snapshot) {
                     final userRole = snapshot.data ?? UserRole.none;
                     final isAlmacenero = userRole == UserRole.almacenero;
-                    
+
                     if (!isAlmacenero) {
                       return Column(
                         children: [
@@ -290,7 +298,10 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             subtitle: 'Gestión de puntos de venta',
                             onTap: () {
                               Navigator.pop(context);
-                              NavigationGuard.navigateWithPermission(context, '/tpv-management');
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/tpv-management',
+                              );
                             },
                           ),
                           const Divider(height: 1),
@@ -351,7 +362,10 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             subtitle: 'Monitoreo de ventas',
                             onTap: () {
                               Navigator.pop(context);
-                              NavigationGuard.navigateWithPermission(context, '/sales');
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/sales',
+                              );
                             },
                           ),
                           const Divider(height: 1),
@@ -380,7 +394,10 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             subtitle: 'Gestión financiera',
                             onTap: () {
                               Navigator.pop(context);
-                              NavigationGuard.navigateWithPermission(context, '/financial');
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/financial',
+                              );
                             },
                           ),
                           const Divider(height: 1),
@@ -409,7 +426,10 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             subtitle: 'Clientes y proveedores',
                             onTap: () {
                               Navigator.pop(context);
-                              NavigationGuard.navigateWithPermission(context, '/crm-dashboard');
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/crm-dashboard',
+                              );
                             },
                           ),
                           const Divider(height: 1),
@@ -463,7 +483,10 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             subtitle: 'Gestión de personal',
                             onTap: () {
                               Navigator.pop(context);
-                              NavigationGuard.navigateWithPermission(context, '/workers');
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/workers',
+                              );
                             },
                           ),
                           const Divider(height: 1),
@@ -490,7 +513,10 @@ class _AdminDrawerState extends State<AdminDrawer> {
                         subtitle: 'Ajustes del sistema',
                         onTap: () {
                           Navigator.pop(context);
-                          NavigationGuard.navigateWithPermission(context, '/settings');
+                          NavigationGuard.navigateWithPermission(
+                            context,
+                            '/settings',
+                          );
                         },
                       );
                     }
@@ -523,12 +549,19 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
+                      Icon(
+                        Icons.info_outline,
+                        size: 16,
+                        color: Colors.grey[600],
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Inventtia® Admin $_appVersion',
-                          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
                         ),
                       ),
                     ],
@@ -538,7 +571,11 @@ class _AdminDrawerState extends State<AdminDrawer> {
                     width: double.infinity,
                     child: TextButton.icon(
                       onPressed: _checkForUpdates,
-                      icon: Icon(Icons.system_update, size: 16, color: AppColors.primary),
+                      icon: Icon(
+                        Icons.system_update,
+                        size: 16,
+                        color: AppColors.primary,
+                      ),
                       label: Text(
                         'Ver Novedades',
                         style: TextStyle(
@@ -548,7 +585,10 @@ class _AdminDrawerState extends State<AdminDrawer> {
                         ),
                       ),
                       style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 8,
+                          horizontal: 12,
+                        ),
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
@@ -569,21 +609,22 @@ class _AdminDrawerState extends State<AdminDrawer> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const AlertDialog(
-        content: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 16),
-            Text('Verificando actualizaciones...'),
-          ],
-        ),
-      ),
+      builder:
+          (context) => const AlertDialog(
+            content: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Text('Verificando actualizaciones...'),
+              ],
+            ),
+          ),
     );
 
     try {
       final updateInfo = await UpdateService.checkForUpdates();
-      
+
       // Cerrar diálogo de carga
       if (mounted) {
         Navigator.of(context).pop();
@@ -614,7 +655,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
       if (mounted) {
         Navigator.of(context).pop();
       }
-      
+
       print('Error checking for updates: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -639,14 +680,15 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
             return AlertDialog(
               title: const Text('Cerrar Sesión'),
-              content: isLoading
-                  ? const SizedBox(
-                      height: 50,
-                      child: Center(
-                        child: CircularProgressIndicator(),
+              content:
+                  isLoading
+                      ? const SizedBox(
+                        height: 50,
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                      : const Text(
+                        '¿Estás seguro de que deseas cerrar sesión?',
                       ),
-                    )
-                  : const Text('¿Estás seguro de que deseas cerrar sesión?'),
               actions: [
                 if (!isLoading)
                   TextButton(
@@ -654,38 +696,42 @@ class _AdminDrawerState extends State<AdminDrawer> {
                     child: const Text('Cancelar'),
                   ),
                 ElevatedButton(
-                  onPressed: isLoading
-                      ? null
-                      : () async {
-                          setState(() => isLoading = true);
-                          // Hacer logout
-                          await _performLogout();
-                          // Cerrar diálogo
-                          if (dialogContext.mounted) {
-                            Navigator.of(dialogContext).pop();
-                          }
-                          // Navegar a splash que detectará que no hay sesión
-                          if (context.mounted) {
-                            Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil(
-                              '/',
-                              (route) => false,
-                            );
-                          }
-                        },
+                  onPressed:
+                      isLoading
+                          ? null
+                          : () async {
+                            setState(() => isLoading = true);
+                            // Hacer logout
+                            await _performLogout();
+                            // Cerrar diálogo
+                            if (dialogContext.mounted) {
+                              Navigator.of(dialogContext).pop();
+                            }
+                            // Navegar a splash que detectará que no hay sesión
+                            if (context.mounted) {
+                              Navigator.of(
+                                context,
+                                rootNavigator: true,
+                              ).pushNamedAndRemoveUntil('/', (route) => false);
+                            }
+                          },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red,
                     foregroundColor: Colors.white,
                   ),
-                  child: isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : const Text('Cerrar Sesión'),
+                  child:
+                      isLoading
+                          ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          )
+                          : const Text('Cerrar Sesión'),
                 ),
               ],
             );

@@ -1584,21 +1584,8 @@ class _SalesScreenState extends State<SalesScreen>
             ),
             const Tab(text: 'Análisis', icon: Icon(Icons.analytics, size: 18)),
             Tab(
-              text: _hasAdvancedPlan ? 'Analista' : 'Analista (Avanzado)',
-              icon:
-                  _isLoadingAdvancedPlan
-                      ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                      : Icon(
-                        _hasAdvancedPlan ? Icons.smart_toy : Icons.lock,
-                        size: 18,
-                      ),
+              text: 'Analista',
+              icon: Icon(Icons.smart_toy, size: 18),
             ),
           ],
         ),
@@ -2073,6 +2060,12 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Widget _buildAnalystGateTab() {
+    // Verificación eliminada temporalmente
+    return _buildAnalystTab();
+  }
+
+  /*
+  Widget _buildAnalystGateTab() {
     if (_isLoadingAdvancedPlan) {
       return const Center(
         child: CircularProgressIndicator(color: AppColors.primary),
@@ -2082,6 +2075,7 @@ class _SalesScreenState extends State<SalesScreen>
     if (_hasAdvancedPlan) {
       return _buildAnalystTab();
     }
+
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -2181,6 +2175,7 @@ class _SalesScreenState extends State<SalesScreen>
     );
   }
 
+  */
   Widget _buildAnalystHeader() {
     return Container(
       padding: const EdgeInsets.all(16),
