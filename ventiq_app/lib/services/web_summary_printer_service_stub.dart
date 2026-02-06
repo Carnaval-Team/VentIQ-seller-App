@@ -10,7 +10,9 @@ class WebSummaryPrinterServiceImpl {
     required double totalEgresado,
     required double totalEfectivoReal,
   }) async {
-    print('❌ Impresión web de resumen detallado no disponible en esta plataforma');
+    print(
+      '❌ Impresión web de resumen detallado no disponible en esta plataforma',
+    );
     return false;
   }
 }

@@ -16,7 +16,8 @@ class Product {
   final bool esServicio;
   final String categoria;
   final List<ProductVariant> variantes;
-  final Map<String, dynamic>? inventoryMetadata; // Store inventory data for products without variants
+  final Map<String, dynamic>?
+  inventoryMetadata; // Store inventory data for products without variants
 
   Product({
     required this.id,
@@ -57,9 +58,11 @@ class Product {
       esElaborado: json['es_elaborado'] ?? false,
       esServicio: json['es_servicio'] ?? false,
       categoria: json['categoria'] ?? '',
-      variantes: (json['variantes'] as List<dynamic>?)
-          ?.map((v) => ProductVariant.fromJson(v))
-          .toList() ?? [],
+      variantes:
+          (json['variantes'] as List<dynamic>?)
+              ?.map((v) => ProductVariant.fromJson(v))
+              .toList() ??
+          [],
     );
   }
 
@@ -94,7 +97,8 @@ class ProductVariant {
   final double precio;
   final num cantidad;
   final String? descripcion;
-  final Map<String, dynamic>? inventoryMetadata; // Store inventory data for this specific variant
+  final Map<String, dynamic>?
+  inventoryMetadata; // Store inventory data for this specific variant
 
   ProductVariant({
     required this.id,

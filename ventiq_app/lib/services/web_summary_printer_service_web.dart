@@ -5,7 +5,8 @@ import '../services/user_preferences_service.dart';
 
 /// Implementación web para impresión de resumen detallado
 class WebSummaryPrinterServiceImpl {
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
 
   /// Imprime el resumen detallado de productos usando la API de impresión del navegador
   Future<bool> printDetailedSummary({
@@ -24,14 +25,14 @@ class WebSummaryPrinterServiceImpl {
         totalEgresado: totalEgresado,
         totalEfectivoReal: totalEfectivoReal,
       );
-      
+
       // Crear un blob con el HTML
       final blob = html.Blob([summaryHtml], 'text/html');
       final url = html.Url.createObjectUrlFromBlob(blob);
-      
+
       // Abrir en nueva ventana
       html.window.open(url, '_blank');
-      
+
       // Limpiar el URL inmediatamente después de abrir
       Future.delayed(Duration(milliseconds: 100), () {
         try {
@@ -61,13 +62,17 @@ class WebSummaryPrinterServiceImpl {
     final workerProfile = await _userPreferencesService.getWorkerProfile();
     final userEmail = await _userPreferencesService.getUserEmail();
 
-    final sellerName = '${workerProfile['nombres'] ?? ''} ${workerProfile['apellidos'] ?? ''}'.trim();
+    final sellerName =
+        '${workerProfile['nombres'] ?? ''} ${workerProfile['apellidos'] ?? ''}'
+            .trim();
     final sellerEmail = userEmail ?? 'Sin email';
-    
+
     // Fecha y hora actual
     final now = DateTime.now();
-    final dateStr = '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
-    final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final dateStr =
+        '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+    final timeStr =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
     // Agrupar productos por nombre para mostrar cantidades totales
     final productosAgrupados = <String, Map<String, dynamic>>{};
@@ -77,8 +82,10 @@ class WebSummaryPrinterServiceImpl {
       if (productosAgrupados.containsKey(key)) {
         productosAgrupados[key]!['cantidad'] += item.cantidad;
         productosAgrupados[key]!['subtotal'] += item.subtotal;
-        productosAgrupados[key]!['costo'] += (item.precioUnitario * 0.6) * item.cantidad;
-        productosAgrupados[key]!['descuento'] += (item.precioUnitario * 0.1) * item.cantidad;
+        productosAgrupados[key]!['costo'] +=
+            (item.precioUnitario * 0.6) * item.cantidad;
+        productosAgrupados[key]!['descuento'] +=
+            (item.precioUnitario * 0.1) * item.cantidad;
       } else {
         productosAgrupados[key] = {
           'item': item,
@@ -91,14 +98,15 @@ class WebSummaryPrinterServiceImpl {
     }
 
     // Generar filas de productos detalladas
-    final productRows = productosAgrupados.values.map((producto) {
-      final item = producto['item'] as OrderItem;
-      final cantidad = producto['cantidad'] as int;
-      final subtotal = producto['subtotal'] as double;
-      final costo = producto['costo'] as double;
-      final descuento = producto['descuento'] as double;
+    final productRows = productosAgrupados.values
+        .map((producto) {
+          final item = producto['item'] as OrderItem;
+          final cantidad = producto['cantidad'] as int;
+          final subtotal = producto['subtotal'] as double;
+          final costo = producto['costo'] as double;
+          final descuento = producto['descuento'] as double;
 
-      return '''
+          return '''
         <div class="product-item">
           <div class="product-name">${item.nombre}</div>
           <div class="product-details">
@@ -111,7 +119,8 @@ class WebSummaryPrinterServiceImpl {
           <div class="separator">- - - - - - - - - - - - - - - -</div>
         </div>
       ''';
-    }).join('');
+        })
+        .join('');
 
     return '''
 <!DOCTYPE html>
