@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
@@ -2142,7 +2143,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   }
 
   bool _shouldShowCancelButton(Map<String, dynamic> operation) {
-    // Show cancel button only for pending operations
+    // Show cancel button for pending operations
+    // For managers: also show for completed operations
     String estado = operation['estado_nombre']?.toString().toLowerCase() ?? '';
 
     // Debug logging
@@ -2157,10 +2159,20 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         estado.contains('en proceso') ||
         estado.contains('proceso');
 
-    print('   - Is pending: $isPending');
-    print('   - Should show cancel button: $isPending');
+    // Check for completed status
+    bool isCompleted =
+        estado.contains('completada') ||
+        estado.contains('completed') ||
+        estado.contains('finalizada') ||
+        estado.contains('finalizado');
 
-    return isPending;
+    print('   - Is pending: $isPending');
+    print('   - Is completed: $isCompleted');
+    print('   - Should show cancel button: ${isPending || isCompleted}');
+
+    // Allow cancellation for pending operations always
+    // For completed operations, only if user is a manager (will be checked in the dialog)
+    return isPending || isCompleted;
   }
 
   Widget _buildCompleteButton(Map<String, dynamic> operation) {
@@ -2407,6 +2419,30 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     try {
       Navigator.pop(context); // Close dialog
 
+      // Check if operation is completed and verify user role
+      String estado = operation['estado_nombre']?.toString().toLowerCase() ?? '';
+      bool isCompleted =
+          estado.contains('completada') ||
+          estado.contains('completed') ||
+          estado.contains('finalizada') ||
+          estado.contains('finalizado');
+
+      if (isCompleted) {
+        // For completed operations, verify user is a manager
+        final userRole = await _getUserRole();
+        if (userRole != 'gerente') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Solo los gerentes pueden cancelar operaciones completadas',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+      }
+
       // Show loading
       showDialog(
         context: context,
@@ -2435,28 +2471,26 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         throw Exception('ID de operación no válido');
       }
 
-      final result = await InventoryService.cancelOperation(
-        idOperacion:
-            operationId is int
-                ? operationId
-                : int.parse(operationId.toString()),
-        comentario:
-            comment.isEmpty ? 'Operación cancelada desde la app' : comment,
-        uuid: userUuid,
+      // Use the RPC fn_registrar_cambio_estado_operacion with estado 3 (cancelada)
+      final supabase = Supabase.instance.client;
+      final result = await supabase.rpc(
+        'fn_registrar_cambio_estado_operacion',
+        params: {
+          'p_id_operacion': operationId is int ? operationId : int.parse(operationId.toString()),
+          'p_nuevo_estado': 3, // Estado cancelada
+        },
       );
 
       Navigator.pop(context); // Close loading dialog
 
-      if (result['status'] == 'success') {
+      if (result != null && result['success'] == true) {
         // Close the detail modal
         Navigator.pop(context);
 
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              result['mensaje'] ?? 'Operación cancelada exitosamente',
-            ),
+          const SnackBar(
+            content: Text('Operación cancelada exitosamente'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -2468,7 +2502,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              result['message'] ?? 'Error al cancelar la operación',
+              result?['message'] ?? 'Error al cancelar la operación',
             ),
             backgroundColor: Colors.red,
           ),

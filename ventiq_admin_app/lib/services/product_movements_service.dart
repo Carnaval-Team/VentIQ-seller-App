@@ -23,6 +23,7 @@ class ProductMovementsService {
       try {
         final response = await _supabase.rpc(
           'get_product_movements_optimized',
+
           params: {
             'p_id_producto': productId,
             'p_fecha_desde': dateFrom?.toString().split(' ')[0],
