@@ -602,6 +602,10 @@ class ProductService {
             item['ubicacion']?.toString() ??
             item['almacen']?.toString() ??
             'Sin ubicación';
+        final nombreAlmacen =
+            item['ubicacion']?.toString() ??
+            item['almacen']?.toString() ??
+            'Sin ubicación';
         final cantidad = (item['cantidad_final'] ?? 0).toDouble();
         final reservado = (item['stock_reservado'] ?? 0).toDouble();
 
@@ -610,6 +614,7 @@ class ProductService {
           ubicacionesAgrupadas[idUbicacion] = {
             'id_ubicacion': idUbicacion,
             'ubicacion': nombreUbicacion,
+            'almacen': nombreAlmacen,
             'cantidad': cantidad,
             'reservado': reservado,
           };
@@ -624,7 +629,7 @@ class ProductService {
       print('🔍 Ubicaciones encontradas:');
       for (var ub in ubicacionesUnicas) {
         print(
-          '   - ${ub['ubicacion']}: ${ub['cantidad']} unidades (${ub['reservado']} reservadas)',
+          '   - ${ub['almacen']} - ${ub['ubicacion']}: ${ub['cantidad']} unidades (${ub['reservado']} reservadas)',
         );
       }
 

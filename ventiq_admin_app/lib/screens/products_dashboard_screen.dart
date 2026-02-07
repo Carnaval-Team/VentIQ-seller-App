@@ -304,9 +304,6 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ProductsKPICards(kpis: _kpis, isLoading: _isLoadingKPIs),
-            const SizedBox(height: 20),
-
             // Acciones Rápidas
             ProductsQuickActions(
               onAddProduct:
@@ -318,11 +315,13 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
                   () => _tabController.animateTo(2), // Cambiar de 2 a 3
               onViewReports: () => _tabController.animateTo(1), // Mantener en 1
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+            ProductsKPICards(kpis: _kpis, isLoading: _isLoadingKPIs),
+            const SizedBox(height: 12),
 
             // Información adicional
             ProductsAdditionalInfo(kpis: _kpis, isLoading: _isLoadingKPIs),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
             ProductsCategoryChart(
               categoryData: _categoryDistribution,
               isLoading: _isLoadingCharts,
