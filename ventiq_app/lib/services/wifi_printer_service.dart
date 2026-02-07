@@ -469,6 +469,25 @@ class WiFiPrinterService {
       }
 
       debugPrint('✅ Ambos recibos impresos exitosamente');
+
+      // Esperar entre impresiones
+      debugPrint('⏳ Esperando 3 segundos antes de recibo vendedor...');
+      await Future.delayed(const Duration(seconds: 3));
+
+      // ========== IMPRIMIR SELLER RECEIPT ==========
+      debugPrint('👤 Imprimiendo recibo vendedor...');
+      bool sellerResult = await _printCustomerReceipt(
+        generator,
+        order,
+        storeInfo,
+        title: 'RECIBO VENDEDOR',
+      );
+
+      if (!sellerResult) {
+        debugPrint('❌ Error imprimiendo recibo de vendedor');
+        // No retornamos false porque ya se imprimieron los principales
+      }
+
       return true;
     } catch (e) {
       debugPrint('❌ Error imprimiendo factura: $e');
@@ -480,8 +499,9 @@ class WiFiPrinterService {
   Future<bool> _printCustomerReceipt(
     Generator generator,
     Order order,
-    _StorePrintInfo storeInfo,
-  ) async {
+    _StorePrintInfo storeInfo, {
+    String title = 'FACTURA',
+  }) async {
     try {
       final usdRate = await _getUsdRateForPrint();
       List<int> bytes = [];
@@ -491,15 +511,16 @@ class WiFiPrinterService {
         order,
         storeInfo,
         usdRate: usdRate,
+        title: title,
       );
       bytes += generator.emptyLines(1);
       bytes += generator.cut();
 
-      debugPrint('📤 Enviando recibo del cliente (${bytes.length} bytes)...');
+      debugPrint('📤 Enviando $title (${bytes.length} bytes)...');
 
-      return await _sendToPrinterWithRetry(bytes, 'Recibo del Cliente');
+      return await _sendToPrinterWithRetry(bytes, title);
     } catch (e) {
-      debugPrint('❌ Error creando recibo del cliente: $e');
+      debugPrint('❌ Error creando $title: $e');
       return false;
     }
   }
@@ -706,6 +727,7 @@ class WiFiPrinterService {
     _StorePrintInfo storeInfo, {
     bool includeHeader = true,
     double? usdRate,
+    String title = 'FACTURA',
   }) {
     List<int> bytes = [];
 
@@ -714,7 +736,7 @@ class WiFiPrinterService {
       bytes += _addStoreHeader(generator, storeInfo);
     }
     bytes += generator.text(
-      'FACTURA',
+      title,
       styles: PosStyles(align: PosAlign.center, bold: true),
     );
     bytes += generator.text(
@@ -805,7 +827,7 @@ class WiFiPrinterService {
       final usdTotal = order.total / usdRate;
       bytes += generator.text(
         'USD (${usdRate.toStringAsFixed(0)}): \$${usdTotal.toStringAsFixed(2)}',
-        styles: PosStyles(align: PosAlign.right),
+        styles: PosStyles(align: PosAlign.right, bold: true),
       );
     }
 
@@ -915,7 +937,7 @@ class WiFiPrinterService {
       final usdTotal = order.total / usdRate;
       bytes += generator.text(
         'USD (${usdRate.toStringAsFixed(0)}): \$${usdTotal.toStringAsFixed(2)}',
-        styles: PosStyles(align: PosAlign.left),
+        styles: PosStyles(align: PosAlign.left, bold: true),
       );
     }
 

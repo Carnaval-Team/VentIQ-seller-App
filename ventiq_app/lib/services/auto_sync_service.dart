@@ -642,6 +642,64 @@ class AutoSyncService {
         }
       }
 
+      // 🎯 OPTIMIZACIÓN: Obtener presentaciones en batch para TODOS los productos de la categoría
+      if (allProducts.isNotEmpty) {
+        try {
+          final productIds = allProducts.map((p) => p['id'] as int).toList();
+          print(
+            '  📦 Obteniendo presentaciones para ${productIds.length} productos en batch...',
+          );
+
+          // Una sola consulta con WHERE IN para todas las presentaciones
+          final allPresentations = await Supabase.instance.client
+              .from('app_dat_producto_presentacion')
+              .select('''
+                id,
+                id_producto,
+                id_presentacion,
+                cantidad,
+                es_base,
+                presentacion:app_nom_presentacion!inner(
+                  id,
+                  denominacion,
+                  descripcion,
+                  sku_codigo,
+                  es_fraccionable
+                )
+              ''')
+              .inFilter('id_producto', productIds)
+              .order('es_base', ascending: false);
+
+          print('  ✅ ${allPresentations.length} presentaciones obtenidas');
+
+          // Agrupar presentaciones por id_producto
+          final Map<int, List<dynamic>> presentationsByProduct = {};
+          for (var presentation in allPresentations) {
+            final productId = presentation['id_producto'] as int;
+            if (!presentationsByProduct.containsKey(productId)) {
+              presentationsByProduct[productId] = [];
+            }
+            presentationsByProduct[productId]!.add(presentation);
+          }
+
+          // Asignar presentaciones a cada producto
+          for (var product in allProducts) {
+            final productId = product['id'] as int;
+            product['presentaciones'] = presentationsByProduct[productId] ?? [];
+          }
+
+          print(
+            '  ✅ Presentaciones asignadas a ${productIds.length} productos',
+          );
+        } catch (presError) {
+          print('  ⚠️ Error obteniendo presentaciones en batch: $presError');
+          // Si falla, los productos quedan sin presentaciones (array vacío)
+          for (var product in allProducts) {
+            product['presentaciones'] = [];
+          }
+        }
+      }
+
       productsByCategory[category.id.toString()] = allProducts;
       print(
         '  ✅ Categoría "${category.name}": ${allProducts.length} productos sincronizados',

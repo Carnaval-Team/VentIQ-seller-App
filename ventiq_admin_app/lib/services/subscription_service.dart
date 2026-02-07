@@ -410,6 +410,23 @@ class SubscriptionService {
     }
   }
 
+  /// Verifica si la tienda tiene plan Pro (o superior: Avanzado)
+  Future<bool> hasProPlan(int idTienda) async {
+    try {
+      final subscription = await getActiveSubscription(idTienda);
+      if (subscription == null) return false;
+
+      final planName = subscription.planDenominacion?.toLowerCase() ?? '';
+      // El plan avanzado incluye todo lo del pro
+      return planName.contains('pro') ||
+          planName.contains('avanzado') ||
+          planName.contains('advanced');
+    } catch (e) {
+      print('❌ Error verificando plan pro: $e');
+      return false;
+    }
+  }
+
   /// Verifica si la suscripción está próxima a vencer (3 días o menos)
   Future<Map<String, dynamic>?> checkSubscriptionExpiration(
     int idTienda,

@@ -255,26 +255,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
         actions: [
           if (_canCreateProduct)
             IconButton(
-              icon:
-                  _isLoadingAdvancedPlan
-                      ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                      : Icon(
-                        _hasAdvancedPlan ? Icons.auto_awesome : Icons.lock,
-                        color: Colors.white,
-                      ),
-              onPressed:
-                  _isLoadingAdvancedPlan ? null : _showAiProductGenerator,
-              tooltip:
-                  _hasAdvancedPlan
-                      ? 'Generar productos con IA'
-                      : 'Plan Avanzado requerido',
+              icon: const Icon(Icons.auto_awesome, color: Colors.white),
+              onPressed: _showAiProductGenerator,
+              tooltip: 'Generar productos con IA',
             ),
           if (_canCreateProduct)
             IconButton(
@@ -340,10 +323,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
       return;
     }
 
-    if (!_hasAdvancedPlan) {
-      _showAdvancedPlanRequiredSheet();
-      return;
-    }
+    // Verificación de plan eliminada temporalmente
+    // if (!_hasAdvancedPlan) {
+    //   _showAdvancedPlanRequiredSheet();
+    //   return;
+    // }
 
     final result = await showModalBottomSheet<AiProductCreationResult>(
       context: context,

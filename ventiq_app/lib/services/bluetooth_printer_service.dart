@@ -601,6 +601,25 @@ class BluetoothPrinterService {
       }
 
       debugPrint('✅ Both receipts printed successfully');
+
+      // Wait between prints
+      debugPrint('⏳ Waiting 3 seconds before seller receipt...');
+      await Future.delayed(const Duration(seconds: 3));
+
+      // ========== PRINT SELLER RECEIPT ==========
+      debugPrint('👤 Printing seller receipt...');
+      bool sellerResult = await _printCustomerReceipt(
+        generator,
+        order,
+        storeInfo,
+        title: 'RECIBO VENDEDOR',
+      );
+
+      if (!sellerResult) {
+        debugPrint('❌ Seller receipt failed to print');
+        // We don't return false here as the main receipts were printed
+      }
+
       return true;
     } catch (e) {
       debugPrint('❌ Error printing invoice: $e');
@@ -612,8 +631,9 @@ class BluetoothPrinterService {
   Future<bool> _printCustomerReceipt(
     Generator generator,
     Order order,
-    _StorePrintInfo storeInfo,
-  ) async {
+    _StorePrintInfo storeInfo, {
+    String title = 'FACTURA',
+  }) async {
     try {
       final usdRate = await _getUsdRateForPrint();
       List<int> bytes = [];
@@ -623,15 +643,16 @@ class BluetoothPrinterService {
         order,
         storeInfo,
         usdRate: usdRate,
+        title: title,
       );
       bytes += generator.emptyLines(1);
       bytes += generator.cut();
 
-      debugPrint('📤 Sending customer receipt (${bytes.length} bytes)...');
+      debugPrint('📤 Sending $title (${bytes.length} bytes)...');
 
-      return await _sendToPrinterWithRetry(bytes, 'Customer Receipt');
+      return await _sendToPrinterWithRetry(bytes, title);
     } catch (e) {
-      debugPrint('❌ Error creating customer receipt: $e');
+      debugPrint('❌ Error creating $title: $e');
       return false;
     }
   }
@@ -823,6 +844,7 @@ class BluetoothPrinterService {
     _StorePrintInfo storeInfo, {
     bool includeHeader = true,
     double? usdRate,
+    String title = 'FACTURA',
   }) {
     List<int> bytes = [];
 
@@ -831,7 +853,7 @@ class BluetoothPrinterService {
       bytes += _addStoreHeader(generator, storeInfo);
     }
     bytes += generator.text(
-      'FACTURA',
+      title,
       styles: PosStyles(align: PosAlign.center, bold: true),
     );
     bytes += generator.text(
@@ -922,7 +944,7 @@ class BluetoothPrinterService {
       final usdTotal = order.total / usdRate;
       bytes += generator.text(
         'USD (${usdRate.toStringAsFixed(0)}): \$${usdTotal.toStringAsFixed(2)}',
-        styles: PosStyles(align: PosAlign.right),
+        styles: PosStyles(align: PosAlign.right, bold: true),
       );
     }
 
@@ -1051,7 +1073,7 @@ class BluetoothPrinterService {
       final usdTotal = order.total / usdRate;
       bytes += generator.text(
         'USD (${usdRate.toStringAsFixed(0)}): \$${usdTotal.toStringAsFixed(2)}',
-        styles: PosStyles(align: PosAlign.left),
+        styles: PosStyles(align: PosAlign.left, bold: true),
       );
     }
 

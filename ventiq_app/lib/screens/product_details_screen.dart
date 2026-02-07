@@ -79,7 +79,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   final Map<int, double> _customVariantPrices = {};
   late final AnimationController _editIconController;
   late final Animation<double> _editIconOpacity;
-
   @override
   void initState() {
     super.initState();
@@ -838,7 +837,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     }
   }
 
-  /// Cargar presentaciones del producto desde Supabase
+  /// Cargar presentaciones del producto desde Supabase o cache offline
   Future<void> _loadProductPresentations() async {
     setState(() {
       _isLoadingPresentations = true;
@@ -849,9 +848,70 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         '🔍 Cargando presentaciones para producto ID: ${widget.product.id}',
       );
 
-      final presentations = await _productDetailService.getProductPresentations(
-        widget.product.id,
-      );
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled =
+          await _userPreferencesService.isOfflineModeEnabled();
+
+      List<ProductPresentation> presentations = [];
+
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline - Cargando presentaciones desde cache...');
+
+        // Cargar datos offline
+        final offlineData = await _userPreferencesService.getOfflineData();
+
+        if (offlineData != null && offlineData['products'] != null) {
+          final productsData = offlineData['products'] as Map<String, dynamic>;
+
+          // Buscar el producto en todas las categorías
+          bool found = false;
+          for (var categoryProducts in productsData.values) {
+            if (found) break;
+
+            final productsList = categoryProducts as List<dynamic>;
+            final productData = productsList.firstWhere(
+              (p) => p['id'] == widget.product.id,
+              orElse: () => null,
+            );
+
+            if (productData != null && productData['presentaciones'] != null) {
+              final presentationsData =
+                  productData['presentaciones'] as List<dynamic>;
+
+              // Convertir los datos a ProductPresentation
+              presentations =
+                  presentationsData
+                      .map((item) => ProductPresentation.fromJson(item))
+                      .toList();
+
+              print(
+                '✅ ${presentations.length} presentaciones cargadas desde cache offline',
+              );
+              found = true;
+              break;
+            }
+          }
+
+          if (!found) {
+            print('⚠️ No se encontraron presentaciones en cache offline');
+          }
+        } else {
+          print('⚠️ No hay datos de productos en cache offline');
+        }
+      } else {
+        // Modo online - Cargar desde Supabase
+        print('🌐 Modo online - Cargando presentaciones desde Supabase...');
+        presentations = await _productDetailService.getProductPresentations(
+          widget.product.id,
+        );
+      }
+
+      debugPrint('📦 Presentaciones recibidas: ${presentations.length}');
+      for (final pp in presentations) {
+        print(
+          '  - ProductPresentation(id=${pp.id}, idProducto=${pp.idProducto}, idPresentacion=${pp.idPresentacion}, cantidad=${pp.cantidad}, esBase=${pp.esBase}, denominacion=${pp.presentacion.denominacion}, sku=${pp.presentacion.skuCodigo})',
+        );
+      }
 
       setState(() {
         _productPresentations = presentations;
@@ -870,11 +930,17 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             debugPrint(
               '✅ Presentación base seleccionada: ${_selectedPresentation!.presentacion.denominacion}',
             );
+            debugPrint(
+              '🎯 Presentación seleccionada (base): idPresentacion=${_selectedPresentation!.idPresentacion}, cantidad=${_selectedPresentation!.cantidad}',
+            );
           } else {
             _selectedPresentation = presentations.first;
             _selectedPresentationsByProduct[productKey] = presentations.first;
             debugPrint(
               '✅ Primera presentación seleccionada: ${_selectedPresentation!.presentacion.denominacion}',
+            );
+            debugPrint(
+              '🎯 Presentación seleccionada (primera): idPresentacion=${_selectedPresentation!.idPresentacion}, cantidad=${_selectedPresentation!.cantidad}',
             );
           }
         } else {
@@ -885,12 +951,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           _selectedPresentationsByProduct[productKey] = null;
         }
       });
-    } catch (e) {
-      debugPrint('❌ Error cargando presentaciones: $e');
+    } catch (e, stackTrace) {
+      print('❌ Error cargando presentaciones: $e');
+      print('📍 Stack trace: $stackTrace');
+
       setState(() {
         _productPresentations = [];
-        _selectedPresentation = null;
         _isLoadingPresentations = false;
+        _selectedPresentation = null;
       });
     }
   }
