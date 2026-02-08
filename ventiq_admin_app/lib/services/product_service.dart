@@ -603,7 +603,7 @@ class ProductService {
             item['almacen']?.toString() ??
             'Sin ubicación';
         final nombreAlmacen =
-            item['ubicacion']?.toString() ??
+            item['almacen']?.toString() ??
             item['almacen']?.toString() ??
             'Sin ubicación';
         final cantidad = (item['cantidad_final'] ?? 0).toDouble();
