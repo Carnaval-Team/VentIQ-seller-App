@@ -3,10 +3,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/reception_total_widget.dart';
 import '../config/app_colors.dart';
 import '../models/product.dart';
-import '../services/product_service.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/currency_display_service.dart';
+import '../services/warehouse_service.dart';
 import '../models/warehouse.dart';
 import '../models/supplier.dart';
 import '../widgets/conversion_info_widget.dart';
@@ -14,8 +14,9 @@ import '../widgets/product_quantity_dialog.dart';
 import '../widgets/location_selector_widget.dart';
 import '../widgets/currency_info_widget.dart';
 import '../widgets/product_selector_widget.dart';
-import '../widgets/supplier/supplier_reception_integration.dart';
 import '../services/product_search_service.dart';
+import '../widgets/ai_reception_sheet.dart';
+import '../models/ai_reception_models.dart';
 
 class InventoryReceptionScreen extends StatefulWidget {
   const InventoryReceptionScreen({super.key});
@@ -162,7 +163,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       setState(() => _isLoadingProveedores = true);
       final userPrefs = UserPreferencesService();
       final idTienda = await userPrefs.getIdTienda();
-      
+
       if (idTienda == null) {
         throw Exception('No se encontró ID de tienda');
       }
@@ -174,16 +175,18 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
           .select('id, denominacion, sku_codigo')
           .eq('idtienda', idTienda)
           .order('denominacion', ascending: true);
-      
+
       final proveedores = List<Map<String, dynamic>>.from(response);
-      
+
       setState(() {
         _proveedores = proveedores;
         _selectedProveedor = null; // Sin filtro por defecto
         _isLoadingProveedores = false;
       });
-      
-      print('✅ Proveedores cargados de tienda $idTienda: ${_proveedores.length}');
+
+      print(
+        '✅ Proveedores cargados de tienda $idTienda: ${_proveedores.length}',
+      );
     } catch (e) {
       setState(() => _isLoadingProveedores = false);
       print('❌ Error al cargar proveedores: $e');
@@ -191,6 +194,133 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al cargar proveedores: $e')),
         );
+      }
+    }
+  }
+
+  Future<void> _openAiAssistant() async {
+    final result = await showModalBottomSheet<AiReceptionResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const AiReceptionSheet(),
+    );
+
+    if (result != null) {
+      // 0. Pre-calculation (Async)
+      WarehouseZone? matchedLocation;
+      if (result.location != null) {
+        try {
+          final warehouseService = WarehouseService();
+          // Note: This might be redundant if we cached locations, but it's safer to fetch fresh
+          final warehouses = await warehouseService.listWarehousesOK();
+          for (final w in warehouses) {
+            for (final z in w.zones) {
+              if (z.name.toLowerCase().contains(
+                    result.location!.toLowerCase(),
+                  ) ||
+                  result.location!.toLowerCase().contains(
+                    z.name.toLowerCase(),
+                  )) {
+                matchedLocation = WarehouseZone(
+                  id: z.id,
+                  warehouseId: w.id,
+                  name: z.name,
+                  code: z.code,
+                  type: z.type,
+                  conditions: z.conditions,
+                  capacity: z.capacity,
+                  currentOccupancy: z.currentOccupancy,
+                  locations: z.locations,
+                  conditionCodes: z.conditionCodes,
+                );
+                break;
+              }
+            }
+            if (matchedLocation != null) break;
+          }
+        } catch (e) {
+          print('Error matching location: $e');
+        }
+      }
+
+      // 1. Fill Header Fields (Sync)
+      setState(() {
+        if (result.observations != null) {
+          _observacionesController.text = result.observations!;
+        }
+        if (result.currency != null) {
+          _selectedCurrency = result.currency!;
+        }
+        if (result.receivedBy != null && result.receivedBy!.isNotEmpty) {
+          _recibidoPorController.text = result.receivedBy!;
+        }
+        if (result.deliveredBy != null && result.deliveredBy!.isNotEmpty) {
+          _entregadoPorController.text = result.deliveredBy!;
+        }
+
+        // Set Location
+        if (matchedLocation != null) {
+          _selectedLocation = matchedLocation;
+        }
+
+        // Match Reason
+        if (result.reason != null) {
+          try {
+            final matched = _motivoOptions.firstWhere(
+              (m) =>
+                  m['denominacion'].toString().toLowerCase().contains(
+                    result.reason!.toLowerCase(),
+                  ) ||
+                  result.reason!.toLowerCase().contains(
+                    m['denominacion'].toString().toLowerCase(),
+                  ),
+            );
+            _selectedMotivo = matched;
+          } catch (_) {
+            print('Motivo inferred "${result.reason}" not found in list.');
+          }
+        }
+      });
+
+      // 2. Fill Products
+      if (result.items.isNotEmpty) {
+        int addedCount = 0;
+        for (final draft in result.items) {
+          if (draft.productId != null) {
+            setState(() {
+              _selectedProducts.add({
+                'id': draft.productId,
+                'denominacion': draft.productName,
+                'sku_producto': draft.productSku ?? '',
+                'cantidad': draft.quantity,
+                'precio_unitario': draft.price ?? 0.0,
+                // Defaults
+                'sku': draft.productSku ?? '',
+                'descripcion': '',
+                'es_vendible': true,
+                'es_elaborado': false,
+                'es_servicio': false,
+                'stock_disponible': false,
+                'presentaciones': [],
+                'variantes_disponibles': [],
+              });
+              addedCount++;
+            });
+          }
+        }
+
+        if (addedCount > 0) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Datos importados: $addedCount productos + Encabezados',
+              ),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        }
       }
     }
   }
@@ -294,12 +424,19 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
           _selectedProducts.map((product) {
             // Add selected location ID to each product
             final productWithLocation = Map<String, dynamic>.from(product);
+
+            // Fix: Ensure id_producto is set (AI and ProductSelector might use 'id')
+            if (productWithLocation['id_producto'] == null &&
+                productWithLocation['id'] != null) {
+              productWithLocation['id_producto'] = productWithLocation['id'];
+            }
+
             if (_selectedLocation != null) {
               // Remove prefix ('z' for zones, 'w' for warehouses) before parsing as int
               try {
                 // El LocationSelectorWidget ahora devuelve directamente el ID de la zona
                 final locationId = int.parse(_selectedLocation!.id);
-                print("Location ID: $locationId");
+                // print("Location ID: $locationId");
                 productWithLocation['id_ubicacion'] = locationId;
               } catch (e) {
                 throw Exception(
@@ -331,7 +468,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         recibidoPor: _recibidoPorController.text,
         idProveedor: _selectedSupplier?.id,
         uuid: userUuid,
-        monedaFactura: _selectedCurrency
+        monedaFactura: _selectedCurrency,
       );
 
       if (mounted) {
@@ -396,6 +533,13 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         backgroundColor: AppColors.primary,
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.auto_awesome),
+            tooltip: 'Asistente IA',
+            onPressed: _openAiAssistant,
+          ),
+        ],
       ),
       body: Form(
         key: _formKey,
@@ -414,7 +558,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                     _buildProductSelectionSection(),
                     const SizedBox(height: 24),
                     _buildSelectedProductsSection(),
-                    
                   ],
                 ),
               ),
@@ -555,6 +698,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
             // Sección de filtro por proveedor
             _buildProveedorFilterSection(),
             const SizedBox(height: 16),
+
             SizedBox(
               height: 300,
               child: ProductSelectorWidget(
@@ -563,7 +707,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 requireInventory: false,
                 searchHint: 'Buscar productos para recibir...',
                 supplierId: _selectedProveedor?['id'] as int?,
-                onProductSelected: (productData) {                  
+                onProductSelected: (productData) {
                   // Convertir Map a Product para mantener compatibilidad
                   final product = Product(
                     id: productData['id']?.toString() ?? '',
@@ -579,7 +723,8 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                     categoryId: productData['id_categoria']?.toString() ?? '',
                     categoryName: productData['categoria_nombre'] ?? '',
                     brand: '', // No disponible en nueva estructura
-                    sku: productData['sku_producto'] ?? productData['sku'] ?? '',
+                    sku:
+                        productData['sku_producto'] ?? productData['sku'] ?? '',
                     barcode: productData['codigo_barras'] ?? '',
                     basePrice:
                         (productData['precio_venta_cup'] as num?)?.toDouble() ??
@@ -605,13 +750,13 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                             ?.cast<Map<String, dynamic>>() ??
                         [],
                   );
-                  
+
                   // Debug: Verificar el objeto Product creado
                   print('✅ Product creado:');
                   print('  - name: ${product.name}');
                   print('  - sku: "${product.sku}"');
                   print('  - sku.isEmpty: ${product.sku.isEmpty}');
-                  
+
                   _addProductToReception(product);
                 },
               ),
@@ -909,50 +1054,51 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         const SizedBox(height: 8),
         _isLoadingProveedores
             ? const Padding(
-                padding: EdgeInsets.all(8.0),
-                child: SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              )
-            : DropdownButtonFormField<Map<String, dynamic>>(
-                value: _selectedProveedor,
-                decoration: InputDecoration(
-                  labelText: 'Seleccionar proveedor',
-                  border: const OutlineInputBorder(),
-                  hintText: _proveedores.isEmpty
-                      ? 'No hay proveedores disponibles'
-                      : 'Todos los proveedores',
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                ),
-                items: [
-                  DropdownMenuItem<Map<String, dynamic>>(
-                    value: null,
-                    child: const Text('Todos los proveedores'),
-                  ),
-                  ..._proveedores.map((proveedor) {
-                    return DropdownMenuItem<Map<String, dynamic>>(
-                      value: proveedor,
-                      child: Text(
-                        proveedor['denominacion'] ?? 'Sin nombre',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    );
-                  }).toList(),
-                ],
-                onChanged: (proveedor) {
-                  setState(() {
-                    _selectedProveedor = proveedor;
-                  });
-                  print(
-                    '✅ Proveedor seleccionado: ${proveedor?['denominacion'] ?? "Todos"}',
-                  );
-                },
+              padding: EdgeInsets.all(8.0),
+              child: SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
+            )
+            : DropdownButtonFormField<Map<String, dynamic>>(
+              value: _selectedProveedor,
+              decoration: InputDecoration(
+                labelText: 'Seleccionar proveedor',
+                border: const OutlineInputBorder(),
+                hintText:
+                    _proveedores.isEmpty
+                        ? 'No hay proveedores disponibles'
+                        : 'Todos los proveedores',
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+              ),
+              items: [
+                DropdownMenuItem<Map<String, dynamic>>(
+                  value: null,
+                  child: const Text('Todos los proveedores'),
+                ),
+                ..._proveedores.map((proveedor) {
+                  return DropdownMenuItem<Map<String, dynamic>>(
+                    value: proveedor,
+                    child: Text(
+                      proveedor['denominacion'] ?? 'Sin nombre',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }).toList(),
+              ],
+              onChanged: (proveedor) {
+                setState(() {
+                  _selectedProveedor = proveedor;
+                });
+                print(
+                  '✅ Proveedor seleccionado: ${proveedor?['denominacion'] ?? "Todos"}',
+                );
+              },
+            ),
       ],
     );
   }
