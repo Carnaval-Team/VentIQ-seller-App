@@ -234,15 +234,17 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
 
-                // Inventario (solo Gerente y Supervisor)
-                FutureBuilder<bool>(
-                  future: NavigationGuard.canNavigate(
-                    '/inventory',
-                    context,
-                    showDialog: false,
-                  ),
+                // Inventario (Gerente, Supervisor, Auditor y Almacenero)
+                FutureBuilder<UserRole>(
+                  future: PermissionsService().getUserRole(),
                   builder: (context, snapshot) {
-                    if (snapshot.data == true) {
+                    final userRole = snapshot.data ?? UserRole.none;
+                    final canAccessInventory = userRole == UserRole.gerente ||
+                        userRole == UserRole.supervisor ||
+                        userRole == UserRole.auditor ||
+                        userRole == UserRole.almacenero;
+                    
+                    if (canAccessInventory) {
                       return Column(
                         children: [
                           _buildDrawerItem(

@@ -11,22 +11,25 @@ class ProductMovementsService {
     DateTime? dateFrom,
     DateTime? dateTo,
     int? operationTypeId,
+    int? warehouseId,
     int offset = 0,
     int limit = 20,
   }) async {
     try {
       print('🔍 Obteniendo movimientos del producto $productId (offset: $offset, limit: $limit)');
-      print('📅 Filtros: desde=$dateFrom, hasta=$dateTo, tipoOp=$operationTypeId');
+      print('📅 Filtros: desde=$dateFrom, hasta=$dateTo, tipoOp=$operationTypeId, almacén=$warehouseId');
 
       // Intentar usar el RPC optimizado primero
       try {
         final response = await _supabase.rpc(
           'get_product_movements_optimized',
+
           params: {
             'p_id_producto': productId,
             'p_fecha_desde': dateFrom?.toString().split(' ')[0],
             'p_fecha_hasta': dateTo?.toString().split(' ')[0],
             'p_tipo_operacion_id': operationTypeId,
+            'p_id_almacen': warehouseId,
             'p_offset': offset,
             'p_limit': limit,
           },
@@ -39,6 +42,7 @@ class ProductMovementsService {
             dateFrom,
             dateTo,
             operationTypeId,
+            warehouseId,
             offset: offset,
             limit: limit,
           );
@@ -62,6 +66,7 @@ class ProductMovementsService {
           dateFrom,
           dateTo,
           operationTypeId,
+          warehouseId,
           offset: offset,
           limit: limit,
         );
@@ -77,12 +82,14 @@ class ProductMovementsService {
     int productId,
     DateTime? dateFrom,
     DateTime? dateTo,
-    int? operationTypeId, {
+    int? operationTypeId,
+    int? warehouseId, {
     int offset = 0,
     int limit = 20,
   }) async {
     try {
       print('📊 Usando fallback: consultas desde app_dat_inventario_productos');
+      print('📅 Filtros: desde=$dateFrom, hasta=$dateTo, tipoOp=$operationTypeId, almacén=$warehouseId');
 
       // Obtener registros de inventario para el producto
       var inventoryQuery = _supabase
@@ -100,6 +107,24 @@ class ProductMovementsService {
             id_proveedor
           ''')
           .eq('id_producto', productId);
+
+      // Filtrar por almacén si se especifica
+      if (warehouseId != null) {
+        // Obtener zonas del almacén especificado
+        final zonasQuery = await _supabase
+            .from('app_dat_layout_almacen')
+            .select('id')
+            .eq('id_almacen', warehouseId);
+        
+        final zonaIds = zonasQuery.map((z) => z['id'] as int).toList();
+        
+        if (zonaIds.isNotEmpty) {
+          inventoryQuery = inventoryQuery.filter('id_ubicacion', 'in', zonaIds);
+        } else {
+          // Si el almacén no tiene zonas, no retornar resultados
+          inventoryQuery = inventoryQuery.eq('id', -1);
+        }
+      }
 
       if (dateFrom != null) {
         inventoryQuery = inventoryQuery.gte('created_at', dateFrom.toIso8601String());
@@ -256,15 +281,26 @@ class ProductMovementsService {
           .eq('id_operacion', recepcion['id_operacion'] as int)
           .maybeSingle();
 
-      // Obtener nombre de la ubicación
+      // Obtener nombre de la ubicación y almacén
       String? ubicacionNombre;
+      String? almacenNombre;
+      String? zonaNombre;
       if (recepcion['id_ubicacion'] != null) {
         final ubicacion = await _supabase
             .from('app_dat_layout_almacen')
-            .select('denominacion')
+            .select('''
+              denominacion,
+              id_almacen,
+              app_dat_almacen!inner(denominacion)
+            ''')
             .eq('id', recepcion['id_ubicacion'] as int)
             .maybeSingle();
-        ubicacionNombre = ubicacion?['denominacion'] as String?;
+        
+        if (ubicacion != null) {
+          ubicacionNombre = ubicacion['denominacion'] as String?;
+          almacenNombre = (ubicacion['app_dat_almacen'] as Map<String, dynamic>?)?['denominacion'] as String?;
+          zonaNombre = ubicacionNombre; // Para compatibilidad con vista existente
+        }
       }
 
       // Obtener nombre del proveedor
@@ -291,6 +327,8 @@ class ProductMovementsService {
         'entregado_por': operacionRecepcion?['entregado_por'] as String?,
         'recibido_por': operacionRecepcion?['recibido_por'] as String?,
         'ubicacion': ubicacionNombre ?? 'Desconocida',
+        'almacen': almacenNombre ?? 'Desconocido',
+        'zona': zonaNombre ?? 'Desconocida',
         'proveedor': proveedorNombre,
         'observaciones': operacion['observaciones'],
         'cantidad_inicial': inventoryRecord['cantidad_inicial'],
@@ -356,15 +394,26 @@ class ProductMovementsService {
           .eq('id_operacion', extraccion['id_operacion'] as int)
           .maybeSingle();
 
-      // Obtener nombre de la ubicación
+      // Obtener nombre de la ubicación y almacén
       String? ubicacionNombre;
+      String? almacenNombre;
+      String? zonaNombre;
       if (extraccion['id_ubicacion'] != null) {
         final ubicacion = await _supabase
             .from('app_dat_layout_almacen')
-            .select('denominacion')
+            .select('''
+              denominacion,
+              id_almacen,
+              app_dat_almacen!inner(denominacion)
+            ''')
             .eq('id', extraccion['id_ubicacion'] as int)
             .maybeSingle();
-        ubicacionNombre = ubicacion?['denominacion'] as String?;
+        
+        if (ubicacion != null) {
+          ubicacionNombre = ubicacion['denominacion'] as String?;
+          almacenNombre = (ubicacion['app_dat_almacen'] as Map<String, dynamic>?)?['denominacion'] as String?;
+          zonaNombre = ubicacionNombre; // Para compatibilidad con vista existente
+        }
       }
 
       return {
@@ -378,6 +427,8 @@ class ProductMovementsService {
         'importe_real': extraccion['importe_real'],
         'fecha': extraccion['created_at'],
         'ubicacion': ubicacionNombre ?? 'Desconocida',
+        'almacen': almacenNombre ?? 'Desconocido',
+        'zona': zonaNombre ?? 'Desconocida',
         'observaciones': operacionExtraccion?['observaciones'] as String?,
         'autorizado_por': operacionExtraccion?['autorizado_por'] as String?,
         'cantidad_inicial': inventoryRecord['cantidad_inicial'],
@@ -434,15 +485,26 @@ class ProductMovementsService {
         return null;
       }
 
-      // Obtener nombre de la ubicación
+      // Obtener nombre de la ubicación y almacén
       String? ubicacionNombre;
+      String? almacenNombre;
+      String? zonaNombre;
       if (control['id_ubicacion'] != null) {
         final ubicacion = await _supabase
             .from('app_dat_layout_almacen')
-            .select('denominacion')
+            .select('''
+              denominacion,
+              id_almacen,
+              app_dat_almacen!inner(denominacion)
+            ''')
             .eq('id', control['id_ubicacion'] as int)
             .maybeSingle();
-        ubicacionNombre = ubicacion?['denominacion'] as String?;
+        
+        if (ubicacion != null) {
+          ubicacionNombre = ubicacion['denominacion'] as String?;
+          almacenNombre = (ubicacion['app_dat_almacen'] as Map<String, dynamic>?)?['denominacion'] as String?;
+          zonaNombre = ubicacionNombre; // Para compatibilidad con vista existente
+        }
       }
 
       return {
@@ -454,6 +516,8 @@ class ProductMovementsService {
         'cantidad': control['cantidad'],
         'fecha': control['created_at'],
         'ubicacion': ubicacionNombre ?? 'Desconocida',
+        'almacen': almacenNombre ?? 'Desconocido',
+        'zona': zonaNombre ?? 'Desconocida',
         'observaciones': operacion['observaciones'],
         'cantidad_inicial': inventoryRecord['cantidad_inicial'],
         'cantidad_final': inventoryRecord['cantidad_final'],

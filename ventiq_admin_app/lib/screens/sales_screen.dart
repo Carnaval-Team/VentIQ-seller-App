@@ -21,6 +21,7 @@ import '../services/sales_service.dart';
 import '../services/sales_analyst_controller.dart';
 import '../services/subscription_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/permissions_service.dart';
 
 // Importación condicional para descargas en web
 import '../services/web_download_stub.dart'
@@ -4925,6 +4926,63 @@ class _SalesScreenState extends State<SalesScreen>
                                                 ],
                                               ),
                                             ],
+
+                                            // Botón de cancelación para gerentes
+                                            FutureBuilder<UserRole>(
+                                              future: PermissionsService()
+                                                  .getUserRole(),
+                                              builder: (context, snapshot) {
+                                                final userRole =
+                                                    snapshot.data ??
+                                                        UserRole.none;
+                                                final isGerente =
+                                                    userRole ==
+                                                        UserRole.gerente;
+
+                                                if (!isGerente) {
+                                                  return const SizedBox.shrink();
+                                                }
+
+                                                return Column(
+                                                  children: [
+                                                    const SizedBox(height: 16),
+                                                    SizedBox(
+                                                      width: double.infinity,
+                                                      child:
+                                                          OutlinedButton.icon(
+                                                        onPressed: () =>
+                                                            _showCancelOrderDialog(
+                                                              order,
+                                                            ),
+                                                        icon: const Icon(
+                                                          Icons
+                                                              .cancel_outlined,
+                                                        ),
+                                                        label: const Text(
+                                                          'Cancelar Operación',
+                                                        ),
+                                                        style:
+                                                            OutlinedButton
+                                                                .styleFrom(
+                                                          foregroundColor:
+                                                              Colors.red,
+                                                          side:
+                                                              const BorderSide(
+                                                                color:
+                                                                    Colors.red,
+                                                              ),
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                                vertical: 12,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                );
+                                              },
+                                            ),
                                           ],
                                         ),
                                       );
@@ -7663,6 +7721,131 @@ class _SalesScreenState extends State<SalesScreen>
       case 4: // Configuración
         Navigator.pushNamed(context, '/settings');
         break;
+    }
+  }
+
+  void _showCancelOrderDialog(VendorOrder order) {
+    final commentController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.cancel_outlined, color: Colors.red, size: 24),
+            const SizedBox(width: 8),
+            const Text('Cancelar Operación'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '¿Está seguro de cancelar la operación #${order.idOperacion}?',
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Esta acción no se puede deshacer.',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.red,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: commentController,
+              decoration: const InputDecoration(
+                labelText: 'Motivo de cancelación',
+                hintText: 'Ingrese el motivo por el cual cancela la operación',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('No, mantener'),
+          ),
+          ElevatedButton(
+            onPressed: () => _cancelOrder(order, commentController.text),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Sí, cancelar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _cancelOrder(VendorOrder order, String comment) async {
+    try {
+      Navigator.pop(context); // Close dialog
+
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Cancelando operación...'),
+            ],
+          ),
+        ),
+      );
+
+      // Use the RPC fn_registrar_cambio_estado_operacion with estado 3 (cancelada)
+      final supabase = Supabase.instance.client;
+      final result = await supabase.rpc(
+        'fn_registrar_cambio_estado_operacion',
+        params: {
+          'p_id_operacion': order.idOperacion,
+          'p_nuevo_estado': 3, // Estado cancelada
+        },
+      );
+
+      Navigator.pop(context); // Close loading dialog
+
+      if (result != null && result['success'] == true) {
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Operación cancelada exitosamente'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+
+        // Refresh the data
+        _loadVendorReports();
+      } else {
+        // Show error message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                result?['message'] ?? 'Error al cancelar la operación',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      Navigator.pop(context); // Close loading dialog if still open
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 }
