@@ -814,18 +814,43 @@ class BluetoothPrinterService {
     return img.copyResize(image, width: targetWidth);
   }
 
+  img.Image _normalizeLogoForEscPos(img.Image image) {
+    final normalizedWidth = (image.width ~/ 8) * 8;
+    final byteAligned =
+        (normalizedWidth > 0 && normalizedWidth != image.width)
+            ? img.copyResize(image, width: normalizedWidth)
+            : image;
+
+    return img.grayscale(byteAligned);
+  }
+
+  List<int> _escPosInit() {
+    return const <int>[0x1B, 0x40];
+  }
+
   List<int> _addStoreHeader(Generator generator, _StorePrintInfo storeInfo) {
     List<int> bytes = [];
     final logoImage = _decodeLogoImage(storeInfo.logoBytes);
 
     if (logoImage != null) {
-      final resized = _resizeLogoForPrinter(logoImage);
-      bytes += generator.imageRaster(resized, align: PosAlign.center);
-      bytes += generator.emptyLines(1);
-      bytes += generator.text(
-        storeInfo.name,
-        styles: const PosStyles(align: PosAlign.center),
-      );
+      try {
+        final resized = _resizeLogoForPrinter(logoImage);
+        final normalized = _normalizeLogoForEscPos(resized);
+
+        bytes += generator.imageRaster(normalized, align: PosAlign.center);
+        bytes += _escPosInit();
+        bytes += generator.emptyLines(1);
+        bytes += generator.text(
+          storeInfo.name,
+          styles: const PosStyles(align: PosAlign.center),
+        );
+      } catch (e) {
+        debugPrint('⚠️ Error imprimiendo logo, usando header solo texto: $e');
+        bytes += generator.text(
+          storeInfo.name,
+          styles: const PosStyles(align: PosAlign.center, bold: true),
+        );
+      }
     } else {
       bytes += generator.text(
         storeInfo.name,

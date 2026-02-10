@@ -697,18 +697,51 @@ class WiFiPrinterService {
     return img.copyResize(image, width: targetWidth);
   }
 
+  img.Image _normalizeLogoForEscPos(img.Image image) {
+    // ESC/POS raster printing is typically more reliable when width is a
+    // multiple of 8 pixels (byte-aligned).
+    final normalizedWidth = (image.width ~/ 8) * 8;
+    final byteAligned =
+        (normalizedWidth > 0 && normalizedWidth != image.width)
+            ? img.copyResize(image, width: normalizedWidth)
+            : image;
+
+    // Some printers behave better with grayscale images.
+    return img.grayscale(byteAligned);
+  }
+
+  List<int> _escPosInit() {
+    // ESC @ (Initialize printer)
+    return const <int>[0x1B, 0x40];
+  }
+
   List<int> _addStoreHeader(Generator generator, _StorePrintInfo storeInfo) {
     List<int> bytes = [];
     final logoImage = _decodeLogoImage(storeInfo.logoBytes);
 
     if (logoImage != null) {
-      final resized = _resizeLogoForPrinter(logoImage);
-      bytes += generator.imageRaster(resized, align: PosAlign.center);
-      bytes += generator.emptyLines(1);
-      bytes += generator.text(
-        storeInfo.name,
-        styles: const PosStyles(align: PosAlign.center),
-      );
+      try {
+        final resized = _resizeLogoForPrinter(logoImage);
+        final normalized = _normalizeLogoForEscPos(resized);
+
+        bytes += generator.imageRaster(normalized, align: PosAlign.center);
+
+        // Some printers leave the data stream in a state where the next bytes
+        // (text) get printed as garbage. Re-initialize before continuing.
+        bytes += _escPosInit();
+
+        bytes += generator.emptyLines(1);
+        bytes += generator.text(
+          storeInfo.name,
+          styles: const PosStyles(align: PosAlign.center),
+        );
+      } catch (e) {
+        debugPrint('⚠️ Error imprimiendo logo, usando header solo texto: $e');
+        bytes += generator.text(
+          storeInfo.name,
+          styles: const PosStyles(align: PosAlign.center, bold: true),
+        );
+      }
     } else {
       bytes += generator.text(
         storeInfo.name,
