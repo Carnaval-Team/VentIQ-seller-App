@@ -1,9 +1,31 @@
 {
-  "current_version": "2.0.5",
-  "build": 815,
+  "current_version": "2.0.6",
+  "build": 816,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.0.6",
+      "date": "2026-02-10",
+      "title": "Impresiones más limpias y compatibles",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Tu logo se imprime sin caracteres extraños",
+          "description": "Mejoramos la impresión para que el ticket salga más limpio: el logo y el nombre de la tienda aparecen correctos, sin símbolos raros entre ellos."
+        },
+        {
+          "type": "improvement",
+          "title": "Mejor compatibilidad con impresoras 80mm y 58mm",
+          "description": "Optimizamos la forma en que se prepara el ticket para que funcione mejor con distintos modelos de impresoras térmicas."
+        },
+        {
+          "type": "improvement",
+          "title": "Tickets con mejor acabado",
+          "description": "Ajustamos el formato del encabezado para que la impresión sea más estable y profesional en Bluetooth y WiFi."
+        }
+      ]
+    },
     {
       "version": "2.0.5",
       "date": "2026-02-05",
