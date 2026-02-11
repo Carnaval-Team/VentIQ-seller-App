@@ -1058,7 +1058,7 @@ class BluetoothPrinterService {
       styles: PosStyles(align: PosAlign.center),
     );
 
-    // Products compactos
+    // Products - mostrar nombre completo
     debugPrint('📦 Adding ${order.items.length} products to warehouse slip');
     for (int i = 0; i < order.items.length; i++) {
       var item = order.items[i];
@@ -1069,19 +1069,22 @@ class BluetoothPrinterService {
         '📋 Product ${i + 1}: ${item.cantidad}x $productName @ $ubicacion',
       );
 
-      // Truncar nombre si es muy largo
-      if (productName.length > 22) {
-        productName = productName.substring(0, 19) + '...';
-      }
-
+      // Mostrar cantidad y nombre completo del producto
       bytes += generator.text(
         '${item.cantidad}x $productName',
-        styles: PosStyles(align: PosAlign.left),
+        styles: PosStyles(align: PosAlign.left, bold: true),
       );
       bytes += generator.text(
-        '  Ubic: $ubicacion',
+        '   Ubic: $ubicacion',
         styles: PosStyles(align: PosAlign.left),
       );
+      // Agregar linea de separacion entre productos
+      if (i < order.items.length - 1) {
+        bytes += generator.text(
+          '- - - - - - - - - - - - - -',
+          styles: PosStyles(align: PosAlign.center),
+        );
+      }
     }
     debugPrint('✅ All warehouse products added');
 

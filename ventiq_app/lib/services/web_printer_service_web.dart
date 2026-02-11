@@ -838,24 +838,20 @@ class WebPrinterServiceImpl {
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
-    // Generar filas de productos con ubicaciones de almacén
+    // Generar filas de productos con ubicaciones de almacén - nombre completo
     final productRows = order.items
         .where((item) => item.subtotal > 0)
         .map((item) {
           final ubicacion = item.ubicacionAlmacen ?? 'N/A';
           String productName = item.nombre;
 
-          // Truncar nombre si es muy largo
-          if (productName.length > 15) {
-            productName = productName.substring(0, 15) + '...';
-          }
-
           return '''
         <div class="product-item">
-          <div class="product-line">${item.cantidad.toString().padLeft(3, ' ')} | $productName</div>
-          <div class="location-line">    | Ubic: $ubicacion</div>
-          <div class="price-line">    | \$${item.precioUnitario.toStringAsFixed(0)} c/u</div>
+          <div class="product-line">${item.cantidad.toString().padLeft(3, ' ')}x $productName</div>
+          <div class="location-line">     Ubic: $ubicacion</div>
+          <div class="price-line">     \$${item.precioUnitario.toStringAsFixed(0)} c/u</div>
         </div>
+        <div class="product-separator">- - - - - - - - - - - - - -</div>
           ''';
         })
         .join('');
@@ -951,12 +947,18 @@ class WebPrinterServiceImpl {
         .product-line {
             margin: 2px 0;
             font-weight: bold;
+            word-wrap: break-word;
         }
         .location-line {
             margin: 2px 0;
         }
         .price-line {
             margin: 2px 0;
+        }
+        .product-separator {
+            text-align: center;
+            margin: 4px 0;
+            color: #666;
         }
         .totals-section {
             margin: 15px 0;

@@ -928,7 +928,7 @@ class WiFiPrinterService {
       styles: PosStyles(align: PosAlign.center),
     );
 
-    // Productos compactos
+    // Productos - mostrar nombre completo
     debugPrint(
       '📦 Agregando ${order.items.length} productos a la guía de almacén',
     );
@@ -941,19 +941,22 @@ class WiFiPrinterService {
         '📋 Producto ${i + 1}: ${item.cantidad}x $productName @ $ubicacion',
       );
 
-      // Truncar nombre si es muy largo
-      if (productName.length > 22) {
-        productName = productName.substring(0, 19) + '...';
-      }
-
+      // Mostrar cantidad y nombre completo del producto
       bytes += generator.text(
         '${item.cantidad}x $productName',
-        styles: PosStyles(align: PosAlign.left),
+        styles: PosStyles(align: PosAlign.left, bold: true),
       );
       bytes += generator.text(
-        '  Ubic: $ubicacion',
+        '   Ubic: $ubicacion',
         styles: PosStyles(align: PosAlign.left),
       );
+      // Agregar linea de separacion entre productos
+      if (i < order.items.length - 1) {
+        bytes += generator.text(
+          '- - - - - - - - - - - - - -',
+          styles: PosStyles(align: PosAlign.center),
+        );
+      }
     }
     debugPrint('✅ Todos los productos de almacén agregados');
 
