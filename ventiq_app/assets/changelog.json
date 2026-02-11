@@ -1,9 +1,26 @@
 {
-  "current_version": "2.0.6",
-  "build": 816,
+  "current_version": "2.0.7",
+  "build": 817,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.0.7",
+      "date": "2026-02-11",
+      "title": "Guía de almacén más clara",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Nombres completos en la guía de almacén",
+          "description": "Ahora el ticket del almacenero muestra el nombre completo de cada producto, sin cortes ni puntos suspensivos."
+        },
+        {
+          "type": "improvement",
+          "title": "Mejor separación entre productos",
+          "description": "Cada producto en la guía de picking aparece separado para que sea más fácil leer y preparar los pedidos."
+        }
+      ]
+    },
     {
       "version": "2.0.6",
       "date": "2026-02-10",
