@@ -1,9 +1,26 @@
 {
-  "current_version": "1.9.2",
-  "build": 192,
+  "current_version": "1.9.3",
+  "build": 193,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.9.3",
+      "date": "2026-02-11",
+      "title": "🧪 Crear tienda con IA (Beta)",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Asistente de creación de tienda desde el paso 0",
+          "description": "Nuevo botón \"Crear tienda asistida (IA)\" que abre un chat para recopilar los datos necesarios (usuario, tienda, ubicación, almacenes, zonas y TPVs) y generar la tienda más rápido. Función en beta: aún está en desarrollo y puede ajustarse en próximas versiones."
+        },
+        {
+          "type": "improvement",
+          "title": "Autocompletado inteligente para ahorrar tiempo",
+          "description": "La IA puede sugerir valores automáticos (por ejemplo, códigos de zonas, nombres por defecto y asignaciones) para reducir el trabajo manual durante el registro."
+        }
+      ]
+    },
     {
       "version": "1.9.2",
       "date": "2026-02-05",
