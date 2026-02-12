@@ -1,9 +1,36 @@
 {
-  "current_version": "1.9.3",
-  "build": 193,
+  "current_version": "1.9.4",
+  "build": 194,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.9.4",
+      "date": "2026-02-11",
+      "title": "🤖 Tu nuevo asistente de ayuda inteligente",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Asistente de ayuda siempre disponible",
+          "description": "Ahora tienes un asistente que responde tus preguntas sobre como usar la app. Toca el boton de ayuda en el Dashboard y pregunta lo que necesites."
+        },
+        {
+          "type": "improvement",
+          "title": "Respuestas paso a paso",
+          "description": "Pregunta cosas como '¿Como creo un producto?' o '¿Como registro mercancia?' y recibe instrucciones claras para completar la tarea."
+        },
+        {
+          "type": "improvement",
+          "title": "Navega directo a la pantalla",
+          "description": "Cuando el asistente te explica algo, puedes tocar 'Ir a la pantalla' para llegar rapidamente al lugar correcto sin buscar en el menu."
+        },
+        {
+          "type": "improvement",
+          "title": "Preguntas frecuentes personalizadas",
+          "description": "El asistente te sugiere preguntas segun tu rol (Gerente, Supervisor, Auditor o Almacenero) para que encuentres ayuda mas rapido."
+        }
+      ]
+    },
     {
       "version": "1.9.3",
       "date": "2026-02-11",
