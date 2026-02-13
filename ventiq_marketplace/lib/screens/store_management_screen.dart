@@ -2241,29 +2241,30 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    IconButton.filledTonal(
-                      tooltip: _isMultiSelectMode
-                          ? 'Cancelar selección múltiple'
-                          : 'Seleccionar múltiples para compartir',
-                      onPressed: _toggleMultiSelect,
-                      icon: Icon(
-                        _isMultiSelectMode
-                            ? Icons.checklist_rtl
-                            : Icons.library_add_check,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton.filled(
-                      tooltip: 'Compartir seleccionados',
-                      onPressed:
-                          !_isMultiSelectMode ||
-                              _selectedProductIds.isEmpty ||
-                              _isProductsLoading
-                          ? null
-                          : _shareSelectedProducts,
-                      icon: const Icon(Icons.campaign),
-                    ),
+                    // TODO: WhatsApp sharing disabled for security reasons
+                    // const SizedBox(width: 8),
+                    // IconButton.filledTonal(
+                    //   tooltip: _isMultiSelectMode
+                    //       ? 'Cancelar selección múltiple'
+                    //       : 'Seleccionar múltiples para compartir',
+                    //   onPressed: _toggleMultiSelect,
+                    //   icon: Icon(
+                    //     _isMultiSelectMode
+                    //         ? Icons.checklist_rtl
+                    //         : Icons.library_add_check,
+                    //   ),
+                    // ),
+                    // const SizedBox(width: 8),
+                    // IconButton.filled(
+                    //   tooltip: 'Compartir seleccionados',
+                    //   onPressed:
+                    //       !_isMultiSelectMode ||
+                    //           _selectedProductIds.isEmpty ||
+                    //           _isProductsLoading
+                    //       ? null
+                    //       : _shareSelectedProducts,
+                    //   icon: const Icon(Icons.campaign),
+                    // ),
                   ],
                 ),
                 if (_isMultiSelectMode)
@@ -2451,14 +2452,15 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    tooltip: 'Compartir en WhatsApp',
-                    onPressed: () async {
-                      await _shareProductOnWhatsapp(product);
-                    },
-                    icon: Icon(Icons.campaign_outlined, color: accentColor),
-                  ),
+                  // TODO: WhatsApp sharing disabled for security reasons
+                  // const SizedBox(width: 8),
+                  // IconButton(
+                  //   tooltip: 'Compartir en WhatsApp',
+                  //   onPressed: () async {
+                  //     await _shareProductOnWhatsapp(product);
+                  //   },
+                  //   icon: Icon(Icons.campaign_outlined, color: accentColor),
+                  // ),
                   const SizedBox(width: 4),
                   Switch(
                     value: isProductVisible && isStoreEffectiveActive,
