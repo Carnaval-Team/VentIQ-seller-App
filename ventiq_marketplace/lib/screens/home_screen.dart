@@ -35,7 +35,8 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>
+    with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   final ProductService _productService = ProductService();
   final StoreService _storeService = StoreService();
@@ -74,15 +75,143 @@ class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey<_MarqueeTextState> _marqueeKey =
       GlobalKey<_MarqueeTextState>();
 
+  // Auto-scroll carousels controllers
+  final ScrollController _bestSellingScrollController = ScrollController();
+  final ScrollController _recentProductsScrollController = ScrollController();
+  final ScrollController _storesScrollController = ScrollController();
+  Timer? _bestSellingAutoScrollTimer;
+  Timer? _recentProductsAutoScrollTimer;
+  Timer? _storesAutoScrollTimer;
+  bool _isBestSellingUserScrolling = false;
+  bool _isRecentUserScrolling = false;
+  bool _isStoresUserScrolling = false;
+
   @override
   void initState() {
     super.initState();
+
     _loadData();
     _startBannerTimer();
     unawaited(_initializeAccessTracking());
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _runStartupDialogs();
+      // Start auto-scroll after data loads
+      _startAutoScrollCarousels();
+    });
+  }
+
+  /// Start auto-scroll for all carousels
+  void _startAutoScrollCarousels() {
+    // Best selling: left to right, slow (30s full cycle)
+    _startBestSellingAutoScroll();
+    // Recent products: right to left for contrast
+    _startRecentProductsAutoScroll();
+    // Stores: left to right
+    _startStoresAutoScroll();
+  }
+
+  void _startBestSellingAutoScroll() {
+    _bestSellingAutoScrollTimer?.cancel();
+    _bestSellingAutoScrollTimer = Timer.periodic(
+      const Duration(milliseconds: 50),
+      (timer) {
+        if (!mounted || _isBestSellingUserScrolling) return;
+        if (!_bestSellingScrollController.hasClients) return;
+
+        final maxScroll = _bestSellingScrollController.position.maxScrollExtent;
+        final currentScroll = _bestSellingScrollController.offset;
+
+        // Slow speed: 0.5 pixels per tick
+        double newOffset = currentScroll + 0.5;
+
+        if (newOffset >= maxScroll) {
+          // Smooth loop back to start
+          _bestSellingScrollController.jumpTo(0);
+        } else {
+          _bestSellingScrollController.jumpTo(newOffset);
+        }
+      },
+    );
+  }
+
+  void _startRecentProductsAutoScroll() {
+    _recentProductsAutoScrollTimer?.cancel();
+
+    // Wait a bit for layout to complete
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      if (!_recentProductsScrollController.hasClients) return;
+
+      // Start from the end for right-to-left effect
+      final maxScroll = _recentProductsScrollController.position.maxScrollExtent;
+      _recentProductsScrollController.jumpTo(maxScroll);
+
+      _recentProductsAutoScrollTimer = Timer.periodic(
+        const Duration(milliseconds: 50),
+        (timer) {
+          if (!mounted || _isRecentUserScrolling) return;
+          if (!_recentProductsScrollController.hasClients) return;
+
+          final currentScroll = _recentProductsScrollController.offset;
+
+          // Move right to left: subtract pixels
+          double newOffset = currentScroll - 0.6;
+
+          if (newOffset <= 0) {
+            // Loop back to end
+            final max = _recentProductsScrollController.position.maxScrollExtent;
+            _recentProductsScrollController.jumpTo(max);
+          } else {
+            _recentProductsScrollController.jumpTo(newOffset);
+          }
+        },
+      );
+    });
+  }
+
+  void _startStoresAutoScroll() {
+    _storesAutoScrollTimer?.cancel();
+    _storesAutoScrollTimer = Timer.periodic(
+      const Duration(milliseconds: 50),
+      (timer) {
+        if (!mounted || _isStoresUserScrolling) return;
+        if (!_storesScrollController.hasClients) return;
+
+        final maxScroll = _storesScrollController.position.maxScrollExtent;
+        final currentScroll = _storesScrollController.offset;
+
+        // Medium speed
+        double newOffset = currentScroll + 0.4;
+
+        if (newOffset >= maxScroll) {
+          _storesScrollController.jumpTo(0);
+        } else {
+          _storesScrollController.jumpTo(newOffset);
+        }
+      },
+    );
+  }
+
+  void _pauseBestSellingAutoScroll() {
+    _isBestSellingUserScrolling = true;
+    // Resume after 3 seconds of no interaction
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) _isBestSellingUserScrolling = false;
+    });
+  }
+
+  void _pauseRecentAutoScroll() {
+    _isRecentUserScrolling = true;
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) _isRecentUserScrolling = false;
+    });
+  }
+
+  void _pauseStoresAutoScroll() {
+    _isStoresUserScrolling = true;
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) _isStoresUserScrolling = false;
     });
   }
 
@@ -1019,6 +1148,13 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchController.dispose();
     _debounceTimer?.cancel();
     _bannerTimer?.cancel();
+    // Dispose auto-scroll timers and controllers
+    _bestSellingAutoScrollTimer?.cancel();
+    _recentProductsAutoScrollTimer?.cancel();
+    _storesAutoScrollTimer?.cancel();
+    _bestSellingScrollController.dispose();
+    _recentProductsScrollController.dispose();
+    _storesScrollController.dispose();
     super.dispose();
   }
 
@@ -1986,46 +2122,58 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 )
-              : ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppTheme.paddingM,
-                  ),
-                  itemCount: _bestSellingProducts.length,
-                  itemBuilder: (context, index) {
-                    final product = _bestSellingProducts[index];
-
-                    return Padding(
-                      padding: const EdgeInsets.only(right: AppTheme.paddingM),
-                      child: ProductCard(
-                        productName:
-                            product['nombre'] as String? ?? 'Sin nombre',
-                        price:
-                            (product['precio_venta'] as num?)?.toDouble() ??
-                            0.0,
-                        category:
-                            product['categoria_nombre'] as String? ??
-                            'Sin categoría',
-                        imageUrl: product['imagen'] as String?,
-                        storeName:
-                            product['tienda_nombre'] as String? ?? 'Tienda',
-                        rating:
-                            (product['rating_promedio'] as num?)?.toDouble() ??
-                            0.0,
-                        salesCount:
-                            (product['total_vendido'] as num?)?.toInt() ?? 0,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  ProductDetailScreen(product: product),
-                            ),
-                          );
-                        },
-                      ),
-                    );
+              : NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    if (notification is ScrollStartNotification) {
+                      _pauseBestSellingAutoScroll();
+                    }
+                    return false;
                   },
+                  child: ListView.builder(
+                    controller: _bestSellingScrollController,
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.paddingM,
+                    ),
+                    itemCount: _bestSellingProducts.length,
+                    itemBuilder: (context, index) {
+                      final product = _bestSellingProducts[index];
+
+                      return Padding(
+                        padding: const EdgeInsets.only(right: AppTheme.paddingM),
+                        child: _AnimatedProductCard(
+                          index: index,
+                          child: ProductCard(
+                            productName:
+                                product['nombre'] as String? ?? 'Sin nombre',
+                            price:
+                                (product['precio_venta'] as num?)?.toDouble() ??
+                                0.0,
+                            category:
+                                product['categoria_nombre'] as String? ??
+                                'Sin categoría',
+                            imageUrl: product['imagen'] as String?,
+                            storeName:
+                                product['tienda_nombre'] as String? ?? 'Tienda',
+                            rating:
+                                (product['rating_promedio'] as num?)?.toDouble() ??
+                                0.0,
+                            salesCount:
+                                (product['total_vendido'] as num?)?.toInt() ?? 0,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      ProductDetailScreen(product: product),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
         ),
       ],
@@ -2187,21 +2335,33 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     return Stack(
                       children: [
-                        ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppTheme.paddingM,
-                          ),
-                          itemCount: _mostRecentProducts.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(width: 12),
-                          itemBuilder: (context, index) {
-                            final product = _mostRecentProducts[index];
-                            return SizedBox(
-                              width: cardWidth,
-                              child: _buildMostRecentProductCard(product),
-                            );
+                        NotificationListener<ScrollNotification>(
+                          onNotification: (notification) {
+                            if (notification is ScrollStartNotification) {
+                              _pauseRecentAutoScroll();
+                            }
+                            return false;
                           },
+                          child: ListView.separated(
+                            controller: _recentProductsScrollController,
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTheme.paddingM,
+                            ),
+                            itemCount: _mostRecentProducts.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 12),
+                            itemBuilder: (context, index) {
+                              final product = _mostRecentProducts[index];
+                              return SizedBox(
+                                width: cardWidth,
+                                child: _AnimatedProductCard(
+                                  index: index,
+                                  child: _buildMostRecentProductCard(product),
+                                ),
+                              );
+                            },
+                          ),
                         ),
                         if (_mostRecentProducts.length > 1)
                           Positioned(
@@ -2685,53 +2845,65 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 )
-              : ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppTheme.paddingM,
-                  ),
-                  itemCount: _featuredStores.length,
-                  itemBuilder: (context, index) {
-                    final store = _featuredStores[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(right: AppTheme.paddingM),
-                      child: StoreCard(
-                        storeName: store['nombre'] as String? ?? 'Tienda',
-                        productCount:
-                            (store['total_productos'] as num?)?.toInt() ?? 0,
-                        salesCount:
-                            (store['total_ventas'] as num?)?.toInt() ?? 0,
-                        rating:
-                            (store['rating_promedio'] as num?)?.toDouble() ??
-                            0.0,
-                        logoUrl: store['imagen_url'] as String?,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => StoreDetailScreen(
-                                store: {
-                                  'id': store['id_tienda'],
-                                  'nombre': store['nombre'],
-                                  'logoUrl': store['imagen_url'],
-                                  'ubicacion':
-                                      store['ubicacion'] ?? 'Sin ubicación',
-                                  'provincia': 'Santo Domingo',
-                                  'municipio': 'Santo Domingo Este',
-                                  'direccion':
-                                      store['direccion'] ?? 'Sin dirección',
-                                  'phone': store['phone'] ?? store['telefono'],
-                                  'productCount': store['total_productos'],
-                                  'latitude': 18.4861,
-                                  'longitude': -69.9312,
-                                },
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    );
+              : NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    if (notification is ScrollStartNotification) {
+                      _pauseStoresAutoScroll();
+                    }
+                    return false;
                   },
+                  child: ListView.builder(
+                    controller: _storesScrollController,
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.paddingM,
+                    ),
+                    itemCount: _featuredStores.length,
+                    itemBuilder: (context, index) {
+                      final store = _featuredStores[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(right: AppTheme.paddingM),
+                        child: _AnimatedStoreCard(
+                          index: index,
+                          child: StoreCard(
+                            storeName: store['nombre'] as String? ?? 'Tienda',
+                            productCount:
+                                (store['total_productos'] as num?)?.toInt() ?? 0,
+                            salesCount:
+                                (store['total_ventas'] as num?)?.toInt() ?? 0,
+                            rating:
+                                (store['rating_promedio'] as num?)?.toDouble() ??
+                                0.0,
+                            logoUrl: store['imagen_url'] as String?,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => StoreDetailScreen(
+                                    store: {
+                                      'id': store['id_tienda'],
+                                      'nombre': store['nombre'],
+                                      'logoUrl': store['imagen_url'],
+                                      'ubicacion':
+                                          store['ubicacion'] ?? 'Sin ubicación',
+                                      'provincia': 'Santo Domingo',
+                                      'municipio': 'Santo Domingo Este',
+                                      'direccion':
+                                          store['direccion'] ?? 'Sin dirección',
+                                      'phone': store['phone'] ?? store['telefono'],
+                                      'productCount': store['total_productos'],
+                                      'latitude': 18.4861,
+                                      'longitude': -69.9312,
+                                    },
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
         ),
       ],
@@ -2814,6 +2986,434 @@ class _MarqueeTextState extends State<_MarqueeText>
           Text.rich(widget.textSpan),
         ],
       ),
+    );
+  }
+}
+
+/// Animated product card with entrance animation and scale on tap
+class _AnimatedProductCard extends StatefulWidget {
+  final Widget child;
+  final int index;
+
+  const _AnimatedProductCard({
+    required this.child,
+    required this.index,
+  });
+
+  @override
+  State<_AnimatedProductCard> createState() => _AnimatedProductCardState();
+}
+
+class _AnimatedProductCardState extends State<_AnimatedProductCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+  bool _isPressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: 400 + (widget.index * 100).clamp(0, 300)),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
+    );
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0.3, 0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return FadeTransition(
+          opacity: _fadeAnimation,
+          child: SlideTransition(
+            position: _slideAnimation,
+            child: Transform.scale(
+              scale: _scaleAnimation.value * (_isPressed ? 0.95 : 1.0),
+              child: GestureDetector(
+                onTapDown: (_) => setState(() => _isPressed = true),
+                onTapUp: (_) => setState(() => _isPressed = false),
+                onTapCancel: () => setState(() => _isPressed = false),
+                child: widget.child,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Animated store card with entrance animation
+class _AnimatedStoreCard extends StatefulWidget {
+  final Widget child;
+  final int index;
+
+  const _AnimatedStoreCard({
+    required this.child,
+    required this.index,
+  });
+
+  @override
+  State<_AnimatedStoreCard> createState() => _AnimatedStoreCardState();
+}
+
+class _AnimatedStoreCardState extends State<_AnimatedStoreCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _fadeAnimation;
+  bool _isPressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: 500 + (widget.index * 80).clamp(0, 400)),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.85, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.elasticOut),
+    );
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+    );
+
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return FadeTransition(
+          opacity: _fadeAnimation,
+          child: Transform.scale(
+            scale: _scaleAnimation.value * (_isPressed ? 0.96 : 1.0),
+            child: GestureDetector(
+              onTapDown: (_) => setState(() => _isPressed = true),
+              onTapUp: (_) => setState(() => _isPressed = false),
+              onTapCancel: () => setState(() => _isPressed = false),
+              child: widget.child,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Pulsing badge widget for offers/discounts - adds attention-grabbing effect
+class PulsingBadge extends StatefulWidget {
+  final Widget child;
+  final Color? pulseColor;
+  final bool enabled;
+
+  const PulsingBadge({
+    super.key,
+    required this.child,
+    this.pulseColor,
+    this.enabled = true,
+  });
+
+  @override
+  State<PulsingBadge> createState() => _PulsingBadgeState();
+}
+
+class _PulsingBadgeState extends State<PulsingBadge>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+
+    _animation = Tween<double>(begin: 1.0, end: 1.08).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+
+    if (widget.enabled) {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.enabled) return widget.child;
+
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _animation.value,
+          child: widget.child,
+        );
+      },
+    );
+  }
+}
+
+/// Shimmer effect widget for loading states
+class ShimmerLoading extends StatefulWidget {
+  final double width;
+  final double height;
+  final double borderRadius;
+
+  const ShimmerLoading({
+    super.key,
+    required this.width,
+    required this.height,
+    this.borderRadius = 8,
+  });
+
+  @override
+  State<ShimmerLoading> createState() => _ShimmerLoadingState();
+}
+
+class _ShimmerLoadingState extends State<ShimmerLoading>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _animation = Tween<double>(begin: -1.0, end: 2.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    _controller.repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseColor = isDark ? Colors.grey[800]! : Colors.grey[300]!;
+    final highlightColor = isDark ? Colors.grey[700]! : Colors.grey[100]!;
+
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Container(
+          width: widget.width,
+          height: widget.height,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(widget.borderRadius),
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                baseColor,
+                highlightColor,
+                baseColor,
+              ],
+              stops: [
+                (_animation.value - 0.3).clamp(0.0, 1.0),
+                _animation.value.clamp(0.0, 1.0),
+                (_animation.value + 0.3).clamp(0.0, 1.0),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Animated counter widget that counts up when appearing
+class AnimatedCounter extends StatefulWidget {
+  final int value;
+  final TextStyle? style;
+  final String? prefix;
+  final String? suffix;
+  final Duration duration;
+
+  const AnimatedCounter({
+    super.key,
+    required this.value,
+    this.style,
+    this.prefix,
+    this.suffix,
+    this.duration = const Duration(milliseconds: 1000),
+  });
+
+  @override
+  State<AnimatedCounter> createState() => _AnimatedCounterState();
+}
+
+class _AnimatedCounterState extends State<AnimatedCounter>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: widget.duration,
+    );
+    _animation = Tween<double>(begin: 0, end: widget.value.toDouble()).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+    );
+    _controller.forward();
+  }
+
+  @override
+  void didUpdateWidget(AnimatedCounter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value) {
+      _animation = Tween<double>(
+        begin: _animation.value,
+        end: widget.value.toDouble(),
+      ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Text(
+          '${widget.prefix ?? ''}${_animation.value.toInt()}${widget.suffix ?? ''}',
+          style: widget.style,
+        );
+      },
+    );
+  }
+}
+
+/// Glowing "NEW" badge for fresh products
+class GlowingNewBadge extends StatefulWidget {
+  final String text;
+
+  const GlowingNewBadge({
+    super.key,
+    this.text = 'NUEVO',
+  });
+
+  @override
+  State<GlowingNewBadge> createState() => _GlowingNewBadgeState();
+}
+
+class _GlowingNewBadgeState extends State<GlowingNewBadge>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _glowAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    );
+    _glowAnimation = Tween<double>(begin: 0.3, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    _controller.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _glowAnimation,
+      builder: (context, child) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                AppTheme.successColor,
+                AppTheme.successColor.withOpacity(_glowAnimation.value),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.successColor.withOpacity(0.4 * _glowAnimation.value),
+                blurRadius: 8 * _glowAnimation.value,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Text(
+            widget.text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+          ),
+        );
+      },
     );
   }
 }
