@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../services/cart_service.dart';
 import '../services/store_service.dart';
+import '../widgets/supabase_image.dart';
 import 'route_plan_screen.dart';
 
 /// Pantalla del carrito de compras
@@ -616,18 +617,18 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: item.productImage != null
-                  ? Image.network(
-                      item.productImage!,
+                  ? SupabaseImage(
+                      imageUrl: item.productImage!,
+                      width: 80,
+                      height: 80,
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Center(
-                          child: Icon(
-                            Icons.shopping_bag_rounded,
-                            size: 32,
-                            color: isDark ? AppTheme.darkTextHint : Colors.grey[300],
-                          ),
-                        );
-                      },
+                      errorWidgetOverride: Center(
+                        child: Icon(
+                          Icons.shopping_bag_rounded,
+                          size: 32,
+                          color: isDark ? AppTheme.darkTextHint : Colors.grey[300],
+                        ),
+                      ),
                     )
                   : Center(
                       child: Icon(

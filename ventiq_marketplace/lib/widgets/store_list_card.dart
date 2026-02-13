@@ -168,6 +168,8 @@ class StoreListCard extends StatelessWidget {
           ? SupabaseImage(
               imageUrl: logoUrl!,
               fit: BoxFit.cover,
+              width: 70,
+              height: 70,
               borderRadius: 12,
               placeholderAsset: null,
             )

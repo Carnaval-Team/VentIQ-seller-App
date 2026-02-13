@@ -2328,6 +2328,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ? SupabaseImage(
                                   imageUrl: imageUrl,
                                   width: 130,
+                                  height: 165,
                                   fit: BoxFit.cover,
                                 )
                               : Container(
