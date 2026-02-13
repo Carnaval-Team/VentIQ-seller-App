@@ -57,8 +57,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final action = await showDialog<String>(
       context: context,
       barrierDismissible: true,
-      builder: (context) {
+      builder: (dialogContext) {
+        final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
+        final cardColor = AppTheme.getCardColor(dialogContext);
+        final textPrimary = AppTheme.getTextPrimaryColor(dialogContext);
+        final accentColor = AppTheme.getAccentColor(dialogContext);
+
         return Dialog(
+          backgroundColor: cardColor,
           insetPadding: const EdgeInsets.symmetric(
             horizontal: 18,
             vertical: 24,
@@ -74,8 +80,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-                  decoration: const BoxDecoration(
-                    gradient: AppTheme.primaryGradient,
+                  decoration: BoxDecoration(
+                    gradient: isDark
+                        ? LinearGradient(
+                            colors: [
+                              AppTheme.darkAccentColor,
+                              AppTheme.darkAccentColorDark,
+                            ],
+                          )
+                        : AppTheme.primaryGradient,
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,7 +136,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         ),
                       ),
                       IconButton(
-                        onPressed: () => Navigator.of(context).pop(null),
+                        onPressed: () => Navigator.of(dialogContext).pop(null),
                         icon: const Icon(Icons.close_rounded),
                         color: Colors.white,
                         tooltip: 'Cerrar',
@@ -140,20 +153,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       Text(
                         '¿Qué deseas hacer ahora?',
                         style: TextStyle(
-                          color: AppTheme.textPrimary.withOpacity(0.9),
+                          color: textPrimary.withOpacity(0.9),
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: 14),
                       OutlinedButton.icon(
-                        onPressed: () => Navigator.of(context).pop('continue'),
+                        onPressed: () => Navigator.of(dialogContext).pop('continue'),
                         icon: const Icon(Icons.grid_view_rounded),
                         label: const Text('Continuar comprando'),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.primaryColor,
+                          foregroundColor: accentColor,
                           side: BorderSide(
-                            color: AppTheme.primaryColor.withOpacity(0.35),
+                            color: accentColor.withOpacity(0.35),
                           ),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,
@@ -166,11 +179,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ),
                       const SizedBox(height: 10),
                       ElevatedButton.icon(
-                        onPressed: () => Navigator.of(context).pop('plan'),
+                        onPressed: () => Navigator.of(dialogContext).pop('plan'),
                         icon: const Icon(Icons.shopping_cart_rounded),
                         label: const Text('Ir al plan'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.accentColor,
+                          backgroundColor: isDark ? AppTheme.darkAccentColor : AppTheme.accentColor,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,

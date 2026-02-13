@@ -77,7 +77,7 @@ class SettingsScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
-                    isDark ? Icons.dark_mode : Icons.light_mode,
+                    themeProvider.currentModeIcon,
                     color: accentColor,
                     size: 24,
                   ),
@@ -88,7 +88,7 @@ class SettingsScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Modo oscuro',
+                        'Tema de la aplicación',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -97,9 +97,7 @@ class SettingsScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        themeProvider.isDarkMode
-                            ? 'Activado'
-                            : 'Desactivado',
+                        themeProvider.currentModeName,
                         style: TextStyle(
                           fontSize: 13,
                           color: textSecondary,
@@ -107,11 +105,6 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                ),
-                Switch(
-                  value: themeProvider.isDarkMode,
-                  onChanged: (value) => themeProvider.setDarkMode(value),
-                  activeColor: accentColor,
                 ),
               ],
             ),
@@ -127,27 +120,68 @@ class SettingsScreen extends StatelessWidget {
                 Expanded(
                   child: _buildThemeOption(
                     context: context,
-                    icon: Icons.wb_sunny_outlined,
-                    label: 'Claro',
-                    isSelected: !themeProvider.isDarkMode,
-                    onTap: () => themeProvider.setDarkMode(false),
+                    icon: Icons.brightness_auto,
+                    label: 'Auto',
+                    isSelected: themeProvider.appThemeMode == AppThemeMode.system,
+                    onTap: () => themeProvider.setAppThemeMode(AppThemeMode.system),
                     isDark: isDark,
                   ),
                 ),
-                const SizedBox(width: AppTheme.paddingM),
+                const SizedBox(width: AppTheme.paddingS),
                 Expanded(
                   child: _buildThemeOption(
                     context: context,
-                    icon: Icons.nightlight_outlined,
+                    icon: Icons.light_mode,
+                    label: 'Claro',
+                    isSelected: themeProvider.appThemeMode == AppThemeMode.light,
+                    onTap: () => themeProvider.setAppThemeMode(AppThemeMode.light),
+                    isDark: isDark,
+                  ),
+                ),
+                const SizedBox(width: AppTheme.paddingS),
+                Expanded(
+                  child: _buildThemeOption(
+                    context: context,
+                    icon: Icons.dark_mode,
                     label: 'Oscuro',
-                    isSelected: themeProvider.isDarkMode,
-                    onTap: () => themeProvider.setDarkMode(true),
+                    isSelected: themeProvider.appThemeMode == AppThemeMode.dark,
+                    onTap: () => themeProvider.setAppThemeMode(AppThemeMode.dark),
                     isDark: isDark,
                   ),
                 ),
               ],
             ),
           ),
+          // Hint text explaining auto mode
+          if (themeProvider.appThemeMode == AppThemeMode.system)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppTheme.paddingM,
+                0,
+                AppTheme.paddingM,
+                AppTheme.paddingM,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 14,
+                    color: textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'El tema cambiará automáticamente según la configuración de tu dispositivo',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: textSecondary,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -169,7 +203,7 @@ class SettingsScreen extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         decoration: BoxDecoration(
           color: isSelected
               ? accentColor.withOpacity(0.15)
@@ -180,7 +214,7 @@ class SettingsScreen extends StatelessWidget {
             width: 2,
           ),
         ),
-        child: Row(
+        child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
@@ -188,11 +222,11 @@ class SettingsScreen extends StatelessWidget {
               color: isSelected ? accentColor : textSecondary,
               size: 22,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(height: 6),
             Text(
               label,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 12,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 color: isSelected ? accentColor : textPrimary,
               ),

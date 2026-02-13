@@ -10,7 +10,14 @@ class ChangelogDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final cardColor = AppTheme.getCardColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Dialog(
+      backgroundColor: cardColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 620, maxWidth: 420),
@@ -20,9 +27,18 @@ class ChangelogDialog extends StatelessWidget {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                gradient: AppTheme.primaryGradient,
-                borderRadius: BorderRadius.only(
+              decoration: BoxDecoration(
+                gradient: isDark
+                    ? LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppTheme.darkAccentColor,
+                          AppTheme.darkAccentColorDark,
+                        ],
+                      )
+                    : AppTheme.primaryGradient,
+                borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(16),
                   topRight: Radius.circular(16),
                 ),
@@ -58,16 +74,18 @@ class ChangelogDialog extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       '¿Qué hay de nuevo?',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
-                        color: AppTheme.textPrimary,
+                        color: textPrimary,
                       ),
                     ),
                     const SizedBox(height: 16),
-                    ...changelog.changes.map(_buildChangeItem),
+                    ...changelog.changes.map(
+                      (change) => _buildChangeItem(context, change, textPrimary, textSecondary, isDark),
+                    ),
                   ],
                 ),
               ),
@@ -79,7 +97,7 @@ class ChangelogDialog extends StatelessWidget {
                 child: FilledButton(
                   onPressed: () => Navigator.of(context).pop(),
                   style: FilledButton.styleFrom(
-                    backgroundColor: AppTheme.primaryColor,
+                    backgroundColor: accentColor,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
@@ -99,7 +117,13 @@ class ChangelogDialog extends StatelessWidget {
     );
   }
 
-  Widget _buildChangeItem(ChangelogEntry change) {
+  Widget _buildChangeItem(
+    BuildContext context,
+    ChangelogEntry change,
+    Color textPrimary,
+    Color textSecondary,
+    bool isDark,
+  ) {
     IconData icon;
     Color color;
 
@@ -110,7 +134,7 @@ class ChangelogDialog extends StatelessWidget {
         break;
       case 'improvement':
         icon = Icons.trending_up;
-        color = AppTheme.primaryColor;
+        color = isDark ? AppTheme.darkAccentColor : AppTheme.primaryColor;
         break;
       case 'fix':
         icon = Icons.bug_report;
@@ -136,19 +160,19 @@ class ChangelogDialog extends StatelessWidget {
               children: [
                 Text(
                   change.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
-                    color: AppTheme.textPrimary,
+                    color: textPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   change.description,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.textSecondary,
+                    color: textSecondary,
                     height: 1.25,
                   ),
                 ),

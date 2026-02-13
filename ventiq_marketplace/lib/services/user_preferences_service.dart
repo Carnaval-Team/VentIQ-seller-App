@@ -41,8 +41,9 @@ class UserPreferencesService {
   static const String _waFavoritesKey = 'wa_favorites_marketplace';
   static const String _waGroupsByStoreKey = 'wa_groups_by_store_marketplace';
 
-  // Dark mode preference
+  // Dark mode preference (now supports: 'system', 'light', 'dark')
   static const String _darkModeKey = 'dark_mode_enabled_marketplace';
+  static const String _themeModeKey = 'theme_mode_marketplace';
 
   Future<void> saveAppVersion(String version) async {
     final prefs = await SharedPreferences.getInstance();
@@ -317,7 +318,7 @@ class UserPreferencesService {
     } catch (_) {}
   }
 
-  /// Obtiene si el modo oscuro está habilitado
+  /// Obtiene si el modo oscuro está habilitado (legacy, for backwards compatibility)
   Future<bool> isDarkModeEnabled() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -327,11 +328,50 @@ class UserPreferencesService {
     }
   }
 
-  /// Guarda la preferencia del modo oscuro
+  /// Guarda la preferencia del modo oscuro (legacy)
   Future<void> setDarkModeEnabled(bool enabled) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_darkModeKey, enabled);
+    } catch (_) {}
+  }
+
+  /// Obtiene el modo de tema guardado: 'system', 'light', o 'dark'
+  /// Por defecto es 'system' para que siga el tema del dispositivo
+  Future<String> getThemeMode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final mode = prefs.getString(_themeModeKey);
+
+      // Si no hay preferencia guardada, migrar desde el valor antiguo
+      if (mode == null) {
+        // Check if old dark mode preference exists
+        final oldDarkMode = prefs.getBool(_darkModeKey);
+        if (oldDarkMode != null) {
+          // Migrate: if user explicitly set dark mode before, keep it
+          return oldDarkMode ? 'dark' : 'light';
+        }
+        // Default to system if no preference was ever set
+        return 'system';
+      }
+      return mode;
+    } catch (_) {
+      return 'system';
+    }
+  }
+
+  /// Guarda el modo de tema: 'system', 'light', o 'dark'
+  Future<void> setThemeMode(String mode) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_themeModeKey, mode);
+      // Also update legacy key for backwards compatibility
+      if (mode == 'dark') {
+        await prefs.setBool(_darkModeKey, true);
+      } else if (mode == 'light') {
+        await prefs.setBool(_darkModeKey, false);
+      }
+      // For 'system', we don't update the legacy key
     } catch (_) {}
   }
 }

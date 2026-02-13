@@ -134,6 +134,9 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -142,11 +145,17 @@ class _AuthScreenState extends State<AuthScreen> {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                AppTheme.primaryColor,
-                AppTheme.primaryColor.withOpacity(0.85),
-                AppTheme.secondaryColor,
-              ],
+              colors: isDark
+                  ? [
+                      AppTheme.darkBackgroundColor,
+                      AppTheme.darkSurfaceColor,
+                      AppTheme.darkAccentColorDark,
+                    ]
+                  : [
+                      AppTheme.primaryColor,
+                      AppTheme.primaryColor.withOpacity(0.85),
+                      AppTheme.secondaryColor,
+                    ],
             ),
           ),
           child: SafeArea(
@@ -236,14 +245,19 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _buildCard() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.18),
+            color: Colors.black.withOpacity(isDark ? 0.4 : 0.18),
             blurRadius: 28,
             offset: const Offset(0, 12),
           ),
@@ -254,25 +268,25 @@ class _AuthScreenState extends State<AuthScreen> {
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: AppTheme.backgroundColor,
+              color: isDark ? AppTheme.darkSurfaceColor : AppTheme.backgroundColor,
               borderRadius: BorderRadius.circular(14),
             ),
             child: TabBar(
               dividerColor: Colors.transparent,
               indicatorSize: TabBarIndicatorSize.tab,
               indicator: BoxDecoration(
-                color: Colors.white,
+                color: isDark ? AppTheme.darkCardBackground : Colors.white,
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
+                    color: Colors.black.withOpacity(isDark ? 0.2 : 0.06),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
                 ],
               ),
-              labelColor: AppTheme.primaryColor,
-              unselectedLabelColor: AppTheme.textSecondary,
+              labelColor: accentColor,
+              unselectedLabelColor: textSecondary,
               labelStyle: const TextStyle(fontWeight: FontWeight.w700),
               tabs: const [
                 Tab(text: 'Iniciar sesión'),
@@ -294,6 +308,9 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _buildLoginForm() {
+    final accentColor = AppTheme.getAccentColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+
     return Form(
       key: _loginFormKey,
       child: SingleChildScrollView(
@@ -338,7 +355,7 @@ class _AuthScreenState extends State<AuthScreen> {
             FilledButton(
               onPressed: _isLoading ? null : _handleLogin,
               style: FilledButton.styleFrom(
-                backgroundColor: AppTheme.primaryColor,
+                backgroundColor: accentColor,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -353,7 +370,7 @@ class _AuthScreenState extends State<AuthScreen> {
             Text(
               'Tip: usa el mismo correo y contraseña con los que te registraste.',
               style: TextStyle(
-                color: AppTheme.textSecondary.withOpacity(0.85),
+                color: textSecondary.withOpacity(0.85),
                 fontSize: 12,
               ),
               textAlign: TextAlign.center,
@@ -362,7 +379,7 @@ class _AuthScreenState extends State<AuthScreen> {
             Text(
               '',
               style: TextStyle(
-                color: AppTheme.textSecondary.withOpacity(0.85),
+                color: textSecondary.withOpacity(0.85),
                 fontSize: 12,
               ),
               textAlign: TextAlign.center,
@@ -374,6 +391,9 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _buildRegisterForm() {
+    final accentColor = AppTheme.getAccentColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+
     return Form(
       key: _registerFormKey,
       child: SingleChildScrollView(
@@ -479,7 +499,7 @@ class _AuthScreenState extends State<AuthScreen> {
             FilledButton(
               onPressed: _isLoading ? null : _handleRegister,
               style: FilledButton.styleFrom(
-                backgroundColor: AppTheme.primaryColor,
+                backgroundColor: accentColor,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -494,7 +514,7 @@ class _AuthScreenState extends State<AuthScreen> {
             Text(
               'Al registrarte, guardaremos tu usuario en el dispositivo para usarlo más adelante.',
               style: TextStyle(
-                color: AppTheme.textSecondary.withOpacity(0.85),
+                color: textSecondary.withOpacity(0.85),
                 fontSize: 12,
               ),
               textAlign: TextAlign.center,

@@ -259,6 +259,9 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+
     // Calcular centro inicial (promedio de tiendas o default)
     LatLng initialCenter = const LatLng(
       22.40694,
@@ -278,7 +281,13 @@ class _MapScreenState extends State<MapScreen> {
       }
     }
 
+    // URL del mapa según tema
+    final tileUrl = isDark
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+        : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+
     return Scaffold(
+      backgroundColor: isDark ? AppTheme.darkBackgroundColor : Colors.white,
       floatingActionButton: const CarnavalFab(),
       body: Stack(
         children: [
@@ -297,7 +306,8 @@ class _MapScreenState extends State<MapScreen> {
             ),
             children: [
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: tileUrl,
+                subdomains: isDark ? const ['a', 'b', 'c', 'd'] : const [],
                 userAgentPackageName:
                     'com.ventiq.marketplace', // Replace with your app package
               ),
@@ -325,17 +335,17 @@ class _MapScreenState extends State<MapScreen> {
               children: [
                 FloatingActionButton.small(
                   heroTag: 'close_map',
-                  backgroundColor: Colors.white,
-                  child: const Icon(Icons.close, color: Colors.black),
+                  backgroundColor: isDark ? AppTheme.darkCardBackground : Colors.white,
+                  child: Icon(Icons.close, color: isDark ? Colors.white : Colors.black),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
                   heroTag: 'my_location',
-                  backgroundColor: Colors.white,
-                  child: const Icon(
+                  backgroundColor: isDark ? AppTheme.darkCardBackground : Colors.white,
+                  child: Icon(
                     Icons.my_location,
-                    color: AppTheme.primaryColor,
+                    color: accentColor,
                   ),
                   onPressed: () {
                     if (_currentPosition != null) {
@@ -363,15 +373,19 @@ class _MapScreenState extends State<MapScreen> {
               minChildSize: 0.15,
               maxChildSize: 0.4,
               builder: (context, scrollController) {
+                final cardColor = AppTheme.getCardColor(context);
+                final textPrimary = AppTheme.getTextPrimaryColor(context);
+                final textSecondary = AppTheme.getTextSecondaryColor(context);
+
                 return Container(
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: cardColor,
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(20),
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
+                        color: Colors.black.withOpacity(isDark ? 0.3 : 0.1),
                         blurRadius: 10,
                         offset: const Offset(0, -5),
                       ),
@@ -386,7 +400,7 @@ class _MapScreenState extends State<MapScreen> {
                           width: 40,
                           height: 5,
                           decoration: BoxDecoration(
-                            color: Colors.grey[300],
+                            color: isDark ? Colors.grey[700] : Colors.grey[300],
                             borderRadius: BorderRadius.circular(2.5),
                           ),
                         ),
@@ -398,7 +412,7 @@ class _MapScreenState extends State<MapScreen> {
                             width: 60,
                             height: 60,
                             decoration: BoxDecoration(
-                              color: Colors.grey[100],
+                              color: isDark ? AppTheme.darkSurfaceColor : Colors.grey[100],
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: _getStoreImageUrl(_selectedStore!) != null
@@ -410,16 +424,16 @@ class _MapScreenState extends State<MapScreen> {
                                     height: 60,
                                     fit: BoxFit.cover,
                                     borderRadius: 12,
-                                    errorWidgetOverride: const Icon(
+                                    errorWidgetOverride: Icon(
                                       Icons.store,
                                       size: 30,
-                                      color: AppTheme.primaryColor,
+                                      color: accentColor,
                                     ),
                                   )
-                                : const Icon(
+                                : Icon(
                                     Icons.store,
                                     size: 30,
-                                    color: AppTheme.primaryColor,
+                                    color: accentColor,
                                   ),
                           ),
                           const SizedBox(width: 16),
@@ -429,9 +443,10 @@ class _MapScreenState extends State<MapScreen> {
                               children: [
                                 Text(
                                   _getStoreName(_selectedStore!),
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
+                                    color: textPrimary,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
@@ -439,7 +454,7 @@ class _MapScreenState extends State<MapScreen> {
                                   _getStoreAddress(_selectedStore!),
                                   style: TextStyle(
                                     fontSize: 14,
-                                    color: Colors.grey[600],
+                                    color: textSecondary,
                                   ),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
@@ -462,6 +477,8 @@ class _MapScreenState extends State<MapScreen> {
                                     });
                                   },
                                   style: OutlinedButton.styleFrom(
+                                    foregroundColor: textSecondary,
+                                    side: BorderSide(color: textSecondary.withOpacity(0.3)),
                                     padding: const EdgeInsets.symmetric(
                                       vertical: 12,
                                     ),
@@ -479,7 +496,7 @@ class _MapScreenState extends State<MapScreen> {
                                       ? null
                                       : _traceRouteToSelectedStore,
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppTheme.primaryColor,
+                                    backgroundColor: accentColor,
                                     foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(
                                       vertical: 12,
@@ -538,6 +555,8 @@ class _MapScreenState extends State<MapScreen> {
                                   );
                                 },
                                 style: OutlinedButton.styleFrom(
+                                  foregroundColor: accentColor,
+                                  side: BorderSide(color: accentColor.withOpacity(0.3)),
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 12,
                                   ),

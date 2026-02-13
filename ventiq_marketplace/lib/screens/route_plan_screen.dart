@@ -520,9 +520,20 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+
+    // URL del mapa según tema
+    final tileUrl = isDark
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+        : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+
     return Scaffold(
+      backgroundColor: isDark ? AppTheme.darkBackgroundColor : Colors.white,
       appBar: AppBar(
         title: const Text('Ruta de Compra'),
+        backgroundColor: isDark ? AppTheme.darkSurfaceColor : AppTheme.primaryColor,
+        foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -531,7 +542,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator(color: accentColor))
           : Stack(
               children: [
                 FlutterMap(
@@ -542,8 +553,8 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                   ),
                   children: [
                     TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      urlTemplate: tileUrl,
+                      subdomains: isDark ? const ['a', 'b', 'c', 'd'] : const [],
                       userAgentPackageName: 'com.ventiq.marketplace',
                     ),
                     PolylineLayer(polylines: _buildPolylines()),
@@ -574,15 +585,20 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
   }
 
   Widget _buildArrivalBanner(String text) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Material(
       elevation: 4,
       borderRadius: BorderRadius.circular(14),
-      color: Colors.white,
+      color: cardColor,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppTheme.primaryColor.withOpacity(0.25)),
+          border: Border.all(color: accentColor.withOpacity(0.25)),
         ),
         child: Row(
           children: [
@@ -590,12 +606,12 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
               width: 34,
               height: 34,
               decoration: BoxDecoration(
-                color: AppTheme.primaryColor.withOpacity(0.1),
+                color: accentColor.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.check_circle,
-                color: AppTheme.primaryColor,
+                color: accentColor,
                 size: 20,
               ),
             ),
@@ -605,9 +621,10 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                 text,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 13,
+                  color: textPrimary,
                 ),
               ),
             ),
@@ -657,15 +674,21 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
       return const SizedBox.shrink();
     }
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return SafeArea(
       top: false,
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: cardColor,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
+              color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
               blurRadius: 10,
               offset: const Offset(0, -2),
             ),
@@ -698,19 +721,20 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                               : 'Ruta optimizada lista',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 14,
+                            color: textPrimary,
                           ),
                         ),
                       ),
                       if (_isTravelActive && _isLoadingStoreLegs)
-                        const Padding(
-                          padding: EdgeInsets.only(right: 8),
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
                           child: SizedBox(
                             width: 14,
                             height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(strokeWidth: 2, color: accentColor),
                           ),
                         ),
                       if (_totalDistance != null &&
@@ -720,7 +744,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                           '${(_totalDistance! / 1000).toStringAsFixed(1)} km • ${(_totalDuration! / 60).toStringAsFixed(0)} min',
                           style: TextStyle(
                             fontSize: 12,
-                            color: Colors.grey[700],
+                            color: textSecondary,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -729,7 +753,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                           distanceText,
                           style: TextStyle(
                             fontSize: 12,
-                            color: Colors.grey[700],
+                            color: textSecondary,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -738,7 +762,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                         _isBottomPanelExpanded
                             ? Icons.keyboard_arrow_down_rounded
                             : Icons.keyboard_arrow_up_rounded,
-                        color: AppTheme.textSecondary,
+                        color: textSecondary,
                       ),
                     ],
                   ),
@@ -781,7 +805,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                     ElevatedButton.icon(
                       onPressed: _startTravel,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryColor,
+                        backgroundColor: accentColor,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
@@ -798,7 +822,8 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                     OutlinedButton.icon(
                       onPressed: _stopTravel,
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.primaryColor,
+                        foregroundColor: accentColor,
+                        side: BorderSide(color: accentColor.withOpacity(0.5)),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
@@ -829,15 +854,19 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
     required List<CartItem> items,
     required double total,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     final storeName = store == null ? 'Tienda' : _getStoreName(store);
 
     final isExpanded = _isStoreItemsPanelExpanded;
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: isDark ? AppTheme.darkSurfaceColor : Colors.grey[50],
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.withOpacity(0.18)),
+        border: Border.all(color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.18)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -858,12 +887,12 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                       width: 34,
                       height: 34,
                       decoration: BoxDecoration(
-                        color: AppTheme.primaryColor.withOpacity(0.10),
+                        color: accentColor.withOpacity(0.10),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.shopping_bag_rounded,
-                        color: AppTheme.primaryColor,
+                        color: accentColor,
                         size: 18,
                       ),
                     ),
@@ -876,10 +905,10 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                             storeName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 13,
-                              color: AppTheme.textPrimary,
+                              color: textPrimary,
                             ),
                           ),
                           Text(
@@ -887,7 +916,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 11,
-                              color: AppTheme.textSecondary.withOpacity(0.9),
+                              color: AppTheme.getTextSecondaryColor(context).withOpacity(0.9),
                             ),
                           ),
                         ],
@@ -920,7 +949,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                         isExpanded
                             ? Icons.keyboard_arrow_down_rounded
                             : Icons.keyboard_arrow_up_rounded,
-                        color: AppTheme.textSecondary,
+                        color: AppTheme.getTextSecondaryColor(context),
                       ),
                     ),
                   ],
@@ -928,7 +957,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
               ),
             ),
           ),
-          Divider(height: 1, color: Colors.grey.withOpacity(0.15)),
+          Divider(height: 1, color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.15)),
           AnimatedCrossFade(
             firstChild: ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 180),
@@ -942,9 +971,9 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                   return Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: isDark ? AppTheme.darkCardBackground : Colors.white,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.withOpacity(0.10)),
+                      border: Border.all(color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.10)),
                     ),
                     child: Row(
                       children: [
@@ -956,10 +985,10 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                                 item.productName,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w800,
                                   fontSize: 13,
-                                  color: AppTheme.textPrimary,
+                                  color: textPrimary,
                                 ),
                               ),
                               const SizedBox(height: 4),
@@ -970,7 +999,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 11,
-                                  color: AppTheme.textSecondary.withOpacity(
+                                  color: AppTheme.getTextSecondaryColor(context).withOpacity(
                                     0.9,
                                   ),
                                 ),
@@ -985,18 +1014,18 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: AppTheme.primaryColor.withOpacity(0.10),
+                            color: accentColor.withOpacity(0.10),
                             borderRadius: BorderRadius.circular(999),
                             border: Border.all(
-                              color: AppTheme.primaryColor.withOpacity(0.18),
+                              color: accentColor.withOpacity(0.18),
                             ),
                           ),
                           child: Text(
                             'x${item.quantity}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w900,
                               fontSize: 12,
-                              color: AppTheme.primaryColor,
+                              color: accentColor,
                             ),
                           ),
                         ),
@@ -1117,6 +1146,10 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
   }
 
   Widget _buildStoresDistanceList() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     final pos = _currentPosition;
     if (pos == null) {
       return const SizedBox.shrink();
@@ -1144,23 +1177,23 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
     return Container(
       constraints: const BoxConstraints(maxHeight: 170),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: isDark ? AppTheme.darkSurfaceColor : Colors.grey[50],
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.withOpacity(0.2)),
+        border: Border.all(color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.2)),
       ),
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(vertical: 8),
         shrinkWrap: true,
         itemCount: items.length,
         separatorBuilder: (_, __) =>
-            Divider(height: 1, color: Colors.grey.withOpacity(0.2)),
+            Divider(height: 1, color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.2)),
         itemBuilder: (context, idx) {
           final item = items[idx];
           final isNext = _isTravelActive && item.index == _currentStopIndex;
           final isVisited = _visitedStopIndices.contains(item.index);
           final badgeColor = isVisited
               ? Colors.green.shade700
-              : (isNext ? AppTheme.primaryColor : AppTheme.primaryColor);
+              : (isNext ? accentColor : accentColor);
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             child: Row(
@@ -1172,7 +1205,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                   decoration: BoxDecoration(
                     color: (isVisited || isNext)
                         ? badgeColor
-                        : AppTheme.primaryColor.withOpacity(0.1),
+                        : accentColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
@@ -1182,7 +1215,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                       fontWeight: FontWeight.w800,
                       color: (isVisited || isNext)
                           ? Colors.white
-                          : AppTheme.primaryColor,
+                          : accentColor,
                     ),
                   ),
                 ),
@@ -1199,7 +1232,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                           : FontWeight.w600,
                       color: isVisited
                           ? Colors.green.shade800
-                          : (isNext ? AppTheme.primaryColor : Colors.black87),
+                          : (isNext ? accentColor : textPrimary),
                     ),
                   ),
                 ),
@@ -1232,18 +1265,18 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: AppTheme.primaryColor.withOpacity(0.10),
+                      color: accentColor.withOpacity(0.10),
                       borderRadius: BorderRadius.circular(999),
                       border: Border.all(
-                        color: AppTheme.primaryColor.withOpacity(0.30),
+                        color: accentColor.withOpacity(0.30),
                       ),
                     ),
-                    child: const Text(
+                    child: Text(
                       'SIGUIENTE',
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w900,
-                        color: AppTheme.primaryColor,
+                        color: accentColor,
                       ),
                     ),
                   ),
@@ -1255,7 +1288,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                     fontWeight: FontWeight.w800,
                     color: isVisited
                         ? Colors.green.shade800
-                        : (isNext ? AppTheme.primaryColor : Colors.grey[800]),
+                        : (isNext ? accentColor : textPrimary.withOpacity(0.7)),
                   ),
                 ),
               ],

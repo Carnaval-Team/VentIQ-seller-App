@@ -1,8 +1,40 @@
 {
-  "current_version": "1.3.2",
-  "build": 10,
+  "current_version": "1.4.0",
+  "build": 11,
   "app_name": "ventiq_marketplace",
   "changelogs": [
+    {
+      "version": "1.4.0",
+      "date": "2026-02-12",
+      "title": "🌙 Modo oscuro y animaciones de marketing",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Modo oscuro automático",
+          "description": "La app detecta automáticamente si tu dispositivo está en modo oscuro y se adapta. También puedes cambiarlo manualmente en Configuración."
+        },
+        {
+          "type": "feature",
+          "title": "Carruseles animados en inicio",
+          "description": "Los productos más vendidos, nuevos y tiendas destacadas ahora se desplazan automáticamente para una experiencia más dinámica."
+        },
+        {
+          "type": "improvement",
+          "title": "Animaciones de entrada suaves",
+          "description": "Las tarjetas de productos y tiendas aparecen con animaciones elegantes al cargar."
+        },
+        {
+          "type": "improvement",
+          "title": "Mejoras visuales generales",
+          "description": "Nuevos efectos visuales, mejor contraste en modo oscuro y transiciones más fluidas en toda la app."
+        },
+        {
+          "type": "improvement",
+          "title": "Interacción táctil mejorada",
+          "description": "Las tarjetas responden visualmente al tocarlas con efectos de escala sutiles."
+        }
+      ]
+    },
     {
       "version": "1.3.2",
       "date": "2026-01-27",
