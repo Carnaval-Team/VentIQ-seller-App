@@ -22,7 +22,7 @@ class ProductMovementsService {
       // Intentar usar el RPC optimizado primero
       try {
         final response = await _supabase.rpc(
-          'get_product_movements_optimized',
+          'get_product_movements_optimized_with_warehouse',
 
           params: {
             'p_id_producto': productId,

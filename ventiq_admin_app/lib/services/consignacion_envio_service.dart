@@ -607,7 +607,7 @@ class ConsignacionEnvioService {
       debugPrint('❌ Rechazando producto $idEnvioProducto del envío $idEnvio...');
 
       final response = await _supabase.rpc(
-        'rechazar_producto_envio_consignacion',
+        'rechazar_producto_envio_consignacion2',
         params: {
           'p_id_envio': idEnvio,
           'p_id_envio_producto': idEnvioProducto,

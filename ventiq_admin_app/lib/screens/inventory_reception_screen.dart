@@ -5,14 +5,12 @@ import '../config/app_colors.dart';
 import '../models/product.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
-import '../services/currency_display_service.dart';
 import '../services/warehouse_service.dart';
 import '../models/warehouse.dart';
 import '../models/supplier.dart';
 import '../widgets/conversion_info_widget.dart';
 import '../widgets/product_quantity_dialog.dart';
 import '../widgets/location_selector_widget.dart';
-import '../widgets/currency_info_widget.dart';
 import '../widgets/product_selector_widget.dart';
 import '../services/product_search_service.dart';
 import '../widgets/ai_reception_sheet.dart';
@@ -38,9 +36,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   static String _lastEntregadoPor = '';
   static String _lastRecibidoPor = '';
   static String _lastObservaciones = '';
-  String _selectedCurrency = 'USD'; // Moneda seleccionada para la factura
-  double? _currentExchangeRate; // Tasa de cambio actual
-  double? _totalAmountInCUP; // Monto total convertido a CUP
+  final String _selectedCurrency = 'USD'; // Siempre USD, la conversión se hace por producto
   List<Map<String, dynamic>> _selectedProducts = [];
   List<Map<String, dynamic>> _motivoOptions = [];
   Map<String, dynamic>? _selectedMotivo;
@@ -58,56 +54,13 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   void initState() {
     super.initState();
     _loadMotivoOptions();
-    _loadExchangeRate();
     _loadProveedores();
     _searchController.addListener(_onSearchChanged);
-    _montoTotalController.addListener(_updateTotalAmountInCUP);
 
     // Load persisted values from previous entries
     _loadPersistedValues();
   }
 
-  // ← NUEVOS MÉTODOS PARA MONEDAS
-  Future<void> _loadExchangeRate() async {
-    if (_selectedCurrency == 'CUP') return;
-
-    try {
-      final rate = await CurrencyDisplayService.getExchangeRateForDisplay(
-        _selectedCurrency,
-        'CUP',
-      );
-      setState(() {
-        _currentExchangeRate = rate;
-        _updateTotalAmountInCUP();
-      });
-    } catch (e) {
-      print('Error loading exchange rate: $e');
-    }
-  }
-
-  void _updateTotalAmountInCUP() {
-    final totalAmount = double.tryParse(_montoTotalController.text);
-    if (totalAmount != null &&
-        _currentExchangeRate != null &&
-        _selectedCurrency != 'CUP') {
-      setState(() {
-        _totalAmountInCUP = totalAmount * _currentExchangeRate!;
-      });
-    } else {
-      setState(() {
-        _totalAmountInCUP = null;
-      });
-    }
-  }
-
-  void _onCurrencyChanged(String newCurrency) {
-    setState(() {
-      _selectedCurrency = newCurrency;
-      _currentExchangeRate = null;
-      _totalAmountInCUP = null;
-    });
-    _loadExchangeRate();
-  }
 
   void _loadPersistedValues() {
     _entregadoPorController.text = _lastEntregadoPor;
@@ -249,9 +202,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         if (result.observations != null) {
           _observacionesController.text = result.observations!;
         }
-        if (result.currency != null) {
-          _selectedCurrency = result.currency!;
-        }
         if (result.receivedBy != null && result.receivedBy!.isNotEmpty) {
           _recibidoPorController.text = result.receivedBy!;
         }
@@ -332,8 +282,8 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
           (context) => ProductQuantityDialog(
             product: product,
             selectedLocation: _selectedLocation,
-            invoiceCurrency: _selectedCurrency, // ← Moneda de factura
-            exchangeRate: _currentExchangeRate, // ← Tasa actual
+            invoiceCurrency: _selectedCurrency,
+            exchangeRate: null,
             onProductAdded: (productData) {
               setState(() {
                 _selectedProducts.add(productData);
@@ -379,14 +329,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     }
     if (_selectedLocation == null) {
       _showError('Debe seleccionar una ubicación de destino');
-      return;
-    }
-    if (_selectedCurrency.isEmpty) {
-      _showError('Debe seleccionar una moneda para la factura');
-      return;
-    }
-    if (_selectedCurrency != 'CUP' && _currentExchangeRate == null) {
-      _showError('No se pudo cargar la tasa de cambio para $_selectedCurrency');
       return;
     }
     // Validar que todos los productos tengan datos válidos
@@ -476,25 +418,10 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
           // Save the values for future use before showing success message
           _savePersistedValues();
 
-          // ← GUARDAR TASA HISTÓRICA CON VALIDACIÓN
-          if (_currentExchangeRate != null && result['id_operacion'] != null) {
-            try {
-              final success =
-                  await CurrencyDisplayService.saveHistoricalExchangeRate(
-                    result['id_operacion'],
-                    _currentExchangeRate!,
-                    _selectedCurrency,
-                    'CUP',
-                  );
-              if (!success) {
-                print('⚠️ Advertencia: No se pudo guardar la tasa histórica');
-              }
-            } catch (e) {
-              print('❌ Error guardando tasa histórica: $e');
-            }
-          }
-
-          ScaffoldMessenger.of(context).showSnackBar(
+          // Capturar referencia al ScaffoldMessenger antes de pop
+          final messenger = ScaffoldMessenger.of(context);
+          Navigator.pop(context);
+          messenger.showSnackBar(
             SnackBar(
               content: Text(
                 'Recepción registrada exitosamente. ID: ${result['id_operacion']}',
@@ -502,7 +429,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               backgroundColor: AppColors.success,
             ),
           );
-          Navigator.pop(context);
         } else {
           throw Exception(result['message'] ?? 'Error desconocido');
         }
@@ -517,7 +443,9 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         );
       }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -645,38 +573,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               keyboardType: TextInputType.number,
             ),
 
-            // ← NUEVOS WIDGETS DE MONEDA
-            const SizedBox(height: 16),
-            CurrencyInfoWidget(
-              selectedCurrency: _selectedCurrency,
-              amount: double.tryParse(_montoTotalController.text),
-              onCurrencyChanged: _onCurrencyChanged,
-            ),
-
-            // Mostrar conversión si hay monto y tasa
-            if (_totalAmountInCUP != null) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.currency_exchange, color: Colors.green),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Total en CUP: \$${_totalAmountInCUP!.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green[700],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -928,23 +824,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
 
   String _buildPriceDisplay(Map<String, dynamic> item) {
     final precio = item['precio_unitario'] as double? ?? 0.0;
-    String precioText;
-    if (_selectedCurrency == 'CUP') {
-      precioText = 'Precio: ${precio.toStringAsFixed(3)} CUP';
-      if (_currentExchangeRate != null && _currentExchangeRate! > 0) {
-        final precioUSD = precio / _currentExchangeRate!;
-        precioText += ' (≈ ${precioUSD.toStringAsFixed(2)} USD)';
-      }
-    } else {
-      final currencySymbol = _getCurrencySymbol(_selectedCurrency);
-      precioText =
-          'Precio: $currencySymbol${precio.toStringAsFixed(2)} $_selectedCurrency';
-      if (_currentExchangeRate != null && _currentExchangeRate! > 0) {
-        final precioCUP = precio * _currentExchangeRate!;
-        precioText += ' (≈ ${precioCUP.toStringAsFixed(2)} CUP)';
-      }
-    }
-    return precioText;
+    return 'Precio: \$${precio.toStringAsFixed(2)} USD';
   }
 
   Widget _buildBottomSection() {
@@ -1151,19 +1031,5 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     }
 
     return variantParts.join(' | ');
-  }
-
-  /// Obtiene el símbolo de la moneda
-  String _getCurrencySymbol(String currencyCode) {
-    switch (currencyCode) {
-      case 'USD':
-        return '\$';
-      case 'EUR':
-        return '€';
-      case 'CUP':
-        return '\$';
-      default:
-        return '';
-    }
   }
 }
