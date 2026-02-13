@@ -41,6 +41,9 @@ class UserPreferencesService {
   static const String _waFavoritesKey = 'wa_favorites_marketplace';
   static const String _waGroupsByStoreKey = 'wa_groups_by_store_marketplace';
 
+  // Dark mode preference
+  static const String _darkModeKey = 'dark_mode_enabled_marketplace';
+
   Future<void> saveAppVersion(String version) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_appVersionKey, version);
@@ -311,6 +314,24 @@ class UserPreferencesService {
           'invite_code': inviteCode.trim(),
       };
       await prefs.setString(_waGroupsByStoreKey, jsonEncode(decoded));
+    } catch (_) {}
+  }
+
+  /// Obtiene si el modo oscuro está habilitado
+  Future<bool> isDarkModeEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_darkModeKey) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Guarda la preferencia del modo oscuro
+  Future<void> setDarkModeEnabled(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_darkModeKey, enabled);
     } catch (_) {}
   }
 }

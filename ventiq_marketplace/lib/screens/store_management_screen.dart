@@ -815,10 +815,15 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
       _fillStoreFormFromData(store);
     });
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
+      backgroundColor: isDark ? AppTheme.darkCardBackground : Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
@@ -840,7 +845,9 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                   children: [
                     Text(
                       'Editar tienda',
-                      style: Theme.of(context).textTheme.titleLarge,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: textPrimary,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -970,7 +977,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                                 ? null
                                 : () => _updateStore(storeId: storeId),
                             style: FilledButton.styleFrom(
-                              backgroundColor: AppTheme.primaryColor,
+                              backgroundColor: accentColor,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
@@ -1321,29 +1328,40 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (_errorMessage != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Mi tienda')),
+        appBar: AppBar(
+          title: const Text('Mi tienda'),
+          backgroundColor: isDark ? AppTheme.darkSurfaceColor : AppTheme.primaryColor,
+          foregroundColor: Colors.white,
+        ),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(AppTheme.paddingL),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.store_mall_directory_outlined, size: 56),
+                Icon(Icons.store_mall_directory_outlined, size: 56, color: textSecondary),
                 const SizedBox(height: 10),
                 Text(
                   _errorMessage!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppTheme.textSecondary),
+                  style: TextStyle(color: textSecondary),
                 ),
                 const SizedBox(height: 14),
                 FilledButton(
                   onPressed: _loadStores,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: accentColor,
+                  ),
                   child: const Text('Reintentar'),
                 ),
               ],
@@ -1355,7 +1373,11 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
 
     if (_stores.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Administrar mi tienda')),
+        appBar: AppBar(
+          title: const Text('Administrar mi tienda'),
+          backgroundColor: isDark ? AppTheme.darkSurfaceColor : AppTheme.primaryColor,
+          foregroundColor: Colors.white,
+        ),
         body: _buildCreateStore(),
       );
     }
@@ -1365,12 +1387,14 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: _buildStoreSelector(),
-          bottom: const TabBar(
-            labelColor: Colors.white,
-            unselectedLabelColor: Color(0xCCFFFFFF),
-            indicatorColor: Colors.white,
+          backgroundColor: isDark ? AppTheme.darkSurfaceColor : AppTheme.primaryColor,
+          foregroundColor: Colors.white,
+          bottom: TabBar(
+            labelColor: isDark ? AppTheme.darkAccentColor : Colors.white,
+            unselectedLabelColor: isDark ? AppTheme.darkTextSecondary : const Color(0xCCFFFFFF),
+            indicatorColor: isDark ? AppTheme.darkAccentColor : Colors.white,
             indicatorWeight: 3,
-            tabs: [
+            tabs: const [
               Tab(text: 'Tienda'),
               Tab(text: 'Productos'),
             ],
@@ -1382,6 +1406,8 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   }
 
   Widget _buildStoreSelector() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     if (_stores.length <= 1) {
       return Text((_stores.first['denominacion'] ?? 'Mi tienda').toString());
     }
@@ -1389,7 +1415,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
     return DropdownButtonHideUnderline(
       child: DropdownButton<int>(
         value: _selectedStoreIndex,
-        dropdownColor: AppTheme.primaryColor,
+        dropdownColor: isDark ? AppTheme.darkCardBackground : AppTheme.primaryColor,
         iconEnabledColor: Colors.white,
         style: const TextStyle(
           color: Colors.white,
@@ -1413,6 +1439,13 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   }
 
   Widget _buildStoreTab() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+    final dividerColor = AppTheme.getDividerColor(context);
+
     final store = _stores[_selectedStoreIndex];
 
     final storeIdRaw = store['id'];
@@ -1445,11 +1478,11 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
           children: [
             Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: cardColor,
                 borderRadius: BorderRadius.circular(18),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
+                    color: Colors.black.withOpacity(isDark ? 0.3 : 0.06),
                     blurRadius: 18,
                     offset: const Offset(0, 6),
                   ),
@@ -1489,16 +1522,17 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                             Expanded(
                               child: Text(
                                 denominacion,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.w800,
+                                  color: textPrimary,
                                 ),
                               ),
                             ),
                             IconButton(
                               onPressed: () =>
                                   _openEditStoreSheet(store: store),
-                              icon: const Icon(Icons.edit_outlined),
+                              icon: Icon(Icons.edit_outlined, color: accentColor),
                               tooltip: 'Editar',
                             ),
                             _buildValidationChip(isValidated),
@@ -1536,10 +1570,10 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: cardColor,
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                              color: Colors.grey.withOpacity(0.18),
+                              color: dividerColor,
                             ),
                           ),
                           child: Row(
@@ -1549,8 +1583,8 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                                     ? Icons.visibility_outlined
                                     : Icons.visibility_off_outlined,
                                 color: effectiveVisible
-                                    ? AppTheme.primaryColor
-                                    : AppTheme.textSecondary,
+                                    ? accentColor
+                                    : textSecondary,
                               ),
                               const SizedBox(width: 10),
                               Expanded(
@@ -1560,9 +1594,9 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                                       : (effectiveVisible
                                             ? 'Visible en el catálogo'
                                             : 'Oculta en el catálogo'),
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w700,
-                                    color: AppTheme.textPrimary,
+                                    color: textPrimary,
                                   ),
                                 ),
                               ),
@@ -1612,8 +1646,8 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: isValidated
-                                ? AppTheme.successColor.withOpacity(0.08)
-                                : AppTheme.warningColor.withOpacity(0.08),
+                                ? AppTheme.successColor.withOpacity(isDark ? 0.15 : 0.08)
+                                : AppTheme.warningColor.withOpacity(isDark ? 0.15 : 0.08),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Row(
@@ -1632,9 +1666,9 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                                   isValidated
                                       ? 'Tu tienda fue validada. Puedes decidir si mostrarla en el catálogo.'
                                       : 'Tu tienda está en validación. Mientras tanto no aparecerá en el catálogo y no podrás cambiar su visibilidad.',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w600,
-                                    color: AppTheme.textPrimary,
+                                    color: textPrimary,
                                   ),
                                 ),
                               ),
@@ -1642,12 +1676,17 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        _buildSubscriptionCard(),
+                        _buildSubscriptionCard(isDark: isDark, textPrimary: textPrimary, cardColor: cardColor, dividerColor: dividerColor),
                         const SizedBox(height: 12),
                         _buildCatalogQrCard(
                           catalogUrl: catalogUrl,
                           storeName: denominacion,
                           isStoreEffectivelyActive: effectiveVisible,
+                          isDark: isDark,
+                          textPrimary: textPrimary,
+                          cardColor: cardColor,
+                          dividerColor: dividerColor,
+                          accentColor: accentColor,
                         ),
                       ],
                     ),
@@ -1661,31 +1700,36 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
     );
   }
 
-  Widget _buildSubscriptionCard() {
+  Widget _buildSubscriptionCard({
+    required bool isDark,
+    required Color textPrimary,
+    required Color cardColor,
+    required Color dividerColor,
+  }) {
     final sub = _subscriptionCatalog;
 
     if (_isSubscriptionLoading) {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: cardColor,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey.withOpacity(0.18)),
+          border: Border.all(color: dividerColor),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            SizedBox(
+            const SizedBox(
               width: 18,
               height: 18,
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
-            SizedBox(width: 10),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 'Cargando suscripción del catálogo...',
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
+                  color: textPrimary,
                 ),
               ),
             ),
@@ -1698,7 +1742,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: AppTheme.errorColor.withOpacity(0.08),
+          color: AppTheme.errorColor.withOpacity(isDark ? 0.15 : 0.08),
           borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
@@ -1708,9 +1752,9 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
             Expanded(
               child: Text(
                 _subscriptionErrorMessage!,
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  color: AppTheme.textPrimary,
+                  color: textPrimary,
                 ),
               ),
             ),
@@ -1728,20 +1772,20 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: cardColor,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey.withOpacity(0.18)),
+          border: Border.all(color: dividerColor),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.subscriptions_outlined, color: AppTheme.textSecondary),
-            SizedBox(width: 10),
+            Icon(Icons.subscriptions_outlined, color: AppTheme.getTextSecondaryColor(context)),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 'Suscripción del catálogo: no se ha creado aún.',
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
+                  color: textPrimary,
                 ),
               ),
             ),
@@ -1771,7 +1815,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: statusColor.withOpacity(0.08),
+        color: statusColor.withOpacity(isDark ? 0.15 : 0.08),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
@@ -1784,9 +1828,9 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
               children: [
                 Text(
                   'Suscripción del catálogo',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w800,
-                    color: AppTheme.textPrimary,
+                    color: textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -1794,9 +1838,9 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                   isExpired
                       ? 'Tiempo disponible: 0 días'
                       : 'Tiempo disponible: ${remainingDays.toStringAsFixed(1)} días',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary,
+                    color: textPrimary,
                   ),
                 ),
               ],
@@ -1811,29 +1855,34 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
     required String? catalogUrl,
     required String storeName,
     required bool isStoreEffectivelyActive,
+    required bool isDark,
+    required Color textPrimary,
+    required Color cardColor,
+    required Color dividerColor,
+    required Color accentColor,
   }) {
     final canShowQr = catalogUrl != null && catalogUrl.trim().isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.withOpacity(0.18)),
+        border: Border.all(color: dividerColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              const Icon(Icons.qr_code_2_rounded, color: AppTheme.primaryColor),
+              Icon(Icons.qr_code_2_rounded, color: accentColor),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'QR del catálogo',
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
-                    color: AppTheme.textPrimary,
+                    color: textPrimary,
                   ),
                 ),
               ),
@@ -1940,18 +1989,18 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: AppTheme.warningColor.withOpacity(0.10),
+                color: AppTheme.warningColor.withOpacity(isDark ? 0.15 : 0.10),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.info_outline, color: AppTheme.warningColor),
-                  SizedBox(width: 10),
+                  const Icon(Icons.info_outline, color: AppTheme.warningColor),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'Tu tienda no está activa en el catálogo. El QR abrirá el enlace, pero puede que la tienda no sea visible para los clientes.',
                       style: TextStyle(
-                        color: AppTheme.textPrimary,
+                        color: textPrimary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -1967,9 +2016,9 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: AppTheme.backgroundColor,
+                    color: isDark ? AppTheme.darkSurfaceColor : AppTheme.backgroundColor,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.withOpacity(0.16)),
+                    border: Border.all(color: dividerColor),
                   ),
                   child: QrImageView(
                     data: catalogUrl,
@@ -1984,9 +2033,9 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                     children: [
                       Text(
                         'Escanéalo para abrir tu tienda en el catálogo.',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: AppTheme.textPrimary,
+                          color: textPrimary,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -2021,7 +2070,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                         icon: const Icon(Icons.open_in_new_rounded),
                         label: const Text('Abrir catálogo'),
                         style: FilledButton.styleFrom(
-                          backgroundColor: AppTheme.primaryColor,
+                          backgroundColor: accentColor,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -2052,10 +2101,10 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
               ],
             )
           else
-            const Text(
+            Text(
               'Selecciona una tienda para generar el QR.',
               style: TextStyle(
-                color: AppTheme.textSecondary,
+                color: AppTheme.getTextSecondaryColor(context),
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -2065,12 +2114,19 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   }
 
   Widget _buildProductsTab() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+    final dividerColor = AppTheme.getDividerColor(context);
+
     final storeId = _getSelectedStoreId();
     final isStoreValidated = _isSelectedStoreValidated();
     final isStoreEffectiveActive = _isSelectedStoreEffectivelyActive();
 
     if (storeId == null) {
-      return const Center(child: Text('No hay tienda seleccionada'));
+      return Center(child: Text('No hay tienda seleccionada', style: TextStyle(color: textPrimary)));
     }
 
     if (_productsErrorMessage != null) {
@@ -2080,16 +2136,17 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.inventory_2_outlined, size: 56),
+              Icon(Icons.inventory_2_outlined, size: 56, color: textSecondary),
               const SizedBox(height: 10),
               Text(
                 _productsErrorMessage!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppTheme.textSecondary),
+                style: TextStyle(color: textSecondary),
               ),
               const SizedBox(height: 14),
               FilledButton(
                 onPressed: _loadProductsForSelectedStore,
+                style: FilledButton.styleFrom(backgroundColor: accentColor),
                 child: const Text('Reintentar'),
               ),
             ],
@@ -2116,8 +2173,8 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: isStoreValidated
-                        ? AppTheme.successColor.withOpacity(0.08)
-                        : AppTheme.warningColor.withOpacity(0.08),
+                        ? AppTheme.successColor.withOpacity(isDark ? 0.15 : 0.08)
+                        : AppTheme.warningColor.withOpacity(isDark ? 0.15 : 0.08),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Row(
@@ -2138,9 +2195,9 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                                     ? 'Tu tienda está activa en el catálogo.'
                                     : 'Tu tienda está validada pero no está visible en el catálogo. Activa la tienda primero para mostrar productos.')
                               : 'Tu tienda está en validación. Mientras tanto los productos no podrán mostrarse en el catálogo.',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            color: AppTheme.textPrimary,
+                            color: textPrimary,
                           ),
                         ),
                       ),
@@ -2176,7 +2233,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                           style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                         style: FilledButton.styleFrom(
-                          backgroundColor: AppTheme.primaryColor,
+                          backgroundColor: accentColor,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
@@ -2217,7 +2274,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                         Chip(
                           label: Text(
                             '${_selectedProductIds.length} seleccionados',
-                            style: const TextStyle(fontWeight: FontWeight.w700),
+                            style: TextStyle(fontWeight: FontWeight.w700, color: textPrimary),
                           ),
                           avatar: const Icon(
                             Icons.check_circle,
@@ -2225,7 +2282,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                             size: 18,
                           ),
                           backgroundColor: AppTheme.successColor.withOpacity(
-                            0.12,
+                            isDark ? 0.2 : 0.12,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -2242,23 +2299,23 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: cardColor,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.grey.withOpacity(0.18)),
+                      border: Border.all(color: dividerColor),
                     ),
-                    child: const Column(
+                    child: Column(
                       children: [
-                        Icon(Icons.inventory_2_outlined, size: 44),
-                        SizedBox(height: 10),
+                        Icon(Icons.inventory_2_outlined, size: 44, color: textSecondary),
+                        const SizedBox(height: 10),
                         Text(
                           'Aún no tienes productos.',
-                          style: TextStyle(fontWeight: FontWeight.w800),
+                          style: TextStyle(fontWeight: FontWeight.w800, color: textPrimary),
                         ),
-                        SizedBox(height: 6),
+                        const SizedBox(height: 6),
                         Text(
                           'Crea tu primer producto para empezar a vender en el catálogo.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: AppTheme.textSecondary),
+                          style: TextStyle(color: textSecondary),
                         ),
                       ],
                     ),
@@ -2294,12 +2351,12 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: cardColor,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.withOpacity(0.16)),
+              border: Border.all(color: dividerColor),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
+                  color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -2353,8 +2410,8 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                               fit: BoxFit.cover,
                             )
                           : Container(
-                              color: Colors.grey[200],
-                              child: const Icon(Icons.image_outlined),
+                              color: isDark ? AppTheme.darkSurfaceColor : Colors.grey[200],
+                              child: Icon(Icons.image_outlined, color: textSecondary),
                             ),
                     ),
                   ),
@@ -2367,16 +2424,17 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                           nombre,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 15,
+                            color: textPrimary,
                           ),
                         ),
                         const SizedBox(height: 6),
                         Text(
                           'Stock: ${stock.toString()}',
-                          style: const TextStyle(
-                            color: AppTheme.textSecondary,
+                          style: TextStyle(
+                            color: textSecondary,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -2385,8 +2443,8 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                           precio == null
                               ? 'Precio: --'
                               : 'Precio: ${precio.toStringAsFixed(2)} CUP',
-                          style: const TextStyle(
-                            color: AppTheme.textSecondary,
+                          style: TextStyle(
+                            color: textSecondary,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -2399,7 +2457,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                     onPressed: () async {
                       await _shareProductOnWhatsapp(product);
                     },
-                    icon: const Icon(Icons.campaign_outlined),
+                    icon: Icon(Icons.campaign_outlined, color: accentColor),
                   ),
                   const SizedBox(width: 4),
                   Switch(
@@ -2444,12 +2502,13 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   }
 
   Widget _buildValidationChip(bool isValidated) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: isValidated
-            ? AppTheme.successColor.withOpacity(0.12)
-            : AppTheme.warningColor.withOpacity(0.12),
+            ? AppTheme.successColor.withOpacity(isDark ? 0.2 : 0.12)
+            : AppTheme.warningColor.withOpacity(isDark ? 0.2 : 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -2464,16 +2523,17 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   }
 
   Widget _infoRow({required IconData icon, required String text}) {
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 18, color: AppTheme.textSecondary),
+        Icon(icon, size: 18, color: textSecondary),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(
-              color: AppTheme.textSecondary,
+            style: TextStyle(
+              color: textSecondary,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -2483,6 +2543,11 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   }
 
   Widget _buildCreateStore() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppTheme.paddingM),
       child: Form(
@@ -2493,11 +2558,11 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
             Container(
               padding: const EdgeInsets.all(AppTheme.paddingM),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: cardColor,
                 borderRadius: BorderRadius.circular(18),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
+                    color: Colors.black.withOpacity(isDark ? 0.3 : 0.06),
                     blurRadius: 18,
                     offset: const Offset(0, 6),
                   ),
@@ -2511,7 +2576,9 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                       Expanded(
                         child: Text(
                           'Crea tu tienda',
-                          style: Theme.of(context).textTheme.titleLarge,
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: textPrimary,
+                          ),
                         ),
                       ),
                       Container(
@@ -2520,7 +2587,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: AppTheme.warningColor.withOpacity(0.12),
+                          color: AppTheme.warningColor.withOpacity(isDark ? 0.2 : 0.12),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: const Text(
@@ -2652,7 +2719,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                         ? null
                         : _createStore,
                     style: FilledButton.styleFrom(
-                      backgroundColor: AppTheme.primaryColor,
+                      backgroundColor: accentColor,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -2673,6 +2740,11 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   }
 
   Widget _buildLocationCard() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final dividerColor = AppTheme.getDividerColor(context);
+
     final text = _selectedLocation == null
         ? 'Seleccionar en mapa'
         : '${_selectedLocation!.latitude.toStringAsFixed(6)}, ${_selectedLocation!.longitude.toStringAsFixed(6)}';
@@ -2683,24 +2755,24 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: AppTheme.backgroundColor,
+          color: isDark ? AppTheme.darkSurfaceColor : AppTheme.backgroundColor,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.withOpacity(0.2)),
+          border: Border.all(color: dividerColor),
         ),
         child: Row(
           children: [
-            const Icon(
+            Icon(
               Icons.location_on_outlined,
-              color: AppTheme.primaryColor,
+              color: accentColor,
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 text,
-                style: const TextStyle(fontWeight: FontWeight.w700),
+                style: TextStyle(fontWeight: FontWeight.w700, color: textPrimary),
               ),
             ),
-            const Icon(Icons.chevron_right_rounded),
+            Icon(Icons.chevron_right_rounded, color: textPrimary),
           ],
         ),
       ),
@@ -2708,24 +2780,30 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   }
 
   Widget _buildImageCard() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final dividerColor = AppTheme.getDividerColor(context);
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppTheme.backgroundColor,
+        color: isDark ? AppTheme.darkSurfaceColor : AppTheme.backgroundColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.withOpacity(0.2)),
+        border: Border.all(color: dividerColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              const Icon(Icons.image_outlined, color: AppTheme.primaryColor),
+              Icon(Icons.image_outlined, color: accentColor),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'Foto de la tienda',
-                  style: TextStyle(fontWeight: FontWeight.w800),
+                  style: TextStyle(fontWeight: FontWeight.w800, color: textPrimary),
                 ),
               ),
               TextButton(
@@ -2741,7 +2819,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
               borderRadius: BorderRadius.circular(14),
               child: _isUploadingImage
                   ? Container(
-                      color: Colors.white,
+                      color: isDark ? AppTheme.darkCardBackground : Colors.white,
                       child: const Center(child: CircularProgressIndicator()),
                     )
                   : (_imageUrl != null && _imageUrl!.isNotEmpty)
@@ -2752,9 +2830,9 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                       fit: BoxFit.cover,
                     )
                   : Container(
-                      color: Colors.white,
-                      child: const Center(
-                        child: Icon(Icons.storefront_outlined, size: 42),
+                      color: isDark ? AppTheme.darkCardBackground : Colors.white,
+                      child: Center(
+                        child: Icon(Icons.storefront_outlined, size: 42, color: textSecondary),
                       ),
                     ),
             ),
@@ -2765,6 +2843,11 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   }
 
   Widget _buildScheduleRow() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final dividerColor = AppTheme.getDividerColor(context);
+
     return Row(
       children: [
         Expanded(
@@ -2774,18 +2857,18 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
               decoration: BoxDecoration(
-                color: AppTheme.backgroundColor,
+                color: isDark ? AppTheme.darkSurfaceColor : AppTheme.backgroundColor,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                border: Border.all(color: dividerColor),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.schedule, color: AppTheme.primaryColor),
+                  Icon(Icons.schedule, color: accentColor),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'Apertura: ${_horaApertura.format(context)}',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                      style: TextStyle(fontWeight: FontWeight.w700, color: textPrimary),
                     ),
                   ),
                 ],
@@ -2801,18 +2884,18 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
               decoration: BoxDecoration(
-                color: AppTheme.backgroundColor,
+                color: isDark ? AppTheme.darkSurfaceColor : AppTheme.backgroundColor,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                border: Border.all(color: dividerColor),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.schedule, color: AppTheme.primaryColor),
+                  Icon(Icons.schedule, color: accentColor),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'Cierre: ${_horaCierre.format(context)}',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                      style: TextStyle(fontWeight: FontWeight.w700, color: textPrimary),
                     ),
                   ),
                 ],

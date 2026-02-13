@@ -237,9 +237,16 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Scaffold(
+      backgroundColor: AppTheme.getBackgroundColor(context),
       appBar: AppBar(
         title: Text('Plan de Compra (${_cartService.itemCount})'),
+        backgroundColor: isDark ? AppTheme.darkSurfaceColor : AppTheme.primaryColor,
+        foregroundColor: Colors.white,
+        elevation: 0,
         actions: [
           // Botón de refresh manual
           IconButton(
@@ -257,8 +264,9 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
       ),
       body: RefreshIndicator(
         onRefresh: _refreshCart,
+        color: accentColor,
         child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? Center(child: CircularProgressIndicator(color: accentColor))
             : _cartService.isEmpty
             ? _buildEmptyState()
             : _buildCartContent(),
@@ -270,6 +278,11 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildEmptyState() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       child: SizedBox(
@@ -283,15 +296,15 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                 Icon(
                   Icons.shopping_cart_outlined,
                   size: 100,
-                  color: Colors.grey[300],
+                  color: isDark ? AppTheme.darkTextHint : Colors.grey[300],
                 ),
                 const SizedBox(height: 24),
-                const Text(
+                Text(
                   'Tu plan de compra está vacío',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary,
+                    color: textPrimary,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -300,7 +313,7 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 15,
-                    color: AppTheme.textSecondary.withOpacity(0.8),
+                    color: textSecondary.withOpacity(0.8),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -309,7 +322,7 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13,
-                    color: AppTheme.primaryColor.withOpacity(0.7),
+                    color: accentColor.withOpacity(0.7),
                     fontStyle: FontStyle.italic,
                   ),
                 ),
@@ -333,7 +346,7 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryColor,
+                    backgroundColor: accentColor,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 32,
                       vertical: 16,
@@ -383,6 +396,13 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
     List<CartItem> items,
     double total,
   ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+    final priceColor = AppTheme.getPriceColor(context);
+
     // Obtener ubicación y dirección del primer item (todos son de la misma tienda)
     final firstItem = items.first;
     final storeLocation = firstItem.storeLocation;
@@ -406,11 +426,15 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
     return Container(
       margin: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.1),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withOpacity(isDark ? 0.3 : 0.06),
             blurRadius: 15,
             offset: const Offset(0, 5),
           ),
@@ -422,13 +446,15 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
           // Header de tienda con gradiente
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFFF0F4FF), Colors.white],
+                colors: isDark
+                    ? [AppTheme.darkSurfaceColor, cardColor]
+                    : [const Color(0xFFF0F4FF), Colors.white],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
               ),
-              borderRadius: BorderRadius.only(
+              borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(20),
                 topRight: Radius.circular(20),
               ),
@@ -442,13 +468,13 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: AppTheme.primaryColor.withOpacity(0.1),
+                        color: accentColor.withOpacity(isDark ? 0.2 : 0.1),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.store_rounded,
                         size: 20,
-                        color: AppTheme.primaryColor,
+                        color: accentColor,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -458,10 +484,10 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                         children: [
                           Text(
                             storeName,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: AppTheme.textPrimary,
+                              color: textPrimary,
                               letterSpacing: -0.3,
                             ),
                           ),
@@ -472,9 +498,7 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                                 fullLocation,
                                 style: TextStyle(
                                   fontSize: 11,
-                                  color: AppTheme.textSecondary.withOpacity(
-                                    0.8,
-                                  ),
+                                  color: textSecondary.withOpacity(0.8),
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -489,18 +513,18 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: AppTheme.successColor.withOpacity(0.1),
+                        color: priceColor.withOpacity(isDark ? 0.2 : 0.1),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: AppTheme.successColor.withOpacity(0.2),
+                          color: priceColor.withOpacity(isDark ? 0.4 : 0.2),
                         ),
                       ),
                       child: Text(
                         '\$${total.toStringAsFixed(2)}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
-                          color: AppTheme.successColor,
+                          color: priceColor,
                         ),
                       ),
                     ),
@@ -517,7 +541,7 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                         Icon(
                           Icons.location_on_outlined,
                           size: 14,
-                          color: AppTheme.textSecondary.withOpacity(0.7),
+                          color: textSecondary.withOpacity(0.7),
                         ),
                         const SizedBox(width: 6),
                         Expanded(
@@ -525,7 +549,7 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                             storeAddress,
                             style: TextStyle(
                               fontSize: 12,
-                              color: AppTheme.textSecondary.withOpacity(0.7),
+                              color: textSecondary.withOpacity(0.7),
                               height: 1.2,
                             ),
                             maxLines: 2,
@@ -540,7 +564,7 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
           ),
 
           // Divisor sutil
-          Divider(height: 1, color: Colors.grey.withOpacity(0.1)),
+          Divider(height: 1, color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.1)),
 
           // Items de la tienda
           ...items.map((item) => _buildCartItem(item)),
@@ -552,11 +576,19 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildCartItem(CartItem item) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final priceColor = AppTheme.getPriceColor(context);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: Colors.grey.withOpacity(0.05), width: 1),
+          bottom: BorderSide(
+            color: isDark ? AppTheme.darkDividerColor.withOpacity(0.5) : Colors.grey.withOpacity(0.05),
+            width: 1,
+          ),
         ),
       ),
       child: Row(
@@ -567,11 +599,15 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
             width: 80,
             height: 80,
             decoration: BoxDecoration(
-              color: Colors.grey[50],
+              color: isDark ? AppTheme.darkSurfaceColor : Colors.grey[50],
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.1),
+                width: 1,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
+                  color: Colors.black.withOpacity(isDark ? 0.2 : 0.03),
                   blurRadius: 4,
                   offset: const Offset(0, 2),
                 ),
@@ -588,7 +624,7 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                           child: Icon(
                             Icons.shopping_bag_rounded,
                             size: 32,
-                            color: Colors.grey[300],
+                            color: isDark ? AppTheme.darkTextHint : Colors.grey[300],
                           ),
                         );
                       },
@@ -597,7 +633,7 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                       child: Icon(
                         Icons.shopping_bag_rounded,
                         size: 32,
-                        color: Colors.grey[300],
+                        color: isDark ? AppTheme.darkTextHint : Colors.grey[300],
                       ),
                     ),
             ),
@@ -611,10 +647,10 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
               children: [
                 Text(
                   item.productName,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary,
+                    color: textPrimary,
                     height: 1.2,
                   ),
                   maxLines: 2,
@@ -627,15 +663,19 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.grey[100],
+                    color: isDark ? AppTheme.darkSurfaceColor : Colors.grey[100],
                     borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: isDark ? AppTheme.darkDividerColor : Colors.transparent,
+                      width: 1,
+                    ),
                   ),
                   child: Text(
                     '${item.variantName} • ${item.presentacion}',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
-                      color: AppTheme.textSecondary.withOpacity(0.9),
+                      color: textSecondary.withOpacity(0.9),
                     ),
                   ),
                 ),
@@ -648,10 +688,10 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                         alignment: Alignment.centerLeft,
                         child: Text(
                           '\$${item.price.toStringAsFixed(2)}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.bold,
-                            color: AppTheme.textPrimary,
+                            color: priceColor,
                             letterSpacing: -0.5,
                           ),
                         ),
@@ -671,13 +711,17 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildQuantityControls(CartItem item) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         // Botón eliminar
         Container(
           decoration: BoxDecoration(
-            color: AppTheme.errorColor.withOpacity(0.08),
+            color: AppTheme.errorColor.withOpacity(isDark ? 0.15 : 0.08),
             borderRadius: BorderRadius.circular(6),
           ),
           child: IconButton(
@@ -694,13 +738,13 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
         // Botón menos
         Container(
           decoration: BoxDecoration(
-            color: AppTheme.primaryColor.withOpacity(0.08),
+            color: accentColor.withOpacity(isDark ? 0.15 : 0.08),
             borderRadius: BorderRadius.circular(6),
           ),
           child: IconButton(
             onPressed: () => _updateQuantity(item.id, item.quantity - 1),
             icon: const Icon(Icons.remove_rounded),
-            color: AppTheme.primaryColor,
+            color: accentColor,
             iconSize: 18,
             padding: const EdgeInsets.all(6),
             constraints: const BoxConstraints(),
@@ -713,10 +757,10 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
           alignment: Alignment.center,
           child: Text(
             '${item.quantity}',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,
-              color: AppTheme.textPrimary,
+              color: textPrimary,
               letterSpacing: -0.2,
             ),
           ),
@@ -725,13 +769,13 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
         // Botón más
         Container(
           decoration: BoxDecoration(
-            color: AppTheme.primaryColor.withOpacity(0.08),
+            color: accentColor.withOpacity(isDark ? 0.15 : 0.08),
             borderRadius: BorderRadius.circular(6),
           ),
           child: IconButton(
             onPressed: () => _updateQuantity(item.id, item.quantity + 1),
             icon: const Icon(Icons.add_rounded),
-            color: AppTheme.primaryColor,
+            color: accentColor,
             iconSize: 18,
             padding: const EdgeInsets.all(6),
             constraints: const BoxConstraints(),
@@ -742,13 +786,25 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildCheckoutButton() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
+        border: Border(
+          top: BorderSide(
+            color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.1),
+            width: 1,
+          ),
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
             blurRadius: 12,
             offset: const Offset(0, -4),
           ),
@@ -769,16 +825,16 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                       '${_cartService.totalQuantity} ${_cartService.totalQuantity == 1 ? 'producto' : 'productos'}',
                       style: TextStyle(
                         fontSize: 13,
-                        color: AppTheme.textSecondary.withOpacity(0.8),
+                        color: textSecondary.withOpacity(0.8),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Total: \$${_cartService.total.toStringAsFixed(2)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w700,
-                        color: AppTheme.textPrimary,
+                        color: textPrimary,
                         letterSpacing: -0.5,
                       ),
                     ),
@@ -787,7 +843,7 @@ class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                 ElevatedButton(
                   onPressed: _traceRoute,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryColor,
+                    backgroundColor: accentColor,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 24,
                       vertical: 16,

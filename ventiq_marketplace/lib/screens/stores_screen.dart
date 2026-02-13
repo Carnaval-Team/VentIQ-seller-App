@@ -193,11 +193,13 @@ class _StoresScreenState extends State<StoresScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: AppTheme.getBackgroundColor(context),
       body: RefreshIndicator(
         onRefresh: _loadStores,
-        color: AppTheme.primaryColor,
+        color: accentColor,
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
@@ -227,9 +229,11 @@ class _StoresScreenState extends State<StoresScreen> {
 
   /// AppBar moderno con SliverAppBar
   Widget _buildModernAppBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return SliverAppBar(
       expandedHeight: 140.0,
-      floating: false,
+      floating: true,
       pinned: true,
       elevation: 0,
       flexibleSpace: FlexibleSpaceBar(
@@ -238,11 +242,17 @@ class _StoresScreenState extends State<StoresScreen> {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                AppTheme.primaryColor,
-                AppTheme.primaryColor.withOpacity(0.85),
-                AppTheme.secondaryColor.withOpacity(0.9),
-              ],
+              colors: isDark
+                  ? [
+                      const Color(0xFF2D2D30),
+                      const Color(0xFF1A1A1D),
+                      AppTheme.darkAccentColor.withOpacity(0.3),
+                    ]
+                  : [
+                      AppTheme.primaryColor,
+                      AppTheme.primaryColor.withOpacity(0.85),
+                      AppTheme.secondaryColor.withOpacity(0.9),
+                    ],
             ),
           ),
           child: SafeArea(
@@ -262,14 +272,14 @@ class _StoresScreenState extends State<StoresScreen> {
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              AppTheme.warningColor.withOpacity(0.3),
-                              AppTheme.warningColor.withOpacity(0.2),
+                              AppTheme.warningColor.withOpacity(isDark ? 0.4 : 0.3),
+                              AppTheme.warningColor.withOpacity(isDark ? 0.3 : 0.2),
                             ],
                           ),
                           borderRadius: BorderRadius.circular(14),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
+                              color: Colors.black.withOpacity(isDark ? 0.3 : 0.1),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -309,10 +319,10 @@ class _StoresScreenState extends State<StoresScreen> {
                       Container(
                         margin: const EdgeInsets.only(left: 8),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withOpacity(isDark ? 0.1 : 0.2),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.3),
+                            color: Colors.white.withOpacity(isDark ? 0.2 : 0.3),
                           ),
                         ),
                         child: IconButton(
@@ -343,15 +353,21 @@ class _StoresScreenState extends State<StoresScreen> {
 
   /// Sección del buscador mejorada
   Widget _buildSearchSection() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Padding(
       padding: const EdgeInsets.all(AppTheme.paddingM),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: cardColor,
           borderRadius: BorderRadius.circular(AppTheme.radiusL),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
+              color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
               blurRadius: 20,
               offset: const Offset(0, 4),
             ),
@@ -360,25 +376,26 @@ class _StoresScreenState extends State<StoresScreen> {
         child: TextField(
           controller: _searchController,
           onChanged: _filterStores,
+          style: TextStyle(color: textPrimary),
           decoration: InputDecoration(
             hintText: 'Buscar tiendas...',
             hintStyle: TextStyle(
-              color: AppTheme.textSecondary.withOpacity(0.6),
+              color: isDark ? AppTheme.darkTextHint : AppTheme.textSecondary.withOpacity(0.6),
               fontSize: 15,
             ),
             prefixIcon: Container(
               padding: const EdgeInsets.all(12),
-              child: const Icon(
+              child: Icon(
                 Icons.search_rounded,
-                color: AppTheme.primaryColor,
+                color: accentColor,
                 size: 24,
               ),
             ),
             suffixIcon: _searchController.text.isNotEmpty
                 ? IconButton(
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.clear_rounded,
-                      color: AppTheme.textSecondary,
+                      color: textSecondary,
                     ),
                     onPressed: () {
                       _searchController.clear();
@@ -402,6 +419,9 @@ class _StoresScreenState extends State<StoresScreen> {
   }
 
   Widget _buildResultsCounter() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
     final isFiltering = _searchController.text.isNotEmpty;
 
     return Container(
@@ -414,18 +434,18 @@ class _StoresScreenState extends State<StoresScreen> {
         gradient: LinearGradient(
           colors: [
             isFiltering
-                ? AppTheme.primaryColor.withOpacity(0.08)
-                : AppTheme.secondaryColor.withOpacity(0.06),
+                ? accentColor.withOpacity(isDark ? 0.15 : 0.08)
+                : AppTheme.secondaryColor.withOpacity(isDark ? 0.12 : 0.06),
             isFiltering
-                ? AppTheme.primaryColor.withOpacity(0.04)
-                : AppTheme.secondaryColor.withOpacity(0.03),
+                ? accentColor.withOpacity(isDark ? 0.08 : 0.04)
+                : AppTheme.secondaryColor.withOpacity(isDark ? 0.06 : 0.03),
           ],
         ),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isFiltering
-              ? AppTheme.primaryColor.withOpacity(0.2)
-              : Colors.grey.withOpacity(0.15),
+              ? accentColor.withOpacity(isDark ? 0.4 : 0.2)
+              : (isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.15)),
           width: 1,
         ),
       ),
@@ -435,16 +455,14 @@ class _StoresScreenState extends State<StoresScreen> {
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
               color: isFiltering
-                  ? AppTheme.primaryColor.withOpacity(0.15)
-                  : AppTheme.secondaryColor.withOpacity(0.12),
+                  ? accentColor.withOpacity(isDark ? 0.25 : 0.15)
+                  : AppTheme.secondaryColor.withOpacity(isDark ? 0.2 : 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
               isFiltering ? Icons.filter_list_rounded : Icons.store_rounded,
               size: 18,
-              color: isFiltering
-                  ? AppTheme.primaryColor
-                  : AppTheme.secondaryColor,
+              color: isFiltering ? accentColor : AppTheme.secondaryColor,
             ),
           ),
           const SizedBox(width: 12),
@@ -456,9 +474,7 @@ class _StoresScreenState extends State<StoresScreen> {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: isFiltering
-                    ? AppTheme.primaryColor
-                    : AppTheme.textPrimary,
+                color: isFiltering ? accentColor : textPrimary,
                 letterSpacing: -0.2,
               ),
             ),
@@ -469,6 +485,11 @@ class _StoresScreenState extends State<StoresScreen> {
   }
 
   Widget _buildLoadingState() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(40),
@@ -480,26 +501,24 @@ class _StoresScreenState extends State<StoresScreen> {
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    AppTheme.primaryColor.withOpacity(0.1),
-                    AppTheme.secondaryColor.withOpacity(0.05),
+                    accentColor.withOpacity(isDark ? 0.2 : 0.1),
+                    accentColor.withOpacity(isDark ? 0.1 : 0.05),
                   ],
                 ),
                 shape: BoxShape.circle,
               ),
-              child: const CircularProgressIndicator(
+              child: CircularProgressIndicator(
                 strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  AppTheme.primaryColor,
-                ),
+                valueColor: AlwaysStoppedAnimation<Color>(accentColor),
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
+            Text(
               'Cargando tiendas...',
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
+                color: textPrimary,
                 letterSpacing: -0.3,
               ),
             ),
@@ -508,7 +527,7 @@ class _StoresScreenState extends State<StoresScreen> {
               'Descubriendo las mejores opciones',
               style: TextStyle(
                 fontSize: 14,
-                color: AppTheme.textSecondary.withOpacity(0.8),
+                color: textSecondary.withOpacity(0.8),
               ),
             ),
           ],
@@ -518,6 +537,10 @@ class _StoresScreenState extends State<StoresScreen> {
   }
 
   Widget _buildEmptyState() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
     final isFiltering = _searchController.text.isNotEmpty;
 
     return Center(
@@ -529,17 +552,17 @@ class _StoresScreenState extends State<StoresScreen> {
             Icon(
               isFiltering ? Icons.search_off : Icons.store_outlined,
               size: 80,
-              color: Colors.grey[400],
+              color: isDark ? AppTheme.darkTextHint : Colors.grey[400],
             ),
             const SizedBox(height: AppTheme.paddingM),
             Text(
               isFiltering
                   ? 'No se encontraron tiendas'
                   : 'No hay tiendas disponibles',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
+                color: textPrimary,
               ),
             ),
             const SizedBox(height: AppTheme.paddingS),
@@ -548,9 +571,9 @@ class _StoresScreenState extends State<StoresScreen> {
                   ? 'Intenta con otros términos de búsqueda'
                   : 'Aún no hay tiendas registradas en el marketplace',
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
-                color: AppTheme.textSecondary,
+                color: textSecondary,
               ),
             ),
             if (isFiltering) ...[
@@ -563,8 +586,8 @@ class _StoresScreenState extends State<StoresScreen> {
                 icon: const Icon(Icons.clear),
                 label: const Text('Limpiar búsqueda'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.primaryColor,
-                  side: const BorderSide(color: AppTheme.primaryColor),
+                  foregroundColor: accentColor,
+                  side: BorderSide(color: accentColor),
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppTheme.paddingL,
                     vertical: AppTheme.paddingM,

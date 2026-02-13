@@ -33,18 +33,26 @@ class StoreListCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Container(
       margin: const EdgeInsets.symmetric(
         horizontal: AppTheme.paddingM,
         vertical: 6,
       ),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.withOpacity(0.15), width: 1),
+        border: Border.all(
+          color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.15),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withOpacity(isDark ? 0.25 : 0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -61,7 +69,7 @@ class StoreListCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Logo de la tienda
-                _buildStoreLogo(),
+                _buildStoreLogo(context),
                 const SizedBox(width: 14),
 
                 // Información de la tienda
@@ -75,10 +83,10 @@ class StoreListCard extends StatelessWidget {
                           Expanded(
                             child: Text(
                               storeName,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
-                                color: AppTheme.textPrimary,
+                                color: textPrimary,
                                 letterSpacing: -0.2,
                               ),
                               maxLines: 2,
@@ -89,13 +97,13 @@ class StoreListCard extends StatelessWidget {
                             Container(
                               margin: const EdgeInsets.only(left: 8),
                               decoration: BoxDecoration(
-                                color: AppTheme.primaryColor.withOpacity(0.08),
+                                color: accentColor.withOpacity(isDark ? 0.15 : 0.08),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.map_outlined,
-                                  color: AppTheme.primaryColor,
+                                  color: accentColor,
                                   size: 20,
                                 ),
                                 onPressed: onMapTap,
@@ -112,17 +120,17 @@ class StoreListCard extends StatelessWidget {
                       if (ubicacion != null ||
                           provincia != null ||
                           municipio != null)
-                        _buildLocationInfo(),
+                        _buildLocationInfo(context),
 
                       const SizedBox(height: 10),
 
                       // Total de productos
-                      _buildProductCount(),
+                      _buildProductCount(context),
 
                       // Dirección
                       if (direccion != null && direccion!.isNotEmpty) ...[
                         const SizedBox(height: 8),
-                        _buildAddress(),
+                        _buildAddress(context),
                       ],
                     ],
                   ),
@@ -135,17 +143,22 @@ class StoreListCard extends StatelessWidget {
     );
   }
 
-  Widget _buildStoreLogo() {
+  Widget _buildStoreLogo(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       width: 70,
       height: 70,
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: isDark ? AppTheme.darkSurfaceColor : Colors.grey[50],
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.withOpacity(0.15), width: 1),
+        border: Border.all(
+          color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.15),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -156,19 +169,26 @@ class StoreListCard extends StatelessWidget {
               imageUrl: logoUrl!,
               fit: BoxFit.cover,
               borderRadius: 12,
-              placeholderAsset: null, // Default
+              placeholderAsset: null,
             )
-          : _buildPlaceholderLogo(),
+          : _buildPlaceholderLogo(context),
     );
   }
 
-  Widget _buildPlaceholderLogo() {
+  Widget _buildPlaceholderLogo(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Center(
-      child: Icon(Icons.store_rounded, size: 32, color: Colors.grey[400]),
+      child: Icon(
+        Icons.store_rounded,
+        size: 32,
+        color: isDark ? AppTheme.darkTextHint : Colors.grey[400],
+      ),
     );
   }
 
-  Widget _buildLocationInfo() {
+  Widget _buildLocationInfo(BuildContext context) {
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
     final List<String> locationParts = [];
 
     if (ubicacion != null && ubicacion!.isNotEmpty) {
@@ -196,7 +216,7 @@ class StoreListCard extends StatelessWidget {
             locationText,
             style: TextStyle(
               fontSize: 13,
-              color: AppTheme.textSecondary.withOpacity(0.9),
+              color: textSecondary.withOpacity(0.9),
               height: 1.3,
             ),
             maxLines: 2,
@@ -207,21 +227,24 @@ class StoreListCard extends StatelessWidget {
     );
   }
 
-  Widget _buildProductCount() {
+  Widget _buildProductCount(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            AppTheme.primaryColor.withOpacity(0.08),
-            AppTheme.primaryColor.withOpacity(0.12),
+            accentColor.withOpacity(isDark ? 0.15 : 0.08),
+            accentColor.withOpacity(isDark ? 0.2 : 0.12),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: AppTheme.primaryColor.withOpacity(0.2),
+          color: accentColor.withOpacity(isDark ? 0.35 : 0.2),
           width: 0.5,
         ),
       ),
@@ -231,7 +254,7 @@ class StoreListCard extends StatelessWidget {
           Icon(
             Icons.inventory_2_rounded,
             size: 14,
-            color: AppTheme.primaryColor.withOpacity(0.9),
+            color: accentColor.withOpacity(0.9),
           ),
           const SizedBox(width: 6),
           Text(
@@ -239,7 +262,7 @@ class StoreListCard extends StatelessWidget {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: AppTheme.primaryColor.withOpacity(0.9),
+              color: accentColor.withOpacity(0.9),
               letterSpacing: -0.1,
             ),
           ),
@@ -248,14 +271,16 @@ class StoreListCard extends StatelessWidget {
     );
   }
 
-  Widget _buildAddress() {
+  Widget _buildAddress(BuildContext context) {
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(
           Icons.home_rounded,
           size: 14,
-          color: AppTheme.textSecondary.withOpacity(0.6),
+          color: textSecondary.withOpacity(0.6),
         ),
         const SizedBox(width: 5),
         Expanded(
@@ -263,7 +288,7 @@ class StoreListCard extends StatelessWidget {
             direccion!,
             style: TextStyle(
               fontSize: 11.5,
-              color: AppTheme.textSecondary.withOpacity(0.8),
+              color: textSecondary.withOpacity(0.8),
               height: 1.4,
             ),
             maxLines: 2,

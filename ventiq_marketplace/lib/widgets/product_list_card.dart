@@ -30,18 +30,26 @@ class ProductListCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final priceColor = AppTheme.getPriceColor(context);
+
     return Container(
       margin: const EdgeInsets.symmetric(
         horizontal: AppTheme.paddingM,
         vertical: 6,
       ),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.withOpacity(0.15), width: 1),
+        border: Border.all(
+          color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.15),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withOpacity(isDark ? 0.25 : 0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -58,7 +66,7 @@ class ProductListCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Imagen del producto
-                _buildProductImage(),
+                _buildProductImage(context),
                 const SizedBox(width: 12),
 
                 // Información del producto
@@ -73,10 +81,10 @@ class ProductListCard extends StatelessWidget {
                           Expanded(
                             child: Text(
                               productName,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.w600,
-                                color: AppTheme.textPrimary,
+                                color: textPrimary,
                                 height: 1.3,
                                 letterSpacing: -0.2,
                               ),
@@ -85,7 +93,7 @@ class ProductListCard extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          _buildRating(),
+                          _buildRating(context),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -93,24 +101,24 @@ class ProductListCard extends StatelessWidget {
                       // Precio
                       Text(
                         '\$${price.toStringAsFixed(2)}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
-                          color: AppTheme.accentColor,
+                          color: priceColor,
                           letterSpacing: -0.3,
                         ),
                       ),
                       const SizedBox(height: 8),
 
                       // Presentaciones
-                      if (presentations.isNotEmpty) _buildPresentations(),
+                      if (presentations.isNotEmpty) _buildPresentations(context),
 
                       if (presentations.isNotEmpty) const SizedBox(height: 8),
 
                       // Tienda y Stock
                       Row(
                         children: [
-                          Expanded(child: _buildStoreInfo()),
+                          Expanded(child: _buildStoreInfo(context)),
                           if (showStockStatus) const SizedBox(width: 8),
                           if (showStockStatus) _buildStockInfo(),
                         ],
@@ -126,17 +134,22 @@ class ProductListCard extends StatelessWidget {
     );
   }
 
-  Widget _buildProductImage() {
+  Widget _buildProductImage(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       width: 85,
       height: 85,
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: isDark ? AppTheme.darkSurfaceColor : Colors.grey[50],
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.withOpacity(0.15), width: 1),
+        border: Border.all(
+          color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.15),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -149,37 +162,41 @@ class ProductListCard extends StatelessWidget {
               width: 85,
               height: 85,
               borderRadius: 10,
-              placeholderAsset: null, // Use default or specific logic if needed
+              placeholderAsset: null,
             )
-          : _buildPlaceholderImage(),
+          : _buildPlaceholderImage(context),
     );
   }
 
-  Widget _buildPlaceholderImage() {
+  Widget _buildPlaceholderImage(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Center(
       child: Icon(
         Icons.shopping_bag_rounded,
         size: 36,
-        color: Colors.grey[400],
+        color: isDark ? AppTheme.darkTextHint : Colors.grey[400],
       ),
     );
   }
 
-  Widget _buildRating() {
+  Widget _buildRating(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            AppTheme.warningColor.withOpacity(0.12),
-            AppTheme.warningColor.withOpacity(0.08),
+            AppTheme.warningColor.withOpacity(isDark ? 0.2 : 0.12),
+            AppTheme.warningColor.withOpacity(isDark ? 0.15 : 0.08),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
-          color: AppTheme.warningColor.withOpacity(0.25),
+          color: AppTheme.warningColor.withOpacity(isDark ? 0.4 : 0.25),
           width: 0.5,
         ),
       ),
@@ -206,7 +223,9 @@ class ProductListCard extends StatelessWidget {
     );
   }
 
-  Widget _buildPresentations() {
+  Widget _buildPresentations(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Wrap(
       spacing: 5,
       runSpacing: 5,
@@ -216,15 +235,15 @@ class ProductListCard extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                AppTheme.secondaryColor.withOpacity(0.08),
-                AppTheme.secondaryColor.withOpacity(0.12),
+                AppTheme.secondaryColor.withOpacity(isDark ? 0.15 : 0.08),
+                AppTheme.secondaryColor.withOpacity(isDark ? 0.2 : 0.12),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: AppTheme.secondaryColor.withOpacity(0.2),
+              color: AppTheme.secondaryColor.withOpacity(isDark ? 0.35 : 0.2),
               width: 0.5,
             ),
           ),
@@ -233,7 +252,7 @@ class ProductListCard extends StatelessWidget {
             style: TextStyle(
               fontSize: 9.5,
               fontWeight: FontWeight.w600,
-              color: AppTheme.secondaryColor.withOpacity(0.9),
+              color: AppTheme.secondaryColor.withOpacity(isDark ? 1.0 : 0.9),
               letterSpacing: -0.1,
             ),
           ),
@@ -242,13 +261,15 @@ class ProductListCard extends StatelessWidget {
     );
   }
 
-  Widget _buildStoreInfo() {
+  Widget _buildStoreInfo(BuildContext context) {
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+
     return Row(
       children: [
         Icon(
           Icons.store_rounded,
           size: 13,
-          color: AppTheme.textSecondary.withOpacity(0.7),
+          color: textSecondary.withOpacity(0.7),
         ),
         const SizedBox(width: 4),
         Expanded(
@@ -256,7 +277,7 @@ class ProductListCard extends StatelessWidget {
             storeName,
             style: TextStyle(
               fontSize: 11.5,
-              color: AppTheme.textSecondary.withOpacity(0.85),
+              color: textSecondary.withOpacity(0.85),
               height: 1.3,
             ),
             maxLines: 1,

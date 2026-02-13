@@ -962,6 +962,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.settings_outlined),
+                  title: const Text(
+                    'Configuración',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    if (!mounted) return;
+                    await Navigator.of(context).pushNamed('/settings');
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.system_update),
                   title: const Text(
                     'Buscar actualizaciones',
@@ -1185,11 +1198,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: AppTheme.getBackgroundColor(context),
       body: RefreshIndicator(
         onRefresh: _loadData,
-        color: AppTheme.primaryColor,
+        color: accentColor,
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
@@ -1222,26 +1237,26 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: AppTheme.paddingL),
+          const SizedBox(height: AppTheme.paddingM),
 
           // Banner promocional
           // _buildPromoBanner(),
-          const SizedBox(height: AppTheme.paddingL),
+          const SizedBox(height: AppTheme.paddingM),
 
           // Productos más vendidos
           _buildBestSellingProducts(),
 
-          const SizedBox(height: AppTheme.paddingXL),
+          const SizedBox(height: AppTheme.paddingL),
 
           // Productos nuevos
           _buildMostRecentProducts(),
 
-          const SizedBox(height: AppTheme.paddingXL),
+          const SizedBox(height: AppTheme.paddingL),
 
           // Tiendas destacadas
           _buildTopStores(),
 
-          const SizedBox(height: AppTheme.paddingXL),
+          const SizedBox(height: AppTheme.paddingL),
         ],
       ),
     );
@@ -1373,29 +1388,38 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// AppBar moderno con SliverAppBar
   Widget _buildModernAppBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
     return SliverAppBar(
-      expandedHeight: 120.0,
-      floating: false,
+      expandedHeight: 100.0,
+      floating: true,
       pinned: true,
       elevation: 0,
+      backgroundColor: isDark ? AppTheme.darkSurfaceColor : AppTheme.primaryColor,
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                AppTheme.primaryColor,
-                AppTheme.primaryColor.withOpacity(0.8),
-                AppTheme.secondaryColor,
-              ],
+              colors: isDark
+                  ? [
+                      const Color(0xFF2D2D30),
+                      const Color(0xFF1A1A1D),
+                      accentColor.withOpacity(0.3),
+                    ]
+                  : [
+                      AppTheme.primaryColor,
+                      AppTheme.primaryColor.withOpacity(0.85),
+                      AppTheme.secondaryColor,
+                    ],
             ),
           ),
           child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.paddingM,
-                vertical: AppTheme.paddingS,
+                vertical: AppTheme.paddingXS,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1404,38 +1428,62 @@ class _HomeScreenState extends State<HomeScreen> {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(0),
+                        padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.white.withOpacity(isDark ? 0.1 : 0.15),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.2),
+                            width: 1,
+                          ),
                         ),
                         child: Image.asset(
                           'assets/logo_app_no_background.png',
-                          width: 58,
-                          height: 58,
+                          width: 46,
+                          height: 46,
                           fit: BoxFit.contain,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      const Expanded(
+                      const SizedBox(width: 10),
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Inventtia',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
+                            ShaderMask(
+                              shaderCallback: (bounds) => LinearGradient(
+                                colors: [
+                                  Colors.white,
+                                  Colors.white.withOpacity(0.9),
+                                ],
+                              ).createShader(bounds),
+                              child: const Text(
+                                'Inventtia',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.3,
+                                ),
                               ),
                             ),
-                            Text(
-                              'Catálogo',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
+                            Container(
+                              margin: const EdgeInsets.only(top: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Text(
+                                'Catálogo',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.5,
+                                ),
                               ),
                             ),
                           ],
@@ -1453,15 +1501,21 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               Container(
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(12),
+                                  color: Colors.white.withOpacity(isDark ? 0.1 : 0.15),
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: IconButton(
                                   icon: const Icon(
                                     Icons.notifications_outlined,
+                                    size: 22,
                                   ),
                                   color: Colors.white,
                                   onPressed: _onNotificationsPressed,
+                                  padding: const EdgeInsets.all(8),
+                                  constraints: const BoxConstraints(
+                                    minWidth: 38,
+                                    minHeight: 38,
+                                  ),
                                 ),
                               ),
                               if (unread > 0)
@@ -1474,7 +1528,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       vertical: 2,
                                     ),
                                     constraints: const BoxConstraints(
-                                      minWidth: 18,
+                                      minWidth: 16,
                                     ),
                                     decoration: BoxDecoration(
                                       color: Colors.redAccent,
@@ -1489,7 +1543,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       textAlign: TextAlign.center,
                                       style: const TextStyle(
                                         color: Colors.white,
-                                        fontSize: 10,
+                                        fontSize: 9,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
@@ -1499,31 +1553,41 @@ class _HomeScreenState extends State<HomeScreen> {
                           );
                         },
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       // Map Button
                       Container(
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.white.withOpacity(isDark ? 0.1 : 0.15),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: IconButton(
-                          icon: const Icon(Icons.map_outlined),
+                          icon: const Icon(Icons.map_outlined, size: 22),
                           color: Colors.white,
                           onPressed: _navigateToMap,
                           tooltip: 'Ver Mapa',
+                          padding: const EdgeInsets.all(8),
+                          constraints: const BoxConstraints(
+                            minWidth: 38,
+                            minHeight: 38,
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       // Profile Button
                       Container(
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.white.withOpacity(isDark ? 0.1 : 0.15),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: IconButton(
-                          icon: const Icon(Icons.account_circle_outlined),
+                          icon: const Icon(Icons.account_circle_outlined, size: 22),
                           color: Colors.white,
                           onPressed: _onProfilePressed,
+                          padding: const EdgeInsets.all(8),
+                          constraints: const BoxConstraints(
+                            minWidth: 38,
+                            minHeight: 38,
+                          ),
                         ),
                       ),
                     ],
@@ -1539,15 +1603,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Sección del buscador mejorada
   Widget _buildSearchSection() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.paddingM),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isDark ? AppTheme.darkCardBackground : Colors.white,
           borderRadius: BorderRadius.circular(AppTheme.radiusL),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
+              color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
               blurRadius: 20,
               offset: const Offset(0, 4),
             ),
@@ -1556,10 +1621,15 @@ class _HomeScreenState extends State<HomeScreen> {
         child: TextField(
           controller: _searchController,
           onChanged: _onSearchChanged,
+          style: TextStyle(
+            color: isDark ? AppTheme.darkTextPrimary : AppTheme.textPrimary,
+          ),
           decoration: InputDecoration(
             hintText: 'Buscar productos o tiendas...',
             hintStyle: TextStyle(
-              color: AppTheme.textSecondary.withOpacity(0.6),
+              color: isDark
+                  ? AppTheme.darkTextHint
+                  : AppTheme.textSecondary.withOpacity(0.6),
               fontSize: 15,
             ),
             prefixIcon: Container(
@@ -1572,9 +1642,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             suffixIcon: _searchController.text.isNotEmpty
                 ? IconButton(
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.clear_rounded,
-                      color: AppTheme.textSecondary,
+                      color: isDark ? AppTheme.darkTextSecondary : AppTheme.textSecondary,
                     ),
                     onPressed: () {
                       _searchController.clear();
@@ -1773,6 +1843,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Sección de productos más vendidos con diseño mejorado
   Widget _buildBestSellingProducts() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+    final cardColor = AppTheme.getCardColor(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1787,21 +1863,20 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [
-                          AppTheme.errorColor.withOpacity(0.2),
-                          AppTheme.warningColor.withOpacity(0.2),
-                        ],
+                        colors: isDark
+                            ? [AppTheme.darkAccentColor.withOpacity(0.25), AppTheme.warningColor.withOpacity(0.15)]
+                            : [AppTheme.errorColor.withOpacity(0.2), AppTheme.warningColor.withOpacity(0.2)],
                       ),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.local_fire_department_rounded,
-                      color: AppTheme.errorColor,
+                      color: isDark ? AppTheme.darkAccentColor : AppTheme.errorColor,
                       size: 24,
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
@@ -1809,14 +1884,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: AppTheme.textPrimary,
+                          color: textPrimary,
                         ),
                       ),
                       Text(
                         'Los favoritos del momento',
                         style: TextStyle(
                           fontSize: 12,
-                          color: AppTheme.textSecondary,
+                          color: textSecondary,
                         ),
                       ),
                     ],
@@ -1825,7 +1900,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               Container(
                 decoration: BoxDecoration(
-                  color: AppTheme.primaryColor.withOpacity(0.1),
+                  color: accentColor.withOpacity(isDark ? 0.15 : 0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: TextButton(
@@ -1837,14 +1912,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         'Ver todos',
                         style: TextStyle(
-                          color: AppTheme.primaryColor,
+                          color: accentColor,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(width: 4),
                       Icon(
                         Icons.arrow_forward_rounded,
-                        color: AppTheme.primaryColor,
+                        color: accentColor,
                         size: 18,
                       ),
                     ],
@@ -1856,18 +1931,18 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: AppTheme.paddingM),
         SizedBox(
-          height: 290,
+          height: 275,
           child: _isLoadingProducts
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      CircularProgressIndicator(color: AppTheme.primaryColor),
+                      CircularProgressIndicator(color: accentColor),
                       const SizedBox(height: 12),
-                      const Text(
+                      Text(
                         'Cargando productos...',
                         style: TextStyle(
-                          color: AppTheme.textSecondary,
+                          color: textSecondary,
                           fontSize: 14,
                         ),
                       ),
@@ -1880,11 +1955,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     margin: const EdgeInsets.all(AppTheme.paddingM),
                     padding: const EdgeInsets.all(AppTheme.paddingL),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: cardColor,
                       borderRadius: BorderRadius.circular(AppTheme.radiusL),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 2),
                         ),
@@ -1896,13 +1971,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         Icon(
                           Icons.inventory_2_outlined,
                           size: 48,
-                          color: AppTheme.textSecondary.withOpacity(0.5),
+                          color: textSecondary.withOpacity(0.5),
                         ),
                         const SizedBox(height: 12),
-                        const Text(
+                        Text(
                           'No hay productos disponibles',
                           style: TextStyle(
-                            color: AppTheme.textSecondary,
+                            color: textSecondary,
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
                           ),
@@ -1959,6 +2034,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Sección de productos nuevos con carrusel compacto
   Widget _buildMostRecentProducts() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+    final cardColor = AppTheme.getCardColor(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1973,21 +2054,20 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [
-                          AppTheme.primaryColor.withOpacity(0.18),
-                          AppTheme.accentColor.withOpacity(0.18),
-                        ],
+                        colors: isDark
+                            ? [AppTheme.darkAccentColor.withOpacity(0.2), AppTheme.darkAccentColorLight.withOpacity(0.15)]
+                            : [AppTheme.primaryColor.withOpacity(0.18), AppTheme.accentColor.withOpacity(0.18)],
                       ),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.auto_awesome_rounded,
-                      color: AppTheme.primaryColor,
+                      color: accentColor,
                       size: 22,
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
@@ -1995,14 +2075,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: AppTheme.textPrimary,
+                          color: textPrimary,
                         ),
                       ),
                       Text(
                         'Lo más reciente en el catálogo',
                         style: TextStyle(
                           fontSize: 12,
-                          color: AppTheme.textSecondary,
+                          color: textSecondary,
                         ),
                       ),
                     ],
@@ -2011,7 +2091,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               Container(
                 decoration: BoxDecoration(
-                  color: AppTheme.primaryColor.withOpacity(0.08),
+                  color: accentColor.withOpacity(isDark ? 0.15 : 0.08),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: TextButton(
@@ -2023,14 +2103,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         'Ver más',
                         style: TextStyle(
-                          color: AppTheme.primaryColor,
+                          color: accentColor,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(width: 4),
                       Icon(
                         Icons.arrow_forward_rounded,
-                        color: AppTheme.primaryColor,
+                        color: accentColor,
                         size: 18,
                       ),
                     ],
@@ -2048,12 +2128,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      CircularProgressIndicator(color: AppTheme.primaryColor),
+                      CircularProgressIndicator(color: accentColor),
                       const SizedBox(height: 12),
-                      const Text(
+                      Text(
                         'Cargando novedades...',
                         style: TextStyle(
-                          color: AppTheme.textSecondary,
+                          color: textSecondary,
                           fontSize: 14,
                         ),
                       ),
@@ -2066,11 +2146,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     margin: const EdgeInsets.all(AppTheme.paddingM),
                     padding: const EdgeInsets.all(AppTheme.paddingL),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: cardColor,
                       borderRadius: BorderRadius.circular(AppTheme.radiusL),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 2),
                         ),
@@ -2082,13 +2162,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         Icon(
                           Icons.new_releases_outlined,
                           size: 48,
-                          color: AppTheme.textSecondary.withOpacity(0.5),
+                          color: textSecondary.withOpacity(0.5),
                         ),
                         const SizedBox(height: 12),
-                        const Text(
+                        Text(
                           'Aún no hay productos nuevos',
                           style: TextStyle(
-                            color: AppTheme.textSecondary,
+                            color: textSecondary,
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
                           ),
@@ -2136,8 +2216,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                     begin: Alignment.centerLeft,
                                     end: Alignment.centerRight,
                                     colors: [
-                                      AppTheme.backgroundColor.withOpacity(0),
-                                      AppTheme.backgroundColor,
+                                      AppTheme.getBackgroundColor(context).withOpacity(0),
+                                      AppTheme.getBackgroundColor(context),
                                     ],
                                   ),
                                 ),
@@ -2155,14 +2235,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                 width: 28,
                                 height: 28,
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.95),
+                                  color: cardColor.withOpacity(0.95),
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
-                                    color: Colors.grey.withOpacity(0.2),
+                                    color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.2),
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.08),
+                                      color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
                                       blurRadius: 6,
                                       offset: const Offset(0, 2),
                                     ),
@@ -2199,6 +2279,12 @@ class _HomeScreenState extends State<HomeScreen> {
         product['tiene_oferta'] == true && offerPrice > 0 && offerPrice < price;
     final double rating = _parseDouble(product['rating_promedio']);
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final priceColor = AppTheme.getPriceColor(context);
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -2213,12 +2299,15 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(AppTheme.radiusL),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: cardColor,
             borderRadius: BorderRadius.circular(AppTheme.radiusL),
-            border: Border.all(color: Colors.grey.withOpacity(0.15), width: 1),
+            border: Border.all(
+              color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.15),
+              width: 1,
+            ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -2242,12 +2331,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                   fit: BoxFit.cover,
                                 )
                               : Container(
-                                  color: Colors.grey[100],
+                                  color: isDark ? AppTheme.darkSurfaceColor : Colors.grey[100],
                                   child: Center(
                                     child: Icon(
                                       Icons.shopping_bag_outlined,
                                       size: 38,
-                                      color: Colors.grey[400],
+                                      color: isDark ? AppTheme.darkTextHint : Colors.grey[400],
                                     ),
                                   ),
                                 ),
@@ -2269,10 +2358,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               name,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.w700,
-                                color: AppTheme.textPrimary,
+                                color: textPrimary,
                                 height: 1.2,
                               ),
                             ),
@@ -2291,24 +2380,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                       vertical: 4,
                                     ),
                                     decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          AppTheme.successColor.withOpacity(
-                                            0.12,
-                                          ),
-                                          AppTheme.successColor.withOpacity(
-                                            0.05,
-                                          ),
-                                        ],
-                                      ),
+                                      color: priceColor.withOpacity(isDark ? 0.15 : 0.1),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(
                                       '\$${(hasOffer ? offerPrice : price).toStringAsFixed(2)}',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
-                                        color: AppTheme.priceColor,
+                                        color: priceColor,
                                       ),
                                     ),
                                   ),
@@ -2316,9 +2396,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                     const SizedBox(width: 6),
                                     Text(
                                       '\$${price.toStringAsFixed(2)}',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 11,
-                                        color: AppTheme.textSecondary,
+                                        color: textSecondary,
                                         decoration: TextDecoration.lineThrough,
                                       ),
                                     ),
@@ -2342,19 +2422,26 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildStoreChip(String storeName) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppTheme.backgroundColor,
+        color: isDark ? AppTheme.darkSurfaceColor : AppTheme.backgroundColor,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.withOpacity(0.15), width: 0.5),
+        border: Border.all(
+          color: isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.15),
+          width: 0.5,
+        ),
       ),
       child: Row(
         children: [
-          const Icon(
+          Icon(
             Icons.store_rounded,
             size: 12,
-            color: AppTheme.primaryColor,
+            color: accentColor,
           ),
           const SizedBox(width: 4),
           Expanded(
@@ -2362,9 +2449,9 @@ class _HomeScreenState extends State<HomeScreen> {
               storeName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 10.5,
-                color: AppTheme.textSecondary,
+                color: textSecondary,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -2375,16 +2462,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildCategoryBadge(String category) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 110),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              AppTheme.primaryColor,
-              AppTheme.primaryColor.withOpacity(0.8),
-            ],
+            colors: isDark
+                ? [AppTheme.darkAccentColor, AppTheme.darkAccentColorDark]
+                : [AppTheme.primaryColor, AppTheme.primaryColor.withOpacity(0.8)],
           ),
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
@@ -2451,6 +2540,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Sección de tiendas destacadas con diseño mejorado
   Widget _buildTopStores() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+    final cardColor = AppTheme.getCardColor(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2466,8 +2561,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          AppTheme.warningColor.withOpacity(0.2),
-                          AppTheme.warningColor.withOpacity(0.1),
+                          AppTheme.warningColor.withOpacity(isDark ? 0.25 : 0.2),
+                          AppTheme.warningColor.withOpacity(isDark ? 0.15 : 0.1),
                         ],
                       ),
                       borderRadius: BorderRadius.circular(12),
@@ -2479,7 +2574,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
@@ -2487,14 +2582,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: AppTheme.textPrimary,
+                          color: textPrimary,
                         ),
                       ),
                       Text(
                         'Las mejores valoradas',
                         style: TextStyle(
                           fontSize: 12,
-                          color: AppTheme.textSecondary,
+                          color: textSecondary,
                         ),
                       ),
                     ],
@@ -2503,7 +2598,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               Container(
                 decoration: BoxDecoration(
-                  color: AppTheme.primaryColor.withOpacity(0.1),
+                  color: accentColor.withOpacity(isDark ? 0.15 : 0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: TextButton(
@@ -2515,14 +2610,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         'Ver todas',
                         style: TextStyle(
-                          color: AppTheme.primaryColor,
+                          color: accentColor,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(width: 4),
                       Icon(
                         Icons.arrow_forward_rounded,
-                        color: AppTheme.primaryColor,
+                        color: accentColor,
                         size: 18,
                       ),
                     ],
@@ -2540,12 +2635,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      CircularProgressIndicator(color: AppTheme.primaryColor),
+                      CircularProgressIndicator(color: accentColor),
                       const SizedBox(height: 12),
-                      const Text(
+                      Text(
                         'Cargando tiendas...',
                         style: TextStyle(
-                          color: AppTheme.textSecondary,
+                          color: textSecondary,
                           fontSize: 14,
                         ),
                       ),
@@ -2558,11 +2653,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     margin: const EdgeInsets.all(AppTheme.paddingM),
                     padding: const EdgeInsets.all(AppTheme.paddingL),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: cardColor,
                       borderRadius: BorderRadius.circular(AppTheme.radiusL),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 2),
                         ),
@@ -2574,13 +2669,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         Icon(
                           Icons.store_mall_directory_outlined,
                           size: 48,
-                          color: AppTheme.textSecondary.withOpacity(0.5),
+                          color: textSecondary.withOpacity(0.5),
                         ),
                         const SizedBox(height: 12),
-                        const Text(
+                        Text(
                           'No hay tiendas disponibles',
                           style: TextStyle(
-                            color: AppTheme.textSecondary,
+                            color: textSecondary,
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
                           ),
