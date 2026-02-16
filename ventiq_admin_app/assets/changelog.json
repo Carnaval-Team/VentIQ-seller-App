@@ -1,9 +1,31 @@
 {
-  "current_version": "1.9.4",
-  "build": 194,
+  "current_version": "1.9.5",
+  "build": 195,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.9.5",
+      "date": "2026-02-16",
+      "title": "Márgenes y precios que se ajustan solos",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Configura tu margen de ganancia",
+          "description": "Define el porcentaje de ganancia que quieres obtener por cada producto y deja que la app calcule el precio de venta ideal por ti."
+        },
+        {
+          "type": "feature",
+          "title": "Precios de venta que se actualizan solos",
+          "description": "Cuando cambia el costo de un producto, el precio de venta se recalcula automáticamente según el margen que configuraste. Sin cálculos manuales, sin sorpresas."
+        },
+        {
+          "type": "improvement",
+          "title": "Más control sobre tu rentabilidad",
+          "description": "Revisa de un vistazo el margen real de cada producto y ajústalo cuando lo necesites para mantener tus ganancias siempre en orden."
+        }
+      ]
+    },
     {
       "version": "1.9.4",
       "date": "2026-02-11",
