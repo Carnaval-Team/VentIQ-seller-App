@@ -295,7 +295,7 @@ class FilteredOrdersScreen extends StatelessWidget {
                   Icon(Icons.shopping_cart, size: 16, color: Colors.grey[600]),
                   const SizedBox(width: 8),
                   Text(
-                    '${order.totalItems} productos',
+                    '${order.distinctItemCount} productos',
                     style: TextStyle(color: Colors.grey[700], fontSize: 14),
                   ),
                 ],
@@ -475,7 +475,7 @@ class FilteredOrdersScreen extends StatelessWidget {
                         _buildDetailSection(
                           'Productos',
                           Icons.shopping_cart,
-                          '${order.totalItems} productos',
+                          '${order.distinctItemCount} productos',
                         ),
                         const SizedBox(height: 16),
 

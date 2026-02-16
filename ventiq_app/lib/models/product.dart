@@ -137,12 +137,14 @@ class Presentation {
   final String denominacion;
   final String? descripcion;
   final String skuCodigo;
+  final bool esFraccionable;
 
   Presentation({
     required this.id,
     required this.denominacion,
     this.descripcion,
     required this.skuCodigo,
+    this.esFraccionable = false,
   });
 
   factory Presentation.fromJson(Map<String, dynamic> json) {
@@ -151,6 +153,7 @@ class Presentation {
       denominacion: json['denominacion'],
       descripcion: json['descripcion'],
       skuCodigo: json['sku_codigo'],
+      esFraccionable: json['es_fraccionable'] ?? false,
     );
   }
 }

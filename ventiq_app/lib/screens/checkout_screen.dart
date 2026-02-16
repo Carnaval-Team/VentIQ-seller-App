@@ -204,7 +204,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       productPromotions: productPromotions,
       globalPromotion: _globalPromotionData,
       paymentMethodId: paymentMethodId,
-      quantity: item.cantidad,
+      quantity: item.cantidad.round(),
     );
 
     // Si no hay promoción aplicable, es un caso de precio base
@@ -235,7 +235,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       promotion: applicablePromotion,
     );
 
-    final itemTotal = precioFinal * item.cantidad;
+    // Redondear por exceso al entero más cercano para cantidades fraccionadas
+    final rawTotal = precioFinal * item.cantidad;
+    final itemTotal = (item.cantidad != item.cantidad.roundToDouble())
+        ? rawTotal.ceilToDouble()
+        : rawTotal;
 
     print('  💰 ${item.producto.denominacion}:');
     print(
@@ -342,7 +346,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '${widget.order.totalItems} producto${widget.order.totalItems == 1 ? '' : 's'}',
+                '${widget.order.distinctItemCount} producto${widget.order.distinctItemCount == 1 ? '' : 's'}',
                 style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
               Text(
@@ -1037,7 +1041,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               // ✅ CORREGIDO: Usar el precio unitario correcto calculado desde el subtotal
               final precioUnitarioCorrect =
                   item.cantidad > 0
-                      ? (itemTotal / item.cantidad)
+                      ? (itemTotal / item.cantidad).ceilToDouble()
                       : item.precioUnitario;
 
               print(

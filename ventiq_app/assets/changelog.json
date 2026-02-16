@@ -1,9 +1,41 @@
 {
-  "current_version": "2.0.7",
-  "build": 817,
+  "current_version": "2.0.8",
+  "build": 818,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.0.8",
+      "date": "2026-02-16",
+      "title": "Cantidades flexibles y descuentos visibles",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Vende por fracciones: litros, kilos, medios...",
+          "description": "Ahora puedes vender medio litro, un cuarto de kilo o la cantidad exacta que necesite tu cliente. Elige el paso de incremento (0.1, 0.25 o 0.5) y los botones +/- se ajustan solos."
+        },
+        {
+          "type": "feature",
+          "title": "Descuentos reflejados en todos los tickets",
+          "description": "Cuando aplicas un descuento manual a una orden, ahora el ticket impreso (Bluetooth, WiFi y web) muestra el subtotal original, el descuento aplicado y el total final. Tu cliente ve exactamente cuánto se ahorró."
+        },
+        {
+          "type": "improvement",
+          "title": "Carrito más claro: cuenta productos, no unidades",
+          "description": "El numerito del carrito ahora muestra cuántos productos distintos llevas, en lugar de sumar todas las unidades. Así sabes de un vistazo qué tan variado es el pedido."
+        },
+        {
+          "type": "improvement",
+          "title": "Precios siempre redondeados al peso",
+          "description": "Si vendes cantidades fraccionadas, el total se redondea hacia arriba al peso más cercano. Nada de centavos sueltos en tus ventas."
+        },
+        {
+          "type": "improvement",
+          "title": "Cantidades claras en tickets e historial",
+          "description": "Los tickets, el historial de órdenes y los reportes muestran '1.5' en vez de '1' cuando vendes fracciones, para que todo cuadre sin confusiones."
+        }
+      ]
+    },
     {
       "version": "2.0.7",
       "date": "2026-02-11",

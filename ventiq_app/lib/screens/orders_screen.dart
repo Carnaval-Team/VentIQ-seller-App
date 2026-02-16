@@ -13,6 +13,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
 import '../models/payment_method.dart';
 import '../services/order_service.dart';
+import '../utils/price_utils.dart';
 import '../services/payment_method_service.dart';
 import '../services/printer_manager.dart';
 import '../services/user_preferences_service.dart';
@@ -1188,7 +1189,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            '${order.totalItems} producto${order.totalItems == 1 ? '' : 's'}',
+                            '${order.distinctItemCount} producto${order.distinctItemCount == 1 ? '' : 's'}',
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
@@ -1447,7 +1448,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 ),
                                 _buildDetailRow(
                                   'Total productos:',
-                                  '${order.totalItems}',
+                                  '${order.distinctItemCount}',
                                 ),
                                 Builder(
                                   builder: (_) {
@@ -1654,7 +1655,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                       .spaceBetween,
                                               children: [
                                                 Text(
-                                                  'Cantidad: ${item.cantidad} • ${item.ubicacionAlmacen}',
+                                                  'Cantidad: ${PriceUtils.formatQuantity(item.cantidad)} • ${item.ubicacionAlmacen}',
                                                   style: TextStyle(
                                                     fontSize: 12,
                                                     color: Colors.grey[600],
@@ -3611,7 +3612,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         pw.TableRow(
                           children: [
                             _pdfBodyCell(item.nombre),
-                            _pdfBodyCell('${item.cantidad}'),
+                            _pdfBodyCell(PriceUtils.formatQuantity(item.cantidad)),
                             _pdfBodyCell(
                               '\$${item.displayPrice.toStringAsFixed(2)}',
                             ),

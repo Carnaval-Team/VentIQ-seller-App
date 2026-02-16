@@ -112,4 +112,12 @@ class PriceUtils {
         return '';
     }
   }
+
+  /// Formats a quantity smartly: "2" for 2.0, "1.5" for 1.5, "0.25" for 0.25
+  static String formatQuantity(double quantity) {
+    if (quantity == quantity.roundToDouble()) {
+      return quantity.toInt().toString();
+    }
+    return quantity.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+  }
 }

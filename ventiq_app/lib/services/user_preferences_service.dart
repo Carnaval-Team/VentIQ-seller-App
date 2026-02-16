@@ -1617,10 +1617,10 @@ class UserPreferencesService {
 
       for (final orden in ordenesOffline) {
         ventasOffline += orden.total;
-        productosVendidosOffline += orden.items.fold<int>(
-          0,
+        productosVendidosOffline += orden.items.fold<double>(
+          0.0,
           (sum, item) => sum + item.cantidad,
-        );
+        ).round();
 
         // Estimar método de pago (70% efectivo, 30% transferencias)
         final efectivoOrden = orden.total * 0.7;
@@ -2362,5 +2362,17 @@ class UserPreferencesService {
     } catch (e) {
       print('❌ Error limpiando cache de tipo de cambio: $e');
     }
+  }
+
+  // ==================== FRACTION STEP ====================
+
+  Future<double> getFractionStep() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble('fraction_step') ?? 0.5;
+  }
+
+  Future<void> setFractionStep(double step) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('fraction_step', step);
   }
 }

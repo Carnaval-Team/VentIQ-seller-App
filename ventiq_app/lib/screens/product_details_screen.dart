@@ -45,8 +45,9 @@ class ProductDetailsScreen extends StatefulWidget {
 class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     with SingleTickerProviderStateMixin {
   ProductVariant? selectedVariant;
-  int selectedQuantity = 1;
-  Map<ProductVariant, int> variantQuantities = {};
+  double selectedQuantity = 1;
+  Map<ProductVariant, double> variantQuantities = {};
+  double _fractionStep = 0.5;
   Map<String, List<ProductVariant>> locationGroups =
       {}; // Group variants by location
   final ProductDetailService _productDetailService = ProductDetailService();
@@ -91,7 +92,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     );
     // Inicializar cantidades de variantes
     for (var variant in widget.product.variantes) {
-      variantQuantities[variant] = 0;
+      variantQuantities[variant] = 0.0;
     }
     // Group variants by location
     _groupVariantsByLocation(widget.product.variantes);
@@ -100,6 +101,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     _loadPromotionData();
     _loadUsdRate();
     _loadProductPresentations();
+    _loadFractionStep();
     _loadDataUsageSettings();
     _loadSalePricePermission();
   }
@@ -963,6 +965,62 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     }
   }
 
+  Future<void> _loadFractionStep() async {
+    final step = await UserPreferencesService().getFractionStep();
+    if (mounted) {
+      setState(() {
+        _fractionStep = step;
+      });
+    }
+  }
+
+  bool _isCurrentPresentationFractional() {
+    final productKey = '${currentProduct.id}';
+    final selected = _selectedPresentationsByProduct[productKey];
+    if (selected != null) {
+      return selected.presentacion.esFraccionable;
+    }
+    return false;
+  }
+
+  Widget _buildFractionStepSelector() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          'Incremento:',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: Colors.grey[700],
+          ),
+        ),
+        Flexible(
+          child: SegmentedButton<double>(
+            segments: const [
+              ButtonSegment(value: 0.1, label: Text('0.1')),
+              ButtonSegment(value: 0.25, label: Text('0.25')),
+              ButtonSegment(value: 0.5, label: Text('0.5')),
+            ],
+            selected: {_fractionStep},
+            onSelectionChanged: (Set<double> newSelection) {
+              setState(() {
+                _fractionStep = newSelection.first;
+              });
+              UserPreferencesService().setFractionStep(newSelection.first);
+            },
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              textStyle: WidgetStatePropertyAll(
+                const TextStyle(fontSize: 12),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   /// Calcula el precio con descuento, priorizando promoción de producto sobre global
   /// Para display purposes, usa la primera promoción de la lista (aplicación real en checkout)
   Map<String, double> _calculatePromotionPrices(double originalPrice) {
@@ -970,7 +1028,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     final activePromotion = PromotionRules.pickPromotionForDisplay(
       productPromotions: _productPromotionData,
       globalPromotion: _globalPromotionData,
-      quantity: _getTotalEquivalentUnits(),
+      quantity: _getTotalEquivalentUnits().round(),
     );
 
     if (activePromotion == null) {
@@ -1007,7 +1065,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     return PromotionRules.pickPromotionForDisplay(
       productPromotions: _productPromotionData,
       globalPromotion: _globalPromotionData,
-      quantity: _getTotalEquivalentUnits(),
+      quantity: _getTotalEquivalentUnits().round(),
     );
   }
 
@@ -1246,12 +1304,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     return total;
   }
 
-  int get maxQuantityForProduct {
-    return currentProduct.cantidad.toInt();
+  double get maxQuantityForProduct {
+    return currentProduct.cantidad.toDouble();
   }
 
-  int maxQuantityForVariant(ProductVariant variant) {
-    return variant.cantidad.toInt();
+  double maxQuantityForVariant(ProductVariant variant) {
+    return variant.cantidad.toDouble();
   }
 
   @override
@@ -1650,7 +1708,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'TOTAL: ${_getTotalEquivalentUnits()} unidad${_getTotalEquivalentUnits() == 1 ? '' : 'es'}',
+                                  'TOTAL: ${PriceUtils.formatQuantity(_getTotalEquivalentUnits())} unidad${_getTotalEquivalentUnits() == 1 ? '' : 'es'}',
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -1812,7 +1870,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     bool isSelected,
     Color locationColor,
   ) {
-    int currentQuantity = variantQuantities[variant] ?? 0;
+    double currentQuantity = variantQuantities[variant] ?? 0.0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
@@ -1820,9 +1878,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         onTap: () {
           setState(() {
             if (currentQuantity == 0) {
-              variantQuantities[variant] = 1;
+              variantQuantities[variant] = 1.0;
             } else {
-              variantQuantities[variant] = 0;
+              variantQuantities[variant] = 0.0;
             }
           });
         },
@@ -1938,7 +1996,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   // Método para construir items de productos seleccionados
   Widget _buildSelectedProductItem(
     String name,
-    int quantity,
+    double quantity,
     double price,
     String ubicacion, {
     bool isVariant = false,
@@ -2087,6 +2145,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           const SizedBox(height: 12),
           // Fila de presentación
           _buildPresentationSelector(currentProduct),
+          if (_isCurrentPresentationFractional()) ...[
+            const SizedBox(height: 8),
+            _buildFractionStepSelector(),
+          ],
           const SizedBox(height: 8),
           // Fila inferior: Controles de cantidad
           Row(
@@ -2111,16 +2173,17 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   children: [
                     InkWell(
                       onTap: () {
+                        final step = _isCurrentPresentationFractional() ? _fractionStep : 1.0;
                         setState(() {
                           if (currentProduct.variantes.isEmpty) {
-                            if (selectedQuantity > 0) selectedQuantity--;
+                            if (selectedQuantity > 0) selectedQuantity = (selectedQuantity - step).clamp(0.0, double.infinity);
                           } else {
                             // Buscar la variante correspondiente
                             for (var variant in currentProduct.variantes) {
                               if (name.contains(variant.nombre)) {
                                 if (variantQuantities[variant]! > 0) {
                                   variantQuantities[variant] =
-                                      variantQuantities[variant]! - 1;
+                                      (variantQuantities[variant]! - step).clamp(0.0, double.infinity);
                                 }
                                 break;
                               }
@@ -2156,7 +2219,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                       ),
                     ),
                     InkWell(
-                      onTap: () => _showQuantityDialog(name, quantity),
+                      onTap: () => _showQuantityDialog(name, quantity.toDouble()),
                       child: Container(
                         width: 50,
                         height: 36,
@@ -2171,7 +2234,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                         ),
                         child: Center(
                           child: Text(
-                            '$quantity',
+                            PriceUtils.formatQuantity(quantity.toDouble()),
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -2183,13 +2246,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     ),
                     InkWell(
                       onTap: () {
+                        final step = _isCurrentPresentationFractional() ? _fractionStep : 1.0;
                         setState(() {
                           if (currentProduct.variantes.isEmpty) {
                             // Si es elaborado o servicio, no limitar cantidad; si no, usar límite de stock
                             if (currentProduct.esElaborado ||
                                 currentProduct.esServicio ||
-                                selectedQuantity < maxQuantityForProduct)
-                              selectedQuantity++;
+                                selectedQuantity + step <= maxQuantityForProduct)
+                              selectedQuantity += step;
                           } else {
                             // Buscar la variante correspondiente
                             for (var variant in currentProduct.variantes) {
@@ -2197,10 +2261,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                                 // Si es elaborado o servicio, no limitar cantidad; si no, usar límite de stock
                                 if (currentProduct.esElaborado ||
                                     currentProduct.esServicio ||
-                                    variantQuantities[variant]! <
+                                    variantQuantities[variant]! + step <=
                                         variant.cantidad) {
                                   variantQuantities[variant] =
-                                      variantQuantities[variant]! + 1;
+                                      variantQuantities[variant]! + step;
                                 }
                                 break;
                               }
@@ -2343,6 +2407,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               onChanged: (ProductPresentation? newPresentation) {
                 setState(() {
                   _selectedPresentationsByProduct[productKey] = newPresentation;
+                  // Si la nueva presentación no es fraccionable, redondear cantidades al entero más cercano
+                  final isFractional = newPresentation?.presentacion.esFraccionable ?? false;
+                  if (!isFractional) {
+                    selectedQuantity = selectedQuantity.roundToDouble();
+                    for (var variant in variantQuantities.keys.toList()) {
+                      variantQuantities[variant] = variantQuantities[variant]!.roundToDouble();
+                    }
+                  }
                   debugPrint(
                     '🔄 Presentación cambiada para producto ${product.id}: ${newPresentation?.presentacion.denominacion} (Factor: ${newPresentation?.cantidad})',
                   );
@@ -2377,12 +2449,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   /// Calcular el precio total considerando la presentación seleccionada
   double _calculateTotalPriceWithPresentation(
     double basePrice,
-    int quantity,
+    double quantity,
     Product product,
   ) {
     final conversionFactor = _getPresentationConversionFactor(product);
     final unitPrice = basePrice * conversionFactor;
-    final totalPrice = unitPrice * quantity;
+    final rawTotal = unitPrice * quantity;
+    // Redondear por exceso al entero más cercano para cantidades fraccionadas
+    final totalPrice = (quantity != quantity.roundToDouble())
+        ? rawTotal.ceilToDouble()
+        : rawTotal;
 
     debugPrint('💰 Cálculo precio para producto ${product.id}:');
     debugPrint('   - Precio base: \$${basePrice.toStringAsFixed(2)}');
@@ -2396,8 +2472,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
   // Método para obtener el total de items (productos/presentaciones seleccionadas)
   // Mantenido para compatibilidad futura - cuenta las presentaciones, no las unidades
-  int _getTotalItems() {
-    int total = 0;
+  double _getTotalItems() {
+    double total = 0.0;
     if (currentProduct.variantes.isEmpty) {
       total = selectedQuantity;
     } else {
@@ -2409,12 +2485,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   }
 
   // Método para obtener el total de unidades equivalentes considerando presentaciones
-  int _getTotalEquivalentUnits() {
-    int total = 0;
+  double _getTotalEquivalentUnits() {
+    double total = 0.0;
     if (currentProduct.variantes.isEmpty) {
       // Producto sin variantes
       final conversionFactor = _getPresentationConversionFactor(currentProduct);
-      total = (selectedQuantity * conversionFactor).round();
+      total = selectedQuantity * conversionFactor;
     } else {
       // Producto con variantes
       for (var entry in variantQuantities.entries) {
@@ -2424,7 +2500,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         final conversionFactor = _getPresentationConversionFactor(
           currentProduct,
         );
-        total += (quantity * conversionFactor).round();
+        total += quantity * conversionFactor;
       }
     }
 
@@ -2432,9 +2508,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     return total;
   }
 
-  void _showQuantityDialog(String productName, int currentQuantity) {
+  void _showQuantityDialog(String productName, double currentQuantity) {
+    final isFractional = _isCurrentPresentationFractional();
     final TextEditingController quantityController = TextEditingController(
-      text: currentQuantity.toString(),
+      text: PriceUtils.formatQuantity(currentQuantity),
     );
 
     showDialog(
@@ -2460,7 +2537,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               const SizedBox(height: 16),
               TextField(
                 controller: quantityController,
-                keyboardType: TextInputType.number,
+                keyboardType: isFractional
+                    ? const TextInputType.numberWithOptions(decimal: true)
+                    : TextInputType.number,
                 autofocus: true,
                 decoration: InputDecoration(
                   labelText: 'Cantidad deseada',
@@ -2502,7 +2581,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   }
 
   void _updateQuantityFromDialog(String productName, String quantityText) {
-    final int? newQuantity = int.tryParse(quantityText);
+    final double? newQuantity = double.tryParse(quantityText);
     if (newQuantity == null || newQuantity < 0) return;
 
     setState(() {
@@ -2626,8 +2705,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   }
 
   /// Get total stock for a location group
-  int _getLocationStock(List<ProductVariant> variants) {
-    return variants.fold(0, (sum, variant) => sum + variant.cantidad.toInt());
+  double _getLocationStock(List<ProductVariant> variants) {
+    return variants.fold(0.0, (sum, variant) => sum + variant.cantidad);
   }
 
   String _compressImageUrl(String url) {
@@ -2748,7 +2827,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       // Continuar con el flujo normal si hay error en la configuración
     }
 
-    int totalItemsAdded = 0;
+    double totalItemsAdded = 0.0;
     List<String> addedItems = [];
 
     try {
@@ -2769,11 +2848,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             promotionData: _getActivePromotion(),
           );
           totalItemsAdded += selectedQuantity;
-          addedItems.add('${currentProduct.denominacion} (x$selectedQuantity)');
+          addedItems.add('${currentProduct.denominacion} (x${PriceUtils.formatQuantity(selectedQuantity)})');
 
           // Resetear cantidad después de agregar
           setState(() {
-            selectedQuantity = 0;
+            selectedQuantity = 0.0;
           });
         }
       } else {
@@ -2795,14 +2874,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               promotionData: _getActivePromotion(),
             );
             totalItemsAdded += entry.value;
-            addedItems.add('${entry.key.nombre} (x${entry.value})');
+            addedItems.add('${entry.key.nombre} (x${PriceUtils.formatQuantity(entry.value)})');
           }
         }
 
         // Resetear cantidades después de agregar
         setState(() {
           for (var variant in currentProduct.variantes) {
-            variantQuantities[variant] = 0;
+            variantQuantities[variant] = 0.0;
           }
         });
       }

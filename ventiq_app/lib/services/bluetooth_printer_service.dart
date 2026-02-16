@@ -12,6 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
 import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/price_utils.dart';
 
 class _StorePrintInfo {
   final String name;
@@ -947,7 +948,7 @@ class BluetoothPrinterService {
       String prodName = item.producto.denominacion;
       if (prodName.length > 28) prodName = prodName.substring(0, 25) + '...';
       bytes += generator.text(
-        '${item.cantidad}x $prodName',
+        '${PriceUtils.formatQuantity(item.cantidad)}x $prodName',
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.text(
@@ -961,6 +962,23 @@ class BluetoothPrinterService {
       '----------------------------',
       styles: PosStyles(align: PosAlign.center),
     );
+
+    // Mostrar descuento si existe
+    if (order.descuento != null) {
+      final double montoReal = ((order.descuento!['monto_real'] ?? order.total) as num).toDouble();
+      final double montoDescontado = ((order.descuento!['monto_descontado'] ?? 0) as num).toDouble();
+      if (montoDescontado > 0) {
+        bytes += generator.text(
+          'Subtotal: \$${montoReal.toStringAsFixed(0)}',
+          styles: PosStyles(align: PosAlign.right),
+        );
+        bytes += generator.text(
+          'Descuento: -\$${montoDescontado.toStringAsFixed(0)}',
+          styles: PosStyles(align: PosAlign.right),
+        );
+      }
+    }
+
     bytes += generator.text(
       'TOTAL: \$${order.total.toStringAsFixed(0)}',
       styles: PosStyles(align: PosAlign.right, bold: true),
@@ -1066,12 +1084,12 @@ class BluetoothPrinterService {
       String productName = item.producto.denominacion;
 
       debugPrint(
-        '📋 Product ${i + 1}: ${item.cantidad}x $productName @ $ubicacion',
+        '📋 Product ${i + 1}: ${PriceUtils.formatQuantity(item.cantidad)}x $productName @ $ubicacion',
       );
 
       // Mostrar cantidad y nombre completo del producto
       bytes += generator.text(
-        '${item.cantidad}x $productName',
+        '${PriceUtils.formatQuantity(item.cantidad)}x $productName',
         styles: PosStyles(align: PosAlign.left, bold: true),
       );
       bytes += generator.text(
@@ -1094,7 +1112,7 @@ class BluetoothPrinterService {
       styles: PosStyles(align: PosAlign.center),
     );
     bytes += generator.text(
-      'TOT: ${order.totalItems} prod - \$${order.total.toStringAsFixed(0)}',
+      'TOT: ${order.distinctItemCount} prod - \$${order.total.toStringAsFixed(0)}',
       styles: PosStyles(align: PosAlign.left, bold: true),
     );
     if (usdRate != null && usdRate > 0) {

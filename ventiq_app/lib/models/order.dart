@@ -43,9 +43,11 @@ class Order {
     return items.fold(0.0, (sum, item) => sum + item.subtotal);
   }
 
-  int get totalItems {
-    return items.fold(0, (sum, item) => sum + item.cantidad);
+  double get totalItems {
+    return items.fold(0.0, (sum, item) => sum + item.cantidad);
   }
+
+  int get distinctItemCount => items.length;
 
   Order copyWith({
     String? id,
@@ -140,7 +142,7 @@ class OrderItem {
   final String id;
   final Product producto;
   final ProductVariant? variante;
-  final int cantidad;
+  final double cantidad;
   final double precioUnitario;
   final double? precioBase;
   final String ubicacionAlmacen;
@@ -173,7 +175,12 @@ class OrderItem {
   });
 
   double get subtotal {
-    return _getFinalPrice() * cantidad;
+    final raw = _getFinalPrice() * cantidad;
+    // Redondear por exceso al entero más cercano para cantidades fraccionadas
+    if (cantidad != cantidad.roundToDouble()) {
+      return raw.ceilToDouble();
+    }
+    return raw;
   }
 
   double get displayPrice {
@@ -192,7 +199,7 @@ class OrderItem {
 
     if (!PromotionRules.isMinimumPurchaseMet(
       promotionData!,
-      quantity: cantidad,
+      quantity: cantidad.round(),
     )) {
       if (paymentMethod?.id == 1) {
         return precioUnitario;
@@ -241,7 +248,7 @@ class OrderItem {
     String? id,
     Product? producto,
     ProductVariant? variante,
-    int? cantidad,
+    double? cantidad,
     double? precioUnitario,
     double? precioBase,
     String? ubicacionAlmacen,
@@ -302,7 +309,7 @@ class OrderItem {
                 json['variante'] as Map<String, dynamic>,
               )
               : null,
-      cantidad: json['cantidad'] as int,
+      cantidad: (json['cantidad'] as num).toDouble(),
       precioUnitario: (json['precioUnitario'] as num).toDouble(),
       precioBase:
           json['precioBase'] != null

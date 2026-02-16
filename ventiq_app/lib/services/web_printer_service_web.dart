@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
 import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/price_utils.dart';
 
 class _StorePrintInfo {
   final String name;
@@ -162,7 +163,7 @@ class WebPrinterServiceImpl {
                         ),
                         Text('Cliente: ${order.buyerName ?? 'Sin nombre'}'),
                         Text('Total: \$${order.total.toStringAsFixed(2)}'),
-                        Text('Productos: ${order.totalItems}'),
+                        Text('Productos: ${order.distinctItemCount}'),
                       ],
                     ),
                   ),
@@ -404,7 +405,7 @@ class WebPrinterServiceImpl {
         .map((item) {
           final itemTotal = item.cantidad * item.precioUnitario;
           return '''
-        <div class="product-line">${item.cantidad}x ${item.nombre}</div>
+        <div class="product-line">${PriceUtils.formatQuantity(item.cantidad)}x ${item.nombre}</div>
         <div class="product-price">\$${item.precioUnitario.toStringAsFixed(0)} c/u = \$${itemTotal.toStringAsFixed(0)}</div>
           ''';
         })
@@ -419,6 +420,19 @@ class WebPrinterServiceImpl {
         usdRate != null && usdRate > 0
             ? '<div class="total-line">USD (${usdRate.toStringAsFixed(0)}): \$${(order.total / usdRate).toStringAsFixed(2)}</div>'
             : '';
+
+    // Líneas de descuento si existe
+    String discountHtml = '';
+    if (order.descuento != null) {
+      final double montoReal = ((order.descuento!['monto_real'] ?? order.total) as num).toDouble();
+      final double montoDescontado = ((order.descuento!['monto_descontado'] ?? 0) as num).toDouble();
+      if (montoDescontado > 0) {
+        discountHtml = '''
+        <div class="total-line">SUBTOTAL: \$${montoReal.toStringAsFixed(0)}</div>
+        <div class="total-line" style="color:#e53e3e;">DESCUENTO: -\$${montoDescontado.toStringAsFixed(0)}</div>
+        ''';
+      }
+    }
 
     return '''
 <!DOCTYPE html>
@@ -566,7 +580,7 @@ class WebPrinterServiceImpl {
 
     <div class="totals-section">
         <div class="separator">--------------------------------</div>
-        <div class="total-line">SUBTOTAL: \$${order.total.toStringAsFixed(0)}</div>
+        $discountHtml
         <div class="final-total">TOTAL: \$${order.total.toStringAsFixed(0)}</div>
         $usdTotalLine
     </div>
@@ -625,7 +639,7 @@ class WebPrinterServiceImpl {
               .map((item) {
                 final itemTotal = item.cantidad * item.precioUnitario;
                 return '''
-        <div class="product-line">${item.cantidad}x ${item.nombre}</div>
+        <div class="product-line">${PriceUtils.formatQuantity(item.cantidad)}x ${item.nombre}</div>
         <div class="product-price">\$${item.precioUnitario.toStringAsFixed(0)} c/u = \$${itemTotal.toStringAsFixed(0)}</div>
           ''';
               })
@@ -640,6 +654,19 @@ class WebPrinterServiceImpl {
               usdRate != null && usdRate > 0
                   ? '<div class="total-line">USD (${usdRate.toStringAsFixed(0)}): \$${(order.total / usdRate).toStringAsFixed(2)}</div>'
                   : '';
+
+          // Líneas de descuento si existe
+          String batchDiscountHtml = '';
+          if (order.descuento != null) {
+            final double montoReal = ((order.descuento!['monto_real'] ?? order.total) as num).toDouble();
+            final double montoDescontado = ((order.descuento!['monto_descontado'] ?? 0) as num).toDouble();
+            if (montoDescontado > 0) {
+              batchDiscountHtml = '''
+              <div class="total-line">SUBTOTAL: \$${montoReal.toStringAsFixed(0)}</div>
+              <div class="total-line" style="color:#e53e3e;">DESCUENTO: -\$${montoDescontado.toStringAsFixed(0)}</div>
+              ''';
+            }
+          }
 
           return '''
     <section class="ticket">
@@ -665,7 +692,7 @@ class WebPrinterServiceImpl {
 
       <div class="totals-section">
         <div class="separator">--------------------------------</div>
-        <div class="total-line">SUBTOTAL: \$${order.total.toStringAsFixed(0)}</div>
+        $batchDiscountHtml
         <div class="final-total">TOTAL: \$${order.total.toStringAsFixed(0)}</div>
         $usdTotalLine
       </div>
@@ -847,7 +874,7 @@ class WebPrinterServiceImpl {
 
           return '''
         <div class="product-item">
-          <div class="product-line">${item.cantidad.toString().padLeft(3, ' ')}x $productName</div>
+          <div class="product-line">${PriceUtils.formatQuantity(item.cantidad).padLeft(3, ' ')}x $productName</div>
           <div class="location-line">     Ubic: $ubicacion</div>
           <div class="price-line">     \$${item.precioUnitario.toStringAsFixed(0)} c/u</div>
         </div>
@@ -1002,7 +1029,7 @@ class WebPrinterServiceImpl {
 
     <div class="totals-section">
         <div class="separator">--------------------------------</div>
-        <div class="total-line">TOTAL PRODUCTOS: ${order.totalItems}</div>
+        <div class="total-line">TOTAL PRODUCTOS: ${order.distinctItemCount}</div>
         <div class="total-line">VALOR TOTAL: \$${order.total.toStringAsFixed(0)}</div>
         $usdTotalLine
     </div>

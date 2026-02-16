@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:html' as html;
 import '../models/order.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/price_utils.dart';
 
 /// Implementación web para impresión de resumen detallado
 class WebSummaryPrinterServiceImpl {
@@ -12,7 +13,7 @@ class WebSummaryPrinterServiceImpl {
   Future<bool> printDetailedSummary({
     required List<OrderItem> productosVendidos,
     required double totalVentas,
-    required int totalProductos,
+    required double totalProductos,
     required double totalEgresado,
     required double totalEfectivoReal,
   }) async {
@@ -54,7 +55,7 @@ class WebSummaryPrinterServiceImpl {
   Future<String> _generateSummaryHtml({
     required List<OrderItem> productosVendidos,
     required double totalVentas,
-    required int totalProductos,
+    required double totalProductos,
     required double totalEgresado,
     required double totalEfectivoReal,
   }) async {
@@ -101,7 +102,7 @@ class WebSummaryPrinterServiceImpl {
     final productRows = productosAgrupados.values
         .map((producto) {
           final item = producto['item'] as OrderItem;
-          final cantidad = producto['cantidad'] as int;
+          final cantidad = (producto['cantidad'] as num).toDouble();
           final subtotal = producto['subtotal'] as double;
           final costo = producto['costo'] as double;
           final descuento = producto['descuento'] as double;
@@ -110,7 +111,7 @@ class WebSummaryPrinterServiceImpl {
         <div class="product-item">
           <div class="product-name">${item.nombre}</div>
           <div class="product-details">
-            <div class="detail-line">Cantidad: $cantidad</div>
+            <div class="detail-line">Cantidad: ${PriceUtils.formatQuantity(cantidad)}</div>
             <div class="detail-line">Precio Unit: \$${item.precioUnitario.toStringAsFixed(0)}</div>
             <div class="detail-line">Costo: \$${costo.toStringAsFixed(0)}</div>
             <div class="detail-line">Descuento: \$${descuento.toStringAsFixed(0)}</div>
@@ -226,7 +227,7 @@ class WebSummaryPrinterServiceImpl {
     <div class="summary-section">
         <div class="summary-header">RESUMEN GENERAL:</div>
         <div class="separator">--------------------------------</div>
-        <div class="info-line">Total Productos: $totalProductos</div>
+        <div class="info-line">Total Productos: ${PriceUtils.formatQuantity(totalProductos)}</div>
         <div class="info-line">Total Ventas: \$${totalVentas.toStringAsFixed(0)}</div>
         <div class="info-line">Total Egresado: \$${totalEgresado.toStringAsFixed(0)}</div>
         <div class="info-line">Efectivo Real: \$${totalEfectivoReal.toStringAsFixed(0)}</div>

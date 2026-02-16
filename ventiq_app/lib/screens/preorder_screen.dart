@@ -33,12 +33,23 @@ class _PreorderScreenState extends State<PreorderScreen> {
   bool _hasOpenShift = false;
   bool _elaboratingProducts = false;
   pm.PaymentMethod? _globalPaymentMethod;
+  double _fractionStep = 0.5;
 
   @override
   void initState() {
     super.initState();
     _loadPersistentPreorder();
     _checkOpenShift();
+    _loadFractionStep();
+  }
+
+  Future<void> _loadFractionStep() async {
+    final step = await _userPreferencesService.getFractionStep();
+    if (mounted) {
+      setState(() {
+        _fractionStep = step;
+      });
+    }
   }
 
   /// Cargar preorden persistente al inicializar la pantalla
@@ -319,7 +330,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                '${order.totalItems} producto${order.totalItems == 1 ? '' : 's'} • Total: \$${PriceUtils.formatDiscountPrice(order.total)}',
+                '${order.distinctItemCount} producto${order.distinctItemCount == 1 ? '' : 's'} • Total: \$${PriceUtils.formatDiscountPrice(order.total)}',
                 style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
               const SizedBox(height: 8),
@@ -418,7 +429,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Cantidad: ${item.cantidad}',
+                'Cantidad: ${PriceUtils.formatQuantity(item.cantidad)}',
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
@@ -430,7 +441,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 children: [
                   IconButton(
                     onPressed:
-                        () => _updateItemQuantity(item.id, item.cantidad - 1),
+                        () {
+                          final step = (item.cantidad % 1 != 0) ? _fractionStep : 1.0;
+                          _updateItemQuantity(item.id, item.cantidad - step);
+                        },
                     icon: const Icon(Icons.remove_circle_outline),
                     color: Colors.red,
                     constraints: const BoxConstraints(
@@ -441,7 +455,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   const SizedBox(width: 8),
                   IconButton(
                     onPressed:
-                        () => _updateItemQuantity(item.id, item.cantidad + 1),
+                        () {
+                          final step = (item.cantidad % 1 != 0) ? _fractionStep : 1.0;
+                          _updateItemQuantity(item.id, item.cantidad + step);
+                        },
                     icon: const Icon(Icons.add_circle_outline),
                     color: const Color(0xFF4A90E2),
                     constraints: const BoxConstraints(
@@ -756,7 +773,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
     });
   }
 
-  void _updateItemQuantity(String itemId, int newQuantity) {
+  void _updateItemQuantity(String itemId, double newQuantity) {
     setState(() {
       _orderService.updateItemQuantity(itemId, newQuantity);
     });

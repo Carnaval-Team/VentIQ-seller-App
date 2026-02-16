@@ -71,6 +71,19 @@ BEGIN
       NEW.precio_venta_cup := NEW.precio_venta_cup;
   END CASE;
 
+  -- CASE v_metodo
+  --   WHEN 'REDONDEAR_POR_DEFECTO' THEN
+  --     NEW. := round(NEW.precio_venta_cup, 0);
+  --   WHEN 'REDONDEAR_POR_EXCESO' THEN
+  --     NEW.precio_venta_cup := ceil(NEW.precio_venta_cup);
+  --   WHEN 'REDONDEAR_A_MULT_5_POR_DEFECTO' THEN
+  --     NEW.precio_venta_cup := round(NEW.precio_venta_cup / 5.0) * 5;
+  --   WHEN 'REDONDEAR_A_MULT_5_POR_EXCESO' THEN
+  --     NEW.precio_venta_cup := ceil(NEW.precio_venta_cup / 5.0) * 5;
+  --   ELSE
+  --     NEW.precio_venta_cup := NEW.precio_venta_cup;
+  -- END CASE;
+
   NEW.precio_venta_cup := round(NEW.precio_venta_cup, 2)::numeric(18, 2);
 
   RETURN NEW;
