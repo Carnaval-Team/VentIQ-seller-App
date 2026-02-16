@@ -2473,8 +2473,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
       // Use the RPC fn_registrar_cambio_estado_operacion with estado 3 (cancelada)
       final supabase = Supabase.instance.client;
+      print(operationId is int ? operationId : int.parse(operationId.toString()));
       final result = await supabase.rpc(
-        'fn_registrar_cambio_estado_operacion',
+        'fn_registrar_cambio_estado_operacion_mejorado',
         params: {
           'p_id_operacion': operationId is int ? operationId : int.parse(operationId.toString()),
           'p_nuevo_estado': 3, // Estado cancelada
@@ -2482,6 +2483,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       );
 
       Navigator.pop(context); // Close loading dialog
+
+      print(result);
 
       if (result != null && result['success'] == true) {
         // Close the detail modal

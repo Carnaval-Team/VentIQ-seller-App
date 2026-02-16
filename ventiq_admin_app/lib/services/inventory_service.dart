@@ -11,6 +11,9 @@ import 'financial_service.dart';
 import 'restaurant_service.dart'; // Agregar import para conversión de unidades
 import 'permissions_service.dart';
 import 'consignacion_service.dart'; // Import para validación de operaciones de consignación
+import 'margin_service.dart';
+import 'currency_service.dart';
+import 'store_config_service.dart';
 
 class InventoryService {
   static final InventoryService _instance = InventoryService._internal();
@@ -2689,7 +2692,7 @@ class InventoryService {
         // Obtener todos los productos recibidos en esta operación
         final productosRecibidos = await _supabase
             .from('app_dat_recepcion_productos')
-            .select('id_presentacion, precio_unitario, cantidad')
+            .select('id_producto, id_presentacion, precio_unitario, cantidad')
             .eq('id_operacion', idOperacion);
 
         print('📦 Productos recibidos encontrados: ${productosRecibidos.length}');
@@ -2779,6 +2782,13 @@ class InventoryService {
           print('   - Productos procesados: ${productosRecibidos.length}');
           print('   - Productos actualizados: $productosActualizados');
           print('   - Tasa de éxito: ${(productosActualizados / productosRecibidos.length * 100).toStringAsFixed(1)}%');
+
+          // =====================================================
+          // VERIFICAR MÁRGENES DE GANANCIA Y AJUSTAR PRECIO VENTA
+          // =====================================================
+          print('\n📊 Verificando márgenes de ganancia configurados...');
+          await _verificarMargenesYAjustarPrecios(productosRecibidos);
+
         } else {
           print('⚠️ No se encontraron productos en la recepción');
         }
@@ -2809,6 +2819,169 @@ class InventoryService {
         'error': e.toString(),
         'error_type': e.runtimeType.toString(),
       };
+    }
+  }
+
+  /// Verifica márgenes de ganancia configurados y ajusta precio de venta si es necesario.
+  /// Para cada producto recibido:
+  /// 1. Obtiene el margen activo del producto
+  /// 2. Obtiene el precio_promedio (USD) y precio_venta_cup actual
+  /// 3. Convierte precio_promedio a CUP usando tasa USD→CUP
+  /// 4. Calcula la ganancia actual
+  /// 5. Si no cumple el margen, calcula nuevo precio de venta y lo actualiza
+  /// 6. Aplica el método de redondeo configurado en la tienda
+  static Future<void> _verificarMargenesYAjustarPrecios(
+    List<Map<String, dynamic>> productosRecibidos,
+  ) async {
+    try {
+      // Obtener tasa USD→CUP
+      final tasaUsdCup = await CurrencyService.getEffectiveUsdToCupRate();
+      if (tasaUsdCup <= 0) {
+        print('⚠️ Tasa USD→CUP inválida ($tasaUsdCup), saltando verificación de márgenes');
+        return;
+      }
+      print('💱 Tasa USD→CUP: $tasaUsdCup');
+
+      // Obtener método de redondeo de la tienda
+      final idTienda = await _prefsService.getIdTienda();
+      String metodoRedondeo = 'NO_REDONDEAR';
+      if (idTienda != null) {
+        metodoRedondeo = await StoreConfigService.getMetodoRedondeoPrecioVenta(idTienda);
+      }
+      print('🔧 Método de redondeo: $metodoRedondeo');
+
+      // Obtener IDs de productos únicos
+      final productosUnicos = <int>{};
+      for (var prod in productosRecibidos) {
+        final idProducto = prod['id_producto'] as int?;
+        if (idProducto != null) productosUnicos.add(idProducto);
+      }
+
+      print('📦 Productos únicos a verificar: ${productosUnicos.length}');
+
+      for (final idProducto in productosUnicos) {
+        try {
+          // 1. Obtener margen activo
+          final margen = await MarginService.getMargenActivoProducto(idProducto);
+          if (margen == null) {
+            print('   ⏭️ Producto $idProducto: sin margen configurado');
+            continue;
+          }
+
+          final margenDeseado = (margen['margen_deseado'] as num).toDouble();
+          final tipoMargen = margen['tipo_margen'] as int; // 1=%, 2=monto fijo CUP
+
+          print('\n   📊 Producto $idProducto:');
+          print('      - Margen deseado: ${tipoMargen == 1 ? '$margenDeseado%' : '$margenDeseado CUP'}');
+
+          // 2. Obtener precio_promedio de la presentación base
+          final presentacionBase = await _supabase
+              .from('app_dat_producto_presentacion')
+              .select('id, precio_promedio')
+              .eq('id_producto', idProducto)
+              .eq('es_base', true)
+              .limit(1)
+              .maybeSingle();
+
+          if (presentacionBase == null) {
+            print('      ⚠️ Sin presentación base, saltando');
+            continue;
+          }
+
+          final precioPromedioUsd = (presentacionBase['precio_promedio'] as num?)?.toDouble() ?? 0;
+          if (precioPromedioUsd <= 0) {
+            print('      ⚠️ Precio promedio USD = 0, saltando');
+            continue;
+          }
+
+          // 3. Convertir costo a CUP
+          final costoCup = precioPromedioUsd * tasaUsdCup;
+          print('      - Costo promedio: \$$precioPromedioUsd USD = $costoCup CUP');
+
+          // 4. Obtener precio de venta actual en CUP
+          final precioVentaData = await _supabase
+              .from('app_dat_precio_venta')
+              .select('id, precio_venta_cup')
+              .eq('id_producto', idProducto)
+              .lte('fecha_desde', DateTime.now().toIso8601String().split('T')[0])
+              .or('fecha_hasta.is.null,fecha_hasta.gte.${DateTime.now().toIso8601String().split('T')[0]}')
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle();
+
+          if (precioVentaData == null) {
+            print('      ⚠️ Sin precio de venta, saltando');
+            continue;
+          }
+
+          final precioVentaActual = (precioVentaData['precio_venta_cup'] as num?)?.toDouble() ?? 0;
+          print('      - Precio venta actual: $precioVentaActual CUP');
+
+          // 5. Calcular ganancia actual
+          final gananciaActualCup = precioVentaActual - costoCup;
+          final gananciaActualPct = costoCup > 0 ? (gananciaActualCup / costoCup) * 100 : 0;
+          print('      - Ganancia actual: $gananciaActualCup CUP (${gananciaActualPct.toStringAsFixed(1)}%)');
+
+          // 6. Verificar si cumple el margen
+          bool cumpleMargen;
+          double nuevoPrecioVenta;
+
+          if (tipoMargen == 1) {
+            // Margen en porcentaje
+            cumpleMargen = gananciaActualPct >= margenDeseado;
+            // Nuevo precio = costo * (1 + margen/100)
+            nuevoPrecioVenta = costoCup * (1 + margenDeseado / 100);
+          } else {
+            // Margen en monto fijo CUP
+            cumpleMargen = gananciaActualCup >= margenDeseado;
+            // Nuevo precio = costo + margen fijo
+            nuevoPrecioVenta = costoCup + margenDeseado;
+          }
+
+          if (cumpleMargen) {
+            print('      ✅ Margen cumplido, precio de venta se mantiene');
+            continue;
+          }
+
+          print('      ⚠️ Margen NO cumplido, ajustando precio de venta...');
+          print('      - Nuevo precio calculado: $nuevoPrecioVenta CUP');
+
+          // 7. Aplicar redondeo
+          final precioRedondeado = _aplicarRedondeo(nuevoPrecioVenta, metodoRedondeo);
+          print('      - Precio redondeado ($metodoRedondeo): $precioRedondeado CUP');
+
+          // 8. Actualizar precio de venta
+          await _supabase
+              .from('app_dat_precio_venta')
+              .update({'precio_venta_cup': precioRedondeado})
+              .eq('id', precioVentaData['id']);
+
+          print('      ✅ Precio de venta actualizado: $precioVentaActual → $precioRedondeado CUP');
+
+        } catch (e) {
+          print('   ❌ Error verificando margen para producto $idProducto: $e');
+        }
+      }
+    } catch (e) {
+      print('⚠️ Error en verificación de márgenes: $e');
+      print('   - Continuando sin interrumpir el flujo');
+    }
+  }
+
+  /// Aplica el método de redondeo configurado para la tienda
+  static double _aplicarRedondeo(double precio, String metodo) {
+    switch (metodo) {
+      case 'REDONDEAR_POR_DEFECTO':
+        return precio.roundToDouble();
+      case 'REDONDEAR_POR_EXCESO':
+        return precio.ceilToDouble();
+      case 'REDONDEAR_A_MULT_5_POR_DEFECTO':
+        return (precio / 5).round() * 5.0;
+      case 'REDONDEAR_A_MULT_5_POR_EXCESO':
+        return (precio / 5).ceil() * 5.0;
+      case 'NO_REDONDEAR':
+      default:
+        return precio;
     }
   }
 

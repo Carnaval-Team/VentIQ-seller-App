@@ -274,6 +274,21 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     _loadData();
   }
 
+  Color _getEstadoColor(String estado) {
+    switch (estado.toLowerCase()) {
+      case 'pendiente':
+        return Colors.orange;
+      case 'completada':
+        return Colors.green;
+      case 'devuelta':
+        return Colors.blue;
+      case 'cancelada':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
   String _formatDate(String dateString) {
     try {
       final date = DateTime.parse(dateString);
@@ -715,12 +730,37 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                     ],
                   ),
                 ),
-                Text(
-                  _formatDate(movement['fecha'] as String? ?? ''),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey.shade600,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (movement['estado_operacion_nombre'] != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _getEstadoColor(movement['estado_operacion_nombre'] as String).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _getEstadoColor(movement['estado_operacion_nombre'] as String).withOpacity(0.5),
+                          ),
+                        ),
+                        child: Text(
+                          movement['estado_operacion_nombre'] as String,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: _getEstadoColor(movement['estado_operacion_nombre'] as String),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatDate(movement['fecha'] as String? ?? ''),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -736,18 +776,26 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ID de Operación
+                  if (movement['id_operacion'] != null)
+                    _buildDetailRow(
+                      'Operación #',
+                      '${movement['id_operacion']}',
+                    ),
+                  
+                  
+                  // Cantidad (movida)
+                  if (movement['cantidad'] != null)
+                    _buildDetailRow(
+                      'Cantidad Movida',
+                      '${movement['cantidad']}',
+                    ),
+                  
                   // Cantidad inicial
                   if (movement['cantidad_inicial'] != null)
                     _buildDetailRow(
                       'Cantidad Inicial',
                       '${movement['cantidad_inicial']}',
-                    ),
-                  
-                  // Cantidad
-                  if (movement['cantidad'] != null)
-                    _buildDetailRow(
-                      'Cantidad',
-                      '${movement['cantidad']}',
                     ),
                   
                   // Cantidad final
@@ -813,13 +861,6 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                       'Zona',
                       movement['zona'] as String,
                     ),
-                  
-                  /* // Ubicación
-                  if (movement['ubicacion'] != null)
-                    _buildDetailRow(
-                      'Ubicación',
-                      movement['ubicacion'] as String,
-                    ), */
                   
                   // Proveedor
                   if (movement['proveedor'] != null)
