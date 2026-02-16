@@ -145,6 +145,7 @@ CREATE TABLE public.app_cont_margen_comercial (
   fecha_desde date NOT NULL,
   fecha_hasta date,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_cont_margen_comercial_pkey PRIMARY KEY (id),
   CONSTRAINT app_cont_margen_comercial_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
   CONSTRAINT app_cont_margen_comercial_id_variante_fkey FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id),
