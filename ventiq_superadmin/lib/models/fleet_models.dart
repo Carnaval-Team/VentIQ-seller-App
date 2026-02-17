@@ -93,7 +93,7 @@ class RepartidorFlota {
   IconData get estadoIcon {
     switch (estado) {
       case EstadoRepartidor.activo:
-        return Icons.directions_bike;
+        return Icons.local_shipping;
       case EstadoRepartidor.estacionado:
         return Icons.local_parking;
       case EstadoRepartidor.inactivo:

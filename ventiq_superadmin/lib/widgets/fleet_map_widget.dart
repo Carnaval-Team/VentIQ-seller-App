@@ -37,7 +37,31 @@ class FleetMapWidget extends StatelessWidget {
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.ventiq.superadmin',
         ),
-        // Ruta del chofer seleccionado - borde oscuro para contraste
+        // 1) Checkpoints DEBAJO de la ruta (se ven asomando por los lados)
+        if (checkpoints != null && checkpoints!.length > 2)
+          MarkerLayer(
+            markers: [
+              for (int i = 1; i < checkpoints!.length - 1; i++)
+                Marker(
+                  point: checkpoints![i],
+                  width: 14,
+                  height: 14,
+                  child: Tooltip(
+                    message: 'Checkpoint $i',
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: rutaColor, width: 2),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        // 2) Ruta del chofer seleccionado - borde oscuro para contraste
         if (rutaSeleccionada != null && rutaSeleccionada!.length >= 2)
           PolylineLayer(
             polylines: [
@@ -55,45 +79,31 @@ class FleetMapWidget extends StatelessWidget {
               ),
             ],
           ),
-        // Checkpoints del historial (puntos intermedios)
+        // 3) Checkpoints ENCIMA de la ruta (puntos visibles sobre la línea)
         if (checkpoints != null && checkpoints!.length > 2)
           MarkerLayer(
             markers: [
               for (int i = 1; i < checkpoints!.length - 1; i++)
                 Marker(
                   point: checkpoints![i],
-                  width: 24,
-                  height: 24,
+                  width: 16,
+                  height: 16,
                   child: Tooltip(
-                    message: 'Checkpoint ${i}',
+                    message: 'Checkpoint $i',
                     child: Container(
-                      width: 18,
-                      height: 18,
+                      width: 10,
+                      height: 10,
                       decoration: BoxDecoration(
                         color: Colors.white,
                         shape: BoxShape.circle,
-                        border: Border.all(color: rutaColor, width: 2),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
-                            blurRadius: 4,
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: Icon(
-                          Icons.flag,
-                          color: rutaColor,
-                          size: 10,
-                        ),
+                        border: Border.all(color: rutaColor, width: 2.5),
                       ),
                     ),
                   ),
                 ),
             ],
           ),
-        // Marcadores de inicio y fin de la ruta
+        // 4) Marcadores de inicio y fin de la ruta
         if (rutaSeleccionada != null && rutaSeleccionada!.length >= 2)
           MarkerLayer(
             markers: [
@@ -121,7 +131,7 @@ class FleetMapWidget extends StatelessWidget {
               ),
             ],
           ),
-        // Markers de repartidores
+        // 5) Markers de repartidores
         MarkerLayer(
           markers: repartidores.map((rep) => _buildMarker(rep)).toList(),
         ),
@@ -163,7 +173,7 @@ class FleetMapWidget extends StatelessWidget {
                 ],
               ),
               child: Icon(
-                Icons.delivery_dining,
+                Icons.local_shipping,
                 color: Colors.white,
                 size: isSelected ? 22 : 18,
               ),

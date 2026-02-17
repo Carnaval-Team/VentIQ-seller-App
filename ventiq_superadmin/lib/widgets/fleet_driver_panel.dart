@@ -9,6 +9,7 @@ class FleetDriverPanel extends StatefulWidget {
   final int pointsLimit;
   final ValueChanged<int> onPointsLimitChanged;
   final bool isLoadingRoute;
+  final double? distanciaRutaKm;
 
   const FleetDriverPanel({
     super.key,
@@ -18,6 +19,7 @@ class FleetDriverPanel extends StatefulWidget {
     required this.pointsLimit,
     required this.onPointsLimitChanged,
     this.isLoadingRoute = false,
+    this.distanciaRutaKm,
   });
 
   @override
@@ -411,12 +413,49 @@ class _FleetDriverPanelState extends State<FleetDriverPanel> {
                   ],
                 ),
 
-                // Órdenes expandibles (solo si está seleccionado)
-                if (isSelected && driver.ordenesAsignadas.isNotEmpty) ...[
+                // Info expandible (solo si está seleccionado)
+                if (isSelected) ...[
                   const SizedBox(height: 10),
                   const Divider(height: 1),
                   const SizedBox(height: 8),
-                  ...driver.ordenesAsignadas.map((orden) => _buildOrdenTile(orden)),
+                  // Distancia recorrida
+                  if (widget.distanciaRutaKm != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.primary.withOpacity(0.2),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.route, size: 16, color: AppColors.primary),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Distancia recorrida:',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '${widget.distanciaRutaKm!.toStringAsFixed(2)} km',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  // Órdenes asignadas
+                  if (driver.ordenesAsignadas.isNotEmpty)
+                    ...driver.ordenesAsignadas.map((orden) => _buildOrdenTile(orden)),
                   if (widget.isLoadingRoute)
                     const Padding(
                       padding: EdgeInsets.only(top: 8),
