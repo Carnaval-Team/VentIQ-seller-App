@@ -7,6 +7,7 @@ import '../config/app_theme.dart';
 import '../widgets/carnaval_fab.dart';
 import '../widgets/supabase_image.dart';
 import '../services/routing_service.dart';
+import '../mixins/repartidor_map_mixin.dart';
 import 'store_detail_screen.dart';
 
 class MapScreen extends StatefulWidget {
@@ -19,7 +20,7 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
+class _MapScreenState extends State<MapScreen> with RepartidorMapMixin {
   final MapController _mapController = MapController();
   final RoutingService _routingService = RoutingService();
   Position? _currentPosition;
@@ -73,12 +74,14 @@ class _MapScreenState extends State<MapScreen> {
       _selectedStore = widget.initialStore;
     }
     _getCurrentLocation();
+    initRepartidorTracking();
   }
 
   StreamSubscription<Position>? _positionStreamSubscription;
 
   @override
   void dispose() {
+    disposeRepartidorTracking();
     _positionStreamSubscription?.cancel();
     _mapController
         .dispose(); // Important if MapController needs disposal, though standard one might not strictly require it, good practice
@@ -323,7 +326,7 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                 ],
               ),
-              MarkerLayer(markers: _buildMarkers()),
+              MarkerLayer(markers: [..._buildMarkers(), ...buildRepartidorMarkers()]),
             ],
           ),
 
@@ -361,6 +364,8 @@ class _MapScreenState extends State<MapScreen> {
                     }
                   },
                 ),
+                const SizedBox(height: 8),
+                buildRepartidorToggleButton(),
               ],
             ),
           ),

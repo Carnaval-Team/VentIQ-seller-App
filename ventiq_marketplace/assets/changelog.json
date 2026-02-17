@@ -1,8 +1,30 @@
 {
-  "current_version": "1.4.0",
-  "build": 11,
+  "current_version": "1.5.0",
+  "build": 12,
   "app_name": "ventiq_marketplace",
   "changelogs": [
+    {
+      "version": "1.5.0",
+      "date": "2026-02-16",
+      "title": "\ud83d\udef5 Ve por dónde van tus repartidores",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Rastreo de repartidores en tiempo real",
+          "description": "Ahora puedes ver la ubicación de tus repartidores directamente en el mapa. Activa el botón de repartidores y sigue sus movimientos en tiempo real."
+        },
+        {
+          "type": "feature",
+          "title": "Actualización automática cada 30 segundos",
+          "description": "Las posiciones se actualizan automáticamente para que siempre sepas dónde están tus repartidores sin necesidad de refrescar."
+        },
+        {
+          "type": "feature",
+          "title": "Disponible en todos los mapas",
+          "description": "El rastreo funciona en el mapa general, la ruta de compra y el selector de ubicación. Un solo toque para activarlo."
+        }
+      ]
+    },
     {
       "version": "1.4.0",
       "date": "2026-02-12",

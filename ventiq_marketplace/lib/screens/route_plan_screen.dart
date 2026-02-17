@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import '../config/app_theme.dart';
 import '../services/cart_service.dart';
 import '../services/routing_service.dart';
+import '../mixins/repartidor_map_mixin.dart';
 import '../widgets/supabase_image.dart';
 
 class RoutePlanScreen extends StatefulWidget {
@@ -23,7 +24,7 @@ class RoutePlanScreen extends StatefulWidget {
   State<RoutePlanScreen> createState() => _RoutePlanScreenState();
 }
 
-class _RoutePlanScreenState extends State<RoutePlanScreen> {
+class _RoutePlanScreenState extends State<RoutePlanScreen> with RepartidorMapMixin {
   final MapController _mapController = MapController();
   final RoutingService _routingService = RoutingService();
   Position? _currentPosition;
@@ -75,10 +76,12 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
     super.initState();
     _startLocationTracking();
     _calculateRoute();
+    initRepartidorTracking();
   }
 
   @override
   void dispose() {
+    disposeRepartidorTracking();
     _positionStreamSubscription?.cancel();
     _arrivalBannerTimer?.cancel();
     _travelTickTimer?.cancel();
@@ -562,9 +565,14 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                       key: ValueKey(
                         '${_currentPosition?.latitude}_${_currentPosition?.longitude}_${_isTravelActive ? 1 : 0}',
                       ),
-                      markers: _buildMarkers(),
+                      markers: [..._buildMarkers(), ...buildRepartidorMarkers()],
                     ),
                   ],
+                ),
+                Positioned(
+                  top: 12,
+                  right: 16,
+                  child: buildRepartidorToggleButton(),
                 ),
                 if (_arrivalBannerText != null)
                   Positioned(
