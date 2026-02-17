@@ -202,11 +202,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: AppTheme.getBackgroundColor(context),
       body: RefreshIndicator(
         onRefresh: _refreshProducts,
-        color: AppTheme.primaryColor,
+        color: accentColor,
         child: CustomScrollView(
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
@@ -247,9 +249,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   /// AppBar moderno con SliverAppBar
   Widget _buildModernAppBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+
     return SliverAppBar(
       expandedHeight: 140.0,
-      floating: false,
+      floating: true,
       pinned: true,
       elevation: 0,
       flexibleSpace: FlexibleSpaceBar(
@@ -258,11 +263,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                AppTheme.primaryColor,
-                AppTheme.primaryColor.withOpacity(0.85),
-                AppTheme.accentColor.withOpacity(0.7),
-              ],
+              colors: isDark
+                  ? [
+                      const Color(0xFF2D2D30),
+                      const Color(0xFF1A1A1D),
+                      AppTheme.darkAccentColor.withOpacity(0.3),
+                    ]
+                  : [
+                      AppTheme.primaryColor,
+                      AppTheme.primaryColor.withOpacity(0.85),
+                      AppTheme.accentColor.withOpacity(0.7),
+                    ],
             ),
           ),
           child: SafeArea(
@@ -281,15 +292,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            colors: [
-                              AppTheme.errorColor.withOpacity(0.3),
-                              AppTheme.warningColor.withOpacity(0.3),
-                            ],
+                            colors: isDark
+                                ? [AppTheme.darkAccentColor.withOpacity(0.4), AppTheme.warningColor.withOpacity(0.3)]
+                                : [AppTheme.errorColor.withOpacity(0.3), AppTheme.warningColor.withOpacity(0.3)],
                           ),
                           borderRadius: BorderRadius.circular(14),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
+                              color: Colors.black.withOpacity(isDark ? 0.3 : 0.1),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -329,10 +339,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       Container(
                         margin: const EdgeInsets.only(left: 8),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withOpacity(isDark ? 0.1 : 0.2),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.3),
+                            color: Colors.white.withOpacity(isDark ? 0.2 : 0.3),
                           ),
                         ),
                         child: IconButton(
@@ -363,15 +373,21 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   /// Sección del buscador mejorada
   Widget _buildSearchSection() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Padding(
       padding: const EdgeInsets.all(AppTheme.paddingM),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: cardColor,
           borderRadius: BorderRadius.circular(AppTheme.radiusL),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
+              color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
               blurRadius: 20,
               offset: const Offset(0, 4),
             ),
@@ -380,25 +396,26 @@ class _ProductsScreenState extends State<ProductsScreen> {
         child: TextField(
           controller: _searchController,
           onChanged: _onSearchChanged,
+          style: TextStyle(color: textPrimary),
           decoration: InputDecoration(
             hintText: 'Buscar productos...',
             hintStyle: TextStyle(
-              color: AppTheme.textSecondary.withOpacity(0.6),
+              color: isDark ? AppTheme.darkTextHint : AppTheme.textSecondary.withOpacity(0.6),
               fontSize: 15,
             ),
             prefixIcon: Container(
               padding: const EdgeInsets.all(12),
-              child: const Icon(
+              child: Icon(
                 Icons.search_rounded,
-                color: AppTheme.primaryColor,
+                color: accentColor,
                 size: 24,
               ),
             ),
             suffixIcon: _searchController.text.isNotEmpty
                 ? IconButton(
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.clear_rounded,
-                      color: AppTheme.textSecondary,
+                      color: textSecondary,
                     ),
                     onPressed: () {
                       _searchController.clear();
@@ -422,15 +439,20 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Widget _buildCategoryFilter() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Container(
       height: 56,
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -451,17 +473,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   gradient: isSelected
                       ? LinearGradient(
                           colors: [
-                            AppTheme.primaryColor.withOpacity(0.15),
-                            AppTheme.primaryColor.withOpacity(0.08),
+                            accentColor.withOpacity(isDark ? 0.25 : 0.15),
+                            accentColor.withOpacity(isDark ? 0.15 : 0.08),
                           ],
                         )
                       : null,
-                  color: isSelected ? null : Colors.grey[50],
+                  color: isSelected ? null : (isDark ? AppTheme.darkSurfaceColor : Colors.grey[50]),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: isSelected
-                        ? AppTheme.primaryColor.withOpacity(0.3)
-                        : Colors.grey.withOpacity(0.2),
+                        ? accentColor.withOpacity(isDark ? 0.5 : 0.3)
+                        : (isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.2)),
                     width: 1,
                   ),
                 ),
@@ -478,9 +500,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       child: Text(
                         'Todos',
                         style: TextStyle(
-                          color: isSelected
-                              ? AppTheme.primaryColor
-                              : AppTheme.textSecondary,
+                          color: isSelected ? accentColor : textSecondary,
                           fontWeight: isSelected
                               ? FontWeight.w600
                               : FontWeight.w500,
@@ -508,17 +528,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 gradient: isSelected
                     ? LinearGradient(
                         colors: [
-                          AppTheme.primaryColor.withOpacity(0.15),
-                          AppTheme.primaryColor.withOpacity(0.08),
+                          accentColor.withOpacity(isDark ? 0.25 : 0.15),
+                          accentColor.withOpacity(isDark ? 0.15 : 0.08),
                         ],
                       )
                     : null,
-                color: isSelected ? null : Colors.grey[50],
+                color: isSelected ? null : (isDark ? AppTheme.darkSurfaceColor : Colors.grey[50]),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: isSelected
-                      ? AppTheme.primaryColor.withOpacity(0.3)
-                      : Colors.grey.withOpacity(0.2),
+                      ? accentColor.withOpacity(isDark ? 0.5 : 0.3)
+                      : (isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.2)),
                   width: 1,
                 ),
               ),
@@ -535,9 +555,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     child: Text(
                       categoryName,
                       style: TextStyle(
-                        color: isSelected
-                            ? AppTheme.primaryColor
-                            : AppTheme.textSecondary,
+                        color: isSelected ? accentColor : textSecondary,
                         fontWeight: isSelected
                             ? FontWeight.w600
                             : FontWeight.w500,
@@ -556,6 +574,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Widget _buildResultsCounter() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
     final isFiltering =
         _searchController.text.isNotEmpty || _selectedCategoryId != null;
 
@@ -569,18 +590,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
         gradient: LinearGradient(
           colors: [
             isFiltering
-                ? AppTheme.accentColor.withOpacity(0.08)
-                : AppTheme.secondaryColor.withOpacity(0.06),
+                ? accentColor.withOpacity(isDark ? 0.15 : 0.08)
+                : AppTheme.secondaryColor.withOpacity(isDark ? 0.12 : 0.06),
             isFiltering
-                ? AppTheme.accentColor.withOpacity(0.04)
-                : AppTheme.secondaryColor.withOpacity(0.03),
+                ? accentColor.withOpacity(isDark ? 0.08 : 0.04)
+                : AppTheme.secondaryColor.withOpacity(isDark ? 0.06 : 0.03),
           ],
         ),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isFiltering
-              ? AppTheme.accentColor.withOpacity(0.2)
-              : Colors.grey.withOpacity(0.15),
+              ? accentColor.withOpacity(isDark ? 0.4 : 0.2)
+              : (isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.15)),
           width: 1,
         ),
       ),
@@ -590,8 +611,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
               color: isFiltering
-                  ? AppTheme.accentColor.withOpacity(0.15)
-                  : AppTheme.secondaryColor.withOpacity(0.12),
+                  ? accentColor.withOpacity(isDark ? 0.25 : 0.15)
+                  : AppTheme.secondaryColor.withOpacity(isDark ? 0.2 : 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
@@ -599,9 +620,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   ? Icons.filter_list_rounded
                   : Icons.shopping_bag_rounded,
               size: 18,
-              color: isFiltering
-                  ? AppTheme.accentColor
-                  : AppTheme.secondaryColor,
+              color: isFiltering ? accentColor : AppTheme.secondaryColor,
             ),
           ),
           const SizedBox(width: 12),
@@ -611,9 +630,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: isFiltering
-                    ? AppTheme.accentColor
-                    : AppTheme.textPrimary,
+                color: isFiltering ? accentColor : textPrimary,
                 letterSpacing: -0.2,
               ),
             ),
@@ -624,6 +641,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Widget _buildLoadingState() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(40),
@@ -635,26 +657,24 @@ class _ProductsScreenState extends State<ProductsScreen> {
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    AppTheme.primaryColor.withOpacity(0.1),
-                    AppTheme.accentColor.withOpacity(0.05),
+                    accentColor.withOpacity(isDark ? 0.2 : 0.1),
+                    accentColor.withOpacity(isDark ? 0.1 : 0.05),
                   ],
                 ),
                 shape: BoxShape.circle,
               ),
-              child: const CircularProgressIndicator(
+              child: CircularProgressIndicator(
                 strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  AppTheme.primaryColor,
-                ),
+                valueColor: AlwaysStoppedAnimation<Color>(accentColor),
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
+            Text(
               'Cargando productos...',
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
+                color: textPrimary,
                 letterSpacing: -0.3,
               ),
             ),
@@ -663,7 +683,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
               'Preparando las mejores ofertas',
               style: TextStyle(
                 fontSize: 14,
-                color: AppTheme.textSecondary.withOpacity(0.8),
+                color: textSecondary.withOpacity(0.8),
               ),
             ),
           ],
@@ -673,24 +693,32 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Widget _buildEmptyState() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.shopping_bag_outlined, size: 80, color: Colors.grey[400]),
+          Icon(
+            Icons.shopping_bag_outlined,
+            size: 80,
+            color: isDark ? AppTheme.darkTextHint : Colors.grey[400],
+          ),
           const SizedBox(height: AppTheme.paddingM),
-          const Text(
+          Text(
             'No se encontraron productos',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: AppTheme.textPrimary,
+              color: textPrimary,
             ),
           ),
           const SizedBox(height: AppTheme.paddingS),
-          const Text(
+          Text(
             'Intenta con otros términos de búsqueda',
-            style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+            style: TextStyle(fontSize: 14, color: textSecondary),
           ),
         ],
       ),

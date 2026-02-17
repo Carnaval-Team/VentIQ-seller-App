@@ -35,6 +35,7 @@ class StoreConfigService {
                   'id_tienda': storeId,
                   'need_master_password_to_cancel': false,
                   'need_all_orders_completed_to_continue': false,
+                  'metodo_redondeo_precio_venta': 'NO_REDONDEAR',
                 })
                 .select()
                 .single();
@@ -61,6 +62,7 @@ class StoreConfigService {
     bool? noSolicitarCliente,
     bool? allowDiscountOnVendedor,
     bool? permitirImprimirPendientes,
+    String? metodoRedondeoPrecioVenta,
     Map<String, dynamic>? tpvTrabajadorEncargadoCarnaval,
   }) async {
     try {
@@ -118,6 +120,11 @@ class StoreConfigService {
       if (permitirImprimirPendientes != null) {
         updateData['permitir_imprimir_pendientes'] = permitirImprimirPendientes;
         print('  - permitir_imprimir_pendientes: $permitirImprimirPendientes');
+      }
+
+      if (metodoRedondeoPrecioVenta != null) {
+        updateData['metodo_redondeo_precio_venta'] = metodoRedondeoPrecioVenta;
+        print('  - metodo_redondeo_precio_venta: $metodoRedondeoPrecioVenta');
       }
 
       if (tpvTrabajadorEncargadoCarnaval != null) {
@@ -295,6 +302,25 @@ class StoreConfigService {
   /// Actualiza permitir_imprimir_pendientes
   static Future<void> updateAllowPrintPending(int storeId, bool value) async {
     await updateStoreConfig(storeId, permitirImprimirPendientes: value);
+  }
+
+  /// Obtiene el método de redondeo configurado
+  static Future<String> getMetodoRedondeoPrecioVenta(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['metodo_redondeo_precio_venta'] ?? 'NO_REDONDEAR';
+    } catch (e) {
+      print('❌ Error al obtener metodo_redondeo_precio_venta: $e');
+      return 'NO_REDONDEAR';
+    }
+  }
+
+  /// Actualiza el método de redondeo configurado
+  static Future<void> updateMetodoRedondeoPrecioVenta(
+    int storeId,
+    String value,
+  ) async {
+    await updateStoreConfig(storeId, metodoRedondeoPrecioVenta: value);
   }
 
   /// Obtiene solo el valor de tpv_trabajador_encargado_carnaval

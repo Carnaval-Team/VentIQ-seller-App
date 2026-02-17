@@ -1,6 +1,6 @@
 import 'product.dart';
 import 'payment_method.dart';
-import '../utils/price_utils.dart';
+import '../utils/promotion_rules.dart';
 
 class Order {
   final String id;
@@ -16,6 +16,8 @@ class Order {
   final int? operationId;
   final List<dynamic>? pagos; // Lista de pagos de la orden
   final Map<String, dynamic>? descuento; // Descuento aplicado (si existe)
+  final String? sellerName;
+  final String? tpvName;
   bool isOfflineOrder; // Campo para marcar órdenes offline
 
   Order({
@@ -32,6 +34,8 @@ class Order {
     this.operationId,
     this.pagos,
     this.descuento,
+    this.sellerName,
+    this.tpvName,
     this.isOfflineOrder = false, // Por defecto false
   });
 
@@ -39,9 +43,11 @@ class Order {
     return items.fold(0.0, (sum, item) => sum + item.subtotal);
   }
 
-  int get totalItems {
-    return items.fold(0, (sum, item) => sum + item.cantidad);
+  double get totalItems {
+    return items.fold(0.0, (sum, item) => sum + item.cantidad);
   }
+
+  int get distinctItemCount => items.length;
 
   Order copyWith({
     String? id,
@@ -57,6 +63,8 @@ class Order {
     int? operationId,
     List<dynamic>? pagos,
     Map<String, dynamic>? descuento,
+    String? sellerName,
+    String? tpvName,
     bool? isOfflineOrder,
   }) {
     return Order(
@@ -73,6 +81,8 @@ class Order {
       operationId: operationId ?? this.operationId,
       pagos: pagos ?? this.pagos,
       descuento: descuento ?? this.descuento,
+      sellerName: sellerName ?? this.sellerName,
+      tpvName: tpvName ?? this.tpvName,
       isOfflineOrder: isOfflineOrder ?? this.isOfflineOrder,
     );
   }
@@ -93,6 +103,8 @@ class Order {
       'operationId': operationId,
       'pagos': pagos,
       'descuento': descuento,
+      'sellerName': sellerName,
+      'tpvName': tpvName,
       'isOfflineOrder': isOfflineOrder,
     };
   }
@@ -119,6 +131,8 @@ class Order {
       operationId: json['operationId'] as int?,
       pagos: json['pagos'] as List<dynamic>?,
       descuento: json['descuento'] as Map<String, dynamic>?,
+      sellerName: json['sellerName'] as String?,
+      tpvName: json['tpvName'] as String?,
       isOfflineOrder: json['isOfflineOrder'] as bool? ?? false,
     );
   }
@@ -128,7 +142,7 @@ class OrderItem {
   final String id;
   final Product producto;
   final ProductVariant? variante;
-  final int cantidad;
+  final double cantidad;
   final double precioUnitario;
   final double? precioBase;
   final String ubicacionAlmacen;
@@ -161,7 +175,12 @@ class OrderItem {
   });
 
   double get subtotal {
-    return _getFinalPrice() * cantidad;
+    final raw = _getFinalPrice() * cantidad;
+    // Redondear por exceso al entero más cercano para cantidades fraccionadas
+    if (cantidad != cantidad.roundToDouble()) {
+      return raw.ceilToDouble();
+    }
+    return raw;
   }
 
   double get displayPrice {
@@ -178,23 +197,44 @@ class OrderItem {
       }
     }
 
-    // Con promociones, calcular precios según tipo y método de pago
-    final valorDescuento = promotionData!['valor_descuento'] as double?;
-    final tipoDescuento = promotionData!['tipo_descuento'] as int?;
+    if (!PromotionRules.isMinimumPurchaseMet(
+      promotionData!,
+      quantity: cantidad.round(),
+    )) {
+      if (paymentMethod?.id == 1) {
+        return precioUnitario;
+      }
+      return precioBase ?? precioUnitario;
+    }
 
-    final prices = PriceUtils.calculatePromotionPrices(
-      precioBase ?? precioUnitario,
-      valorDescuento,
-      tipoDescuento,
+    if (!PromotionRules.isPaymentMethodCompatible(
+      promotionData!,
+      paymentMethod?.id,
+    )) {
+      if (paymentMethod?.id == 1) {
+        return precioUnitario;
+      }
+      return precioBase ?? precioUnitario;
+    }
+
+    final basePrice = PromotionRules.resolveBasePrice(
+      unitPrice: precioUnitario,
+      basePrice: precioBase,
+      promotion: promotionData,
+    );
+
+    final prices = PromotionRules.calculatePromotionPrices(
+      basePrice: basePrice,
+      promotion: promotionData!,
     );
 
     // Para efectivo (id: 1), usar precio_oferta (el menor)
     // Para otros métodos, usar precio_venta (el mayor)
-    if (paymentMethod?.id == 1) {
-      return prices['precio_oferta']!;
-    } else {
-      return prices['precio_venta']!;
-    }
+    return PromotionRules.selectPriceForPayment(
+      prices: prices,
+      paymentMethodId: paymentMethod?.id,
+      promotion: promotionData,
+    );
   }
 
   String get nombre {
@@ -208,7 +248,7 @@ class OrderItem {
     String? id,
     Product? producto,
     ProductVariant? variante,
-    int? cantidad,
+    double? cantidad,
     double? precioUnitario,
     double? precioBase,
     String? ubicacionAlmacen,
@@ -269,7 +309,7 @@ class OrderItem {
                 json['variante'] as Map<String, dynamic>,
               )
               : null,
-      cantidad: json['cantidad'] as int,
+      cantidad: (json['cantidad'] as num).toDouble(),
       precioUnitario: (json['precioUnitario'] as num).toDouble(),
       precioBase:
           json['precioBase'] != null

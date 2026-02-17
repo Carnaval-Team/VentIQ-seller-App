@@ -5,11 +5,17 @@ import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
 import '../widgets/inventory_summary_card.dart';
 import '../widgets/inventory_export_dialog.dart';
-import 'inventory_reception_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class InventoryStockScreen extends StatefulWidget {
-  const InventoryStockScreen({super.key});
+  final bool isAlmacenero;
+  final int? assignedWarehouseId;
+
+  const InventoryStockScreen({
+    super.key,
+    this.isAlmacenero = false,
+    this.assignedWarehouseId,
+  });
 
   @override
   State<InventoryStockScreen> createState() => _InventoryStockScreenState();
@@ -49,6 +55,12 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     _scrollController.addListener(_scrollListener);
     _loadShowDescriptionConfig();
     _loadWarehouses();
+    
+    // Si es almacenero, establecer filtro por defecto
+    if (widget.isAlmacenero && widget.assignedWarehouseId != null) {
+      _selectedWarehouseId = widget.assignedWarehouseId;
+    }
+    
     _loadInventoryData();
   }
 
@@ -213,108 +225,6 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     }
   }
 
-  List<InventoryProduct> _groupProducts(List<InventoryProduct> products) {
-    print('🔄 Grouping ${products.length} products to eliminate duplicates...');
-
-    Map<String, InventoryProduct> groupedMap = {};
-
-    for (final product in products) {
-      // Crear clave única que incluya TODOS los campos relevantes para evitar agrupamiento incorrecto
-      final uniqueKey =
-          '${product.id}_${product.idUbicacion}_${product.idVariante ?? 'null'}_${product.idOpcionVariante ?? 'null'}_${product.idPresentacion ?? 'null'}';
-
-      print('🔍 Processing product: ${product.nombreProducto}');
-      print('   - ID: ${product.id}');
-      print('   - Ubicación: ${product.idUbicacion} (${product.ubicacion})');
-      print('   - Variante: ${product.idVariante} (${product.variante})');
-      print(
-        '   - Opción Variante: ${product.idOpcionVariante} (${product.opcionVariante})',
-      );
-      print(
-        '   - Presentación: ${product.idPresentacion} (${product.presentacion})',
-      );
-      print('   - Unique Key: $uniqueKey');
-      print('   - Stock Disponible: ${product.stockDisponible}');
-
-      if (groupedMap.containsKey(uniqueKey)) {
-        final existing = groupedMap[uniqueKey]!;
-
-        print('   ⚠️  DUPLICADO ENCONTRADO - Sumando cantidades:');
-        print('      - Stock anterior: ${existing.stockDisponible}');
-        print('      - Stock actual: ${product.stockDisponible}');
-
-        // Sum quantities solo si es realmente el mismo producto con misma variante/presentación
-        final newStockDisponible =
-            existing.stockDisponible + product.stockDisponible;
-        final newStockReservado =
-            existing.stockReservado + product.stockReservado;
-        final newCantidadFinal = existing.cantidadFinal + product.cantidadFinal;
-
-        print('      - Stock sumado: $newStockDisponible');
-
-        // Update existing product with summed quantities
-        groupedMap[uniqueKey] = InventoryProduct(
-          id: existing.id,
-          nombreProducto: existing.nombreProducto,
-          skuProducto: existing.skuProducto,
-          idCategoria: existing.idCategoria,
-          categoria: existing.categoria,
-          idSubcategoria: existing.idSubcategoria,
-          subcategoria: existing.subcategoria,
-          idTienda: existing.idTienda,
-          tienda: existing.tienda,
-          idAlmacen: existing.idAlmacen,
-          almacen: existing.almacen,
-          idUbicacion: existing.idUbicacion,
-          ubicacion: existing.ubicacion,
-          idVariante: existing.idVariante,
-          variante: existing.variante,
-          idOpcionVariante: existing.idOpcionVariante,
-          opcionVariante: existing.opcionVariante,
-          idPresentacion: existing.idPresentacion,
-          presentacion: existing.presentacion,
-          cantidadInicial: existing.cantidadInicial + product.cantidadInicial,
-          cantidadFinal: newCantidadFinal,
-          stockDisponible: newStockDisponible,
-          stockReservado: newStockReservado,
-          stockDisponibleAjustado:
-              existing.stockDisponibleAjustado +
-              product.stockDisponibleAjustado,
-          esVendible: existing.esVendible,
-          esInventariable: existing.esInventariable,
-          esElaborado: existing.esElaborado,
-          precioVenta: existing.precioVenta,
-          costoPromedio: existing.costoPromedio,
-          margenActual: existing.margenActual,
-          clasificacionAbc: existing.clasificacionAbc,
-          abcDescripcion: existing.abcDescripcion,
-          fechaUltimaActualizacion: existing.fechaUltimaActualizacion,
-          totalCount: existing.totalCount,
-          resumenInventario: existing.resumenInventario,
-          infoPaginacion: existing.infoPaginacion,
-        );
-      } else {
-        print('   ✅ Producto único - Agregando al mapa');
-        groupedMap[uniqueKey] = product;
-      }
-    }
-
-    final result = groupedMap.values.toList();
-    print(
-      '✅ Grouped ${products.length} products into ${result.length} unique items',
-    );
-
-    // Log final de productos agrupados
-    print('📋 Productos finales después del agrupamiento:');
-    for (int i = 0; i < result.length && i < 5; i++) {
-      final item = result[i];
-      print(
-        '   ${i + 1}. ${item.nombreProducto} - ${item.variante} ${item.opcionVariante} - Stock: ${item.stockDisponible}',
-      );
-    }
-
-    return result;
-  }
 
   List<InventoryProduct> _groupProducts2(List<InventoryProduct> products) {
     print('🔄 Grouping ${products.length} products to eliminate duplicates...');
@@ -375,6 +285,123 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     _loadInventoryData(reset: false);
   }
 
+  void _showWarehouseFilterDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Seleccionar Almacén'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.isAlmacenero) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.lock, color: Colors.orange.shade700, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Filtro bloqueado - Solo puedes ver tu almacén asignado',
+                          style: TextStyle(color: Colors.orange.shade700, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              ..._warehouses.map((warehouse) {
+                final warehouseName = warehouse['denominacion'] as String? ?? 'Sin nombre';
+                final warehouseId = warehouse['id'].toString();
+                final isSelected = _selectedWarehouse == warehouseId;
+                
+                return RadioListTile<String>(
+                  value: warehouseId,
+                  groupValue: _selectedWarehouse,
+                  onChanged: widget.isAlmacenero ? null : (value) {
+                    setState(() {
+                      _selectedWarehouse = value!;
+                      if (value == 'Todos') {
+                        _selectedWarehouseId = null;
+                      } else {
+                        _selectedWarehouseId = int.tryParse(value);
+                      }
+                    });
+                    Navigator.of(context).pop();
+                    _loadInventoryData();
+                  },
+                  title: Text(
+                    warehouseName,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: widget.isAlmacenero ? Colors.grey.shade600 : Colors.black,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'ID: ${warehouse['id']}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showStockFilterDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Filtrar por Stock'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: ['Todos', 'Sin Stock', 'Stock Bajo', 'Stock OK'].map((value) {
+            final isSelected = _stockFilter == value;
+            return RadioListTile<String>(
+              value: value,
+              groupValue: _stockFilter,
+              onChanged: (value) {
+                setState(() => _stockFilter = value!);
+                Navigator.of(context).pop();
+                _loadInventoryData();
+              },
+              title: Text(
+                value,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _toggleView() {
     setState(() {
       _isDetailedView = !_isDetailedView;
@@ -396,7 +423,6 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       body: Column(
         children: [
           _buildSearchAndFilters(),
-          _buildViewToggle(),
           if (_isDetailedView) ...[
             _buildInventorySummary(),
             Expanded(child: _buildDetailedInventoryList()),
@@ -410,52 +436,6 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     );
   }
 
-  Widget _buildViewToggle() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: Colors.white,
-      child: Row(
-        children: [
-          Text(
-            'Vista:',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment<bool>(
-                  value: false,
-                  label: Text('Resumen'),
-                  icon: Icon(Icons.view_list, size: 18),
-                ),
-                ButtonSegment<bool>(
-                  value: true,
-                  label: Text('Detallado'),
-                  icon: Icon(Icons.view_module, size: 18),
-                  enabled: false,
-                ),
-              ],
-              selected: {_isDetailedView},
-              onSelectionChanged: (Set<bool> newSelection) {
-                _toggleView();
-              },
-              style: SegmentedButton.styleFrom(
-                backgroundColor: AppColors.background,
-                foregroundColor: AppColors.textSecondary,
-                selectedBackgroundColor: AppColors.primary,
-                selectedForegroundColor: Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildSummaryInventoryList() {
     final filteredSummaries = _getFilteredInventorySummaries();
@@ -556,131 +536,78 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       color: Colors.white,
       child: Column(
         children: [
-          TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'Buscar productos...',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            onChanged: (value) {
-              setState(() => _searchQuery = value);
-              // Debounce search - increased delay to prevent loading while typing
-              Future.delayed(const Duration(milliseconds: 1500), () {
-                if (_searchQuery == value) {
-                  _loadInventoryData();
-                }
-              });
-            },
-          ),
-          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
-                flex: 1,
-                child: DropdownButtonFormField<String>(
-                  value: _selectedWarehouse,
+                child: TextField(
+                  controller: _searchController,
                   decoration: InputDecoration(
-                    labelText: 'Almacén',
-                    border: const OutlineInputBorder(),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    suffixIcon:
-                        _isLoadingWarehouses
-                            ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: Padding(
-                                padding: EdgeInsets.all(8.0),
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: AppColors.primary,
-                                ),
-                              ),
-                            )
-                            : null,
-                  ),
-                  isExpanded: true,
-                  items: [
-                    const DropdownMenuItem<String>(
-                      value: 'Todos',
-                      child: Text(
-                        'Todos',
-                        style: TextStyle(fontSize: 14),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    ..._warehouses.map((warehouse) {
-                      final warehouseName =
-                          warehouse['denominacion'] as String? ?? 'Sin nombre';
-                      final warehouseId = warehouse['id'].toString();
-
-                      return DropdownMenuItem<String>(
-                        value: warehouseId,
-                        child: Tooltip(
-                          message: warehouseName,
-                          child: Text(
-                            warehouseName,
-                            style: const TextStyle(fontSize: 14),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ],
-                  onChanged:
-                      _isLoadingWarehouses
-                          ? null
-                          : (value) {
-                            setState(() {
-                              _selectedWarehouse = value!;
-                              if (value == 'Todos') {
-                                _selectedWarehouseId = null;
-                              } else {
-                                _selectedWarehouseId = int.tryParse(value);
-                              }
-                            });
-                            _loadInventoryData();
-                          },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 1,
-                child: DropdownButtonFormField<String>(
-                  value: _stockFilter,
-                  decoration: const InputDecoration(
-                    labelText: 'Stock',
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                    hintText: 'Buscar productos...',
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  isExpanded: true,
-                  items:
-                      ['Todos', 'Sin Stock', 'Stock Bajo', 'Stock OK'].map((
-                        String value,
-                      ) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(
-                            value,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        );
-                      }).toList(),
                   onChanged: (value) {
-                    setState(() => _stockFilter = value!);
-                    _loadInventoryData();
+                    setState(() => _searchQuery = value);
+                    // Debounce search - increased delay to prevent loading while typing
+                    Future.delayed(const Duration(milliseconds: 1500), () {
+                      if (_searchQuery == value) {
+                        _loadInventoryData();
+                      }
+                    });
                   },
                 ),
+              ),
+              const SizedBox(width: 8),
+              PopupMenuButton<String>(
+                icon: Icon(Icons.filter_list, color: AppColors.primary),
+                tooltip: 'Filtros',
+                onSelected: (value) {
+                  if (value == 'warehouse') {
+                    _showWarehouseFilterDialog();
+                  } else if (value == 'stock') {
+                    _showStockFilterDialog();
+                  }
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'warehouse',
+                    child: Row(
+                      children: [
+                        Icon(Icons.warehouse, color: AppColors.primary, size: 20),
+                        const SizedBox(width: 8),
+                        Text('Almacén'),
+                        const Spacer(),
+                        Text(
+                          _selectedWarehouse,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'stock',
+                    child: Row(
+                      children: [
+                        Icon(Icons.inventory_2, color: AppColors.primary, size: 20),
+                        const SizedBox(width: 8),
+                        Text('Stock'),
+                        const Spacer(),
+                        Text(
+                          _stockFilter,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -693,38 +620,27 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     if (_inventorySummary == null) return const SizedBox.shrink();
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       color: AppColors.background,
-      child: Column(
+      child: Row(
         children: [
-          Row(
-            children: [
-              _buildSummaryCard(
-                'Total Inventario',
-                _inventorySummary!.totalInventario.toString(),
-                AppColors.info,
-              ),
-              const SizedBox(width: 8),
-              _buildSummaryCard(
-                'Sin Stock',
-                _inventorySummary!.totalSinStock.toString(),
-                AppColors.error,
-              ),
-              const SizedBox(width: 8),
-              _buildSummaryCard(
-                'Stock Bajo',
-                _inventorySummary!.totalConCantidadBaja.toString(),
-                AppColors.warning,
-              ),
-            ],
+          _buildSummaryCard(
+            'Total Inventario',
+            _inventorySummary!.totalInventario.toString(),
+            AppColors.info,
           ),
-          if (_paginationInfo != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Página ${_paginationInfo!.paginaActual} de ${_paginationInfo!.totalPaginas} • ${_paginationInfo!.totalRegistros} productos total',
-              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-            ),
-          ],
+          const SizedBox(width: 8),
+          _buildSummaryCard(
+            'Sin Stock',
+            _inventorySummary!.totalSinStock.toString(),
+            AppColors.error,
+          ),
+          const SizedBox(width: 8),
+          _buildSummaryCard(
+            'Stock Bajo',
+            _inventorySummary!.totalConCantidadBaja.toString(),
+            AppColors.warning,
+          ),
         ],
       ),
     );
@@ -740,7 +656,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   Widget _buildSummaryCard(String title, String value, Color color) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(8),
@@ -753,18 +669,18 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
               child: Text(
                 value,
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: color,
                 ),
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             FittedBox(
               child: Text(
                 title,
                 style: const TextStyle(
-                  fontSize: 11,
+                  fontSize: 10,
                   color: AppColors.textSecondary,
                 ),
                 textAlign: TextAlign.center,

@@ -7,6 +7,7 @@ import '../services/dashboard_service.dart';
 import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
+import '../widgets/admin_ai_assistant_sheet.dart';
 
 class DashboardWebScreen extends StatefulWidget {
   const DashboardWebScreen({super.key});
@@ -408,6 +409,11 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
               onPressed: _showStoreSelectionDialog,
               tooltip: 'Seleccionar Tienda: $_currentStoreName',
             ),
+          IconButton(
+            icon: const Icon(Icons.support_agent, color: Colors.white),
+            onPressed: () => AdminAiAssistantSheet.show(context),
+            tooltip: 'Asistente de ayuda',
+          ),
           Builder(
             builder:
                 (context) => IconButton(

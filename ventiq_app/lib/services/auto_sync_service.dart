@@ -173,7 +173,31 @@ class AutoSyncService {
       final Map<String, dynamic> syncedData = {};
       final List<String> syncedItems = [];
 
-      // 1. Sincronizar credenciales y datos del usuario
+      // 1. Sincronizar métodos de pago (prioritario para uso offline)
+      try {
+        _syncEventController.add(
+          AutoSyncEvent(
+            type: AutoSyncEventType.syncProgress,
+            timestamp: DateTime.now(),
+            message: 'Métodos de pago',
+          ),
+        );
+        final paymentMethods = await _syncPaymentMethods();
+        if (paymentMethods.isNotEmpty) {
+          syncedData['payment_methods'] = paymentMethods;
+          syncedItems.add('métodos de pago');
+          await _userPreferencesService.mergeOfflineData({
+            'payment_methods': paymentMethods,
+          });
+          print('  ✅ Métodos de pago sincronizados y guardados primero');
+        } else {
+          print('  ⚠️ Sin métodos de pago disponibles para guardar');
+        }
+      } catch (e) {
+        print('  ❌ Error sincronizando métodos de pago: $e');
+      }
+
+      // 2. Sincronizar credenciales y datos del usuario
       try {
         _syncEventController.add(
           AutoSyncEvent(
@@ -189,7 +213,7 @@ class AutoSyncService {
         print('  ❌ Error sincronizando credenciales: $e');
       }
 
-      // 2. Sincronizar promociones globales
+      // 3. Sincronizar promociones globales
       try {
         _syncEventController.add(
           AutoSyncEvent(
@@ -205,7 +229,7 @@ class AutoSyncService {
         print('  ❌ Error sincronizando promociones: $e');
       }
 
-      // 3. Sincronizar configuración de tienda
+      // 4. Sincronizar configuración de tienda
       try {
         _syncEventController.add(
           AutoSyncEvent(
@@ -219,22 +243,6 @@ class AutoSyncService {
         print('  ✅ Configuración de tienda sincronizada');
       } catch (e) {
         print('  ❌ Error sincronizando configuración de tienda: $e');
-      }
-
-      // 4. Sincronizar métodos de pago
-      try {
-        _syncEventController.add(
-          AutoSyncEvent(
-            type: AutoSyncEventType.syncProgress,
-            timestamp: DateTime.now(),
-            message: 'Métodos de pago',
-          ),
-        );
-        syncedData['payment_methods'] = await _syncPaymentMethods();
-        syncedItems.add('métodos de pago');
-        print('  ✅ Métodos de pago sincronizados');
-      } catch (e) {
-        print('  ❌ Error sincronizando métodos de pago: $e');
       }
 
       // 5. Sincronizar categorías (siempre en primera sincronización, luego cada 3 sincronizaciones)
@@ -480,6 +488,11 @@ class AutoSyncService {
         codigoPromocion: globalPromotion['codigo_promocion'],
         valorDescuento: globalPromotion['valor_descuento'],
         tipoDescuento: globalPromotion['tipo_descuento'],
+        idTipoPromocion: globalPromotion['id_tipo_promocion'],
+        minCompra: (globalPromotion['min_compra'] as num?)?.toDouble(),
+        aplicaTodo: globalPromotion['aplica_todo'],
+        requiereMedioPago: globalPromotion['requiere_medio_pago'],
+        idMedioPagoRequerido: globalPromotion['id_medio_pago_requerido'],
       );
       print('  🎯 Promoción global actualizada');
     } else {
@@ -498,6 +511,16 @@ class AutoSyncService {
   /// Sincronizar métodos de pago
   Future<List<Map<String, dynamic>>> _syncPaymentMethods() async {
     final paymentMethods = await PaymentMethodService.getActivePaymentMethods();
+
+    if (paymentMethods.isEmpty) {
+      final offlineData = await _userPreferencesService.getOfflineData();
+      final cached = offlineData?['payment_methods'];
+      if (cached is List) {
+        print('  ⚠️ Sin métodos de pago en línea - usando cache offline');
+        return List<Map<String, dynamic>>.from(cached);
+      }
+    }
+
     return paymentMethods.map((pm) => pm.toJson()).toList();
   }
 
@@ -616,6 +639,64 @@ class AutoSyncService {
           print(
             '      ✅ Lote completado: ${batchResults.length} productos procesados',
           );
+        }
+      }
+
+      // 🎯 OPTIMIZACIÓN: Obtener presentaciones en batch para TODOS los productos de la categoría
+      if (allProducts.isNotEmpty) {
+        try {
+          final productIds = allProducts.map((p) => p['id'] as int).toList();
+          print(
+            '  📦 Obteniendo presentaciones para ${productIds.length} productos en batch...',
+          );
+
+          // Una sola consulta con WHERE IN para todas las presentaciones
+          final allPresentations = await Supabase.instance.client
+              .from('app_dat_producto_presentacion')
+              .select('''
+                id,
+                id_producto,
+                id_presentacion,
+                cantidad,
+                es_base,
+                presentacion:app_nom_presentacion!inner(
+                  id,
+                  denominacion,
+                  descripcion,
+                  sku_codigo,
+                  es_fraccionable
+                )
+              ''')
+              .inFilter('id_producto', productIds)
+              .order('es_base', ascending: false);
+
+          print('  ✅ ${allPresentations.length} presentaciones obtenidas');
+
+          // Agrupar presentaciones por id_producto
+          final Map<int, List<dynamic>> presentationsByProduct = {};
+          for (var presentation in allPresentations) {
+            final productId = presentation['id_producto'] as int;
+            if (!presentationsByProduct.containsKey(productId)) {
+              presentationsByProduct[productId] = [];
+            }
+            presentationsByProduct[productId]!.add(presentation);
+          }
+
+          // Asignar presentaciones a cada producto
+          for (var product in allProducts) {
+            final productId = product['id'] as int;
+            product['presentaciones'] = presentationsByProduct[productId] ?? [];
+          }
+
+          print(
+            '  ✅ Presentaciones asignadas a ${productIds.length} productos',
+          );
+        } catch (presError) {
+          print('  ⚠️ Error obteniendo presentaciones en batch: $presError');
+          // Si falla, los productos quedan sin presentaciones (array vacío)
+          for (var product in allProducts) {
+            product['presentaciones'] = [];
+          }
         }
       }
 

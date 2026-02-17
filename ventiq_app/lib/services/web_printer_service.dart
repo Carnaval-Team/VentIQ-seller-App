@@ -11,13 +11,21 @@ class WebPrinterService {
   final WebPrinterServiceImpl _impl = WebPrinterServiceImpl();
 
   /// Muestra diálogo de confirmación de impresión para web
-  Future<bool> showPrintConfirmationDialog(BuildContext context, Order order) async {
+  Future<bool> showPrintConfirmationDialog(
+    BuildContext context,
+    Order order,
+  ) async {
     return await _impl.showPrintConfirmationDialog(context, order);
   }
 
   /// Imprime la factura usando la API de impresión del navegador
   Future<bool> printInvoice(Order order) async {
     return await _impl.printInvoice(order);
+  }
+
+  /// Imprime múltiples recibos del cliente en una sola impresión
+  Future<bool> printCustomerReceiptsBatch(List<Order> orders) async {
+    return await _impl.printCustomerReceiptsBatch(orders);
   }
 
   /// Verifica si la impresión web está disponible

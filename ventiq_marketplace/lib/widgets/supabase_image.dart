@@ -11,6 +11,14 @@ class SupabaseImage extends StatelessWidget {
   final Widget? placeholderWidget;
   final Widget? errorWidgetOverride;
 
+  /// Prefijo de URL de object storage de Supabase
+  static const String _objectPrefix =
+      'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/images_back/';
+
+  /// Prefijo de URL de render (transformación de imágenes) de Supabase
+  static const String _renderPrefix =
+      'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/render/image/public/images_back/';
+
   const SupabaseImage({
     super.key,
     required this.imageUrl,
@@ -23,30 +31,57 @@ class SupabaseImage extends StatelessWidget {
     this.errorWidgetOverride,
   });
 
+  /// Convierte la URL de object storage a render con dimensiones optimizadas
   String _getOptimizedUrl() {
-    if (!imageUrl.contains('supabase.co')) return imageUrl;
+    if (imageUrl.isEmpty) return imageUrl;
 
-    // Si ya tiene query params, agregamos con &, si no con ?
-    final separator = imageUrl.contains('?') ? '&' : '?';
-    final params = <String>[];
+    // Si es URL de object storage de Supabase, convertir a render
+    if (imageUrl.contains(_objectPrefix)) {
+      final params = <String>[];
 
-    // Si tenemos un ancho definido, solicitamos ese tamaño (o el doble para retina)
-    if (width != null && width! != double.infinity) {
-      params.add('width=${(width! * 2).toInt()}');
+      // Calcular dimensiones óptimas (x2 para pantallas retina)
+      final targetWidth = width != null && width! != double.infinity
+          ? (width! * 2).toInt()
+          : 400;
+      final targetHeight = height != null && height! != double.infinity
+          ? (height! * 2).toInt()
+          : 400;
+
+      params.add('width=$targetWidth');
+      params.add('height=$targetHeight');
+      params.add('quality=80');
+
+      final renderUrl = imageUrl.replaceFirst(_objectPrefix, _renderPrefix);
+      return '$renderUrl?${params.join('&')}';
     }
 
-    // Calidad 80 por defecto para buen balance
-    params.add('quality=80');
-    // Formato webp para mejor compresión
-    params.add('format=webp');
+    // Para otras URLs de Supabase, agregar parámetros de optimización
+    if (imageUrl.contains('supabase.co') && !imageUrl.contains('/render/')) {
+      final separator = imageUrl.contains('?') ? '&' : '?';
+      final params = <String>[];
 
-    if (params.isEmpty) return imageUrl;
+      if (width != null && width! != double.infinity) {
+        params.add('width=${(width! * 2).toInt()}');
+      }
+      if (height != null && height! != double.infinity) {
+        params.add('height=${(height! * 2).toInt()}');
+      }
+      params.add('quality=80');
 
-    return '$imageUrl$separator${params.join('&')}';
+      if (params.isNotEmpty) {
+        return '$imageUrl$separator${params.join('&')}';
+      }
+    }
+
+    return imageUrl;
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final placeholderColor = isDark ? const Color(0xFF2D2D30) : Colors.grey[200];
+    final iconColor = isDark ? const Color(0xFF707070) : Colors.grey[400];
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius ?? 0),
       child: CachedNetworkImage(
@@ -54,6 +89,14 @@ class SupabaseImage extends StatelessWidget {
         width: width,
         height: height,
         fit: fit,
+        fadeInDuration: const Duration(milliseconds: 200),
+        fadeOutDuration: const Duration(milliseconds: 200),
+        memCacheWidth: width != null && width! != double.infinity
+            ? (width! * 2).toInt()
+            : null,
+        memCacheHeight: height != null && height! != double.infinity
+            ? (height! * 2).toInt()
+            : null,
         placeholder: (context, url) {
           if (placeholderWidget != null) {
             return SizedBox(
@@ -73,7 +116,7 @@ class SupabaseImage extends StatelessWidget {
           return Container(
             width: width,
             height: height,
-            color: Colors.grey[200],
+            color: placeholderColor,
             child: const Center(
               child: SizedBox(
                 width: 20,
@@ -94,11 +137,11 @@ class SupabaseImage extends StatelessWidget {
           return Container(
             width: width,
             height: height,
-            color: Colors.grey[200],
+            color: placeholderColor,
             child: Center(
               child: Icon(
                 Icons.image_not_supported_outlined,
-                color: Colors.grey[400],
+                color: iconColor,
                 size: (width ?? 50) * 0.4,
               ),
             ),
@@ -106,5 +149,27 @@ class SupabaseImage extends StatelessWidget {
         },
       ),
     );
+  }
+
+  /// Helper estático para obtener URL optimizada sin crear widget
+  static String getOptimizedImageUrl(
+    String url, {
+    int? width,
+    int? height,
+    int quality = 80,
+  }) {
+    if (url.isEmpty) return url;
+
+    if (url.contains(_objectPrefix)) {
+      final params = <String>[];
+      if (width != null) params.add('width=$width');
+      if (height != null) params.add('height=$height');
+      params.add('quality=$quality');
+
+      final renderUrl = url.replaceFirst(_objectPrefix, _renderPrefix);
+      return '$renderUrl?${params.join('&')}';
+    }
+
+    return url;
   }
 }

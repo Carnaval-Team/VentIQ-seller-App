@@ -73,13 +73,22 @@ class _NotificationHubScreenState extends State<NotificationHubScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Scaffold(
+      backgroundColor: AppTheme.getBackgroundColor(context),
       appBar: AppBar(
         title: const Text('Hub'),
+        backgroundColor: isDark ? AppTheme.darkSurfaceColor : AppTheme.primaryColor,
+        foregroundColor: Colors.white,
+        elevation: 0,
         bottom: TabBar(
           controller: _tabController,
           labelColor: Colors.white,
-          unselectedLabelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: accentColor,
+          indicatorWeight: 3,
           tabs: const [
             Tab(text: 'Recomendados', icon: Icon(Icons.recommend_outlined)),
             Tab(
@@ -278,6 +287,11 @@ class _RecommendedProductsTabState extends State<_RecommendedProductsTab> {
   }
 
   Widget _buildCategoryFilter() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+    final cardColor = AppTheme.getCardColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+
     final chips = <Map<String, dynamic>>[
       {'id': null, 'denominacion': 'Todas'},
       if (!_isLoadingCategories) ..._categories,
@@ -309,13 +323,13 @@ class _RecommendedProductsTabState extends State<_RecommendedProductsTab> {
             selected: isSelected,
             onSelected: (_) => _onCategorySelected(categoryId),
             showCheckmark: false,
-            selectedColor: AppTheme.primaryColor,
-            backgroundColor: Colors.white,
+            selectedColor: accentColor,
+            backgroundColor: cardColor,
             side: BorderSide(
-              color: isSelected ? AppTheme.primaryColor : Colors.grey.shade300,
+              color: isSelected ? accentColor : (isDark ? AppTheme.darkDividerColor : Colors.grey.shade300),
             ),
             labelStyle: TextStyle(
-              color: isSelected ? Colors.white : AppTheme.textSecondary,
+              color: isSelected ? Colors.white : textSecondary,
               fontWeight: FontWeight.w700,
               fontSize: 12,
             ),
@@ -328,6 +342,10 @@ class _RecommendedProductsTabState extends State<_RecommendedProductsTab> {
   }
 
   Widget _buildEmptyState() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppTheme.paddingL),
@@ -337,15 +355,15 @@ class _RecommendedProductsTabState extends State<_RecommendedProductsTab> {
             Icon(
               Icons.recommend_outlined,
               size: 72,
-              color: Colors.grey.shade500,
+              color: isDark ? AppTheme.darkTextHint : Colors.grey.shade500,
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Sin recomendaciones aún',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
-                color: AppTheme.textPrimary,
+                color: textPrimary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -355,7 +373,7 @@ class _RecommendedProductsTabState extends State<_RecommendedProductsTab> {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey.shade600,
+                color: textSecondary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -366,6 +384,10 @@ class _RecommendedProductsTabState extends State<_RecommendedProductsTab> {
   }
 
   Widget _buildErrorState() {
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppTheme.paddingL),
@@ -374,12 +396,12 @@ class _RecommendedProductsTabState extends State<_RecommendedProductsTab> {
           children: [
             Icon(Icons.error_outline, size: 68, color: Colors.red.shade400),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'No se pudieron cargar los recomendados',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
-                color: AppTheme.textPrimary,
+                color: textPrimary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -388,7 +410,7 @@ class _RecommendedProductsTabState extends State<_RecommendedProductsTab> {
               _errorMessage ?? '',
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.grey.shade600,
+                color: textSecondary,
                 height: 1.3,
               ),
               textAlign: TextAlign.center,

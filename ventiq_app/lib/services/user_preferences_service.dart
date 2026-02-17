@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../utils/promotion_rules.dart';
 import 'order_service.dart';
 
 class UserPreferencesService {
@@ -38,6 +39,13 @@ class UserPreferencesService {
   static const String _promotionCodeKey = 'promotion_code';
   static const String _promotionValueKey = 'promotion_value';
   static const String _promotionTypeKey = 'promotion_type';
+  static const String _promotionTypeIdKey = 'promotion_type_id';
+  static const String _promotionMinCompraKey = 'promotion_min_compra';
+  static const String _promotionAplicaTodoKey = 'promotion_aplica_todo';
+  static const String _promotionRequiereMedioPagoKey =
+      'promotion_requiere_medio_pago';
+  static const String _promotionIdMedioPagoRequeridoKey =
+      'promotion_id_medio_pago_requerido';
   static const String _productPromotionsKey = 'product_promotions';
 
   // Data usage keys
@@ -434,8 +442,18 @@ class UserPreferencesService {
     String? codigoPromocion,
     double? valorDescuento,
     int? tipoDescuento,
+    int? idTipoPromocion,
+    double? minCompra,
+    bool? aplicaTodo,
+    bool? requiereMedioPago,
+    int? idMedioPagoRequerido,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    final resolvedTipoDescuento =
+        PromotionRules.resolveTipoDescuentoFromPromotionTypeId(
+          idTipoPromocion,
+        ) ??
+        tipoDescuento;
 
     if (idPromocion != null) {
       await prefs.setInt(_promotionIdKey, idPromocion);
@@ -455,10 +473,43 @@ class UserPreferencesService {
       await prefs.remove(_promotionValueKey);
     }
 
-    if (tipoDescuento != null) {
-      await prefs.setInt(_promotionTypeKey, tipoDescuento);
+    if (resolvedTipoDescuento != null) {
+      await prefs.setInt(_promotionTypeKey, resolvedTipoDescuento);
     } else {
       await prefs.remove(_promotionTypeKey);
+    }
+
+    if (idTipoPromocion != null) {
+      await prefs.setInt(_promotionTypeIdKey, idTipoPromocion);
+    } else {
+      await prefs.remove(_promotionTypeIdKey);
+    }
+
+    if (minCompra != null) {
+      await prefs.setDouble(_promotionMinCompraKey, minCompra);
+    } else {
+      await prefs.remove(_promotionMinCompraKey);
+    }
+
+    if (aplicaTodo != null) {
+      await prefs.setBool(_promotionAplicaTodoKey, aplicaTodo);
+    } else {
+      await prefs.remove(_promotionAplicaTodoKey);
+    }
+
+    if (requiereMedioPago != null) {
+      await prefs.setBool(_promotionRequiereMedioPagoKey, requiereMedioPago);
+    } else {
+      await prefs.remove(_promotionRequiereMedioPagoKey);
+    }
+
+    if (idMedioPagoRequerido != null) {
+      await prefs.setInt(
+        _promotionIdMedioPagoRequeridoKey,
+        idMedioPagoRequerido,
+      );
+    } else {
+      await prefs.remove(_promotionIdMedioPagoRequeridoKey);
     }
   }
 
@@ -468,13 +519,37 @@ class UserPreferencesService {
     final codigoPromocion = prefs.getString(_promotionCodeKey);
     final valorDescuento = prefs.getDouble(_promotionValueKey);
     final tipoDescuento = prefs.getInt(_promotionTypeKey);
+    final idTipoPromocion = prefs.getInt(_promotionTypeIdKey);
+    final minCompra = prefs.getDouble(_promotionMinCompraKey);
+    final aplicaTodo = prefs.getBool(_promotionAplicaTodoKey);
+    final requiereMedioPago = prefs.getBool(_promotionRequiereMedioPagoKey);
+    final idMedioPagoRequerido = prefs.getInt(
+      _promotionIdMedioPagoRequeridoKey,
+    );
+
+    final resolvedTipoDescuento =
+        PromotionRules.resolveTipoDescuentoFromPromotionTypeId(
+          idTipoPromocion,
+        ) ??
+        tipoDescuento;
+    final tipoPromocionNombre = PromotionRules.resolveTipoPromocionNombre(
+      idTipoPromocion: idTipoPromocion,
+      tipoDescuento: resolvedTipoDescuento,
+    );
 
     if (idPromocion != null && codigoPromocion != null) {
       return {
         'id_promocion': idPromocion,
         'codigo_promocion': codigoPromocion,
         'valor_descuento': valorDescuento,
-        'tipo_descuento': tipoDescuento, // 1 = porcentual, 2 = valor fijo
+        'tipo_descuento':
+            resolvedTipoDescuento, // 1 = %, 2 = fijo, 3 = recargo %, 4 = recargo fijo
+        'tipo_promocion_nombre': tipoPromocionNombre,
+        'id_tipo_promocion': idTipoPromocion,
+        'min_compra': minCompra,
+        'aplica_todo': aplicaTodo,
+        'requiere_medio_pago': requiereMedioPago,
+        'id_medio_pago_requerido': idMedioPagoRequerido,
       };
     }
     return null;
@@ -486,6 +561,11 @@ class UserPreferencesService {
     await prefs.remove(_promotionCodeKey);
     await prefs.remove(_promotionValueKey);
     await prefs.remove(_promotionTypeKey);
+    await prefs.remove(_promotionTypeIdKey);
+    await prefs.remove(_promotionMinCompraKey);
+    await prefs.remove(_promotionAplicaTodoKey);
+    await prefs.remove(_promotionRequiereMedioPagoKey);
+    await prefs.remove(_promotionIdMedioPagoRequeridoKey);
   }
 
   /// Guardar promociones de un producto específico
@@ -559,6 +639,7 @@ class UserPreferencesService {
 
   // Print settings keys
   static const String _printEnabledKey = 'print_enabled';
+  static const String _printUsdEnabledKey = 'print_usd_enabled';
 
   // Static text settings keys
   static const String _staticTextEnabledKey = 'static_text_enabled';
@@ -605,6 +686,19 @@ class UserPreferencesService {
   Future<bool> isPrintEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_printEnabledKey) ?? true; // Por defecto habilitado
+  }
+
+  Future<void> setPrintUsdEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_printUsdEnabledKey, enabled);
+    print(
+      'UserPreferencesService: Mostrar USD en impresión actualizado: $enabled',
+    );
+  }
+
+  Future<bool> isPrintUsdEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_printUsdEnabledKey) ?? false;
   }
 
   // Static text settings methods
@@ -1523,10 +1617,10 @@ class UserPreferencesService {
 
       for (final orden in ordenesOffline) {
         ventasOffline += orden.total;
-        productosVendidosOffline += orden.items.fold<int>(
-          0,
+        productosVendidosOffline += orden.items.fold<double>(
+          0.0,
           (sum, item) => sum + item.cantidad,
-        );
+        ).round();
 
         // Estimar método de pago (70% efectivo, 30% transferencias)
         final efectivoOrden = orden.total * 0.7;
@@ -2268,5 +2362,17 @@ class UserPreferencesService {
     } catch (e) {
       print('❌ Error limpiando cache de tipo de cambio: $e');
     }
+  }
+
+  // ==================== FRACTION STEP ====================
+
+  Future<double> getFractionStep() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble('fraction_step') ?? 0.5;
+  }
+
+  Future<void> setFractionStep(double step) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('fraction_step', step);
   }
 }

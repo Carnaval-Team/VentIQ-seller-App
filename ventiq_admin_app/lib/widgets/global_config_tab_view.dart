@@ -30,6 +30,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _noSolicitarCliente = false;
   bool _allowDiscountOnVendedor = false;
   bool _allowPrintPending = false;
+  String _metodoRedondeoPrecioVenta = 'NO_REDONDEAR';
   bool _hasMasterPassword = false;
   bool _showMasterPasswordField = false;
   bool _obscureMasterPassword = true;
@@ -40,10 +41,97 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   // Variables para suscripción
   Subscription? _activeSubscription;
 
+  static const List<_RoundingMethodOption> _roundingOptions = [
+    _RoundingMethodOption(
+      value: 'NO_REDONDEAR',
+      title: 'No redondear',
+      description:
+          'Mantiene el precio exacto sin cambios (ej. 12.45 -> 12.45).',
+    ),
+    _RoundingMethodOption(
+      value: 'REDONDEAR_POR_DEFECTO',
+      title: 'Redondeo normal',
+      description: 'Redondea al entero mas cercano (12.40 -> 12, 12.50 -> 13).',
+    ),
+    _RoundingMethodOption(
+      value: 'REDONDEAR_POR_EXCESO',
+      title: 'Redondeo por exceso',
+      description:
+          'Siempre redondea hacia arriba al entero siguiente (12.01 -> 13).',
+    ),
+    _RoundingMethodOption(
+      value: 'REDONDEAR_A_MULT_5_POR_DEFECTO',
+      title: 'Multiplo de 5 (normal)',
+      description:
+          'Redondea al multiplo de 5 mas cercano (12.4 -> 10, 12.6 -> 15).',
+    ),
+    _RoundingMethodOption(
+      value: 'REDONDEAR_A_MULT_5_POR_EXCESO',
+      title: 'Multiplo de 5 (por exceso)',
+      description:
+          'Redondea hacia arriba al siguiente multiplo de 5 (12 -> 15).',
+    ),
+  ];
+
   @override
   void initState() {
     super.initState();
     _loadStoreConfig();
+  }
+
+  _RoundingMethodOption _getRoundingOption(String value) {
+    return _roundingOptions.firstWhere(
+      (option) => option.value == value,
+      orElse: () => _roundingOptions.first,
+    );
+  }
+
+  Future<void> _updateRoundingMethodSetting(String value) async {
+    if (_storeId == null || _metodoRedondeoPrecioVenta == value) return;
+
+    final previousValue = _metodoRedondeoPrecioVenta;
+    final selectedOption = _getRoundingOption(value);
+
+    try {
+      print('🔧 Actualizando metodo de redondeo: $value');
+
+      await StoreConfigService.updateMetodoRedondeoPrecioVenta(
+        _storeId!,
+        value,
+      );
+
+      setState(() {
+        _metodoRedondeoPrecioVenta = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Metodo de redondeo actualizado: ${selectedOption.title}',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+
+      print('✅ Metodo de redondeo actualizado');
+    } catch (e) {
+      print('❌ Error al actualizar metodo de redondeo: $e');
+
+      setState(() {
+        _metodoRedondeoPrecioVenta = previousValue;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuracion: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _updateAllowPrintPendingSetting(bool value) async {
@@ -137,6 +225,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _allowDiscountOnVendedor =
             config['allow_discount_on_vendedor'] ?? false;
         _allowPrintPending = config['permitir_imprimir_pendientes'] ?? false;
+        _metodoRedondeoPrecioVenta =
+            config['metodo_redondeo_precio_venta'] ?? 'NO_REDONDEAR';
         _hasMasterPassword = hasMasterPassword;
         _showMasterPasswordField = _needMasterPasswordToCancel;
         _showDescriptionInSelectors = showDescriptionInSelectors;
@@ -177,6 +267,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       print(
         '  - Permitir descuentos manuales (vendedor): $_allowDiscountOnVendedor',
       );
+      print('  - Metodo redondeo precio venta: $_metodoRedondeoPrecioVenta');
       print('  - Tiene contraseña maestra: $_hasMasterPassword');
       print(
         '  - Mostrar descripción en selectores: $_showDescriptionInSelectors',
@@ -899,6 +990,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
           const SizedBox(height: 16),
 
+          _buildRoundingMethodCard(),
+
+          const SizedBox(height: 16),
+
           // Configuración de imprimir órdenes pendientes
           _buildConfigCard(
             icon: Icons.print_outlined,
@@ -951,6 +1046,137 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                   style: TextStyle(color: Colors.blue, fontSize: 14),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoundingMethodCard() {
+    final selectedOption = _getRoundingOption(_metodoRedondeoPrecioVenta);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.rounded_corner,
+                  color: Colors.green,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Metodo de redondeo de precios',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Define como se ajusta el precio de venta al guardar.',
+                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            value: _metodoRedondeoPrecioVenta,
+            items:
+                _roundingOptions
+                    .map(
+                      (option) => DropdownMenuItem<String>(
+                        value: option.value,
+                        child: Text(option.title),
+                      ),
+                    )
+                    .toList(),
+            onChanged: (value) {
+              if (value != null) {
+                _updateRoundingMethodSetting(value);
+              }
+            },
+            decoration: InputDecoration(
+              labelText: 'Metodo seleccionado',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: AppColors.primary, width: 2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.green.withOpacity(0.2)),
+            ),
+            child: Text(
+              'Actual: ${selectedOption.title}. ${selectedOption.description}',
+              style: const TextStyle(fontSize: 13, color: Colors.black87),
+            ),
+          ),
+          const SizedBox(height: 12),
+          ..._roundingOptions.map(
+            (option) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 6),
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: Colors.green,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${option.title}: ${option.description}',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -1648,4 +1874,16 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       ],
     );
   }
+}
+
+class _RoundingMethodOption {
+  const _RoundingMethodOption({
+    required this.value,
+    required this.title,
+    required this.description,
+  });
+
+  final String value;
+  final String title;
+  final String description;
 }

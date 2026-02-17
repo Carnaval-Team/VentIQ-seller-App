@@ -115,6 +115,11 @@ class ReauthenticationService {
               codigoPromocion: globalPromotion['codigo_promocion'],
               valorDescuento: globalPromotion['valor_descuento'],
               tipoDescuento: globalPromotion['tipo_descuento'],
+              idTipoPromocion: globalPromotion['id_tipo_promocion'],
+              minCompra: (globalPromotion['min_compra'] as num?)?.toDouble(),
+              aplicaTodo: globalPromotion['aplica_todo'],
+              requiereMedioPago: globalPromotion['requiere_medio_pago'],
+              idMedioPagoRequerido: globalPromotion['id_medio_pago_requerido'],
             );
             print('🎯 Promoción global actualizada');
           } else {

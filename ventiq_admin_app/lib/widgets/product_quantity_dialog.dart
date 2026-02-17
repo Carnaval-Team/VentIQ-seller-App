@@ -46,8 +46,8 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   double? _averagePrice;
   bool _isLoadingAveragePrice = false;
 
-  // Variables para conversión de moneda
-  double? _finalPriceInInvoiceCurrency;
+  // Variables para conversión de moneda (siempre en USD)
+  double? _finalPriceInUSD;
   String _finalCurrency = 'USD';
 
   @override
@@ -254,7 +254,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
       final cantidad = (!widget.product.esServicio && !widget.product.esElaborado) ? (double.tryParse(_quantityController.text) ?? 0.0) : 1.0;
       final precioUnitario =
           double.tryParse(_precioUnitarioController.text) ?? 0;
-      final precioConvertido = _finalPriceInInvoiceCurrency ?? precioUnitario;
+      final precioConvertido = _finalPriceInUSD ?? precioUnitario;
       final precioReferencia =
           double.tryParse(_precioReferenciaController.text) ?? 0;
       final descuentoPorcentaje =
@@ -413,13 +413,10 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                         invoiceCurrency: widget.invoiceCurrency,
                         priceController: _precioUnitarioController,
                         onPriceConverted: (convertedPrice, currency) {
-                          print('convertedPrice');
-                          print(convertedPrice);
-                          print('currency');
-                          print(currency);
+                          print('💱 Precio convertido a USD: $convertedPrice');
                           setState(() {
-                            _finalPriceInInvoiceCurrency = convertedPrice;
-                            _finalCurrency = currency;
+                            _finalPriceInUSD = convertedPrice;
+                            _finalCurrency = currency; // Siempre 'USD'
                           });
                         },
                       ),

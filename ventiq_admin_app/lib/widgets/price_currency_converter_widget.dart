@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import '../services/currency_display_service.dart';
+import '../services/currency_service.dart';
 
-/// Widget especializado para conversión de precios en diálogos de inventario
+/// Widget especializado para conversión de precios en diálogos de inventario.
+/// IMPORTANTE: El precio_unitario siempre se guarda en USD.
+/// Si el usuario escribe en CUP, se convierte a USD antes de guardar.
+/// Si escribe en USD, no se convierte.
 class PriceCurrencyConverterWidget extends StatefulWidget {
-  final String invoiceCurrency; // Moneda de la factura (objetivo)
+  final String invoiceCurrency; // Moneda de la factura (informativo)
   final TextEditingController priceController; // Controller del precio
   final Function(double, String)?
-  onPriceConverted; // Callback cuando se convierte
+  onPriceConverted; // Callback: (precioEnUSD, 'USD')
 
   const PriceCurrencyConverterWidget({
     Key? key,
@@ -23,8 +27,8 @@ class PriceCurrencyConverterWidget extends StatefulWidget {
 class _PriceCurrencyConverterWidgetState
     extends State<PriceCurrencyConverterWidget> {
   String _inputCurrency = 'USD'; // Moneda en la que el usuario escribe
-  double? _exchangeRate;
-  double? _convertedAmount;
+  double? _usdToCupRate; // Tasa USD→CUP (ej: 1 USD = 300 CUP)
+  double? _convertedAmount; // Precio convertido a USD
   bool _isLoading = false;
   List<Map<String, dynamic>> _currencies = [];
 
@@ -33,7 +37,7 @@ class _PriceCurrencyConverterWidgetState
     super.initState();
     _inputCurrency = widget.invoiceCurrency; // Iniciar con moneda de factura
     _loadCurrencies();
-    _loadExchangeRate();
+    _loadUsdToCupRate();
     widget.priceController.addListener(_onPriceChanged);
   }
 
@@ -57,60 +61,55 @@ class _PriceCurrencyConverterWidgetState
     }
   }
 
-  Future<void> _loadExchangeRate() async {
-    if (_inputCurrency == widget.invoiceCurrency) {
-      setState(() {
-        _exchangeRate = 1.0;
-        _convertedAmount = null;
-      });
-      return;
-    }
-
+  /// Carga la tasa USD→CUP usando CurrencyService (incluye override por tienda)
+  Future<void> _loadUsdToCupRate() async {
     setState(() => _isLoading = true);
     try {
-      final rate = await CurrencyDisplayService.getExchangeRateForDisplay(
-        _inputCurrency,
-        widget.invoiceCurrency,
-      );
+      final rate = await CurrencyService.getEffectiveUsdToCupRate();
+      print('💱 Tasa USD→CUP obtenida: $rate');
       if (mounted) {
         setState(() {
-          _exchangeRate = rate;
+          _usdToCupRate = rate;
           _isLoading = false;
         });
         _onPriceChanged();
       }
     } catch (e) {
-      print('Error loading exchange rate: $e');
+      print('❌ Error loading USD→CUP rate: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }
     }
   }
 
+  /// Convierte el precio ingresado a USD
   void _onPriceChanged() {
     final inputAmount = double.tryParse(widget.priceController.text);
-    if (inputAmount != null && _exchangeRate != null) {
-      final converted = inputAmount * _exchangeRate!;
-      setState(() {
-        _convertedAmount = converted;
-      });
+    if (inputAmount == null || inputAmount <= 0) {
+      setState(() => _convertedAmount = null);
+      return;
+    }
 
-      // Notificar el precio convertido
-      widget.onPriceConverted?.call(converted, widget.invoiceCurrency);
+    if (_inputCurrency == 'USD') {
+      // Ya está en USD, no necesita conversión
+      setState(() => _convertedAmount = null);
+      widget.onPriceConverted?.call(inputAmount, 'USD');
+    } else if (_inputCurrency == 'CUP' && _usdToCupRate != null && _usdToCupRate! > 0) {
+      // CUP → USD: dividir por la tasa (si 1 USD = 300 CUP, entonces X CUP / 300 = Y USD)
+      final priceInUsd = inputAmount / _usdToCupRate!;
+      setState(() => _convertedAmount = priceInUsd);
+      widget.onPriceConverted?.call(priceInUsd, 'USD');
     } else {
-      setState(() {
-        _convertedAmount = null;
-      });
+      setState(() => _convertedAmount = null);
     }
   }
 
   void _onCurrencyChanged(String newCurrency) {
     setState(() {
       _inputCurrency = newCurrency;
-      _exchangeRate = null;
       _convertedAmount = null;
     });
-    _loadExchangeRate();
+    _onPriceChanged();
   }
 
   @override
@@ -193,9 +192,9 @@ class _PriceCurrencyConverterWidgetState
 
             const SizedBox(height: 12),
 
-            // Información de conversión
+            // Información de conversión (siempre a USD)
             if (_convertedAmount != null &&
-                _inputCurrency != widget.invoiceCurrency) ...[
+                _inputCurrency != 'USD') ...[
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -216,7 +215,7 @@ class _PriceCurrencyConverterWidgetState
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Precio convertido a ${widget.invoiceCurrency}:',
+                            'Precio convertido a USD:',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.green[700],
@@ -228,16 +227,16 @@ class _PriceCurrencyConverterWidgetState
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${_getCurrencySymbol(widget.invoiceCurrency)}${_convertedAmount!.toStringAsFixed(4)} ${widget.invoiceCurrency}',
+                      '\$${_convertedAmount!.toStringAsFixed(4)} USD',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: Colors.green[700],
                       ),
                     ),
-                    if (_exchangeRate != null)
+                    if (_usdToCupRate != null)
                       Text(
-                        'Tasa: 1 $_inputCurrency = ${_exchangeRate!.toStringAsFixed(4)} ${widget.invoiceCurrency}',
+                        'Tasa: 1 USD = ${_usdToCupRate!.toStringAsFixed(2)} CUP',
                         style: TextStyle(
                           fontSize: 10,
                           color: Colors.green[600],
@@ -246,7 +245,7 @@ class _PriceCurrencyConverterWidgetState
                   ],
                 ),
               ),
-            ] else if (_inputCurrency == widget.invoiceCurrency) ...[
+            ] else if (_inputCurrency == 'USD') ...[
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
@@ -259,7 +258,7 @@ class _PriceCurrencyConverterWidgetState
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Precio en moneda de factura (${widget.invoiceCurrency})',
+                        'Precio en USD (se guarda directamente)',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.blue[700],
@@ -277,16 +276,4 @@ class _PriceCurrencyConverterWidgetState
     );
   }
 
-  String _getCurrencySymbol(String currencyCode) {
-    switch (currencyCode) {
-      case 'USD':
-        return '\$';
-      case 'EUR':
-        return '€';
-      case 'CUP':
-        return '\$';
-      default:
-        return '';
-    }
-  }
 }

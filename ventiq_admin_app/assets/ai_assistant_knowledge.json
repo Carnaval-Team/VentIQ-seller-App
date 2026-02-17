@@ -1,0 +1,746 @@
+{
+  "version": "1.0.0",
+  "welcome_messages": {
+    "gerente": "Hola! Soy tu asistente de VentIQ Admin. Como Gerente, tienes acceso completo a todas las funciones del sistema. Puedo ayudarte con productos, inventario, ventas, finanzas, marketing, CRM y configuracion de tu tienda. Que necesitas hacer hoy?",
+    "supervisor": "Bienvenido! Soy tu asistente de VentIQ Admin. Como Supervisor, puedes gestionar productos, inventario, ventas y trabajadores. Te guio paso a paso en cualquier proceso. En que puedo ayudarte?",
+    "auditor": "Hola! Soy tu asistente de VentIQ Admin. Como Auditor, tienes acceso a visualizar informes financieros, inventario, ventas y metricas del negocio. Que informacion necesitas consultar?",
+    "almacenero": "Bienvenido! Soy tu asistente de VentIQ Admin. Como Almacenero, puedes gestionar recepciones de mercancia, transferencias entre almacenes y consultar el inventario de tu zona. Como puedo ayudarte?"
+  },
+  "modules": {
+    "productos": {
+      "name": "Productos",
+      "description": "Gestion completa del catalogo de productos: crear, editar, categorizar, asignar precios por TPV y generar con IA.",
+      "icon": "inventory_2",
+      "routes": {
+        "list": "/products",
+        "add": "/add-product",
+        "detail": "/product-detail",
+        "categories": "/categories",
+        "tpv_prices": "/tpv-prices"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor", "auditor", "almacenero"],
+        "create": ["gerente"],
+        "edit": ["gerente", "supervisor"],
+        "delete": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "crear_producto",
+          "name": "Crear un producto",
+          "route": "/add-product",
+          "steps": [
+            "Abre el menu lateral tocando el icono de hamburguesa",
+            "Selecciona 'Productos' en el menu",
+            "Toca el boton '+' o 'Agregar Producto'",
+            "Completa el formulario: nombre, descripcion, precio base, categoria",
+            "Opcionalmente, agrega una imagen del producto",
+            "Toca 'Guardar' para crear el producto"
+          ],
+          "tips": [
+            "Puedes usar el generador de IA para crear productos automaticamente desde una imagen",
+            "Los precios se pueden personalizar por cada TPV despues de crear el producto"
+          ]
+        },
+        {
+          "id": "crear_producto_ia",
+          "name": "Crear producto con IA",
+          "route": "/add-product",
+          "steps": [
+            "Ve a la pantalla de agregar producto",
+            "Toca el boton 'Generar con IA' o el icono de varita magica",
+            "Sube una imagen del producto o describe el producto",
+            "La IA analizara y sugerira nombre, descripcion, categoria y precio",
+            "Revisa y ajusta los datos generados",
+            "Guarda el producto"
+          ],
+          "tips": [
+            "La IA funciona mejor con imagenes claras del producto",
+            "Puedes editar cualquier campo sugerido antes de guardar"
+          ]
+        },
+        {
+          "id": "editar_producto",
+          "name": "Editar un producto existente",
+          "route": "/product-detail",
+          "steps": [
+            "Ve a 'Productos' desde el menu lateral",
+            "Busca el producto usando el buscador o navega por la lista",
+            "Toca el producto para ver sus detalles",
+            "Toca el boton 'Editar' o el icono de lapiz",
+            "Modifica los campos necesarios",
+            "Guarda los cambios"
+          ],
+          "tips": [
+            "Puedes usar el escaner de codigo de barras para encontrar productos rapidamente"
+          ]
+        },
+        {
+          "id": "gestionar_categorias",
+          "name": "Gestionar categorias",
+          "route": "/categories",
+          "steps": [
+            "Ve a 'Productos' > 'Categorias' desde el menu",
+            "Veras la lista de categorias existentes",
+            "Para crear una nueva, toca el boton '+'",
+            "Ingresa el nombre de la categoria",
+            "Opcionalmente, asigna un color o icono",
+            "Guarda la categoria"
+          ],
+          "tips": [
+            "Organizar bien las categorias facilita la busqueda de productos"
+          ]
+        },
+        {
+          "id": "precios_por_tpv",
+          "name": "Configurar precios por TPV",
+          "route": "/tpv-prices",
+          "steps": [
+            "Ve a 'Productos' > 'Precios por TPV'",
+            "Selecciona el TPV (punto de venta) que deseas configurar",
+            "Veras la lista de productos con sus precios actuales",
+            "Modifica el precio de cada producto para ese TPV",
+            "Guarda los cambios"
+          ],
+          "tips": [
+            "Los precios por TPV permiten tener precios diferentes en cada caja o sucursal"
+          ]
+        }
+      ]
+    },
+    "inventario": {
+      "name": "Inventario",
+      "description": "Control de stock, movimientos de mercancia, ajustes, transferencias y historial de operaciones.",
+      "icon": "warehouse",
+      "routes": {
+        "main": "/inventory",
+        "operations": "/inventory-operations",
+        "reception": "/inventory-reception",
+        "extraction": "/inventory-extraction",
+        "transfer": "/inventory-transfer",
+        "adjustment": "/inventory-adjustment",
+        "history": "/inventory-history"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor", "auditor", "almacenero"],
+        "reception": ["gerente", "almacenero"],
+        "extraction": ["gerente"],
+        "transfer": ["gerente", "almacenero"],
+        "adjustment": ["gerente", "supervisor"]
+      },
+      "features": [
+        {
+          "id": "recepcion_mercancia",
+          "name": "Registrar recepcion de mercancia",
+          "route": "/inventory-reception",
+          "steps": [
+            "Ve a 'Inventario' > 'Operaciones' desde el menu",
+            "Selecciona 'Recepcion de Mercancia'",
+            "Selecciona el almacen destino",
+            "Agrega los productos recibidos (puedes escanear codigos)",
+            "Indica la cantidad de cada producto",
+            "Opcionalmente, asocia un proveedor y numero de factura",
+            "Confirma la recepcion"
+          ],
+          "tips": [
+            "Puedes usar el asistente de IA para procesar facturas automaticamente",
+            "La recepcion actualiza automaticamente el stock del almacen"
+          ]
+        },
+        {
+          "id": "transferir_stock",
+          "name": "Transferir stock entre almacenes",
+          "route": "/inventory-transfer",
+          "steps": [
+            "Ve a 'Inventario' > 'Operaciones'",
+            "Selecciona 'Transferencia de Stock'",
+            "Elige el almacen de origen",
+            "Elige el almacen de destino",
+            "Selecciona los productos a transferir",
+            "Indica las cantidades",
+            "Confirma la transferencia"
+          ],
+          "tips": [
+            "Las transferencias quedan registradas en el historial de movimientos"
+          ]
+        },
+        {
+          "id": "ajuste_inventario",
+          "name": "Realizar ajuste de inventario",
+          "route": "/inventory-adjustment",
+          "steps": [
+            "Ve a 'Inventario' > 'Operaciones'",
+            "Selecciona 'Ajuste de Inventario'",
+            "Selecciona el almacen",
+            "Busca el producto a ajustar",
+            "Indica la cantidad correcta (real) que hay fisicamente",
+            "Agrega un motivo del ajuste",
+            "Confirma el ajuste"
+          ],
+          "tips": [
+            "Los ajustes son importantes para mantener el inventario sincronizado con la realidad",
+            "Siempre documenta el motivo del ajuste para auditorias"
+          ]
+        },
+        {
+          "id": "ver_historial",
+          "name": "Ver historial de movimientos",
+          "route": "/inventory-history",
+          "steps": [
+            "Ve a 'Inventario' > 'Historial'",
+            "Puedes filtrar por fecha, tipo de operacion o almacen",
+            "Cada movimiento muestra: fecha, producto, cantidad, tipo y usuario"
+          ],
+          "tips": [
+            "El historial es util para rastrear discrepancias en el inventario"
+          ]
+        }
+      ]
+    },
+    "ventas": {
+      "name": "Ventas",
+      "description": "Visualizacion de ventas realizadas, reportes, estadisticas y gestion de promociones.",
+      "icon": "point_of_sale",
+      "routes": {
+        "main": "/sales",
+        "promotions": "/promotions"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor", "auditor"],
+        "promotions": ["gerente", "auditor"]
+      },
+      "features": [
+        {
+          "id": "ver_ventas",
+          "name": "Ver historial de ventas",
+          "route": "/sales",
+          "steps": [
+            "Ve a 'Ventas' desde el menu lateral",
+            "Veras las ventas del dia actual por defecto",
+            "Usa los filtros para cambiar el rango de fechas",
+            "Puedes filtrar por TPV, vendedor o metodo de pago",
+            "Toca una venta para ver su detalle"
+          ],
+          "tips": [
+            "Puedes exportar las ventas a Excel o PDF"
+          ]
+        },
+        {
+          "id": "crear_promocion",
+          "name": "Crear una promocion",
+          "route": "/promotions",
+          "steps": [
+            "Ve a 'Ventas' > 'Promociones'",
+            "Toca el boton '+' para crear una nueva promocion",
+            "Elige el tipo: descuento porcentual, monto fijo, 2x1, etc.",
+            "Selecciona los productos o categorias que aplican",
+            "Define las fechas de vigencia",
+            "Opcionalmente, establece condiciones (compra minima, etc.)",
+            "Activa y guarda la promocion"
+          ],
+          "tips": [
+            "Las promociones se aplican automaticamente en el TPV",
+            "Puedes programar promociones para fechas futuras"
+          ]
+        }
+      ]
+    },
+    "almacenes": {
+      "name": "Almacenes",
+      "description": "Gestion de almacenes, zonas (layouts) y TPVs de la tienda.",
+      "icon": "store",
+      "routes": {
+        "list": "/warehouse",
+        "add": "/add-warehouse"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor", "auditor", "almacenero"],
+        "create": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "ver_almacenes",
+          "name": "Ver almacenes",
+          "route": "/warehouse",
+          "steps": [
+            "Ve a 'Almacenes' desde el menu lateral",
+            "Veras la lista de almacenes de tu tienda",
+            "Cada almacen muestra sus zonas y TPVs asociados",
+            "Toca un almacen para ver su detalle"
+          ],
+          "tips": [
+            "Los almaceneros solo pueden ver su almacen asignado"
+          ]
+        },
+        {
+          "id": "crear_almacen",
+          "name": "Crear un nuevo almacen",
+          "route": "/add-warehouse",
+          "steps": [
+            "Ve a 'Almacenes' desde el menu",
+            "Toca el boton '+' o 'Agregar Almacen'",
+            "Ingresa el nombre del almacen",
+            "Opcionalmente, agrega la direccion",
+            "Crea al menos una zona (layout) dentro del almacen",
+            "Guarda el almacen"
+          ],
+          "tips": [
+            "Cada almacen debe tener al menos una zona para poder registrar inventario"
+          ]
+        }
+      ]
+    },
+    "finanzas": {
+      "name": "Finanzas",
+      "description": "Dashboard financiero, reportes de ingresos/gastos, costos de produccion y tasas de cambio.",
+      "icon": "account_balance",
+      "routes": {
+        "dashboard": "/financial-dashboard",
+        "reports": "/financial-reports",
+        "expenses": "/financial-expenses",
+        "setup": "/financial-setup",
+        "production_costs": "/production-costs",
+        "exchange_rates": "/exchange-rates"
+      },
+      "permissions": {
+        "view": ["gerente", "auditor"],
+        "edit": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "ver_dashboard_financiero",
+          "name": "Ver dashboard financiero",
+          "route": "/financial-dashboard",
+          "steps": [
+            "Ve a 'Finanzas' desde el menu lateral",
+            "Selecciona 'Dashboard' o entra directamente",
+            "Veras un resumen de ingresos, gastos y margen de ganancia",
+            "Usa los filtros de periodo para analizar diferentes rangos"
+          ],
+          "tips": [
+            "El dashboard se actualiza automaticamente con cada venta"
+          ]
+        },
+        {
+          "id": "registrar_gasto",
+          "name": "Registrar un gasto",
+          "route": "/financial-expenses",
+          "steps": [
+            "Ve a 'Finanzas' > 'Gastos'",
+            "Toca el boton '+' para agregar un gasto",
+            "Selecciona la categoria del gasto",
+            "Ingresa el monto y descripcion",
+            "Opcionalmente, adjunta un comprobante",
+            "Guarda el gasto"
+          ],
+          "tips": [
+            "Registrar gastos permite calcular correctamente el margen de ganancia"
+          ]
+        },
+        {
+          "id": "configurar_tasas",
+          "name": "Configurar tasas de cambio",
+          "route": "/exchange-rates",
+          "steps": [
+            "Ve a 'Finanzas' > 'Tasas de Cambio'",
+            "Veras las monedas configuradas y sus tasas actuales",
+            "Modifica la tasa de cambio USD segun el mercado",
+            "Guarda los cambios"
+          ],
+          "tips": [
+            "Las tasas de cambio afectan como se muestran los precios y reportes"
+          ]
+        }
+      ]
+    },
+    "crm": {
+      "name": "CRM y Clientes",
+      "description": "Gestion de clientes, historial de compras, segmentacion y analisis de relaciones comerciales.",
+      "icon": "people",
+      "routes": {
+        "dashboard": "/crm-dashboard",
+        "analytics": "/crm-analytics",
+        "relationships": "/crm-relationships",
+        "customers": "/customers"
+      },
+      "permissions": {
+        "view": ["gerente", "auditor"],
+        "edit": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "ver_clientes",
+          "name": "Ver lista de clientes",
+          "route": "/customers",
+          "steps": [
+            "Ve a 'CRM' > 'Clientes' desde el menu",
+            "Veras la lista de clientes registrados",
+            "Usa el buscador para encontrar clientes especificos",
+            "Toca un cliente para ver su historial de compras"
+          ],
+          "tips": [
+            "Los clientes se registran automaticamente con cada venta si proporcionan datos"
+          ]
+        },
+        {
+          "id": "analisis_crm",
+          "name": "Ver analisis de CRM",
+          "route": "/crm-analytics",
+          "steps": [
+            "Ve a 'CRM' > 'Analiticas'",
+            "Veras metricas como: clientes recurrentes, frecuencia de compra, ticket promedio",
+            "Puedes filtrar por periodo o segmento de clientes"
+          ],
+          "tips": [
+            "Usa estas metricas para identificar tus mejores clientes"
+          ]
+        }
+      ]
+    },
+    "marketing": {
+      "name": "Marketing",
+      "description": "Campanas de marketing, comunicaciones a clientes, programas de fidelidad y segmentacion.",
+      "icon": "campaign",
+      "routes": {
+        "dashboard": "/marketing-dashboard",
+        "campaigns": "/campaigns",
+        "communications": "/communications",
+        "segments": "/segments",
+        "loyalty": "/loyalty"
+      },
+      "permissions": {
+        "view": ["gerente"],
+        "edit": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "crear_campana",
+          "name": "Crear campana de marketing",
+          "route": "/campaigns",
+          "steps": [
+            "Ve a 'Marketing' > 'Campanas'",
+            "Toca '+' para crear una nueva campana",
+            "Define el nombre y objetivo de la campana",
+            "Selecciona el publico objetivo (segmento de clientes)",
+            "Elige el canal: SMS, email, notificacion push",
+            "Redacta el mensaje",
+            "Programa o envía inmediatamente"
+          ],
+          "tips": [
+            "Las campanas segmentadas tienen mejor tasa de respuesta"
+          ]
+        },
+        {
+          "id": "programa_fidelidad",
+          "name": "Configurar programa de fidelidad",
+          "route": "/loyalty",
+          "steps": [
+            "Ve a 'Marketing' > 'Fidelidad'",
+            "Configura las reglas de acumulacion de puntos",
+            "Define las recompensas canjeables",
+            "Activa el programa"
+          ],
+          "tips": [
+            "Los programas de fidelidad aumentan la retencion de clientes"
+          ]
+        }
+      ]
+    },
+    "proveedores": {
+      "name": "Proveedores",
+      "description": "Gestion de proveedores, historial de compras y reportes de abastecimiento.",
+      "icon": "local_shipping",
+      "routes": {
+        "list": "/suppliers",
+        "add": "/add-supplier",
+        "detail": "/supplier-detail",
+        "reports": "/supplier-reports"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor", "auditor"],
+        "create": ["gerente"],
+        "edit": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "registrar_proveedor",
+          "name": "Registrar un proveedor",
+          "route": "/add-supplier",
+          "steps": [
+            "Ve a 'Proveedores' desde el menu",
+            "Toca '+' para agregar un proveedor",
+            "Ingresa los datos: nombre, contacto, telefono, email",
+            "Opcionalmente, agrega direccion y notas",
+            "Guarda el proveedor"
+          ],
+          "tips": [
+            "Asociar proveedores a las recepciones facilita el seguimiento de compras"
+          ]
+        },
+        {
+          "id": "ver_reportes_proveedor",
+          "name": "Ver reportes de proveedores",
+          "route": "/supplier-reports",
+          "steps": [
+            "Ve a 'Proveedores' > 'Reportes'",
+            "Selecciona el proveedor a analizar",
+            "Veras: total comprado, productos mas comprados, historial de pedidos"
+          ],
+          "tips": [
+            "Usa estos reportes para negociar mejores precios con proveedores frecuentes"
+          ]
+        }
+      ]
+    },
+    "trabajadores": {
+      "name": "Trabajadores",
+      "description": "Gestion de personal, asignacion de roles y permisos por tienda.",
+      "icon": "badge",
+      "routes": {
+        "list": "/workers",
+        "tpv_management": "/tpv-management"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor", "auditor"],
+        "edit": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "ver_trabajadores",
+          "name": "Ver lista de trabajadores",
+          "route": "/workers",
+          "steps": [
+            "Ve a 'Trabajadores' desde el menu",
+            "Veras la lista de empleados de la tienda",
+            "Cada trabajador muestra su rol y almacen asignado",
+            "Toca un trabajador para ver o editar sus datos"
+          ],
+          "tips": [
+            "Los roles determinan a que pantallas puede acceder cada trabajador"
+          ]
+        },
+        {
+          "id": "gestionar_tpvs",
+          "name": "Gestionar TPVs y cajas",
+          "route": "/tpv-management",
+          "steps": [
+            "Ve a 'Trabajadores' > 'Gestion de TPVs'",
+            "Veras los TPVs (cajas) configurados",
+            "Puedes crear, editar o desactivar TPVs",
+            "Asigna vendedores a cada TPV"
+          ],
+          "tips": [
+            "Cada TPV puede tener precios diferentes para los productos"
+          ]
+        }
+      ]
+    },
+    "configuracion": {
+      "name": "Configuracion",
+      "description": "Ajustes generales de la tienda, impresoras, notificaciones y preferencias del sistema.",
+      "icon": "settings",
+      "routes": {
+        "main": "/settings",
+        "store": "/store-settings",
+        "printers": "/printer-settings",
+        "notifications": "/notification-settings"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor"],
+        "edit": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "configurar_impresora",
+          "name": "Configurar impresora termica",
+          "route": "/printer-settings",
+          "steps": [
+            "Ve a 'Configuracion' > 'Impresoras'",
+            "Asegurate de tener Bluetooth activado",
+            "Toca 'Buscar impresoras'",
+            "Selecciona tu impresora de la lista",
+            "Haz una impresion de prueba"
+          ],
+          "tips": [
+            "Las impresoras termicas Bluetooth se usan para tickets y recibos"
+          ]
+        },
+        {
+          "id": "datos_tienda",
+          "name": "Editar datos de la tienda",
+          "route": "/store-settings",
+          "steps": [
+            "Ve a 'Configuracion' > 'Datos de la Tienda'",
+            "Puedes editar: nombre, direccion, telefono, logo",
+            "Estos datos aparecen en los tickets y reportes"
+          ],
+          "tips": [
+            "Manten actualizados los datos para que los tickets sean correctos"
+          ]
+        }
+      ]
+    }
+  },
+  "faqs": [
+    {
+      "id": "faq_1",
+      "question": "Como puedo crear un producto?",
+      "answer": "Ve al menu lateral, selecciona 'Productos' y luego toca el boton '+'. Completa el formulario con nombre, precio y categoria. Tambien puedes usar el generador de IA para crear productos desde imagenes.",
+      "route": "/add-product",
+      "roles": ["gerente"]
+    },
+    {
+      "id": "faq_2",
+      "question": "Como registro una recepcion de mercancia?",
+      "answer": "Ve a 'Inventario' > 'Operaciones' > 'Recepcion de Mercancia'. Selecciona el almacen destino, agrega los productos con sus cantidades y confirma la recepcion.",
+      "route": "/inventory-reception",
+      "roles": ["gerente", "almacenero"]
+    },
+    {
+      "id": "faq_3",
+      "question": "Como transfiero productos entre almacenes?",
+      "answer": "Ve a 'Inventario' > 'Operaciones' > 'Transferencia'. Selecciona almacen origen, almacen destino, los productos y cantidades a transferir.",
+      "route": "/inventory-transfer",
+      "roles": ["gerente", "almacenero"]
+    },
+    {
+      "id": "faq_4",
+      "question": "Como veo las ventas del dia?",
+      "answer": "Ve a 'Ventas' desde el menu lateral. Por defecto veras las ventas de hoy. Puedes usar los filtros para cambiar el rango de fechas o filtrar por vendedor.",
+      "route": "/sales",
+      "roles": ["gerente", "supervisor", "auditor"]
+    },
+    {
+      "id": "faq_5",
+      "question": "Como creo una promocion o descuento?",
+      "answer": "Ve a 'Ventas' > 'Promociones'. Toca '+' para crear una nueva. Elige el tipo de descuento, selecciona productos, define fechas de vigencia y activa la promocion.",
+      "route": "/promotions",
+      "roles": ["gerente"]
+    },
+    {
+      "id": "faq_6",
+      "question": "Como cambio el precio de un producto?",
+      "answer": "Ve a 'Productos', busca el producto y tocalo para ver sus detalles. Luego toca 'Editar' y modifica el precio. Para precios diferentes por TPV, usa 'Precios por TPV'.",
+      "route": "/products",
+      "roles": ["gerente", "supervisor"]
+    },
+    {
+      "id": "faq_7",
+      "question": "Como veo el stock de un producto?",
+      "answer": "Ve a 'Productos' y busca el producto. En la vista de detalle veras el stock disponible en cada almacen. Tambien puedes ver el stock global en 'Inventario'.",
+      "route": "/products",
+      "roles": ["gerente", "supervisor", "auditor", "almacenero"]
+    },
+    {
+      "id": "faq_8",
+      "question": "Como configuro la impresora de tickets?",
+      "answer": "Ve a 'Configuracion' > 'Impresoras'. Activa Bluetooth, toca 'Buscar impresoras', selecciona tu impresora y haz una prueba de impresion.",
+      "route": "/printer-settings",
+      "roles": ["gerente", "supervisor"]
+    },
+    {
+      "id": "faq_9",
+      "question": "Como registro un gasto?",
+      "answer": "Ve a 'Finanzas' > 'Gastos'. Toca '+', selecciona la categoria, ingresa el monto y descripcion, y guarda el gasto.",
+      "route": "/financial-expenses",
+      "roles": ["gerente"]
+    },
+    {
+      "id": "faq_10",
+      "question": "Como veo los reportes de ventas?",
+      "answer": "Ve a 'Ventas' desde el menu. Puedes filtrar por fechas, exportar a Excel o PDF, y ver graficos de tendencias en el Dashboard.",
+      "route": "/sales",
+      "roles": ["gerente", "supervisor", "auditor"]
+    }
+  ],
+  "glossary": {
+    "TPV": {
+      "term": "TPV (Terminal Punto de Venta)",
+      "definition": "Es una caja o punto de venta donde se realizan las transacciones con clientes. Cada TPV puede tener precios diferentes y un vendedor asignado."
+    },
+    "SKU": {
+      "term": "SKU (Stock Keeping Unit)",
+      "definition": "Codigo unico que identifica a cada producto. Puede ser el codigo de barras o un codigo interno asignado por la tienda."
+    },
+    "Layout": {
+      "term": "Layout (Zona)",
+      "definition": "Division fisica dentro de un almacen. Por ejemplo: estanteria A, zona fria, bodega trasera. Ayuda a organizar donde se ubica cada producto."
+    },
+    "Stock": {
+      "term": "Stock",
+      "definition": "Cantidad de unidades disponibles de un producto en inventario."
+    },
+    "Recepcion": {
+      "term": "Recepcion de Mercancia",
+      "definition": "Proceso de registrar productos que llegan al almacen, ya sea de un proveedor o de otra fuente."
+    },
+    "Transferencia": {
+      "term": "Transferencia de Stock",
+      "definition": "Movimiento de productos de un almacen a otro dentro de la misma tienda."
+    },
+    "Ajuste": {
+      "term": "Ajuste de Inventario",
+      "definition": "Correccion del stock cuando hay diferencia entre el inventario del sistema y el conteo fisico real."
+    },
+    "Margen": {
+      "term": "Margen de Ganancia",
+      "definition": "Diferencia entre el precio de venta y el costo del producto. Se puede expresar en porcentaje o valor absoluto."
+    },
+    "Consignacion": {
+      "term": "Consignacion",
+      "definition": "Modalidad donde un proveedor deja productos en la tienda y solo se paga por lo vendido."
+    },
+    "CRM": {
+      "term": "CRM (Customer Relationship Management)",
+      "definition": "Sistema de gestion de relaciones con clientes. Permite registrar datos de clientes, historial de compras y preferencias."
+    }
+  },
+  "role_descriptions": {
+    "gerente": {
+      "name": "Gerente",
+      "description": "Acceso completo a todas las funciones del sistema. Puede crear, editar y eliminar cualquier dato, gestionar trabajadores y configurar la tienda.",
+      "can_access": ["productos", "inventario", "ventas", "almacenes", "finanzas", "crm", "marketing", "proveedores", "trabajadores", "configuracion"]
+    },
+    "supervisor": {
+      "name": "Supervisor",
+      "description": "Puede gestionar productos, inventario y ventas. No tiene acceso a finanzas ni marketing. Puede ver trabajadores pero no modificarlos.",
+      "can_access": ["productos", "inventario", "ventas", "almacenes", "proveedores", "trabajadores"]
+    },
+    "auditor": {
+      "name": "Auditor",
+      "description": "Acceso de solo lectura a la mayoria de modulos. Puede ver reportes financieros, ventas e inventario para auditorias, pero no puede modificar datos.",
+      "can_access": ["productos", "inventario", "ventas", "almacenes", "finanzas", "crm", "proveedores", "trabajadores"]
+    },
+    "almacenero": {
+      "name": "Almacenero",
+      "description": "Acceso limitado al almacen asignado. Puede registrar recepciones, transferencias y consultar inventario de su zona. No tiene acceso a ventas ni finanzas.",
+      "can_access": ["productos", "inventario", "almacenes"]
+    }
+  },
+  "suggested_questions": {
+    "gerente": [
+      "Como creo un producto?",
+      "Como veo las ventas de hoy?",
+      "Como registro un gasto?",
+      "Como creo una promocion?"
+    ],
+    "supervisor": [
+      "Como veo el inventario?",
+      "Como edito un producto?",
+      "Como veo las ventas?",
+      "Donde veo los trabajadores?"
+    ],
+    "auditor": [
+      "Como veo los reportes financieros?",
+      "Como exporto las ventas?",
+      "Como veo el historial de inventario?",
+      "Como analizo las metricas?"
+    ],
+    "almacenero": [
+      "Como registro una recepcion?",
+      "Como hago una transferencia?",
+      "Como veo el stock de mi almacen?",
+      "Como busco un producto?"
+    ]
+  }
+}

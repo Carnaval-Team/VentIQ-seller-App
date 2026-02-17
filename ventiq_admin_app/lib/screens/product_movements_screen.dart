@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/product.dart';
 import '../services/product_movements_service.dart';
+import '../services/user_preferences_service.dart';
 import '../config/app_colors.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProductMovementsScreen extends StatefulWidget {
   final Product product;
@@ -35,6 +37,12 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
   DateTime? _dateFrom;
   DateTime? _dateTo;
   int? _selectedOperationTypeId;
+  int? _selectedWarehouseId;
+  String _selectedWarehouse = 'Todos';
+  List<Map<String, dynamic>> _warehouses = [];
+  bool _isLoadingWarehouses = false;
+  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  final SupabaseClient _supabase = Supabase.instance.client;
 
   @override
   void initState() {
@@ -47,6 +55,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
+    _loadWarehouses();
     _loadData();
   }
 
@@ -61,6 +70,48 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       if (_hasMoreData && !_isLoadingMore) {
         _loadMoreData();
       }
+    }
+  }
+
+  Future<void> _loadWarehouses() async {
+    setState(() {
+      _isLoadingWarehouses = true;
+    });
+
+    try {
+      print('🏪 Loading warehouses from Supabase...');
+
+      // Obtener el ID de tienda del usuario
+      final idTienda = await _userPreferencesService.getIdTienda();
+      if (idTienda == null) {
+        print('❌ No store ID found for user');
+        setState(() {
+          _isLoadingWarehouses = false;
+        });
+        return;
+      }
+
+      print('🔍 Fetching warehouses for store ID: $idTienda');
+
+      // Consultar almacenes de la tienda
+      final response = await _supabase
+          .from('app_dat_almacen')
+          .select('id, denominacion, direccion, ubicacion')
+          .eq('id_tienda', idTienda)
+          .order('denominacion');
+
+      print('📦 Received ${response.length} warehouses from Supabase');
+
+      setState(() {
+        _warehouses = List<Map<String, dynamic>>.from(response);
+        _isLoadingWarehouses = false;
+      });
+    } catch (e) {
+      print('❌ Error loading warehouses: $e');
+      setState(() {
+        _warehouses = [];
+        _isLoadingWarehouses = false;
+      });
     }
   }
 
@@ -81,6 +132,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         dateFrom: _dateFrom,
         dateTo: _dateTo,
         operationTypeId: _selectedOperationTypeId,
+        warehouseId: _selectedWarehouseId,
         offset: 0,
         limit: _pageSize,
       );
@@ -115,6 +167,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         dateFrom: _dateFrom,
         dateTo: _dateTo,
         operationTypeId: _selectedOperationTypeId,
+        warehouseId: _selectedWarehouseId,
         offset: _currentOffset,
         limit: _pageSize,
       );
@@ -215,8 +268,25 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       _dateFrom = DateTime(now.year, now.month, now.day, 0, 0, 0);
       _dateTo = DateTime(now.year, now.month, now.day, 23, 59, 59);
       _selectedOperationTypeId = null;
+      _selectedWarehouseId = null;
+      _selectedWarehouse = 'Todos';
     });
     _loadData();
+  }
+
+  Color _getEstadoColor(String estado) {
+    switch (estado.toLowerCase()) {
+      case 'pendiente':
+        return Colors.orange;
+      case 'completada':
+        return Colors.green;
+      case 'devuelta':
+        return Colors.blue;
+      case 'cancelada':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
   }
 
   String _formatDate(String dateString) {
@@ -562,6 +632,53 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
               },
             ),
           ),
+          const SizedBox(height: 12),
+          
+          // Filtro de almacén
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(6),
+              color: Colors.white,
+            ),
+            child: DropdownButton<String>(
+              value: _selectedWarehouse,
+              isExpanded: true,
+              underline: const SizedBox(),
+              hint: const Text('Todos los almacenes'),
+              items: [
+                const DropdownMenuItem<String>(
+                  value: 'Todos',
+                  child: Text('Todos los almacenes'),
+                ),
+                ..._warehouses.map((warehouse) {
+                  final warehouseName = warehouse['denominacion'] as String? ?? 'Sin nombre';
+                  final warehouseId = warehouse['id'].toString();
+
+                  return DropdownMenuItem<String>(
+                    value: warehouseId,
+                    child: Text(
+                      warehouseName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  );
+                }).toList(),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _selectedWarehouse = value!;
+                  if (value == 'Todos') {
+                    _selectedWarehouseId = null;
+                  } else {
+                    _selectedWarehouseId = int.tryParse(value);
+                  }
+                });
+                _loadData();
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -613,12 +730,37 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                     ],
                   ),
                 ),
-                Text(
-                  _formatDate(movement['fecha'] as String? ?? ''),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey.shade600,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (movement['estado_operacion_nombre'] != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _getEstadoColor(movement['estado_operacion_nombre'] as String).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _getEstadoColor(movement['estado_operacion_nombre'] as String).withOpacity(0.5),
+                          ),
+                        ),
+                        child: Text(
+                          movement['estado_operacion_nombre'] as String,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: _getEstadoColor(movement['estado_operacion_nombre'] as String),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatDate(movement['fecha'] as String? ?? ''),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -634,18 +776,26 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ID de Operación
+                  if (movement['id_operacion'] != null)
+                    _buildDetailRow(
+                      'Operación #',
+                      '${movement['id_operacion']}',
+                    ),
+                  
+                  
+                  // Cantidad (movida)
+                  if (movement['cantidad'] != null)
+                    _buildDetailRow(
+                      'Cantidad Movida',
+                      '${movement['cantidad']}',
+                    ),
+                  
                   // Cantidad inicial
                   if (movement['cantidad_inicial'] != null)
                     _buildDetailRow(
                       'Cantidad Inicial',
                       '${movement['cantidad_inicial']}',
-                    ),
-                  
-                  // Cantidad
-                  if (movement['cantidad'] != null)
-                    _buildDetailRow(
-                      'Cantidad',
-                      '${movement['cantidad']}',
                     ),
                   
                   // Cantidad final
@@ -698,11 +848,18 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                       movement['autorizado_por'] as String,
                     ),
                   
-                  // Ubicación
-                  if (movement['ubicacion'] != null)
+                  // Almacén
+                  if (movement['almacen'] != null)
                     _buildDetailRow(
-                      'Ubicación',
-                      movement['ubicacion'] as String,
+                      'Almacén',
+                      movement['almacen'] as String,
+                    ),
+                  
+                  // Zona
+                  if (movement['zona'] != null)
+                    _buildDetailRow(
+                      'Zona',
+                      movement['zona'] as String,
                     ),
                   
                   // Proveedor

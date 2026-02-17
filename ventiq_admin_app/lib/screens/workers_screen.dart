@@ -638,6 +638,60 @@ class _WorkersScreenState extends State<WorkersScreen>
     }
   }
 
+  // 🆕 NUEVO: Convertir nombre de rol a ID
+  int? _getRoleIdFromName(String? roleName) {
+    if (roleName == null) return null;
+    
+    // Buscar en _roles por denominación
+    try {
+      final role = _roles.firstWhere(
+        (r) => r.denominacion.toLowerCase() == _getRoleDisplayName(roleName).toLowerCase(),
+        orElse: () => WorkerRole(
+          id: 0,
+          denominacion: '',
+          descripcion: null,
+          createdAt: DateTime.now(),
+        ),
+      );
+      return role.id > 0 ? role.id : null;
+    } catch (e) {
+      print('⚠️ No se encontró rol con nombre: $roleName');
+      return null;
+    }
+  }
+
+  // 🆕 NUEVO: Convertir ID de rol a nombre
+  String? _getRoleNameFromId(int? roleId) {
+    if (roleId == null) return null;
+    
+    try {
+      final role = _roles.firstWhere(
+        (r) => r.id == roleId,
+        orElse: () => WorkerRole(
+          id: 0,
+          denominacion: '',
+          descripcion: null,
+          createdAt: DateTime.now(),
+        ),
+      );
+      
+      if (role.id == 0) return null;
+      
+      // Convertir denominación a nombre de rol
+      final denominacion = role.denominacion.toLowerCase();
+      if (denominacion.contains('gerente')) return 'gerente';
+      if (denominacion.contains('supervisor')) return 'supervisor';
+      if (denominacion.contains('auditor')) return 'auditor';
+      if (denominacion.contains('vendedor')) return 'vendedor';
+      if (denominacion.contains('almacenero')) return 'almacenero';
+      
+      return null;
+    } catch (e) {
+      print('⚠️ No se encontró rol con ID: $roleId');
+      return null;
+    }
+  }
+
   // 🆕 NUEVO: Widget para mostrar etiquetas múltiples de roles
   Widget _buildRoleTags(WorkerData worker) {
     // rolesActivos ya incluye 'usuario' si tieneUsuario es true
@@ -1386,8 +1440,8 @@ class _WorkersScreenState extends State<WorkersScreen>
                             ),
                           ),
                           const SizedBox(height: 12),
-                          DropdownButtonFormField<int>(
-                            value: selectedRolGeneral,
+                          DropdownButtonFormField<String>(
+                            value: _getRoleNameFromId(selectedRolGeneral),
                             decoration: const InputDecoration(
                               labelText: 'Rol *',
                               prefixIcon: Icon(Icons.badge),
@@ -1395,16 +1449,24 @@ class _WorkersScreenState extends State<WorkersScreen>
                               helperText: 'Rol organizacional del trabajador',
                             ),
                             items:
-                                _roles
+                                [
+                                  'gerente',
+                                  'supervisor',
+                                  'auditor',
+                                  'vendedor',
+                                  'almacenero',
+                                ]
                                     .map(
                                       (role) => DropdownMenuItem(
-                                        value: role.id,
-                                        child: Text(role.denominacion),
+                                        value: role,
+                                        child: Text(_getRoleDisplayName(role)),
                                       ),
                                     )
                                     .toList(),
                             onChanged: (value) {
-                              setDialogState(() => selectedRolGeneral = value);
+                              setDialogState(() {
+                                selectedRolGeneral = _getRoleIdFromName(value);
+                              });
                             },
                           ),
                         ],

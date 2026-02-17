@@ -35,19 +35,20 @@ BEGIN
         p.id_proveedor::BIGINT,
         COALESCE(prov.denominacion, 'Sin Proveedor')::VARCHAR AS nombre_proveedor,
         COALESCE(pv.precio_venta_cup, ep_avg.precio_promedio, 0) AS precio_venta_cup,
-        COALESCE(rp.precio_costo, 0) AS precio_costo,
+        COALESCE(pp.precio_promedio, rp.precio_costo, 0) AS precio_costo,
         COALESCE(tc.tasa, 1) AS valor_usd,
-        COALESCE(rp.precio_costo, 0) * COALESCE(tc.tasa, 1) AS precio_costo_cup,
+        COALESCE(pp.precio_promedio, rp.precio_costo, 0) * COALESCE(tc.tasa, 1) AS precio_costo_cup,
         COALESCE(ventas.total_vendido, 0) AS total_vendido,
         COALESCE(ventas.ingresos_totales, 0) AS ingresos_totales,
-        COALESCE(ventas.total_vendido, 0) * (COALESCE(rp.precio_costo, 0) * COALESCE(tc.tasa, 1)) AS costo_total_vendido,
-        COALESCE(pv.precio_venta_cup, ep_avg.precio_promedio, 0) - (COALESCE(rp.precio_costo, 0) * COALESCE(tc.tasa, 1)) AS ganancia_unitaria,
-        COALESCE(ventas.ingresos_totales, 0) - (COALESCE(ventas.total_vendido, 0) * (COALESCE(rp.precio_costo, 0) * COALESCE(tc.tasa, 1))) AS ganancia_total
+        COALESCE(ventas.total_vendido, 0) * (COALESCE(pp.precio_promedio, rp.precio_costo, 0) * COALESCE(tc.tasa, 1)) AS costo_total_vendido,
+        COALESCE(pv.precio_venta_cup, ep_avg.precio_promedio, 0) - (COALESCE(pp.precio_promedio, rp.precio_costo, 0) * COALESCE(tc.tasa, 1)) AS ganancia_unitaria,
+        COALESCE(ventas.ingresos_totales, 0) - (COALESCE(ventas.total_vendido, 0) * (COALESCE(pp.precio_promedio, rp.precio_costo, 0) * COALESCE(tc.tasa, 1))) AS ganancia_total
     FROM (
         -- USAR LA MISMA LÓGICA EXITOSA: Obtener ventas por producto
         SELECT 
             ep.id_producto,
             ep.id_variante,
+            ep.id_presentacion,
             SUM(ep.cantidad) AS total_vendido,
             SUM(ep.importe) AS ingresos_totales,
             AVG(ep.precio_unitario) AS precio_promedio
@@ -65,7 +66,7 @@ BEGIN
           AND (p_id_almacen IS NULL OR ep.id_ubicacion IN (
             SELECT id FROM app_dat_layout_almacen WHERE id_almacen = p_id_almacen
           ))
-        GROUP BY ep.id_producto, ep.id_variante
+        GROUP BY ep.id_producto, ep.id_variante, ep.id_presentacion
         HAVING SUM(ep.cantidad) > 0
     ) ventas
     JOIN app_dat_producto p ON ventas.id_producto = p.id
@@ -85,6 +86,15 @@ BEGIN
           AND eo.id = (SELECT MAX(id) FROM app_dat_estado_operacion WHERE id_operacion = o.id)
         GROUP BY ep.id_producto, ep.id_variante
     ) ep_avg ON p.id = ep_avg.id_producto AND COALESCE(ventas.id_variante, 0) = COALESCE(ep_avg.id_variante, 0)
+    LEFT JOIN (
+        -- ✅ COSTO REAL POR PRESENTACIÓN: precio_promedio de app_dat_producto_presentacion
+        SELECT 
+            pp.id_producto,
+            pp.id AS id_presentacion,
+            pp.precio_promedio::NUMERIC AS precio_promedio
+        FROM app_dat_producto_presentacion pp
+        WHERE pp.precio_promedio > 0
+    ) pp ON ventas.id_producto = pp.id_producto AND ventas.id_presentacion = pp.id_presentacion
     LEFT JOIN (
         -- Obtener el precio de venta más reciente para cada producto
         SELECT DISTINCT ON (ven.id_producto, COALESCE(ven.id_variante, 0)) 

@@ -1,9 +1,205 @@
 {
-  "current_version": "1.9.7",
-  "build": 807,
+  "current_version": "2.0.8",
+  "build": 818,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.0.8",
+      "date": "2026-02-16",
+      "title": "Cantidades flexibles y descuentos visibles",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Vende por fracciones: litros, kilos, medios...",
+          "description": "Ahora puedes vender medio litro, un cuarto de kilo o la cantidad exacta que necesite tu cliente. Elige el paso de incremento (0.1, 0.25 o 0.5) y los botones +/- se ajustan solos."
+        },
+        {
+          "type": "feature",
+          "title": "Descuentos reflejados en todos los tickets",
+          "description": "Cuando aplicas un descuento manual a una orden, ahora el ticket impreso (Bluetooth, WiFi y web) muestra el subtotal original, el descuento aplicado y el total final. Tu cliente ve exactamente cuánto se ahorró."
+        },
+        {
+          "type": "improvement",
+          "title": "Carrito más claro: cuenta productos, no unidades",
+          "description": "El numerito del carrito ahora muestra cuántos productos distintos llevas, en lugar de sumar todas las unidades. Así sabes de un vistazo qué tan variado es el pedido."
+        },
+        {
+          "type": "improvement",
+          "title": "Precios siempre redondeados al peso",
+          "description": "Si vendes cantidades fraccionadas, el total se redondea hacia arriba al peso más cercano. Nada de centavos sueltos en tus ventas."
+        },
+        {
+          "type": "improvement",
+          "title": "Cantidades claras en tickets e historial",
+          "description": "Los tickets, el historial de órdenes y los reportes muestran '1.5' en vez de '1' cuando vendes fracciones, para que todo cuadre sin confusiones."
+        }
+      ]
+    },
+    {
+      "version": "2.0.7",
+      "date": "2026-02-11",
+      "title": "Guía de almacén más clara",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Nombres completos en la guía de almacén",
+          "description": "Ahora el ticket del almacenero muestra el nombre completo de cada producto, sin cortes ni puntos suspensivos."
+        },
+        {
+          "type": "improvement",
+          "title": "Mejor separación entre productos",
+          "description": "Cada producto en la guía de picking aparece separado para que sea más fácil leer y preparar los pedidos."
+        }
+      ]
+    },
+    {
+      "version": "2.0.6",
+      "date": "2026-02-10",
+      "title": "Impresiones más limpias y compatibles",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Tu logo se imprime sin caracteres extraños",
+          "description": "Mejoramos la impresión para que el ticket salga más limpio: el logo y el nombre de la tienda aparecen correctos, sin símbolos raros entre ellos."
+        },
+        {
+          "type": "improvement",
+          "title": "Mejor compatibilidad con impresoras 80mm y 58mm",
+          "description": "Optimizamos la forma en que se prepara el ticket para que funcione mejor con distintos modelos de impresoras térmicas."
+        },
+        {
+          "type": "improvement",
+          "title": "Tickets con mejor acabado",
+          "description": "Ajustamos el formato del encabezado para que la impresión sea más estable y profesional en Bluetooth y WiFi."
+        }
+      ]
+    },
+    {
+      "version": "2.0.5",
+      "date": "2026-02-05",
+      "title": "Ventas sin cortes, siempre listas",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Órdenes listas aunque se caiga la conexión",
+          "description": "Si el internet falla mientras ves órdenes, la app entra en modo offline automáticamente y muestra tus ventas guardadas al instante."
+        },
+        {
+          "type": "improvement",
+          "title": "Transición online/offline más suave",
+          "description": "La experiencia se mantiene fluida para que sigas vendiendo sin interrupciones."
+        },
+        {
+          "type": "improvement",
+          "title": "Avisos claros y reintento fácil",
+          "description": "Te avisamos con un mensaje sencillo y puedes reintentar cuando vuelva la conexión."
+        },
+        {
+          "type": "fix",
+          "title": "Tus métodos de pago siempre listos, incluso sin internet",
+          "description": "Ahora la app asegura tus métodos de pago desde el primer momento para que puedas cobrar sin sorpresas."
+        },
+        {
+          "type": "fix",
+          "title": "Cobro continuo sin cortes",
+          "description": "La lista de métodos se mantiene disponible aunque la señal falle, para que la venta nunca se detenga."
+        }
+      ]
+    },
+    {
+      "version": "2.0.4",
+      "date": "2026-02-04",
+      "title": "Tickets más claros y ventas sin sorpresas",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Tus tickets ahora hablan en USD",
+          "description": "Activa la opción y muestra CUP + USD en cada impresión para dar más claridad al cliente."
+        },
+        {
+          "type": "improvement",
+          "title": "Promos offline con etiquetas visibles",
+          "description": "Cuando no hay internet, las promos siguen mostrando su tipo para vender con confianza."
+        },
+        {
+          "type": "improvement",
+          "title": "Control total desde Configuración",
+          "description": "Enciende o apaga el USD en impresiones con un solo toque."
+        }
+      ]
+    },
+    {
+      "version": "2.0.3",
+      "date": "2026-02-03",
+      "title": "Sincronización más inteligente",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Sincronización manual sin interrupciones",
+          "description": "Si la sincronización automática está activa, la app espera el momento correcto para proteger tus ventas."
+        },
+        {
+          "type": "feature",
+          "title": "Indicador de sincronización en Configuración",
+          "description": "Un vistazo rápido para saber si se está sincronizando o si todo quedó al día."
+        },
+        {
+          "type": "improvement",
+          "title": "Modo offline más protegido",
+          "description": "Al activar o desactivar el modo offline, la app valida el estado y cuida tus datos."
+        }
+      ]
+    },
+    {
+      "version": "2.0.2",
+      "date": "2026-02-03",
+      "title": "Impresión masiva con tu marca",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Imprime todas tus órdenes de una vez",
+          "description": "Un solo clic y salen todos los tickets listos, sin repetir pasos."
+        },
+        {
+          "type": "improvement",
+          "title": "Tu logo abre cada lote",
+          "description": "La marca de tu tienda encabeza la impresión para un acabado más profesional."
+        },
+        {
+          "type": "improvement",
+          "title": "Tickets con responsable y punto de venta",
+          "description": "Cada comprobante incluye quién atendió y desde qué punto se realizó la venta."
+        }
+      ]
+    },
+    {
+      "version": "2.0.0",
+      "date": "2026-02-03",
+      "title": "Nuevas mejoras web ,modo offlie y promociones!",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Conexión estable en la versión web",
+          "description": "En la web la app asume conexión activa para evitar errores al comprobar internet."
+        },
+        {
+          "type": "improvement",
+          "title": "Catálogo más fácil de mover en web",
+          "description": "Cada subcategoría tiene botones para mover productos a la izquierda o derecha, y también puedes usar las flechas del teclado."
+        },
+        {
+          "type": "improvement",
+          "title": "Arreglo del contador de billetes en modo offline",
+          "description": "Ahora el contador de billetes se actualiza correctamente en modo offline."
+        },
+        {
+          "type": "improvement",
+          "title": "Arreglo de Promociones",
+          "description": "Ahora las promociones se aplican correctamente en modo offline y desde el admin se pueden crear nuevos tipos de promociones."
+        }
+      ]
+    },
     {
       "version": "1.9.7",
       "date": "2026-01-30",

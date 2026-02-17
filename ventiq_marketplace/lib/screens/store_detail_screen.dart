@@ -545,11 +545,15 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: AppTheme.getBackgroundColor(context),
       floatingActionButton: const CarnavalFab(),
       body: RefreshIndicator(
         onRefresh: _refreshProducts,
+        color: accentColor,
         child: CustomScrollView(
           controller: _scrollController,
           slivers: [
@@ -564,7 +568,11 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
                   // Información de la tienda
                   _buildStoreInfo(),
 
-                  const Divider(height: 1, thickness: 1),
+                  Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: isDark ? AppTheme.darkDividerColor : null,
+                  ),
 
                   // Sección de productos
                   _buildProductsSection(),
@@ -584,7 +592,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
               SliverToBoxAdapter(
                 child: Container(
                   padding: const EdgeInsets.all(AppTheme.paddingM),
-                  child: const Center(child: CircularProgressIndicator()),
+                  child: Center(child: CircularProgressIndicator(color: accentColor)),
                 ),
               ),
           ],
@@ -594,10 +602,12 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   }
 
   Widget _buildSliverAppBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final screenWidth = MediaQuery.of(context).size.width;
     return SliverAppBar(
       expandedHeight: 250,
       pinned: true,
+      backgroundColor: isDark ? AppTheme.darkSurfaceColor : AppTheme.primaryColor,
       actions: [
         IconButton(
           icon: _isStoreSubscriptionLoading
@@ -699,16 +709,25 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   }
 
   Widget _buildGradientBackground() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppTheme.primaryColor,
-            AppTheme.primaryColor.withOpacity(0.7),
-            AppTheme.accentColor.withOpacity(0.8),
-          ],
+          colors: isDark
+              ? [
+                  AppTheme.darkSurfaceColor,
+                  AppTheme.darkBackgroundColor,
+                  accentColor.withOpacity(0.3),
+                ]
+              : [
+                  AppTheme.primaryColor,
+                  AppTheme.primaryColor.withOpacity(0.7),
+                  AppTheme.accentColor.withOpacity(0.8),
+                ],
         ),
       ),
       child: Center(
@@ -722,11 +741,14 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   }
 
   Widget _buildStoreInfo() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
     final isOpen = _isStoreOpen();
 
     return Container(
       padding: const EdgeInsets.all(AppTheme.paddingM),
-      color: Colors.white,
+      color: cardColor,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -740,8 +762,8 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
                 ),
                 decoration: BoxDecoration(
                   color: isOpen
-                      ? AppTheme.successColor.withOpacity(0.1)
-                      : AppTheme.errorColor.withOpacity(0.1),
+                      ? AppTheme.successColor.withOpacity(isDark ? 0.2 : 0.1)
+                      : AppTheme.errorColor.withOpacity(isDark ? 0.2 : 0.1),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: isOpen ? AppTheme.successColor : AppTheme.errorColor,
@@ -776,9 +798,9 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
               if (!_isLoadingTPVs)
                 Text(
                   '${_getOpenTPVsCount()} de ${_tpvs.length} TPVs abiertos',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
-                    color: AppTheme.textSecondary,
+                    color: textSecondary,
                   ),
                 ),
             ],
@@ -837,6 +859,11 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
     VoidCallback? onTap,
     Color? iconColor,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return InkWell(
       onTap: onTap,
       child: Row(
@@ -845,13 +872,13 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: AppTheme.primaryColor.withOpacity(0.1),
+              color: accentColor.withOpacity(isDark ? 0.2 : 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
               icon,
               size: 20,
-              color: iconColor ?? AppTheme.primaryColor,
+              color: iconColor ?? accentColor,
             ),
           ),
           const SizedBox(width: 12),
@@ -861,18 +888,18 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: AppTheme.textSecondary,
+                    color: textSecondary,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   content,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
-                    color: AppTheme.textPrimary,
+                    color: textPrimary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -880,10 +907,10 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
             ),
           ),
           if (onTap != null)
-            const Icon(
+            Icon(
               Icons.arrow_forward_ios,
               size: 16,
-              color: AppTheme.textSecondary,
+              color: textSecondary,
             ),
         ],
       ),
@@ -891,17 +918,20 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   }
 
   Widget _buildProductsSection() {
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Container(
       padding: const EdgeInsets.all(AppTheme.paddingM),
-      color: AppTheme.backgroundColor,
+      color: AppTheme.getBackgroundColor(context),
       child: Row(
         children: [
-          const Text(
+          Text(
             'Productos de esta tienda',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: AppTheme.textPrimary,
+              color: textPrimary,
             ),
           ),
           const SizedBox(width: 8),
@@ -909,7 +939,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: AppTheme.primaryColor,
+                color: accentColor,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -927,16 +957,19 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   }
 
   Widget _buildLoadingState() {
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Container(
       padding: const EdgeInsets.all(AppTheme.paddingXL),
-      child: const Center(
+      child: Center(
         child: Column(
           children: [
-            CircularProgressIndicator(),
-            SizedBox(height: AppTheme.paddingM),
+            CircularProgressIndicator(color: accentColor),
+            const SizedBox(height: AppTheme.paddingM),
             Text(
               'Cargando productos...',
-              style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+              style: TextStyle(fontSize: 14, color: textSecondary),
             ),
           ],
         ),
@@ -945,6 +978,9 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   }
 
   Widget _buildEmptyState() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+
     return Container(
       padding: const EdgeInsets.all(AppTheme.paddingXL),
       child: Center(
@@ -953,12 +989,12 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
             Icon(
               Icons.shopping_bag_outlined,
               size: 64,
-              color: Colors.grey[400],
+              color: isDark ? AppTheme.darkTextHint : Colors.grey[400],
             ),
             const SizedBox(height: AppTheme.paddingM),
-            const Text(
+            Text(
               'Esta tienda no tiene productos disponibles',
-              style: TextStyle(fontSize: 16, color: AppTheme.textSecondary),
+              style: TextStyle(fontSize: 16, color: textSecondary),
               textAlign: TextAlign.center,
             ),
           ],
@@ -968,15 +1004,17 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   }
 
   Widget _buildTPVsSection() {
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Puntos de Venta (TPVs)',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-            color: AppTheme.textPrimary,
+            color: textPrimary,
           ),
         ),
         const SizedBox(height: 12),
@@ -986,6 +1024,9 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   }
 
   Widget _buildTPVCard(Map<String, dynamic> tpv) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
     final isOpen = tpv['esta_abierto'] as bool? ?? false;
     final tpvName = tpv['denominacion_tpv'] as String? ?? 'TPV';
     final fechaApertura = tpv['fecha_apertura'] as String?;
@@ -995,13 +1036,13 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: isOpen
-            ? AppTheme.successColor.withOpacity(0.05)
-            : Colors.grey.withOpacity(0.05),
+            ? AppTheme.successColor.withOpacity(isDark ? 0.1 : 0.05)
+            : (isDark ? AppTheme.darkSurfaceColor : Colors.grey.withOpacity(0.05)),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: isOpen
-              ? AppTheme.successColor.withOpacity(0.3)
-              : Colors.grey.withOpacity(0.3),
+              ? AppTheme.successColor.withOpacity(isDark ? 0.5 : 0.3)
+              : (isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.3)),
           width: 1,
         ),
       ),
@@ -1012,14 +1053,14 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: isOpen
-                  ? AppTheme.successColor.withOpacity(0.1)
-                  : Colors.grey.withOpacity(0.1),
+                  ? AppTheme.successColor.withOpacity(isDark ? 0.2 : 0.1)
+                  : (isDark ? AppTheme.darkDividerColor : Colors.grey.withOpacity(0.1)),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(
               isOpen ? Icons.check_circle : Icons.cancel,
               size: 20,
-              color: isOpen ? AppTheme.successColor : Colors.grey,
+              color: isOpen ? AppTheme.successColor : (isDark ? AppTheme.darkTextHint : Colors.grey),
             ),
           ),
           const SizedBox(width: 12),
@@ -1031,27 +1072,27 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
               children: [
                 Text(
                   tpvName,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary,
+                    color: textPrimary,
                   ),
                 ),
                 if (fechaApertura != null && isOpen) ...[
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.access_time,
                         size: 12,
-                        color: AppTheme.textSecondary,
+                        color: textSecondary,
                       ),
                       const SizedBox(width: 4),
                       Text(
                         'Abierto desde ${_formatTime(fechaApertura)}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: AppTheme.textSecondary,
+                          color: textSecondary,
                         ),
                       ),
                     ],
@@ -1065,7 +1106,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: isOpen ? AppTheme.successColor : Colors.grey,
+              color: isOpen ? AppTheme.successColor : (isDark ? AppTheme.darkTextHint : Colors.grey),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(

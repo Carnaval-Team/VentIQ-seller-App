@@ -330,7 +330,7 @@ class WorkerService {
     }
   }
 
-  /// Obtiene estadísticas de trabajadores
+  /// Obtiene estadísticas de trabajadores de una tienda
   static Future<WorkerStatistics> getWorkerStatistics(int storeId) async {
     try {
       print('📊 Obteniendo estadísticas de trabajadores para tienda: $storeId');
@@ -740,6 +740,98 @@ class WorkerService {
     } catch (e) {
       print('❌ Error en restoreWorker: $e');
       throw Exception('Error al restaurar trabajador: $e');
+    }
+  }
+
+  // =====================================================
+  // GESTIÓN DE ALMACENEROS
+  // =====================================================
+
+  /// Crea un almacenero (asigna almacén a trabajador)
+  static Future<bool> createAlmacenero({
+    required int trabajadorId,
+    required int almacenId,
+    required int storeId,
+  }) async {
+    try {
+      print('📦 Creando almacenero: trabajador $trabajadorId, almacén $almacenId');
+
+      final response = await _supabase.rpc(
+        'fn_asignar_rol_almacenero',
+        params: {
+          'p_trabajador_id': trabajadorId,
+          'p_almacen_id': almacenId,
+        },
+      );
+
+      print('📋 Respuesta de creación almacenero: $response');
+
+      if (response['success'] == true) {
+        return true;
+      } else {
+        throw Exception(response['message'] ?? 'Error al crear almacenero');
+      }
+    } catch (e) {
+      print('❌ Error en createAlmacenero: $e');
+      throw Exception('Error al crear almacenero: $e');
+    }
+  }
+
+  /// Elimina un almacenero (desasigna almacén de trabajador)
+  static Future<bool> deleteAlmacenero({
+    required int trabajadorId,
+    required int storeId,
+  }) async {
+    try {
+      print('🗑️ Eliminando almacenero: trabajador $trabajadorId');
+
+      final response = await _supabase.rpc(
+        'fn_eliminar_almacenero',
+        params: {
+          'p_id_trabajador': trabajadorId,
+          'p_id_tienda': storeId,
+        },
+      );
+
+      print('📋 Respuesta de eliminación almacenero: $response');
+
+      if (response['success'] == true) {
+        return true;
+      } else {
+        throw Exception(response['message'] ?? 'Error al eliminar almacenero');
+      }
+    } catch (e) {
+      print('❌ Error en deleteAlmacenero: $e');
+      throw Exception('Error al eliminar almacenero: $e');
+    }
+  }
+
+  /// Obtiene el almacén asignado a un almacenero
+  static Future<Map<String, dynamic>?> getAlmaceneroWarehouse({
+    required int trabajadorId,
+    required int storeId,
+  }) async {
+    try {
+      print('🔍 Obteniendo almacén del almacenero: trabajador $trabajadorId');
+
+      final response = await _supabase.rpc(
+        'fn_obtener_almacen_almacenero',
+        params: {
+          'p_id_trabajador': trabajadorId,
+          'p_id_tienda': storeId,
+        },
+      );
+
+      print('📋 Respuesta de almacén almacenero: $response');
+
+      if (response['success'] == true) {
+        return response['data'] as Map<String, dynamic>;
+      } else {
+        return null;
+      }
+    } catch (e) {
+      print('❌ Error en getAlmaceneroWarehouse: $e');
+      return null;
     }
   }
 

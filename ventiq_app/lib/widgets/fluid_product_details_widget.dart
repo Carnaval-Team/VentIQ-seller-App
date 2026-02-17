@@ -7,6 +7,7 @@ import '../services/product_detail_service.dart';
 import '../services/promotion_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
+import '../utils/promotion_rules.dart';
 
 class FluidProductDetailsWidget extends StatefulWidget {
   final Product product;
@@ -40,15 +41,15 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
 
   // Variantes y cantidades
   ProductVariant? _selectedVariant;
-  Map<ProductVariant, int> _variantQuantities = {};
+  Map<ProductVariant, double> _variantQuantities = {};
   Map<String, List<ProductVariant>> _locationGroups = {};
 
   // Presentaciones
-  int _selectedQuantity = 1;
+  double _selectedQuantity = 1.0;
 
   // Promotion data
   Map<String, dynamic>? _globalPromotionData;
-  Map<String, dynamic>? _productPromotionData;
+  List<Map<String, dynamic>>? _productPromotionData;
 
   @override
   void initState() {
@@ -139,7 +140,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         setState(() {
           _selectedVariant = firstVariant;
-          _variantQuantities[firstVariant] = 1;
+          _variantQuantities[firstVariant] = 1.0;
         });
       });
     }
@@ -236,7 +237,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
         setState(() {
           _globalPromotionData = globalPromotion;
           _productPromotionData =
-              productPromotions.isNotEmpty ? productPromotions.first : null;
+              productPromotions.isNotEmpty ? productPromotions : null;
         });
       }
 
@@ -245,7 +246,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
         '  - Global: ${globalPromotion != null ? globalPromotion['codigo_promocion'] : 'No'}',
       );
       print(
-        '  - Producto: ${_productPromotionData != null ? _productPromotionData!['codigo_promocion'] : 'No'}',
+        '  - Producto: ${_productPromotionData != null ? _productPromotionData!.length : 0} promociones',
       );
     } catch (e) {
       print('❌ Error cargando promociones: $e');
@@ -261,25 +262,49 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
   /// Calcula el precio con descuento, priorizando promoción de producto sobre global
   Map<String, double> _calculatePromotionPrices(double originalPrice) {
     // Priorizar promoción específica del producto sobre promoción global
-    final activePromotion = _productPromotionData ?? _globalPromotionData;
+    final activePromotion = PromotionRules.pickPromotionForDisplay(
+      productPromotions: _productPromotionData,
+      globalPromotion: _globalPromotionData,
+      quantity: _getTotalEquivalentUnits().round(),
+    );
 
     if (activePromotion == null) {
       return {'precio_venta': originalPrice, 'precio_oferta': originalPrice};
     }
 
-    final valorDescuento = activePromotion['valor_descuento'] as double?;
-    final tipoDescuento = activePromotion['tipo_descuento'] as int?;
+    final basePrice = PromotionRules.resolveBasePrice(
+      unitPrice: originalPrice,
+      basePrice: originalPrice,
+      promotion: activePromotion,
+    );
 
-    return PriceUtils.calculatePromotionPrices(
-      originalPrice,
-      valorDescuento,
-      tipoDescuento,
+    return PromotionRules.calculatePromotionPrices(
+      basePrice: basePrice,
+      promotion: activePromotion,
     );
   }
 
   /// Obtiene información de la promoción activa
   Map<String, dynamic>? _getActivePromotion() {
-    return _productPromotionData ?? _globalPromotionData;
+    return PromotionRules.pickPromotionForDisplay(
+      productPromotions: _productPromotionData,
+      globalPromotion: _globalPromotionData,
+      quantity: _getTotalEquivalentUnits().round(),
+    );
+  }
+
+  double _getTotalEquivalentUnits() {
+    final conversionFactor = _selectedPresentation?.cantidad ?? 1.0;
+
+    if (_currentProduct?.variantes.isNotEmpty ?? false) {
+      double total = 0.0;
+      for (final quantity in _variantQuantities.values) {
+        total += quantity * conversionFactor;
+      }
+      return total;
+    }
+
+    return _selectedQuantity * conversionFactor;
   }
 
   /// Construye la sección de precio con promociones
@@ -293,8 +318,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
         prices['precio_venta'] != originalPrice;
 
     if (hasPromotion && activePromotion != null) {
-      final tipoDescuento = activePromotion['tipo_descuento'] as int?;
-      final isRecargo = tipoDescuento == 3; // Recargo porcentual
+      final isRecargo = PromotionRules.isRecargoPromotionType(activePromotion);
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -401,8 +425,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
         prices['precio_venta'] != originalPrice;
 
     if (hasPromotion && activePromotion != null) {
-      final tipoDescuento = activePromotion['tipo_descuento'] as int?;
-      final isRecargo = tipoDescuento == 3; // Recargo porcentual
+      final isRecargo = PromotionRules.isRecargoPromotionType(activePromotion);
 
       // Para recargo porcentual, mostrar el precio de venta (mayor)
       // Para descuentos, mostrar el precio de oferta (menor)
@@ -437,12 +460,12 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
     setState(() {
       _selectedVariant = variant;
       if (!_variantQuantities.containsKey(variant)) {
-        _variantQuantities[variant] = 1;
+        _variantQuantities[variant] = 1.0;
       }
     });
   }
 
-  void _updateVariantQuantity(ProductVariant variant, int quantity) {
+  void _updateVariantQuantity(ProductVariant variant, double quantity) {
     setState(() {
       if (quantity > 0) {
         _variantQuantities[variant] = quantity;
@@ -455,7 +478,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
     });
   }
 
-  void _updateQuantity(int quantity) {
+  void _updateQuantity(double quantity) {
     setState(() {
       _selectedQuantity = quantity;
     });
@@ -487,7 +510,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
             OrderItem(
               id: 'item_${DateTime.now().millisecondsSinceEpoch}',
               producto: _currentProduct!,
-              cantidad: finalQuantity.toInt(),
+              cantidad: finalQuantity,
               precioUnitario:
                   prices['precio_oferta']!, // Usar precio con descuento
               precioBase: prices['precio_venta'], // Precio base para cálculos
@@ -512,7 +535,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
           OrderItem(
             id: 'item_${DateTime.now().millisecondsSinceEpoch}',
             producto: _currentProduct!,
-            cantidad: finalQuantity.toInt(),
+            cantidad: finalQuantity,
             precioUnitario:
                 prices['precio_oferta']!, // Usar precio con descuento
             precioBase: prices['precio_venta'], // Precio base para cálculos
@@ -823,7 +846,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
 
   Widget _buildVariantTile(ProductVariant variant) {
     final isSelected = _selectedVariant == variant;
-    final quantity = _variantQuantities[variant] ?? 0;
+    final quantity = _variantQuantities[variant] ?? 0.0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -853,12 +876,12 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                       onPressed:
                           quantity > 0
                               ? () =>
-                                  _updateVariantQuantity(variant, quantity - 1)
+                                  _updateVariantQuantity(variant, quantity - 1.0)
                               : null,
                       icon: const Icon(Icons.remove),
                     ),
                     Text(
-                      quantity.toString(),
+                      PriceUtils.formatQuantity(quantity.toDouble()),
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -868,7 +891,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                       onPressed:
                           quantity < variant.cantidad
                               ? () =>
-                                  _updateVariantQuantity(variant, quantity + 1)
+                                  _updateVariantQuantity(variant, quantity + 1.0)
                               : null,
                       icon: const Icon(Icons.add),
                     ),
@@ -911,7 +934,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                 IconButton(
                   onPressed:
                       _selectedQuantity > 1
-                          ? () => _updateQuantity(_selectedQuantity - 1)
+                          ? () => _updateQuantity(_selectedQuantity - 1.0)
                           : null,
                   icon: const Icon(Icons.remove),
                   style: IconButton.styleFrom(
@@ -920,7 +943,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                 ),
                 const SizedBox(width: 16),
                 Text(
-                  _selectedQuantity.toString(),
+                  PriceUtils.formatQuantity(_selectedQuantity),
                   style: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -928,7 +951,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                 ),
                 const SizedBox(width: 16),
                 IconButton(
-                  onPressed: () => _updateQuantity(_selectedQuantity + 1),
+                  onPressed: () => _updateQuantity(_selectedQuantity + 1.0),
                   icon: const Icon(Icons.add),
                   style: IconButton.styleFrom(
                     backgroundColor: Colors.purple.shade100,
@@ -1011,7 +1034,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          'Cantidad: ${item.cantidad.toStringAsFixed(0)}',
+                          'Cantidad: ${PriceUtils.formatQuantity(item.cantidad)}',
                           style: const TextStyle(fontWeight: FontWeight.w500),
                         ),
                         Text(

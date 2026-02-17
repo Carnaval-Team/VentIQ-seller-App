@@ -35,14 +35,32 @@ class _InventoryScreenState extends State<InventoryScreen>
   bool _canCreateTransfer = false;
   bool _canCreateAdjustment = false;
   bool _canCreateExtraction = false;
+  bool _isAlmacenero = false;
+  int? _assignedWarehouseId;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_onTabChanged);
+    _checkUserRole();
     _checkPermissions();
     _loadInitialData();
+  }
+
+  Future<void> _checkUserRole() async {
+    final role = await _permissionsService.getUserRole();
+    final isAlmacenero = role == UserRole.almacenero;
+    
+    if (isAlmacenero) {
+      final warehouseId = await _permissionsService.getAssignedWarehouse();
+      if (mounted) {
+        setState(() {
+          _isAlmacenero = isAlmacenero;
+          _assignedWarehouseId = warehouseId;
+        });
+      }
+    }
   }
 
   Future<void> _checkPermissions() async {
@@ -497,7 +515,10 @@ class _InventoryScreenState extends State<InventoryScreen>
                 controller: _tabController,
                 children: [
                   const InventoryDashboard(),
-                  const InventoryStockScreen(),
+                  InventoryStockScreen(
+                    isAlmacenero: _isAlmacenero,
+                    assignedWarehouseId: _assignedWarehouseId,
+                  ),
                   const InventoryOperationsScreen(),
                   const InventoryWarehouseScreen(),
                 ],

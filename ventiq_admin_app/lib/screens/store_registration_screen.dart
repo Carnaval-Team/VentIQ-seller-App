@@ -5,41 +5,45 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/app_colors.dart';
+import '../models/store_ai_models.dart';
 import '../services/store_registration_service.dart';
 import '../services/warehouse_service.dart';
 import '../services/geonames_service.dart';
+import '../widgets/ai_store_generator_sheet.dart';
 
 class StoreRegistrationScreen extends StatefulWidget {
   const StoreRegistrationScreen({super.key});
 
   @override
-  State<StoreRegistrationScreen> createState() => _StoreRegistrationScreenState();
+  State<StoreRegistrationScreen> createState() =>
+      _StoreRegistrationScreenState();
 }
 
 class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   final PageController _pageController = PageController();
-  final StoreRegistrationService _registrationService = StoreRegistrationService();
+  final StoreRegistrationService _registrationService =
+      StoreRegistrationService();
   final WarehouseService _warehouseService = WarehouseService();
-  
+
   int _currentStep = 0;
   bool _isLoading = false;
-  
+
   // Formulario controllers
   final _userFormKey = GlobalKey<FormState>();
   final _storeFormKey = GlobalKey<FormState>();
-  
+
   // Datos del usuario
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _fullNameController = TextEditingController();
   final _phoneController = TextEditingController();
-  
+
   // Datos de la tienda
   final _storeNameController = TextEditingController();
   final _storeAddressController = TextEditingController();
   final _storeLocationController = TextEditingController();
-  
+
   // Datos de país, estado y ciudad
   List<Map<String, dynamic>> _countries = [];
   List<Map<String, dynamic>> _states = [];
@@ -55,19 +59,121 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   double? _storeLatitude;
   double? _storeLogitude;
   bool _showMapPicker = false;
-  
+
   // Datos obligatorios
   List<Map<String, dynamic>> _tpvData = [];
   List<Map<String, dynamic>> _almacenesData = [];
   List<Map<String, dynamic>> _layoutsData = [];
   List<Map<String, dynamic>> _personalData = [];
-  
+
   // Los roles y layout types se manejan directamente en los métodos
 
   @override
   void initState() {
     super.initState();
     _loadCountries();
+  }
+
+  Future<void> _openAiStoreAssistant() async {
+    final plan = await showModalBottomSheet<StoreAiPlan>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const AiStoreGeneratorSheet(),
+    );
+
+    if (plan == null || !mounted) {
+      return;
+    }
+
+    _applyAiPlan(plan);
+    Future.microtask(() {
+      if (mounted) {
+        _createStore();
+      }
+    });
+  }
+
+  void _applyAiPlan(StoreAiPlan plan) {
+    setState(() {
+      _fullNameController.text = (plan.user.fullName ?? '').trim();
+      _phoneController.text = (plan.user.phone ?? '').trim();
+      _emailController.text = (plan.user.email ?? '').trim();
+      _passwordController.text = (plan.user.password ?? '').trim();
+      _confirmPasswordController.text = (plan.user.password ?? '').trim();
+
+      _storeNameController.text = (plan.storeName ?? '').trim();
+      _storeAddressController.text = (plan.storeAddress ?? '').trim();
+
+      _selectedCountry = {
+        'countryCode': (plan.location.countryCode ?? '').trim(),
+        'countryName': (plan.location.countryName ?? '').trim(),
+      };
+      _selectedState = {
+        'adminCode1': (plan.location.stateCode ?? '').trim(),
+        'name': (plan.location.stateName ?? '').trim(),
+      };
+      _selectedCity = {
+        'name': (plan.location.city ?? '').trim(),
+        'lat': plan.location.latitude,
+        'lng': plan.location.longitude,
+      };
+      _storeLatitude = plan.location.latitude;
+      _storeLogitude = plan.location.longitude;
+
+      _almacenesData =
+          plan.warehouses
+              .map(
+                (w) => {
+                  'denominacion': (w.name ?? '').trim(),
+                  'direccion': (w.address ?? '').trim(),
+                  'ubicacion': (w.location ?? '').trim(),
+                },
+              )
+              .where((w) => (w['denominacion'] ?? '').toString().isNotEmpty)
+              .toList();
+
+      _layoutsData =
+          plan.layouts
+              .map(
+                (l) => {
+                  'denominacion': (l.name ?? '').trim(),
+                  'codigo': (l.code ?? '').trim(),
+                  'almacen_asignado': (l.warehouseName ?? '').trim(),
+                  'id_tipo_layout': l.tipoLayoutId ?? 1,
+                  'id_layout_padre': null,
+                  'tipo_nombre': 'Zona',
+                },
+              )
+              .where(
+                (l) =>
+                    (l['denominacion'] ?? '').toString().isNotEmpty &&
+                    (l['codigo'] ?? '').toString().isNotEmpty,
+              )
+              .toList();
+
+      _tpvData =
+          plan.tpvs
+              .map(
+                (t) => {
+                  'denominacion': (t.name ?? '').trim(),
+                  'almacen_asignado': (t.warehouseName ?? '').trim(),
+                },
+              )
+              .where((t) => (t['denominacion'] ?? '').toString().isNotEmpty)
+              .toList();
+
+      _personalData = [];
+      _addMainUserToPersonal();
+
+      _currentStep = 3;
+    });
+
+    _pageController.animateToPage(
+      3,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
 
   Future<void> _loadCountries() async {
@@ -87,9 +193,9 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
         setState(() {
           _loadingCountries = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar países: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al cargar países: $e')));
       }
     }
   }
@@ -115,9 +221,9 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
         setState(() {
           _loadingStates = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar estados: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al cargar estados: $e')));
       }
     }
   }
@@ -141,9 +247,9 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
         setState(() {
           _loadingCities = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar ciudades: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al cargar ciudades: $e')));
       }
     }
   }
@@ -234,16 +340,18 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
             children: [
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'VentIQAdmin/1.6.0 (+https://ventiq.com; contact: support@ventiq.com)',
+                userAgentPackageName:
+                    'VentIQAdmin/1.6.0 (+https://ventiq.com; contact: support@ventiq.com)',
                 tileSize: 256,
               ),
               RichAttributionWidget(
                 attributions: [
                   TextSourceAttribution(
                     'OpenStreetMap contributors',
-                    onTap: () => launchUrl(
-                      Uri.parse('https://openstreetmap.org/copyright'),
-                    ),
+                    onTap:
+                        () => launchUrl(
+                          Uri.parse('https://openstreetmap.org/copyright'),
+                        ),
                   ),
                 ],
               ),
@@ -329,15 +437,22 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                   // Resetear a la ubicación de la ciudad seleccionada
                   if (_selectedCity != null) {
                     setState(() {
-                      _storeLatitude = double.tryParse(_selectedCity!['lat'].toString()) ?? 0.0;
-                      _storeLogitude = double.tryParse(_selectedCity!['lng'].toString()) ?? 0.0;
+                      _storeLatitude =
+                          double.tryParse(_selectedCity!['lat'].toString()) ??
+                          0.0;
+                      _storeLogitude =
+                          double.tryParse(_selectedCity!['lng'].toString()) ??
+                          0.0;
                     });
                   }
                 },
                 icon: const Icon(Icons.refresh, size: 18),
                 label: const Text('Resetear'),
                 style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                 ),
               ),
             ],
@@ -353,147 +468,174 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('Ajustar Localización'),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 450,
-            child: Column(
-              children: [
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setState) => AlertDialog(
+                  title: const Text('Ajustar Localización'),
+                  content: SizedBox(
+                    width: double.maxFinite,
+                    height: 450,
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.map, size: 64, color: AppColors.primary),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'OpenStreetMap',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.blue.shade200),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Coordenadas Actuales:',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              border: Border.all(color: Colors.grey.shade300),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.map,
+                                  size: 64,
+                                  color: AppColors.primary,
                                 ),
-                              ),
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  const Icon(Icons.location_on, color: AppColors.primary, size: 18),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Latitud: ${tempLat.toStringAsFixed(6)}',
-                                      style: const TextStyle(fontSize: 13),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  const Icon(Icons.location_on, color: AppColors.primary, size: 18),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Longitud: ${tempLng.toStringAsFixed(6)}',
-                                      style: const TextStyle(fontSize: 13),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.orange.shade200),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.info, color: Colors.orange.shade700, size: 20),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Ejecuta: flutter pub get\npara activar el mapa interactivo',
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'OpenStreetMap',
                                   style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.orange.shade700,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.textPrimary,
                                   ),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 24),
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.blue.shade200,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Coordenadas Actuales:',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.location_on,
+                                            color: AppColors.primary,
+                                            size: 18,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              'Latitud: ${tempLat.toStringAsFixed(6)}',
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.location_on,
+                                            color: AppColors.primary,
+                                            size: 18,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              'Longitud: ${tempLng.toStringAsFixed(6)}',
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.orange.shade200,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.info,
+                                        color: Colors.orange.shade700,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          'Ejecuta: flutter pub get\npara activar el mapa interactivo',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.orange.shade700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Cancelar'),
+                            ),
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                // Guardar coordenadas temporales
+                                this._storeLatitude = tempLat;
+                                this._storeLogitude = tempLng;
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Coordenadas guardadas: ${tempLat.toStringAsFixed(4)}, ${tempLng.toStringAsFixed(4)}',
+                                    ),
+                                    duration: const Duration(seconds: 2),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.check),
+                              label: const Text('Guardar'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        // Guardar coordenadas temporales
-                        this._storeLatitude = tempLat;
-                        this._storeLogitude = tempLng;
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Coordenadas guardadas: ${tempLat.toStringAsFixed(4)}, ${tempLng.toStringAsFixed(4)}',
-                            ),
-                            duration: const Duration(seconds: 2),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.check),
-                      label: const Text('Guardar'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
           ),
-        ),
-      ),
     );
   }
 
@@ -533,10 +675,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  AppColors.primary,
-                  AppColors.primary.withOpacity(0.8),
-                ],
+                colors: [AppColors.primary, AppColors.primary.withOpacity(0.8)],
               ),
             ),
             child: Column(
@@ -547,12 +686,14 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
               ],
             ),
           ),
-          
+
           // Content con mejor diseño
           Expanded(
             child: Container(
               width: double.infinity,
-              constraints: const BoxConstraints(maxWidth: 600), // Limitar ancho en pantallas grandes
+              constraints: const BoxConstraints(
+                maxWidth: 600,
+              ), // Limitar ancho en pantallas grandes
               child: PageView(
                 controller: _pageController,
                 physics: const NeverScrollableScrollPhysics(),
@@ -565,7 +706,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
               ),
             ),
           ),
-          
+
           // Navigation buttons mejorados
           _buildModernNavigationButtons(),
         ],
@@ -595,7 +736,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                   final isActive = index <= _currentStep;
                   final isCompleted = index < _currentStep;
                   final isCurrent = index == _currentStep;
-                  
+
                   return Expanded(
                     child: Row(
                       children: [
@@ -604,37 +745,42 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                           width: isCurrent ? 32 : 28,
                           height: isCurrent ? 32 : 28,
                           decoration: BoxDecoration(
-                            color: isCompleted 
-                                ? Colors.green 
-                                : isActive 
-                                    ? Colors.white 
+                            color:
+                                isCompleted
+                                    ? Colors.green
+                                    : isActive
+                                    ? Colors.white
                                     : Colors.white.withOpacity(0.3),
                             shape: BoxShape.circle,
-                            border: isCurrent ? Border.all(
-                              color: Colors.white,
-                              width: 2,
-                            ) : null,
-                            boxShadow: isCurrent ? [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
-                                blurRadius: 4,
-                                offset: const Offset(0, 1),
-                              ),
-                            ] : null,
+                            border:
+                                isCurrent
+                                    ? Border.all(color: Colors.white, width: 2)
+                                    : null,
+                            boxShadow:
+                                isCurrent
+                                    ? [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.2),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 1),
+                                      ),
+                                    ]
+                                    : null,
                           ),
                           child: Icon(
-                            isCompleted 
-                                ? Icons.check 
+                            isCompleted
+                                ? Icons.check
                                 : steps[index]['icon'] as IconData,
-                            color: isCompleted 
-                                ? Colors.white 
-                                : isActive 
-                                    ? AppColors.primary 
+                            color:
+                                isCompleted
+                                    ? Colors.white
+                                    : isActive
+                                    ? AppColors.primary
                                     : Colors.white.withOpacity(0.6),
                             size: isCurrent ? 16 : 14,
                           ),
                         ),
-                        
+
                         // Línea conectora - MÁS DELGADA
                         if (index < steps.length - 1)
                           Expanded(
@@ -642,9 +788,10 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                               height: 2,
                               margin: const EdgeInsets.symmetric(horizontal: 4),
                               decoration: BoxDecoration(
-                                color: index < _currentStep 
-                                    ? Colors.green 
-                                    : Colors.white.withOpacity(0.3),
+                                color:
+                                    index < _currentStep
+                                        ? Colors.green
+                                        : Colors.white.withOpacity(0.3),
                                 borderRadius: BorderRadius.circular(1),
                               ),
                             ),
@@ -718,96 +865,124 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                   ),
                 ),
                 const SizedBox(height: 40),
-            
-            TextFormField(
-              controller: _fullNameController,
-              decoration: const InputDecoration(
-                labelText: 'Nombre Completo',
-                prefixIcon: Icon(Icons.person),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Ingresa el nombre completo';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            
-            TextFormField(
-              controller: _phoneController,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Número de Teléfono',
-                prefixIcon: Icon(Icons.phone),
-                hintText: 'Ej: +1234567890',
-                helperText: 'Necesario para que nuestro equipo pueda contactarte',
-                helperMaxLines: 2,
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Ingresa un número de teléfono';
-                }
-                if (value.trim().length < 8) {
-                  return 'Ingresa un número de teléfono válido';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            
-            TextFormField(
-              controller: _emailController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                prefixIcon: Icon(Icons.email),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Ingresa un email';
-                }
-                if (!value.contains('@')) {
-                  return 'Ingresa un email válido';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            
-            TextFormField(
-              controller: _passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Contraseña',
-                prefixIcon: Icon(Icons.lock),
-              ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Ingresa una contraseña';
-                }
-                if (value.length < 6) {
-                  return 'La contraseña debe tener al menos 6 caracteres';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            
-            TextFormField(
-              controller: _confirmPasswordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Confirmar Contraseña',
-                prefixIcon: Icon(Icons.lock_outline),
-              ),
-              validator: (value) {
-                if (value != _passwordController.text) {
-                  return 'Las contraseñas no coinciden';
-                }
-                return null;
-              },
-            ),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _isLoading ? null : _openAiStoreAssistant,
+                    icon: const Icon(Icons.auto_awesome, size: 20),
+                    label: const Text(
+                      'Crear tienda asistida (IA)',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(
+                        color: AppColors.primary,
+                        width: 2,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                TextFormField(
+                  controller: _fullNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre Completo',
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Ingresa el nombre completo';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                TextFormField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Número de Teléfono',
+                    prefixIcon: Icon(Icons.phone),
+                    hintText: 'Ej: +1234567890',
+                    helperText:
+                        'Necesario para que nuestro equipo pueda contactarte',
+                    helperMaxLines: 2,
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Ingresa un número de teléfono';
+                    }
+                    if (value.trim().length < 8) {
+                      return 'Ingresa un número de teléfono válido';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                TextFormField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    prefixIcon: Icon(Icons.email),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Ingresa un email';
+                    }
+                    if (!value.contains('@')) {
+                      return 'Ingresa un email válido';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Contraseña',
+                    prefixIcon: Icon(Icons.lock),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Ingresa una contraseña';
+                    }
+                    if (value.length < 6) {
+                      return 'La contraseña debe tener al menos 6 caracteres';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                TextFormField(
+                  controller: _confirmPasswordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirmar Contraseña',
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
+                  validator: (value) {
+                    if (value != _passwordController.text) {
+                      return 'Las contraseñas no coinciden';
+                    }
+                    return null;
+                  },
+                ),
               ],
             ),
           ),
@@ -873,474 +1048,517 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                   ),
                 ),
                 const SizedBox(height: 40),
-            
-            TextFormField(
-              controller: _storeNameController,
-              decoration: const InputDecoration(
-                labelText: 'Nombre de la Tienda',
-                prefixIcon: Icon(Icons.store),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Ingresa el nombre de la tienda';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            
-            TextFormField(
-              controller: _storeAddressController,
-              decoration: const InputDecoration(
-                labelText: 'Dirección',
-                prefixIcon: Icon(Icons.location_on),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Ingresa la dirección';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
 
-            // Dropdown de País con búsqueda y bandera
-            _loadingCountries
-                ? const Padding(
+                TextFormField(
+                  controller: _storeNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre de la Tienda',
+                    prefixIcon: Icon(Icons.store),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Ingresa el nombre de la tienda';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                TextFormField(
+                  controller: _storeAddressController,
+                  decoration: const InputDecoration(
+                    labelText: 'Dirección',
+                    prefixIcon: Icon(Icons.location_on),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Ingresa la dirección';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // Dropdown de País con búsqueda y bandera
+                _loadingCountries
+                    ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: CircularProgressIndicator(),
+                    )
+                    : DropdownSearch<Map<String, dynamic>>(
+                      items: _countries,
+                      itemAsString: (item) => item['countryName'] ?? '',
+                      selectedItem: _selectedCountry,
+                      popupProps: PopupProps.menu(
+                        showSearchBox: true,
+                        searchFieldProps: const TextFieldProps(
+                          decoration: InputDecoration(
+                            hintText: 'Buscar país...',
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                          ),
+                        ),
+                        itemBuilder: (context, item, isSelected) {
+                          final countryCode = item['countryCode'] ?? '';
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            child: Row(
+                              children: [
+                                CountryFlag.fromCountryCode(
+                                  countryCode,
+                                  height: 24,
+                                  width: 32,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    item['countryName'] ?? '',
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        menuProps: const MenuProps(
+                          borderRadius: BorderRadius.vertical(
+                            bottom: Radius.circular(8),
+                          ),
+                          elevation: 8,
+                        ),
+                      ),
+                      dropdownDecoratorProps: DropDownDecoratorProps(
+                        dropdownSearchDecoration: InputDecoration(
+                          labelText: 'País',
+                          prefixIcon:
+                              _selectedCountry != null
+                                  ? Padding(
+                                    padding: const EdgeInsets.all(8),
+                                    child: CountryFlag.fromCountryCode(
+                                      _selectedCountry!['countryCode'] ?? '',
+                                      height: 24,
+                                      width: 32,
+                                    ),
+                                  )
+                                  : const Icon(Icons.public),
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            onPressed: _loadCountries,
+                            icon: const Icon(Icons.refresh),
+                            tooltip: 'Recargar países',
+                          ),
+                        ),
+                      ),
+                      onChanged: (country) {
+                        if (country != null) {
+                          setState(() {
+                            _selectedCountry = country;
+                          });
+                          _loadStates(country['countryCode']);
+                        }
+                      },
+                      validator: (value) {
+                        if (value == null) {
+                          return 'Selecciona un país';
+                        }
+                        return null;
+                      },
+                    ),
+                const SizedBox(height: 16),
+
+                // Dropdown de Estado con búsqueda
+                if (_selectedCountry == null)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'Selecciona un país primero',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                else if (_loadingStates)
+                  const Padding(
                     padding: EdgeInsets.symmetric(vertical: 16),
                     child: CircularProgressIndicator(),
                   )
-                : DropdownSearch<Map<String, dynamic>>(
-                    items: _countries,
-                    itemAsString: (item) => item['countryName'] ?? '',
-                    selectedItem: _selectedCountry,
+                else if (_states.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'Este país no tiene estados registrados',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                else
+                  DropdownSearch<Map<String, dynamic>>(
+                    items: _states,
+                    itemAsString: (item) => item['name'] ?? '',
+                    selectedItem: _selectedState,
                     popupProps: PopupProps.menu(
                       showSearchBox: true,
                       searchFieldProps: const TextFieldProps(
                         decoration: InputDecoration(
-                          hintText: 'Buscar país...',
+                          hintText: 'Buscar estado...',
                           border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                         ),
                       ),
                       itemBuilder: (context, item, isSelected) {
-                        final countryCode = item['countryCode'] ?? '';
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          child: Row(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              CountryFlag.fromCountryCode(
-                                countryCode,
-                                height: 24,
-                                width: 32,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  item['countryName'] ?? '',
-                                  style: const TextStyle(fontSize: 14),
+                              Text(
+                                item['name'] ?? '',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
+                              if (item['adminName1'] != null &&
+                                  item['adminName1'] != item['name'])
+                                Text(
+                                  item['adminName1'],
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
                             ],
                           ),
                         );
                       },
                       menuProps: const MenuProps(
-                        borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
+                        borderRadius: BorderRadius.vertical(
+                          bottom: Radius.circular(8),
+                        ),
                         elevation: 8,
                       ),
                     ),
                     dropdownDecoratorProps: DropDownDecoratorProps(
                       dropdownSearchDecoration: InputDecoration(
-                        labelText: 'País',
-                        prefixIcon: _selectedCountry != null
-                            ? Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: CountryFlag.fromCountryCode(
-                                  _selectedCountry!['countryCode'] ?? '',
-                                  height: 24,
-                                  width: 32,
-                                ),
-                              )
-                            : const Icon(Icons.public),
+                        labelText: 'Estado/Provincia',
+                        prefixIcon: const Icon(Icons.location_city),
                         border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
-                          onPressed: _loadCountries,
-                          icon: const Icon(Icons.refresh),
-                          tooltip: 'Recargar países',
-                        ),
+                        suffixIcon:
+                            _selectedCountry != null
+                                ? IconButton(
+                                  onPressed:
+                                      () => _loadStates(
+                                        _selectedCountry!['countryCode'],
+                                      ),
+                                  icon: const Icon(Icons.refresh),
+                                  tooltip: 'Recargar estados',
+                                )
+                                : null,
                       ),
                     ),
-                    onChanged: (country) {
-                      if (country != null) {
-                        setState(() {
-                          _selectedCountry = country;
-                        });
-                        _loadStates(country['countryCode']);
+                    validator: (value) {
+                      if (_states.isNotEmpty && value == null) {
+                        return 'Selecciona un estado';
+                      }
+                      return null;
+                    },
+                    onChanged: (state) {
+                      setState(() {
+                        _selectedState = state;
+                      });
+                      if (state != null && _selectedCountry != null) {
+                        _loadCities(
+                          _selectedCountry!['countryCode'],
+                          state['adminCode1'] ?? '',
+                        );
                       }
                     },
+                  ),
+                const SizedBox(height: 16),
+
+                // Dropdown de Ciudad con búsqueda
+                if (_selectedState == null)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'Selecciona un estado primero',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                else if (_loadingCities)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: CircularProgressIndicator(),
+                  )
+                else if (_cities.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'No hay ciudades disponibles para este estado',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                else
+                  DropdownSearch<Map<String, dynamic>>(
+                    items: _cities,
+                    itemAsString: (item) {
+                      final name = item['name'] ?? '';
+                      final population = item['population'] ?? 0;
+                      return population > 0
+                          ? '$name (${_formatPopulation(population)})'
+                          : name;
+                    },
+                    selectedItem: _selectedCity,
+                    popupProps: PopupProps.menu(
+                      showSearchBox: true,
+                      searchFieldProps: const TextFieldProps(
+                        decoration: InputDecoration(
+                          hintText: 'Buscar ciudad...',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                        ),
+                      ),
+                      itemBuilder: (context, item, isSelected) {
+                        final name = item['name'] ?? '';
+                        final population = item['population'] ?? 0;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                name,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              if (population > 0)
+                                Text(
+                                  'Población: ${_formatPopulation(population)}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                      menuProps: const MenuProps(
+                        borderRadius: BorderRadius.vertical(
+                          bottom: Radius.circular(8),
+                        ),
+                        elevation: 8,
+                      ),
+                    ),
+                    dropdownDecoratorProps: DropDownDecoratorProps(
+                      dropdownSearchDecoration: InputDecoration(
+                        labelText: 'Ciudad',
+                        prefixIcon: const Icon(Icons.location_on),
+                        border: const OutlineInputBorder(),
+                        suffixIcon:
+                            _selectedState != null
+                                ? IconButton(
+                                  onPressed:
+                                      () => _loadCities(
+                                        _selectedCountry!['countryCode'],
+                                        _selectedState!['adminCode1'] ?? '',
+                                      ),
+                                  icon: const Icon(Icons.refresh),
+                                  tooltip: 'Recargar ciudades',
+                                )
+                                : null,
+                      ),
+                    ),
+                    onChanged: (city) {
+                      setState(() {
+                        _selectedCity = city;
+                        if (city != null) {
+                          // Solo usar las coordenadas de la ciudad como punto inicial del mapa
+                          // El usuario puede cambiar la ubicación en el mapa interactivo
+                          try {
+                            _storeLatitude =
+                                double.tryParse(city['lat'].toString()) ?? 0.0;
+                            _storeLogitude =
+                                double.tryParse(city['lng'].toString()) ?? 0.0;
+                          } catch (e) {
+                            print('Error al convertir coordenadas: $e');
+                            _storeLatitude = 0.0;
+                            _storeLogitude = 0.0;
+                          }
+                        }
+                      });
+                    },
                     validator: (value) {
-                      if (value == null) {
-                        return 'Selecciona un país';
+                      if (_cities.isNotEmpty && value == null) {
+                        return 'Selecciona una ciudad';
                       }
                       return null;
                     },
                   ),
-            const SizedBox(height: 16),
+                const SizedBox(height: 24),
 
-            // Dropdown de Estado con búsqueda
-            if (_selectedCountry == null)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'Selecciona un país primero',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              )
-            else if (_loadingStates)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: CircularProgressIndicator(),
-              )
-            else if (_states.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'Este país no tiene estados registrados',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              )
-            else
-              DropdownSearch<Map<String, dynamic>>(
-                items: _states,
-                itemAsString: (item) => item['name'] ?? '',
-                selectedItem: _selectedState,
-                popupProps: PopupProps.menu(
-                  showSearchBox: true,
-                  searchFieldProps: const TextFieldProps(
-                    decoration: InputDecoration(
-                      hintText: 'Buscar estado...',
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                  ),
-                  itemBuilder: (context, item, isSelected) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            item['name'] ?? '',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
+                // Sección de localización en mapa
+                if (_selectedCity != null)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Localización en Mapa',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                          color: Colors.white,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
                             ),
-                          ),
-                          if (item['adminName1'] != null && item['adminName1'] != item['name'])
-                            Text(
-                              item['adminName1'],
-                              style: const TextStyle(
-                                fontSize: 12,
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Mapa interactivo
+                            Container(
+                              height: 350,
+                              decoration: const BoxDecoration(
+                                borderRadius: BorderRadius.only(
+                                  topLeft: Radius.circular(8),
+                                  topRight: Radius.circular(8),
+                                ),
                                 color: Colors.grey,
                               ),
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                  menuProps: const MenuProps(
-                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
-                    elevation: 8,
-                  ),
-                ),
-                dropdownDecoratorProps: DropDownDecoratorProps(
-                  dropdownSearchDecoration: InputDecoration(
-                    labelText: 'Estado/Provincia',
-                    prefixIcon: const Icon(Icons.location_city),
-                    border: const OutlineInputBorder(),
-                    suffixIcon: _selectedCountry != null
-                        ? IconButton(
-                            onPressed: () => _loadStates(_selectedCountry!['countryCode']),
-                            icon: const Icon(Icons.refresh),
-                            tooltip: 'Recargar estados',
-                          )
-                        : null,
-                  ),
-                ),
-                validator: (value) {
-                  if (_states.isNotEmpty && value == null) {
-                    return 'Selecciona un estado';
-                  }
-                  return null;
-                },
-                onChanged: (state) {
-                  setState(() {
-                    _selectedState = state;
-                  });
-                  if (state != null && _selectedCountry != null) {
-                    _loadCities(
-                      _selectedCountry!['countryCode'],
-                      state['adminCode1'] ?? '',
-                    );
-                  }
-                },
-              ),
-            const SizedBox(height: 16),
-
-            // Dropdown de Ciudad con búsqueda
-            if (_selectedState == null)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'Selecciona un estado primero',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              )
-            else if (_loadingCities)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: CircularProgressIndicator(),
-              )
-            else if (_cities.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'No hay ciudades disponibles para este estado',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              )
-            else
-              DropdownSearch<Map<String, dynamic>>(
-                items: _cities,
-                itemAsString: (item) {
-                  final name = item['name'] ?? '';
-                  final population = item['population'] ?? 0;
-                  return population > 0 ? '$name (${_formatPopulation(population)})' : name;
-                },
-                selectedItem: _selectedCity,
-                popupProps: PopupProps.menu(
-                  showSearchBox: true,
-                  searchFieldProps: const TextFieldProps(
-                    decoration: InputDecoration(
-                      hintText: 'Buscar ciudad...',
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                  ),
-                  itemBuilder: (context, item, isSelected) {
-                    final name = item['name'] ?? '';
-                    final population = item['population'] ?? 0;
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            name,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          if (population > 0)
-                            Text(
-                              'Población: ${_formatPopulation(population)}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
+                              child: ClipRRect(
+                                borderRadius: const BorderRadius.only(
+                                  topLeft: Radius.circular(8),
+                                  topRight: Radius.circular(8),
+                                ),
+                                child: _buildMapPreview(),
                               ),
                             ),
-                        ],
-                      ),
-                    );
-                  },
-                  menuProps: const MenuProps(
-                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
-                    elevation: 8,
-                  ),
-                ),
-                dropdownDecoratorProps: DropDownDecoratorProps(
-                  dropdownSearchDecoration: InputDecoration(
-                    labelText: 'Ciudad',
-                    prefixIcon: const Icon(Icons.location_on),
-                    border: const OutlineInputBorder(),
-                    suffixIcon: _selectedState != null
-                        ? IconButton(
-                            onPressed: () => _loadCities(
-                              _selectedCountry!['countryCode'],
-                              _selectedState!['adminCode1'] ?? '',
-                            ),
-                            icon: const Icon(Icons.refresh),
-                            tooltip: 'Recargar ciudades',
-                          )
-                        : null,
-                  ),
-                ),
-                onChanged: (city) {
-                  setState(() {
-                    _selectedCity = city;
-                    if (city != null) {
-                      // Solo usar las coordenadas de la ciudad como punto inicial del mapa
-                      // El usuario puede cambiar la ubicación en el mapa interactivo
-                      try {
-                        _storeLatitude = double.tryParse(city['lat'].toString()) ?? 0.0;
-                        _storeLogitude = double.tryParse(city['lng'].toString()) ?? 0.0;
-                      } catch (e) {
-                        print('Error al convertir coordenadas: $e');
-                        _storeLatitude = 0.0;
-                        _storeLogitude = 0.0;
-                      }
-                    }
-                  });
-                },
-                validator: (value) {
-                  if (_cities.isNotEmpty && value == null) {
-                    return 'Selecciona una ciudad';
-                  }
-                  return null;
-                },
-              ),
-            const SizedBox(height: 24),
-
-            // Sección de localización en mapa
-            if (_selectedCity != null)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Localización en Mapa',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                      color: Colors.white,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Mapa interactivo
-                        Container(
-                          height: 350,
-                          decoration: const BoxDecoration(
-                            borderRadius: BorderRadius.only(
-                              topLeft: Radius.circular(8),
-                              topRight: Radius.circular(8),
-                            ),
-                            color: Colors.grey,
-                          ),
-                          child: ClipRRect(
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(8),
-                              topRight: Radius.circular(8),
-                            ),
-                            child: _buildMapPreview(),
-                          ),
-                        ),
-                        // Información de la localización
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: const BorderRadius.only(
-                              bottomLeft: Radius.circular(0),
-                              bottomRight: Radius.circular(0),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.location_on, color: AppColors.primary, size: 20),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _selectedCity?['name'] ?? 'Ciudad',
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Lat: ${_storeLatitude?.toStringAsFixed(6) ?? "N/A"} | Lng: ${_storeLogitude?.toStringAsFixed(6) ?? "N/A"}',
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  ],
+                            // Información de la localización
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: const BorderRadius.only(
+                                  bottomLeft: Radius.circular(0),
+                                  bottomRight: Radius.circular(0),
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                        // Resumen de datos
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildLocationSummaryRow(
-                                'País',
-                                _selectedCountry?['countryName'] ?? 'No seleccionado',
-                                Icons.public,
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.location_on,
+                                    color: AppColors.primary,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          _selectedCity?['name'] ?? 'Ciudad',
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppColors.textPrimary,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Lat: ${_storeLatitude?.toStringAsFixed(6) ?? "N/A"} | Lng: ${_storeLogitude?.toStringAsFixed(6) ?? "N/A"}',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 8),
-                              _buildLocationSummaryRow(
-                                'Estado',
-                                _selectedState?['name'] ?? 'No seleccionado',
-                                Icons.location_city,
-                              ),
-                              const SizedBox(height: 8),
-                              _buildLocationSummaryRow(
-                                'Ciudad',
-                                _selectedCity?['name'] ?? 'No seleccionado',
-                                Icons.location_on,
-                              ),
-                              const SizedBox(height: 8),
-                              _buildLocationSummaryRow(
-                                'Dirección',
-                                _storeAddressController.text.isNotEmpty
-                                    ? _storeAddressController.text
-                                    : 'No ingresada',
-                                Icons.home,
-                              ),
-                              /* const SizedBox(height: 16),
+                            ),
+                            // Resumen de datos
+                            Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildLocationSummaryRow(
+                                    'País',
+                                    _selectedCountry?['countryName'] ??
+                                        'No seleccionado',
+                                    Icons.public,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _buildLocationSummaryRow(
+                                    'Estado',
+                                    _selectedState?['name'] ??
+                                        'No seleccionado',
+                                    Icons.location_city,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _buildLocationSummaryRow(
+                                    'Ciudad',
+                                    _selectedCity?['name'] ?? 'No seleccionado',
+                                    Icons.location_on,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _buildLocationSummaryRow(
+                                    'Dirección',
+                                    _storeAddressController.text.isNotEmpty
+                                        ? _storeAddressController.text
+                                        : 'No ingresada',
+                                    Icons.home,
+                                  ),
+                                  /* const SizedBox(height: 16),
                               SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton.icon(
@@ -1358,14 +1576,14 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                                   ),
                                 ),
                               ), */
-                            ],
-                          ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
               ],
             ),
           ),
@@ -1442,45 +1660,43 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
               ),
               const SizedBox(height: 16),
 
-          // Layouts Section
-          _buildSectionCard(
-            title: 'Layouts/Zonas',
-            icon: Icons.grid_view,
-            count: _layoutsData.length,
-            items: _layoutsData,
-            onAdd: _showAddLayoutDialog,
-            onEdit: (index) => _showEditLayoutDialog(index),
-            onDelete: (index) => _deleteLayout(index),
-            required: true,
-          ),
-          const SizedBox(height: 16),
+              // Layouts Section
+              _buildSectionCard(
+                title: 'Layouts/Zonas',
+                icon: Icons.grid_view,
+                count: _layoutsData.length,
+                items: _layoutsData,
+                onAdd: _showAddLayoutDialog,
+                onEdit: (index) => _showEditLayoutDialog(index),
+                onDelete: (index) => _deleteLayout(index),
+                required: true,
+              ),
+              const SizedBox(height: 16),
 
-          // TPVs Section
-          _buildSectionCard(
-            title: 'TPVs',
-            icon: Icons.point_of_sale,
-            count: _tpvData.length,
-            items: _tpvData,
-            onAdd: _showAddTPVDialog,
-            onEdit: (index) => _showEditTPVDialog(index),
-            onDelete: (index) => _deleteTPV(index),
-            required: true,
-          ),
-          const SizedBox(height: 16),
-          
+              // TPVs Section
+              _buildSectionCard(
+                title: 'TPVs',
+                icon: Icons.point_of_sale,
+                count: _tpvData.length,
+                items: _tpvData,
+                onAdd: _showAddTPVDialog,
+                onEdit: (index) => _showEditTPVDialog(index),
+                onDelete: (index) => _deleteTPV(index),
+                required: true,
+              ),
+              const SizedBox(height: 16),
 
-          
-          // Personal Section
-          _buildSectionCard(
-            title: 'Personal',
-            icon: Icons.people,
-            count: _personalData.length,
-            items: _personalData,
-            onAdd: _showAddPersonalDialog,
-            onEdit: (index) => _showEditPersonalDialog(index),
-            onDelete: (index) => _deletePersonal(index),
-            required: true,
-          ),
+              // Personal Section
+              _buildSectionCard(
+                title: 'Personal',
+                icon: Icons.people,
+                count: _personalData.length,
+                items: _personalData,
+                onAdd: _showAddPersonalDialog,
+                onEdit: (index) => _showEditPersonalDialog(index),
+                onDelete: (index) => _deletePersonal(index),
+                required: true,
+              ),
             ],
           ),
         ),
@@ -1519,7 +1735,10 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                 ),
                 if (required && count == 0)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.red.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
@@ -1553,7 +1772,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            
+
             if (items.isEmpty)
               Container(
                 width: double.infinity,
@@ -1594,18 +1813,24 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    item['denominacion'] ?? '${item['nombres']} ${item['apellidos']}' ?? 'Sin nombre',
+                                    item['denominacion'] ??
+                                        '${item['nombres']} ${item['apellidos']}' ??
+                                        'Sin nombre',
                                     style: TextStyle(
                                       fontWeight: FontWeight.w600,
-                                      color: item['is_main_user'] == true 
-                                          ? Colors.green.shade700 
-                                          : Colors.black,
+                                      color:
+                                          item['is_main_user'] == true
+                                              ? Colors.green.shade700
+                                              : Colors.black,
                                     ),
                                   ),
                                 ),
                                 if (item['is_main_user'] == true)
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: Colors.blue.withOpacity(0.1),
                                       borderRadius: BorderRadius.circular(8),
@@ -1634,15 +1859,18 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                                 'Rol: ${item['tipo_rol']}',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: item['is_main_user'] == true 
-                                      ? Colors.green.shade600 
-                                      : Colors.grey,
-                                  fontWeight: item['is_main_user'] == true 
-                                      ? FontWeight.w500 
-                                      : FontWeight.normal,
+                                  color:
+                                      item['is_main_user'] == true
+                                          ? Colors.green.shade600
+                                          : Colors.grey,
+                                  fontWeight:
+                                      item['is_main_user'] == true
+                                          ? FontWeight.w500
+                                          : FontWeight.normal,
                                 ),
                               ),
-                            if (item['almacen_asignado'] != null && item['tipo_rol'] == 'almacenero')
+                            if (item['almacen_asignado'] != null &&
+                                item['tipo_rol'] == 'almacenero')
                               Text(
                                 'Almacén: ${item['almacen_asignado']}',
                                 style: const TextStyle(
@@ -1650,7 +1878,8 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                                   color: Colors.blue,
                                 ),
                               ),
-                            if (item['tpv_asignado'] != null && item['tipo_rol'] == 'vendedor')
+                            if (item['tpv_asignado'] != null &&
+                                item['tipo_rol'] == 'vendedor')
                               Text(
                                 'TPV: ${item['tpv_asignado']}',
                                 style: const TextStyle(
@@ -1676,16 +1905,25 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                       ] else ...[
                         // Mostrar indicador de usuario principal
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.green.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.green.withOpacity(0.3)),
+                            border: Border.all(
+                              color: Colors.green.withOpacity(0.3),
+                            ),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: const [
-                              Icon(Icons.admin_panel_settings, size: 16, color: Colors.green),
+                              Icon(
+                                Icons.admin_panel_settings,
+                                size: 16,
+                                color: Colors.green,
+                              ),
                               SizedBox(width: 4),
                               Text(
                                 'ADMIN',
@@ -1764,165 +2002,201 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                 ),
               ),
               const SizedBox(height: 40),
-          
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Información del Usuario',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text('Nombre: ${_fullNameController.text}'),
-                  Text('Teléfono: ${_phoneController.text}'),
-                  Text('Email: ${_emailController.text}'),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Información de la Tienda',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text('Nombre: ${_storeNameController.text}'),
-                  Text('Dirección: ${_storeAddressController.text}'),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Ubicación Geográfica',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                  ),
-                  const SizedBox(height: 6),
-                  Text('País: ${_selectedCountry?['countryName'] ?? 'No seleccionado'}'),
-                  Text('Provincia: ${_selectedState?['name'] ?? 'No seleccionada'}'),
-                  Text('Ciudad: ${_selectedCity?['name'] ?? 'No seleccionada'}'),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Coordenadas: ${_storeLatitude?.toStringAsFixed(6) ?? 'N/A'}, ${_storeLogitude?.toStringAsFixed(6) ?? 'N/A'}',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Configuración Inicial',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  
-                  // TPVs
-                  Text(
-                    'TPVs (${_tpvData.length}):',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  ..._tpvData.map((tpv) => Padding(
-                    padding: const EdgeInsets.only(left: 16, top: 4),
-                    child: Text('• ${tpv['denominacion']} (Almacén: ${tpv['almacen_asignado'] ?? 'No asignado'})'),
-                  )).toList(),
-                  const SizedBox(height: 8),
-                  
-                  // Almacenes
-                  Text(
-                    'Almacenes (${_almacenesData.length}):',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  ..._almacenesData.map((almacen) => Padding(
-                    padding: const EdgeInsets.only(left: 16, top: 4),
-                    child: Text('• ${almacen['denominacion']} - ${almacen['direccion']}'),
-                  )).toList(),
-                  const SizedBox(height: 8),
-                  
-                  // Layouts
-                  Text(
-                    'Layouts/Zonas (${_layoutsData.length}):',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  ..._layoutsData.map((layout) => Padding(
-                    padding: const EdgeInsets.only(left: 16, top: 4),
-                    child: Text('• ${layout['denominacion']} (${layout['tipo_nombre'] ?? 'Zona'}) - Almacén: ${layout['almacen_asignado']} - Código: ${layout['codigo']}'),
-                  )).toList(),
-                  const SizedBox(height: 8),
-                  
-                  // Personal
-                  Text(
-                    'Personal (${_personalData.length}):',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  ..._personalData.map((personal) {
-                    String asignacion = '';
-                    if (personal['almacen_asignado'] != null) {
-                      asignacion = ' (Almacén: ${personal['almacen_asignado']})';
-                    } else if (personal['tpv_asignado'] != null) {
-                      asignacion = ' (TPV: ${personal['tpv_asignado']})';
-                    }
-                    return Padding(
-                      padding: const EdgeInsets.only(left: 16, top: 4),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('• ${personal['nombres']} ${personal['apellidos']} - ${personal['tipo_rol']}$asignacion'),
-                          if (personal['email'] != null)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 12, top: 2),
-                              child: Text(
-                                'Email: ${personal['email']}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ),
-                        ],
+
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Información del Usuario',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    );
-                  }).toList(),
-                ],
-              ),
-            ),
-          ),
-          
-          if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.all(32),
-              child: Center(
-                child: Column(
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
-                    Text('Creando tienda...'),
-                  ],
+                      const SizedBox(height: 8),
+                      Text('Nombre: ${_fullNameController.text}'),
+                      Text('Teléfono: ${_phoneController.text}'),
+                      Text('Email: ${_emailController.text}'),
+                    ],
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(height: 16),
+
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Información de la Tienda',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text('Nombre: ${_storeNameController.text}'),
+                      Text('Dirección: ${_storeAddressController.text}'),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Ubicación Geográfica',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'País: ${_selectedCountry?['countryName'] ?? 'No seleccionado'}',
+                      ),
+                      Text(
+                        'Provincia: ${_selectedState?['name'] ?? 'No seleccionada'}',
+                      ),
+                      Text(
+                        'Ciudad: ${_selectedCity?['name'] ?? 'No seleccionada'}',
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Coordenadas: ${_storeLatitude?.toStringAsFixed(6) ?? 'N/A'}, ${_storeLogitude?.toStringAsFixed(6) ?? 'N/A'}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Configuración Inicial',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      // TPVs
+                      Text(
+                        'TPVs (${_tpvData.length}):',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      ..._tpvData
+                          .map(
+                            (tpv) => Padding(
+                              padding: const EdgeInsets.only(left: 16, top: 4),
+                              child: Text(
+                                '• ${tpv['denominacion']} (Almacén: ${tpv['almacen_asignado'] ?? 'No asignado'})',
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      const SizedBox(height: 8),
+
+                      // Almacenes
+                      Text(
+                        'Almacenes (${_almacenesData.length}):',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      ..._almacenesData
+                          .map(
+                            (almacen) => Padding(
+                              padding: const EdgeInsets.only(left: 16, top: 4),
+                              child: Text(
+                                '• ${almacen['denominacion']} - ${almacen['direccion']}',
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      const SizedBox(height: 8),
+
+                      // Layouts
+                      Text(
+                        'Layouts/Zonas (${_layoutsData.length}):',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      ..._layoutsData
+                          .map(
+                            (layout) => Padding(
+                              padding: const EdgeInsets.only(left: 16, top: 4),
+                              child: Text(
+                                '• ${layout['denominacion']} (${layout['tipo_nombre'] ?? 'Zona'}) - Almacén: ${layout['almacen_asignado']} - Código: ${layout['codigo']}',
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      const SizedBox(height: 8),
+
+                      // Personal
+                      Text(
+                        'Personal (${_personalData.length}):',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      ..._personalData.map((personal) {
+                        String asignacion = '';
+                        if (personal['almacen_asignado'] != null) {
+                          asignacion =
+                              ' (Almacén: ${personal['almacen_asignado']})';
+                        } else if (personal['tpv_asignado'] != null) {
+                          asignacion = ' (TPV: ${personal['tpv_asignado']})';
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(left: 16, top: 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '• ${personal['nombres']} ${personal['apellidos']} - ${personal['tipo_rol']}$asignacion',
+                              ),
+                              if (personal['email'] != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 12,
+                                    top: 2,
+                                  ),
+                                  child: Text(
+                                    'Email: ${personal['email']}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ],
+                  ),
+                ),
+              ),
+
+              if (_isLoading)
+                const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text('Creando tienda...'),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -1978,9 +2252,9 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                       ),
                     ),
                   ),
-                
+
                 if (_currentStep > 0) const SizedBox(width: 16),
-                
+
                 // Botón Siguiente/Crear
                 Expanded(
                   flex: _currentStep == 0 ? 1 : 1,
@@ -1988,27 +2262,28 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                     height: 56,
                     child: ElevatedButton.icon(
                       onPressed: _isLoading ? null : _nextStep,
-                      icon: _isLoading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
+                      icon:
+                          _isLoading
+                              ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                              : Icon(
+                                _currentStep == 3
+                                    ? Icons.check_circle
+                                    : Icons.arrow_forward,
+                                size: 20,
                               ),
-                            )
-                          : Icon(
-                              _currentStep == 3 
-                                  ? Icons.check_circle 
-                                  : Icons.arrow_forward,
-                              size: 20,
-                            ),
                       label: Text(
-                        _isLoading 
+                        _isLoading
                             ? 'Procesando...'
-                            : _currentStep == 3 
-                                ? 'Crear Tienda' 
-                                : 'Siguiente',
+                            : _currentStep == 3
+                            ? 'Crear Tienda'
+                            : 'Siguiente',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -2052,12 +2327,12 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
         setState(() {
           _currentStep++;
         });
-        
+
         // Si navegamos al paso 3 (configuración), agregar automáticamente al usuario principal
         if (_currentStep == 2) {
           _addMainUserToPersonal();
         }
-        
+
         _pageController.nextPage(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
@@ -2096,8 +2371,10 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
             continue;
           }
 
-          final tieneZonas = _layoutsData.any((layout) =>
-              (layout['almacen_asignado'] ?? '').toString() == nombreAlmacen);
+          final tieneZonas = _layoutsData.any(
+            (layout) =>
+                (layout['almacen_asignado'] ?? '').toString() == nombreAlmacen,
+          );
 
           if (!tieneZonas) {
             almacenesSinZonas.add(nombreAlmacen);
@@ -2132,20 +2409,22 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
     try {
       print('🚀 Iniciando creación de tienda...');
-      
+
       // Formatear coordenadas como "latitud,longitud"
       String? coordinatesString;
       if (_storeLatitude != null && _storeLogitude != null) {
-        coordinatesString = '${_storeLatitude!.toStringAsFixed(6)},${_storeLogitude!.toStringAsFixed(6)}';
+        coordinatesString =
+            '${_storeLatitude!.toStringAsFixed(6)},${_storeLogitude!.toStringAsFixed(6)}';
       }
-      
+
       final result = await _registrationService.registerUserAndCreateStore(
         email: _emailController.text.trim(),
         password: _passwordController.text,
         fullName: _fullNameController.text.trim(),
         denominacionTienda: _storeNameController.text.trim(),
         direccionTienda: _storeAddressController.text.trim(),
-        ubicacionTienda: coordinatesString ?? _storeLocationController.text.trim(),
+        ubicacionTienda:
+            coordinatesString ?? _storeLocationController.text.trim(),
         pais: _selectedCountry?['countryCode'],
         estado: _selectedState?['adminCode1'],
         nombrePais: _selectedCountry?['countryName'],
@@ -2177,84 +2456,89 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.green),
-            SizedBox(width: 8),
-            Text('¡Éxito!'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              userAlreadyExisted 
-                  ? 'La tienda ha sido creada exitosamente. El usuario ya existía en el sistema y fue autenticado correctamente.'
-                  : 'La tienda ha sido creada exitosamente. Ya puedes comenzar a usar la aplicación.',
+      builder:
+          (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green),
+                SizedBox(width: 8),
+                Text('¡Éxito!'),
+              ],
             ),
-            if (userAlreadyExisted) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.orange.shade200),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  userAlreadyExisted
+                      ? 'La tienda ha sido creada exitosamente. El usuario ya existía en el sistema y fue autenticado correctamente.'
+                      : 'La tienda ha sido creada exitosamente. Ya puedes comenzar a usar la aplicación.',
                 ),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, 
-                         color: Colors.orange.shade700, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Nota: El usuario con este email ya existía en el sistema.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.orange.shade700,
-                        ),
-                      ),
+                if (userAlreadyExisted) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.orange.shade200),
                     ),
-                  ],
-                ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: Colors.orange.shade700,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Nota: El usuario con este email ya existía en el sistema.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange.shade700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop(); // Cerrar diálogo
+                  Navigator.of(context).pop(); // Volver al login
+                },
+                child: const Text('OK'),
               ),
             ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop(); // Cerrar diálogo
-              Navigator.of(context).pop(); // Volver al login
-            },
-            child: const Text('OK'),
           ),
-        ],
-      ),
     );
   }
 
   void _showErrorDialog(String message) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.error, color: Colors.red),
-            SizedBox(width: 8),
-            Text('Error'),
-          ],
-        ),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+      builder:
+          (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.error, color: Colors.red),
+                SizedBox(width: 8),
+                Text('Error'),
+              ],
+            ),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -2262,80 +2546,83 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   void _showAddTPVDialog() {
     final nameController = TextEditingController();
     String? selectedAlmacen;
-    
+
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Agregar TPV'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre del TPV',
-                  hintText: 'Ej: TPV Principal, Caja 1',
-                ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: selectedAlmacen,
-                decoration: const InputDecoration(
-                  labelText: 'Almacén Asignado',
-                ),
-                items: _almacenesData.map((almacen) {
-                  return DropdownMenuItem<String>(
-                    value: almacen['denominacion'],
-                    child: Text(almacen['denominacion']),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setDialogState(() {
-                    selectedAlmacen = value;
-                  });
-                },
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Selecciona un almacén';
-                  }
-                  return null;
-                },
-              ),
-              if (_almacenesData.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Debes crear al menos un almacén primero',
-                    style: TextStyle(color: Colors.red, fontSize: 12),
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('Agregar TPV'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: nameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre del TPV',
+                          hintText: 'Ej: TPV Principal, Caja 1',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        value: selectedAlmacen,
+                        decoration: const InputDecoration(
+                          labelText: 'Almacén Asignado',
+                        ),
+                        items:
+                            _almacenesData.map((almacen) {
+                              return DropdownMenuItem<String>(
+                                value: almacen['denominacion'],
+                                child: Text(almacen['denominacion']),
+                              );
+                            }).toList(),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            selectedAlmacen = value;
+                          });
+                        },
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Selecciona un almacén';
+                          }
+                          return null;
+                        },
+                      ),
+                      if (_almacenesData.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Debes crear al menos un almacén primero',
+                            style: TextStyle(color: Colors.red, fontSize: 12),
+                          ),
+                        ),
+                    ],
                   ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (nameController.text.trim().isNotEmpty &&
+                            selectedAlmacen != null &&
+                            _almacenesData.isNotEmpty) {
+                          setState(() {
+                            _tpvData.add({
+                              'denominacion': nameController.text.trim(),
+                              'almacen_asignado': selectedAlmacen,
+                            });
+                          });
+                          Navigator.pop(context);
+                        }
+                      },
+                      child: const Text('Agregar'),
+                    ),
+                  ],
                 ),
-            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (nameController.text.trim().isNotEmpty && 
-                    selectedAlmacen != null && 
-                    _almacenesData.isNotEmpty) {
-                  setState(() {
-                    _tpvData.add({
-                      'denominacion': nameController.text.trim(),
-                      'almacen_asignado': selectedAlmacen,
-                    });
-                  });
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('Agregar'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -2343,87 +2630,96 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     final tpv = _tpvData[index];
     final nameController = TextEditingController(text: tpv['denominacion']);
     String? selectedAlmacen = tpv['almacen_asignado'];
-    
+
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Editar TPV'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre del TPV',
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('Editar TPV'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: nameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre del TPV',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        value: selectedAlmacen,
+                        decoration: const InputDecoration(
+                          labelText: 'Almacén Asignado',
+                        ),
+                        items:
+                            _almacenesData.map((almacen) {
+                              return DropdownMenuItem<String>(
+                                value: almacen['denominacion'],
+                                child: Text(almacen['denominacion']),
+                              );
+                            }).toList(),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            selectedAlmacen = value;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (nameController.text.trim().isNotEmpty &&
+                            selectedAlmacen != null) {
+                          setState(() {
+                            _tpvData[index]['denominacion'] =
+                                nameController.text.trim();
+                            _tpvData[index]['almacen_asignado'] =
+                                selectedAlmacen;
+                          });
+                          Navigator.pop(context);
+                        }
+                      },
+                      child: const Text('Guardar'),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: selectedAlmacen,
-                decoration: const InputDecoration(
-                  labelText: 'Almacén Asignado',
-                ),
-                items: _almacenesData.map((almacen) {
-                  return DropdownMenuItem<String>(
-                    value: almacen['denominacion'],
-                    child: Text(almacen['denominacion']),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setDialogState(() {
-                    selectedAlmacen = value;
-                  });
-                },
-              ),
-            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (nameController.text.trim().isNotEmpty && selectedAlmacen != null) {
-                  setState(() {
-                    _tpvData[index]['denominacion'] = nameController.text.trim();
-                    _tpvData[index]['almacen_asignado'] = selectedAlmacen;
-                  });
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
   void _deleteTPV(int index) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Eliminar TPV'),
-        content: Text('¿Estás seguro de eliminar "${_tpvData[index]['denominacion']}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Eliminar TPV'),
+            content: Text(
+              '¿Estás seguro de eliminar "${_tpvData[index]['denominacion']}"?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _tpvData.removeAt(index);
+                  });
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Eliminar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _tpvData.removeAt(index);
-              });
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -2432,61 +2728,62 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     final nameController = TextEditingController();
     final addressController = TextEditingController();
     final locationController = TextEditingController();
-    
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Agregar Almacén'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nombre del Almacén',
-                hintText: 'Ej: Almacén Principal',
-              ),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Agregar Almacén'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre del Almacén',
+                    hintText: 'Ej: Almacén Principal',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: addressController,
+                  decoration: const InputDecoration(
+                    labelText: 'Dirección',
+                    hintText: 'Dirección del almacén',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: locationController,
+                  decoration: const InputDecoration(
+                    labelText: 'Ubicación',
+                    hintText: 'Ciudad, País',
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: addressController,
-              decoration: const InputDecoration(
-                labelText: 'Dirección',
-                hintText: 'Dirección del almacén',
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: locationController,
-              decoration: const InputDecoration(
-                labelText: 'Ubicación',
-                hintText: 'Ciudad, País',
+              ElevatedButton(
+                onPressed: () {
+                  if (nameController.text.trim().isNotEmpty) {
+                    setState(() {
+                      _almacenesData.add({
+                        'denominacion': nameController.text.trim(),
+                        'direccion': addressController.text.trim(),
+                        'ubicacion': locationController.text.trim(),
+                      });
+                    });
+                    Navigator.pop(context);
+                  }
+                },
+                child: const Text('Agregar'),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              if (nameController.text.trim().isNotEmpty) {
-                setState(() {
-                  _almacenesData.add({
-                    'denominacion': nameController.text.trim(),
-                    'direccion': addressController.text.trim(),
-                    'ubicacion': locationController.text.trim(),
-                  });
-                });
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Agregar'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -2494,83 +2791,88 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     final almacen = _almacenesData[index];
     final nameController = TextEditingController(text: almacen['denominacion']);
     final addressController = TextEditingController(text: almacen['direccion']);
-    final locationController = TextEditingController(text: almacen['ubicacion']);
-    
+    final locationController = TextEditingController(
+      text: almacen['ubicacion'],
+    );
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Editar Almacén'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nombre del Almacén',
-              ),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Editar Almacén'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre del Almacén',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: addressController,
+                  decoration: const InputDecoration(labelText: 'Dirección'),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: locationController,
+                  decoration: const InputDecoration(labelText: 'Ubicación'),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: addressController,
-              decoration: const InputDecoration(
-                labelText: 'Dirección',
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: locationController,
-              decoration: const InputDecoration(
-                labelText: 'Ubicación',
+              ElevatedButton(
+                onPressed: () {
+                  if (nameController.text.trim().isNotEmpty) {
+                    setState(() {
+                      _almacenesData[index]['denominacion'] =
+                          nameController.text.trim();
+                      _almacenesData[index]['direccion'] =
+                          addressController.text.trim();
+                      _almacenesData[index]['ubicacion'] =
+                          locationController.text.trim();
+                    });
+                    Navigator.pop(context);
+                  }
+                },
+                child: const Text('Guardar'),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              if (nameController.text.trim().isNotEmpty) {
-                setState(() {
-                  _almacenesData[index]['denominacion'] = nameController.text.trim();
-                  _almacenesData[index]['direccion'] = addressController.text.trim();
-                  _almacenesData[index]['ubicacion'] = locationController.text.trim();
-                });
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
     );
   }
 
   void _deleteAlmacen(int index) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Eliminar Almacén'),
-        content: Text('¿Estás seguro de eliminar "${_almacenesData[index]['denominacion']}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Eliminar Almacén'),
+            content: Text(
+              '¿Estás seguro de eliminar "${_almacenesData[index]['denominacion']}"?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _almacenesData.removeAt(index);
+                  });
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Eliminar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _almacenesData.removeAt(index);
-              });
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -2584,361 +2886,431 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     String? selectedRole;
     String? selectedAlmacen;
     String? selectedTPV;
-    
+
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Agregar Personal'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nombresController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombres',
-                    hintText: 'Nombres del empleado',
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('Agregar Personal'),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: nombresController,
+                          decoration: const InputDecoration(
+                            labelText: 'Nombres',
+                            hintText: 'Nombres del empleado',
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: apellidosController,
+                          decoration: const InputDecoration(
+                            labelText: 'Apellidos',
+                            hintText: 'Apellidos del empleado',
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: const InputDecoration(
+                            labelText: 'Email',
+                            hintText:
+                                'Email del empleado para acceso al sistema',
+                            prefixIcon: Icon(Icons.email),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: passwordController,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Contraseña',
+                            hintText:
+                                'Contraseña de acceso (mínimo 6 caracteres)',
+                            prefixIcon: Icon(Icons.lock),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: confirmPasswordController,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Confirmar Contraseña',
+                            hintText: 'Repetir la contraseña',
+                            prefixIcon: Icon(Icons.lock_outline),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          value: selectedRole,
+                          decoration: const InputDecoration(labelText: 'Rol'),
+                          items: [
+                            const DropdownMenuItem(
+                              value: 'gerente',
+                              child: Text('Gerente'),
+                            ),
+                            const DropdownMenuItem(
+                              value: 'supervisor',
+                              child: Text('Supervisor'),
+                            ),
+                            const DropdownMenuItem(
+                              value: 'almacenero',
+                              child: Text('Almacenero'),
+                            ),
+                            const DropdownMenuItem(
+                              value: 'vendedor',
+                              child: Text('Vendedor'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedRole = value;
+                              // Reset assignments when role changes
+                              selectedAlmacen = null;
+                              selectedTPV = null;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Mostrar dropdown de almacén para almaceneros
+                        if (selectedRole == 'almacenero')
+                          DropdownButtonFormField<String>(
+                            value: selectedAlmacen,
+                            decoration: const InputDecoration(
+                              labelText: 'Almacén Asignado',
+                            ),
+                            items:
+                                _almacenesData.map((almacen) {
+                                  return DropdownMenuItem<String>(
+                                    value: almacen['denominacion'],
+                                    child: Text(almacen['denominacion']),
+                                  );
+                                }).toList(),
+                            onChanged: (value) {
+                              setDialogState(() {
+                                selectedAlmacen = value;
+                              });
+                            },
+                          ),
+
+                        // Mostrar dropdown de TPV para vendedores
+                        if (selectedRole == 'vendedor')
+                          DropdownButtonFormField<String>(
+                            value: selectedTPV,
+                            decoration: const InputDecoration(
+                              labelText: 'TPV Asignado',
+                            ),
+                            items:
+                                _tpvData.map((tpv) {
+                                  return DropdownMenuItem<String>(
+                                    value: tpv['denominacion'],
+                                    child: Text(tpv['denominacion']),
+                                  );
+                                }).toList(),
+                            onChanged: (value) {
+                              setDialogState(() {
+                                selectedTPV = value;
+                              });
+                            },
+                          ),
+
+                        // Mostrar advertencias si no hay almacenes o TPVs
+                        if (selectedRole == 'almacenero' &&
+                            _almacenesData.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 8),
+                            child: Text(
+                              'Debes crear al menos un almacén primero',
+                              style: TextStyle(color: Colors.red, fontSize: 12),
+                            ),
+                          ),
+
+                        if (selectedRole == 'vendedor' && _tpvData.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 8),
+                            child: Text(
+                              'Debes crear al menos un TPV primero',
+                              style: TextStyle(color: Colors.red, fontSize: 12),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: apellidosController,
-                  decoration: const InputDecoration(
-                    labelText: 'Apellidos',
-                    hintText: 'Apellidos del empleado',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    hintText: 'Email del empleado para acceso al sistema',
-                    prefixIcon: Icon(Icons.email),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: passwordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Contraseña',
-                    hintText: 'Contraseña de acceso (mínimo 6 caracteres)',
-                    prefixIcon: Icon(Icons.lock),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: confirmPasswordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Confirmar Contraseña',
-                    hintText: 'Repetir la contraseña',
-                    prefixIcon: Icon(Icons.lock_outline),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: selectedRole,
-                  decoration: const InputDecoration(
-                    labelText: 'Rol',
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: 'gerente', child: Text('Gerente')),
-                    const DropdownMenuItem(value: 'supervisor', child: Text('Supervisor')),
-                    const DropdownMenuItem(value: 'almacenero', child: Text('Almacenero')),
-                    const DropdownMenuItem(value: 'vendedor', child: Text('Vendedor')),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        bool canAdd =
+                            nombresController.text.trim().isNotEmpty &&
+                            apellidosController.text.trim().isNotEmpty &&
+                            emailController.text.trim().isNotEmpty &&
+                            passwordController.text.trim().isNotEmpty &&
+                            confirmPasswordController.text.trim().isNotEmpty &&
+                            selectedRole != null;
+
+                        // Validaciones de email y contraseña
+                        if (canAdd) {
+                          if (!emailController.text.contains('@')) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Ingresa un email válido'),
+                              ),
+                            );
+                            return;
+                          }
+
+                          if (passwordController.text.length < 6) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'La contraseña debe tener al menos 6 caracteres',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+
+                          if (passwordController.text !=
+                              confirmPasswordController.text) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Las contraseñas no coinciden'),
+                              ),
+                            );
+                            return;
+                          }
+
+                          // Verificar que el email no esté duplicado
+                          final emailExists = _personalData.any(
+                            (p) => p['email'] == emailController.text.trim(),
+                          );
+                          if (emailExists) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Este email ya está registrado'),
+                              ),
+                            );
+                            return;
+                          }
+                        }
+
+                        // Validaciones específicas por rol
+                        if (selectedRole == 'almacenero') {
+                          canAdd =
+                              canAdd &&
+                              selectedAlmacen != null &&
+                              _almacenesData.isNotEmpty;
+                        } else if (selectedRole == 'vendedor') {
+                          canAdd =
+                              canAdd &&
+                              selectedTPV != null &&
+                              _tpvData.isNotEmpty;
+                        }
+
+                        if (canAdd) {
+                          setState(() {
+                            final personalItem = {
+                              'nombres': nombresController.text.trim(),
+                              'apellidos': apellidosController.text.trim(),
+                              'email': emailController.text.trim(),
+                              'password': passwordController.text.trim(),
+                              'tipo_rol': selectedRole,
+                              'id_roll': _getRoleId(selectedRole!),
+                              'uuid':
+                                  'PLACEHOLDER_USER_UUID', // Se reemplazará con el UUID real
+                            };
+
+                            // Agregar asignaciones específicas
+                            if (selectedRole == 'almacenero' &&
+                                selectedAlmacen != null) {
+                              personalItem['almacen_asignado'] =
+                                  selectedAlmacen;
+                            } else if (selectedRole == 'vendedor' &&
+                                selectedTPV != null) {
+                              personalItem['tpv_asignado'] = selectedTPV;
+                            }
+
+                            _personalData.add(personalItem);
+                          });
+                          Navigator.pop(context);
+                        }
+                      },
+                      child: const Text('Agregar'),
+                    ),
                   ],
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedRole = value;
-                      // Reset assignments when role changes
-                      selectedAlmacen = null;
-                      selectedTPV = null;
-                    });
-                  },
                 ),
-                const SizedBox(height: 16),
-                
-                // Mostrar dropdown de almacén para almaceneros
-                if (selectedRole == 'almacenero')
-                  DropdownButtonFormField<String>(
-                    value: selectedAlmacen,
-                    decoration: const InputDecoration(
-                      labelText: 'Almacén Asignado',
-                    ),
-                    items: _almacenesData.map((almacen) {
-                      return DropdownMenuItem<String>(
-                        value: almacen['denominacion'],
-                        child: Text(almacen['denominacion']),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setDialogState(() {
-                        selectedAlmacen = value;
-                      });
-                    },
-                  ),
-                
-                // Mostrar dropdown de TPV para vendedores
-                if (selectedRole == 'vendedor')
-                  DropdownButtonFormField<String>(
-                    value: selectedTPV,
-                    decoration: const InputDecoration(
-                      labelText: 'TPV Asignado',
-                    ),
-                    items: _tpvData.map((tpv) {
-                      return DropdownMenuItem<String>(
-                        value: tpv['denominacion'],
-                        child: Text(tpv['denominacion']),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setDialogState(() {
-                        selectedTPV = value;
-                      });
-                    },
-                  ),
-                
-                // Mostrar advertencias si no hay almacenes o TPVs
-                if (selectedRole == 'almacenero' && _almacenesData.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 8),
-                    child: Text(
-                      'Debes crear al menos un almacén primero',
-                      style: TextStyle(color: Colors.red, fontSize: 12),
-                    ),
-                  ),
-                
-                if (selectedRole == 'vendedor' && _tpvData.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 8),
-                    child: Text(
-                      'Debes crear al menos un TPV primero',
-                      style: TextStyle(color: Colors.red, fontSize: 12),
-                    ),
-                  ),
-              ],
-            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                bool canAdd = nombresController.text.trim().isNotEmpty &&
-                    apellidosController.text.trim().isNotEmpty &&
-                    emailController.text.trim().isNotEmpty &&
-                    passwordController.text.trim().isNotEmpty &&
-                    confirmPasswordController.text.trim().isNotEmpty &&
-                    selectedRole != null;
-                
-                // Validaciones de email y contraseña
-                if (canAdd) {
-                  if (!emailController.text.contains('@')) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Ingresa un email válido')),
-                    );
-                    return;
-                  }
-                  
-                  if (passwordController.text.length < 6) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('La contraseña debe tener al menos 6 caracteres')),
-                    );
-                    return;
-                  }
-                  
-                  if (passwordController.text != confirmPasswordController.text) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Las contraseñas no coinciden')),
-                    );
-                    return;
-                  }
-                  
-                  // Verificar que el email no esté duplicado
-                  final emailExists = _personalData.any((p) => p['email'] == emailController.text.trim());
-                  if (emailExists) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Este email ya está registrado')),
-                    );
-                    return;
-                  }
-                }
-                
-                // Validaciones específicas por rol
-                if (selectedRole == 'almacenero') {
-                  canAdd = canAdd && selectedAlmacen != null && _almacenesData.isNotEmpty;
-                } else if (selectedRole == 'vendedor') {
-                  canAdd = canAdd && selectedTPV != null && _tpvData.isNotEmpty;
-                }
-                
-                if (canAdd) {
-                  setState(() {
-                    final personalItem = {
-                      'nombres': nombresController.text.trim(),
-                      'apellidos': apellidosController.text.trim(),
-                      'email': emailController.text.trim(),
-                      'password': passwordController.text.trim(),
-                      'tipo_rol': selectedRole,
-                      'id_roll': _getRoleId(selectedRole!),
-                      'uuid': 'PLACEHOLDER_USER_UUID', // Se reemplazará con el UUID real
-                    };
-                    
-                    // Agregar asignaciones específicas
-                    if (selectedRole == 'almacenero' && selectedAlmacen != null) {
-                      personalItem['almacen_asignado'] = selectedAlmacen;
-                    } else if (selectedRole == 'vendedor' && selectedTPV != null) {
-                      personalItem['tpv_asignado'] = selectedTPV;
-                    }
-                    
-                    _personalData.add(personalItem);
-                  });
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('Agregar'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
   void _showEditPersonalDialog(int index) {
     final personal = _personalData[index];
     final nombresController = TextEditingController(text: personal['nombres']);
-    final apellidosController = TextEditingController(text: personal['apellidos']);
+    final apellidosController = TextEditingController(
+      text: personal['apellidos'],
+    );
     final emailController = TextEditingController(text: personal['email']);
     String? selectedRole = personal['tipo_rol'];
-    
+
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Editar Personal'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nombresController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombres',
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('Editar Personal'),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: nombresController,
+                          decoration: const InputDecoration(
+                            labelText: 'Nombres',
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: apellidosController,
+                          decoration: const InputDecoration(
+                            labelText: 'Apellidos',
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: const InputDecoration(
+                            labelText: 'Email',
+                            prefixIcon: Icon(Icons.email),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          value: selectedRole,
+                          decoration: const InputDecoration(labelText: 'Rol'),
+                          items: [
+                            const DropdownMenuItem(
+                              value: 'gerente',
+                              child: Text('Gerente'),
+                            ),
+                            const DropdownMenuItem(
+                              value: 'supervisor',
+                              child: Text('Supervisor'),
+                            ),
+                            const DropdownMenuItem(
+                              value: 'almacenero',
+                              child: Text('Almacenero'),
+                            ),
+                            const DropdownMenuItem(
+                              value: 'vendedor',
+                              child: Text('Vendedor'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedRole = value;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: apellidosController,
-                  decoration: const InputDecoration(
-                    labelText: 'Apellidos',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    prefixIcon: Icon(Icons.email),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: selectedRole,
-                  decoration: const InputDecoration(
-                    labelText: 'Rol',
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: 'gerente', child: Text('Gerente')),
-                    const DropdownMenuItem(value: 'supervisor', child: Text('Supervisor')),
-                    const DropdownMenuItem(value: 'almacenero', child: Text('Almacenero')),
-                    const DropdownMenuItem(value: 'vendedor', child: Text('Vendedor')),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (nombresController.text.trim().isNotEmpty &&
+                            apellidosController.text.trim().isNotEmpty &&
+                            emailController.text.trim().isNotEmpty &&
+                            selectedRole != null) {
+                          // Validar email
+                          if (!emailController.text.contains('@')) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Ingresa un email válido'),
+                              ),
+                            );
+                            return;
+                          }
+
+                          // Verificar que el email no esté duplicado (excepto el actual)
+                          final emailExists = _personalData.asMap().entries.any(
+                            (entry) =>
+                                entry.key != index &&
+                                entry.value['email'] ==
+                                    emailController.text.trim(),
+                          );
+                          if (emailExists) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Este email ya está registrado'),
+                              ),
+                            );
+                            return;
+                          }
+
+                          setState(() {
+                            _personalData[index]['nombres'] =
+                                nombresController.text.trim();
+                            _personalData[index]['apellidos'] =
+                                apellidosController.text.trim();
+                            _personalData[index]['email'] =
+                                emailController.text.trim();
+                            _personalData[index]['tipo_rol'] = selectedRole;
+                            _personalData[index]['id_roll'] = _getRoleId(
+                              selectedRole!,
+                            );
+                          });
+                          Navigator.pop(context);
+                        }
+                      },
+                      child: const Text('Guardar'),
+                    ),
                   ],
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedRole = value;
-                    });
-                  },
                 ),
-              ],
-            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (nombresController.text.trim().isNotEmpty &&
-                    apellidosController.text.trim().isNotEmpty &&
-                    emailController.text.trim().isNotEmpty &&
-                    selectedRole != null) {
-                  
-                  // Validar email
-                  if (!emailController.text.contains('@')) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Ingresa un email válido')),
-                    );
-                    return;
-                  }
-                  
-                  // Verificar que el email no esté duplicado (excepto el actual)
-                  final emailExists = _personalData.asMap().entries.any((entry) => 
-                      entry.key != index && entry.value['email'] == emailController.text.trim());
-                  if (emailExists) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Este email ya está registrado')),
-                    );
-                    return;
-                  }
-                  
-                  setState(() {
-                    _personalData[index]['nombres'] = nombresController.text.trim();
-                    _personalData[index]['apellidos'] = apellidosController.text.trim();
-                    _personalData[index]['email'] = emailController.text.trim();
-                    _personalData[index]['tipo_rol'] = selectedRole;
-                    _personalData[index]['id_roll'] = _getRoleId(selectedRole!);
-                  });
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
   void _deletePersonal(int index) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Eliminar Personal'),
-        content: Text('¿Estás seguro de eliminar a "${_personalData[index]['nombres']} ${_personalData[index]['apellidos']}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Eliminar Personal'),
+            content: Text(
+              '¿Estás seguro de eliminar a "${_personalData[index]['nombres']} ${_personalData[index]['apellidos']}"?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _personalData.removeAt(index);
+                  });
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Eliminar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _personalData.removeAt(index);
-              });
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -2961,18 +3333,20 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   void _addMainUserToPersonal() {
     final fullName = _fullNameController.text.trim();
     if (fullName.isEmpty) return;
-    
+
     // Separar nombres y apellidos (simple split por espacio)
     final nameParts = fullName.split(' ');
     final nombres = nameParts.isNotEmpty ? nameParts.first : 'Usuario';
-    final apellidos = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : 'Principal';
-    
+    final apellidos =
+        nameParts.length > 1 ? nameParts.sublist(1).join(' ') : 'Principal';
+
     // Verificar si ya existe el usuario principal para evitar duplicados
-    final existingMainUser = _personalData.where((p) => p['is_main_user'] == true).toList();
+    final existingMainUser =
+        _personalData.where((p) => p['is_main_user'] == true).toList();
     if (existingMainUser.isNotEmpty) {
       return; // Ya existe, no agregar duplicados
     }
-    
+
     // Agregar como Gerente
     final gerenteItem = {
       'nombres': nombres,
@@ -2981,11 +3355,13 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
       'password': _passwordController.text, // Contraseña del usuario principal
       'tipo_rol': 'gerente',
       'id_roll': 1,
-      'uuid': 'MAIN_USER_UUID', // Se reemplazará con el UUID real del usuario creado
-      'is_main_user': true, // Marca especial para identificar al usuario principal
+      'uuid':
+          'MAIN_USER_UUID', // Se reemplazará con el UUID real del usuario creado
+      'is_main_user':
+          true, // Marca especial para identificar al usuario principal
       'is_editable': false, // No se puede editar
     };
-    
+
     // Agregar como Supervisor
     final supervisorItem = {
       'nombres': nombres,
@@ -2994,17 +3370,21 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
       'password': _passwordController.text, // Contraseña del usuario principal
       'tipo_rol': 'supervisor',
       'id_roll': 2,
-      'uuid': 'MAIN_USER_UUID', // Se reemplazará con el UUID real del usuario creado
-      'is_main_user': true, // Marca especial para identificar al usuario principal
+      'uuid':
+          'MAIN_USER_UUID', // Se reemplazará con el UUID real del usuario creado
+      'is_main_user':
+          true, // Marca especial para identificar al usuario principal
       'is_editable': false, // No se puede editar
     };
-    
+
     setState(() {
       _personalData.insert(0, gerenteItem); // Insertar al inicio
       _personalData.insert(1, supervisorItem); // Insertar después del gerente
     });
-    
-    print('✅ Usuario principal agregado automáticamente como Gerente y Supervisor');
+
+    print(
+      '✅ Usuario principal agregado automáticamente como Gerente y Supervisor',
+    );
     print('   - Nombres: $nombres');
     print('   - Apellidos: $apellidos');
   }
@@ -3017,181 +3397,197 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     int? selectedTipoLayout;
     List<Map<String, dynamic>> layoutTypes = [];
     bool loadingTypes = true;
-    
+
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          // Cargar tipos de layout cuando se abre el diálogo
-          if (loadingTypes) {
-            _warehouseService.getTiposLayout().then((types) {
-              setDialogState(() {
-                layoutTypes.clear();
-                layoutTypes.addAll(types);
-                loadingTypes = false;
-                // Seleccionar el primer tipo por defecto
-                if (layoutTypes.isNotEmpty) {
-                  selectedTipoLayout = layoutTypes.first['id'];
-                }
-              });
-            }).catchError((e) {
-              print('Error cargando tipos de layout: $e');
-              setDialogState(() {
-                loadingTypes = false;
-                // Fallback a tipo por defecto
-                layoutTypes = [{'id': 1, 'denominacion': 'Zona'}];
-                selectedTipoLayout = 1;
-              });
-            });
-          }
-
-          return AlertDialog(
-            title: const Text('Agregar Layout/Zona'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'Crea una zona dentro del almacén para organizar los productos.',
-                    style: TextStyle(fontSize: 14, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Nombre del Layout/Zona',
-                      hintText: 'Ej: Zona Principal, Estantería A',
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: codeController,
-                    decoration: const InputDecoration(
-                      labelText: 'Código',
-                      hintText: 'Ej: ZP-001, EST-A-001',
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (loadingTypes)
-                    const Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                          SizedBox(width: 8),
-                          Text('Cargando tipos de layout...'),
-                        ],
-                      ),
-                    )
-                  else
-                    DropdownButtonFormField<int?>(
-                      value: selectedTipoLayout,
-                      decoration: const InputDecoration(
-                        labelText: 'Tipo de Layout',
-                        prefixIcon: Icon(Icons.category),
-                      ),
-                      isExpanded: true, // Evita overflow
-                      items: layoutTypes.map((tipo) {
-                        return DropdownMenuItem<int?>(
-                          value: tipo['id'],
-                          child: Text(
-                            tipo['denominacion'] ?? 'Sin nombre',
-                            overflow: TextOverflow.ellipsis, // Truncar texto largo
-                            maxLines: 1,
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setDialogState(() {
-                          selectedTipoLayout = value;
-                        });
-                      },
-                      validator: (value) {
-                        if (value == null) {
-                          return 'Selecciona un tipo de layout';
-                        }
-                        return null;
-                      },
-                    ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: selectedAlmacen,
-                    decoration: const InputDecoration(
-                      labelText: 'Almacén Asignado',
-                    ),
-                    isExpanded: true, // Evita overflow
-                    items: _almacenesData.map((almacen) {
-                      return DropdownMenuItem<String>(
-                        value: almacen['denominacion'],
-                        child: Text(
-                          almacen['denominacion'],
-                          overflow: TextOverflow.ellipsis, // Truncar texto largo
-                          maxLines: 1,
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
+      builder:
+          (context) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              // Cargar tipos de layout cuando se abre el diálogo
+              if (loadingTypes) {
+                _warehouseService
+                    .getTiposLayout()
+                    .then((types) {
                       setDialogState(() {
-                        selectedAlmacen = value;
+                        layoutTypes.clear();
+                        layoutTypes.addAll(types);
+                        loadingTypes = false;
+                        // Seleccionar el primer tipo por defecto
+                        if (layoutTypes.isNotEmpty) {
+                          selectedTipoLayout = layoutTypes.first['id'];
+                        }
                       });
-                    },
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Selecciona un almacén';
-                      }
-                      return null;
-                    },
-                  ),
-                  if (_almacenesData.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Debes crear al menos un almacén primero',
-                        style: TextStyle(color: Colors.red, fontSize: 12),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (nameController.text.trim().isNotEmpty && 
-                    codeController.text.trim().isNotEmpty &&
-                    selectedAlmacen != null && 
-                    selectedTipoLayout != null &&
-                    _almacenesData.isNotEmpty) {
-                  setState(() {
-                    _layoutsData.add({
-                      'denominacion': nameController.text.trim(),
-                      'codigo': codeController.text.trim(),
-                      'almacen_asignado': selectedAlmacen,
-                      'id_tipo_layout': selectedTipoLayout, // Tipo seleccionado por el usuario
-                      'id_layout_padre': null, // Layout raíz
-                      'tipo_nombre': layoutTypes.firstWhere(
-                        (t) => t['id'] == selectedTipoLayout,
-                        orElse: () => {'denominacion': 'Desconocido'}
-                      )['denominacion'], // Para mostrar en confirmación
+                    })
+                    .catchError((e) {
+                      print('Error cargando tipos de layout: $e');
+                      setDialogState(() {
+                        loadingTypes = false;
+                        // Fallback a tipo por defecto
+                        layoutTypes = [
+                          {'id': 1, 'denominacion': 'Zona'},
+                        ];
+                        selectedTipoLayout = 1;
+                      });
                     });
-                  });
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('Agregar'),
-            ),
-          ],
-        );
-        },
-      ),
+              }
+
+              return AlertDialog(
+                title: const Text('Agregar Layout/Zona'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Crea una zona dentro del almacén para organizar los productos.',
+                        style: TextStyle(fontSize: 14, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: nameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre del Layout/Zona',
+                          hintText: 'Ej: Zona Principal, Estantería A',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: codeController,
+                        decoration: const InputDecoration(
+                          labelText: 'Código',
+                          hintText: 'Ej: ZP-001, EST-A-001',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (loadingTypes)
+                        const Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Text('Cargando tipos de layout...'),
+                            ],
+                          ),
+                        )
+                      else
+                        DropdownButtonFormField<int?>(
+                          value: selectedTipoLayout,
+                          decoration: const InputDecoration(
+                            labelText: 'Tipo de Layout',
+                            prefixIcon: Icon(Icons.category),
+                          ),
+                          isExpanded: true, // Evita overflow
+                          items:
+                              layoutTypes.map((tipo) {
+                                return DropdownMenuItem<int?>(
+                                  value: tipo['id'],
+                                  child: Text(
+                                    tipo['denominacion'] ?? 'Sin nombre',
+                                    overflow:
+                                        TextOverflow
+                                            .ellipsis, // Truncar texto largo
+                                    maxLines: 1,
+                                  ),
+                                );
+                              }).toList(),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedTipoLayout = value;
+                            });
+                          },
+                          validator: (value) {
+                            if (value == null) {
+                              return 'Selecciona un tipo de layout';
+                            }
+                            return null;
+                          },
+                        ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        value: selectedAlmacen,
+                        decoration: const InputDecoration(
+                          labelText: 'Almacén Asignado',
+                        ),
+                        isExpanded: true, // Evita overflow
+                        items:
+                            _almacenesData.map((almacen) {
+                              return DropdownMenuItem<String>(
+                                value: almacen['denominacion'],
+                                child: Text(
+                                  almacen['denominacion'],
+                                  overflow:
+                                      TextOverflow
+                                          .ellipsis, // Truncar texto largo
+                                  maxLines: 1,
+                                ),
+                              );
+                            }).toList(),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            selectedAlmacen = value;
+                          });
+                        },
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Selecciona un almacén';
+                          }
+                          return null;
+                        },
+                      ),
+                      if (_almacenesData.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Debes crear al menos un almacén primero',
+                            style: TextStyle(color: Colors.red, fontSize: 12),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancelar'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      if (nameController.text.trim().isNotEmpty &&
+                          codeController.text.trim().isNotEmpty &&
+                          selectedAlmacen != null &&
+                          selectedTipoLayout != null &&
+                          _almacenesData.isNotEmpty) {
+                        setState(() {
+                          _layoutsData.add({
+                            'denominacion': nameController.text.trim(),
+                            'codigo': codeController.text.trim(),
+                            'almacen_asignado': selectedAlmacen,
+                            'id_tipo_layout':
+                                selectedTipoLayout, // Tipo seleccionado por el usuario
+                            'id_layout_padre': null, // Layout raíz
+                            'tipo_nombre':
+                                layoutTypes.firstWhere(
+                                  (t) => t['id'] == selectedTipoLayout,
+                                  orElse: () => {'denominacion': 'Desconocido'},
+                                )['denominacion'], // Para mostrar en confirmación
+                          });
+                        });
+                        Navigator.pop(context);
+                      }
+                    },
+                    child: const Text('Agregar'),
+                  ),
+                ],
+              );
+            },
+          ),
     );
   }
 
@@ -3200,101 +3596,108 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     final nameController = TextEditingController(text: layout['denominacion']);
     final codeController = TextEditingController(text: layout['codigo']);
     String? selectedAlmacen = layout['almacen_asignado'];
-    
+
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Editar Layout/Zona'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre del Layout/Zona',
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('Editar Layout/Zona'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: nameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre del Layout/Zona',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: codeController,
+                        decoration: const InputDecoration(labelText: 'Código'),
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        value: selectedAlmacen,
+                        decoration: const InputDecoration(
+                          labelText: 'Almacén Asignado',
+                        ),
+                        items:
+                            _almacenesData.map((almacen) {
+                              return DropdownMenuItem<String>(
+                                value: almacen['denominacion'],
+                                child: Text(almacen['denominacion']),
+                              );
+                            }).toList(),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            selectedAlmacen = value;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (nameController.text.trim().isNotEmpty &&
+                            codeController.text.trim().isNotEmpty &&
+                            selectedAlmacen != null) {
+                          setState(() {
+                            _layoutsData[index]['denominacion'] =
+                                nameController.text.trim();
+                            _layoutsData[index]['codigo'] =
+                                codeController.text.trim();
+                            _layoutsData[index]['almacen_asignado'] =
+                                selectedAlmacen;
+                            // Mantener los campos necesarios si no existen
+                            _layoutsData[index]['id_tipo_layout'] ??= 1;
+                            _layoutsData[index]['id_layout_padre'] ??= null;
+                            _layoutsData[index]['tipo_nombre'] ??= 'Zona';
+                          });
+                          Navigator.pop(context);
+                        }
+                      },
+                      child: const Text('Guardar'),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: codeController,
-                decoration: const InputDecoration(
-                  labelText: 'Código',
-                ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: selectedAlmacen,
-                decoration: const InputDecoration(
-                  labelText: 'Almacén Asignado',
-                ),
-                items: _almacenesData.map((almacen) {
-                  return DropdownMenuItem<String>(
-                    value: almacen['denominacion'],
-                    child: Text(almacen['denominacion']),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setDialogState(() {
-                    selectedAlmacen = value;
-                  });
-                },
-              ),
-            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (nameController.text.trim().isNotEmpty && 
-                    codeController.text.trim().isNotEmpty &&
-                    selectedAlmacen != null) {
-                  setState(() {
-                    _layoutsData[index]['denominacion'] = nameController.text.trim();
-                    _layoutsData[index]['codigo'] = codeController.text.trim();
-                    _layoutsData[index]['almacen_asignado'] = selectedAlmacen;
-                    // Mantener los campos necesarios si no existen
-                    _layoutsData[index]['id_tipo_layout'] ??= 1;
-                    _layoutsData[index]['id_layout_padre'] ??= null;
-                    _layoutsData[index]['tipo_nombre'] ??= 'Zona';
-                  });
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
   void _deleteLayout(int index) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Eliminar Layout/Zona'),
-        content: Text('¿Estás seguro de eliminar "${_layoutsData[index]['denominacion']}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Eliminar Layout/Zona'),
+            content: Text(
+              '¿Estás seguro de eliminar "${_layoutsData[index]['denominacion']}"?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _layoutsData.removeAt(index);
+                  });
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Eliminar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _layoutsData.removeAt(index);
-              });
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
     );
   }
 }

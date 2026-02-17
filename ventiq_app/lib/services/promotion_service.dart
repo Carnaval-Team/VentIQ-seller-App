@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../utils/promotion_rules.dart';
 import 'user_preferences_service.dart';
 
 class PromotionService {
@@ -10,7 +11,7 @@ class PromotionService {
   final _userPreferencesService = UserPreferencesService();
 
   /// Obtiene las promociones globales activas para la tienda
-  /// Primero busca en la tabla directa, si no encuentra usa fn_listar_promociones
+  /// Primero busca en la tabla directa, si no encuentra usa fn_listar_promociones2
   Future<Map<String, dynamic>?> getGlobalPromotion(int idTienda) async {
     try {
       print(
@@ -25,7 +26,7 @@ class PromotionService {
             await _supabase
                 .from('app_mkt_promociones')
                 .select(
-                  'id, codigo_promocion, nombre, descripcion, valor_descuento, id_tipo_promocion',
+                  'id, codigo_promocion, nombre, descripcion, valor_descuento, id_tipo_promocion, min_compra, aplica_todo, requiere_medio_pago, id_medio_pago_requerido',
                 )
                 .eq('id_tienda', idTienda)
                 .eq('aplica_todo', true)
@@ -38,14 +39,23 @@ class PromotionService {
                 .single();
 
         if (response.isNotEmpty) {
+          final idTipoPromocion =
+              (response['id_tipo_promocion'] as num?)?.toInt();
+          final tipoDescuento =
+              PromotionRules.resolveTipoDescuentoFromPromotionTypeId(
+                idTipoPromocion,
+              ) ??
+              1;
+
           print('✅ Promoción global encontrada (búsqueda directa):');
           print('  - ID: ${response['id']}');
           print('  - Código: ${response['codigo_promocion']}');
           print('  - Nombre: ${response['nombre']}');
           print('  - Valor Descuento: ${response['valor_descuento']}');
           print(
-            '  - Tipo Descuento: ${response['id_tipo_promocion']} (1=%, 2=fijo)',
+            '  - Tipo Descuento: $tipoDescuento (1=%, 2=fijo, 3=recargo %, 4=recargo fijo)',
           );
+          print('  - Min Compra: ${response['min_compra']}');
 
           return {
             'id_promocion': response['id'],
@@ -53,21 +63,25 @@ class PromotionService {
             'nombre': response['nombre'],
             'descripcion': response['descripcion'],
             'valor_descuento': response['valor_descuento']?.toDouble(),
-            'tipo_descuento': response['id_tipo_promocion'],
-            'tipo_promocion_nombre': _getTipoPromocionNombre(
-              response['id_tipo_promocion'],
-            ),
+            'tipo_descuento': tipoDescuento,
+            'tipo_promocion_nombre': _getTipoPromocionNombre(idTipoPromocion),
+            'id_tipo_promocion': idTipoPromocion,
+            'min_compra': _parseMinCompraValue(response['min_compra']),
+            'aplica_todo': response['aplica_todo'] as bool?,
+            'requiere_medio_pago': response['requiere_medio_pago'] as bool?,
+            'id_medio_pago_requerido':
+                response['id_medio_pago_requerido'] as int?,
           };
         }
       } catch (e) {
         print('ℹ️ No se encontró promoción directa, usando RPC: $e');
       }
 
-      // Segundo intento: usar fn_listar_promociones
-      print('🔄 Usando fn_listar_promociones para buscar promociones...');
+      // Segundo intento: usar fn_listar_promociones2
+      print('🔄 Usando fn_listar_promociones2 para buscar promociones...');
       final rpcResponse = await _supabase.rpc(
-        'fn_listar_promociones',
-        params: {'p_id_tienda': idTienda},
+        'fn_listar_promociones2',
+        params: {'p_id_tienda': idTienda, 'p_activas': true},
       );
 
       if (rpcResponse != null &&
@@ -82,13 +96,23 @@ class PromotionService {
         );
 
         if (globalPromotion != null) {
+          final tipoPromocionNombre =
+              globalPromotion['tipo_promocion'] as String?;
+          final idTipoPromocion =
+              (globalPromotion['id_tipo_promocion'] as num?)?.toInt();
+          final tipoDescuento =
+              PromotionRules.resolveTipoDescuentoFromPromotionTypeId(
+                idTipoPromocion,
+              ) ??
+              _getTipoDescuentoFromNombre(tipoPromocionNombre);
+
           print('✅ Promoción global encontrada (RPC):');
           print('  - ID: ${globalPromotion['id']}');
           print('  - Código: ${globalPromotion['codigo_promocion']}');
           print('  - Nombre: ${globalPromotion['nombre']}');
           print('  - Valor Descuento: ${globalPromotion['valor_descuento']}');
           print('  - Tipo Promoción: ${globalPromotion['tipo_promocion']}');
-
+          print('  - Min Compra: ${globalPromotion['min_compra']}');
           return {
             'id_promocion': globalPromotion['id'],
             'codigo_promocion': globalPromotion['codigo_promocion'],
@@ -99,10 +123,16 @@ class PromotionService {
                   globalPromotion['valor_descuento'].toString(),
                 ) ??
                 0.0,
-            'tipo_descuento': _getTipoDescuentoFromNombre(
-              globalPromotion['tipo_promocion'],
-            ),
-            'tipo_promocion_nombre': globalPromotion['tipo_promocion'],
+            'tipo_descuento': tipoDescuento,
+            'tipo_promocion_nombre':
+                tipoPromocionNombre ?? _getTipoPromocionNombre(idTipoPromocion),
+            'id_tipo_promocion': idTipoPromocion,
+            'min_compra': _parseMinCompraValue(globalPromotion['min_compra']),
+            'aplica_todo': globalPromotion['aplica_todo'] as bool?,
+            'requiere_medio_pago':
+                globalPromotion['requiere_medio_pago'] as bool?,
+            'id_medio_pago_requerido':
+                globalPromotion['id_medio_pago_requerido'] as int?,
           };
         }
       }
@@ -137,6 +167,14 @@ class PromotionService {
         final promotions = <Map<String, dynamic>>[];
 
         for (final promo in rpcResponse) {
+          final tipoPromocionNombre = promo['tipo_promocion'] as String?;
+          final idTipoPromocion = (promo['id_tipo_promocion'] as num?)?.toInt();
+          final tipoDescuento =
+              PromotionRules.resolveTipoDescuentoFromPromotionTypeId(
+                idTipoPromocion,
+              ) ??
+              _getTipoDescuentoFromNombre(tipoPromocionNombre);
+
           final promotion = {
             'id_promocion': promo['id'] as int,
             'codigo_promocion': promo['codigo_promocion'] as String?,
@@ -144,10 +182,11 @@ class PromotionService {
             'descripcion': promo['descripcion'] as String?,
             'valor_descuento':
                 double.tryParse(promo['valor_descuento'].toString()) ?? 0.0,
-            'tipo_promocion_nombre': promo['tipo_promocion'] as String?,
-            'tipo_descuento': _getTipoDescuentoFromNombre(
-              promo['tipo_promocion'] as String?,
-            ),
+            'tipo_promocion_nombre': tipoPromocionNombre,
+            'tipo_descuento': tipoDescuento,
+            'id_tipo_promocion': idTipoPromocion,
+            'min_compra': _parseMinCompraValue(promo['min_compra']),
+            'aplica_todo': promo['aplica_todo'] as bool? ?? false,
             'precio_base':
                 double.tryParse(promo['precio_base'].toString()) ?? 0.0,
             'es_recargo': promo['es_recargo'] as bool? ?? false,
@@ -167,6 +206,8 @@ class PromotionService {
           print(
             '     - ID medio pago: ${promotion['id_medio_pago_requerido']}',
           );
+          print('     - ID tipo promo: ${promotion['id_tipo_promocion']}');
+          print('  - Min Compra producto: ${promotion['min_compra']}');
         }
 
         return promotions;
@@ -216,6 +257,8 @@ class PromotionService {
         return 2; // Fijo/Exacto
       case 'recargo porcentual':
         return 3; // Recargo porcentual (nuevo)
+      case 'recargo fijo':
+        return 4; // Recargo fijo
       default:
         return 1; // Default porcentual
     }
@@ -225,10 +268,19 @@ class PromotionService {
   String _getTipoPromocionNombre(int? tipoId) {
     switch (tipoId) {
       case 1:
+      case 10:
         return 'Descuento porcentual';
       case 2:
-        return 'Descuento exacto';
       case 3:
+      case 4:
+      case 5:
+      case 6:
+      case 7:
+      case 11:
+        return 'Descuento exacto';
+      case 8:
+        return 'Recargo fijo';
+      case 9:
         return 'Recargo porcentual';
       default:
         return 'Descuento porcentual';
@@ -242,6 +294,11 @@ class PromotionService {
     String? codigoPromocion,
     double? valorDescuento,
     int? tipoDescuento,
+    int? idTipoPromocion,
+    double? minCompra,
+    bool? aplicaTodo,
+    bool? requiereMedioPago,
+    int? idMedioPagoRequerido,
   }) async {
     try {
       await _userPreferencesService.savePromotionData(
@@ -249,6 +306,11 @@ class PromotionService {
         codigoPromocion: codigoPromocion,
         valorDescuento: valorDescuento,
         tipoDescuento: tipoDescuento,
+        idTipoPromocion: idTipoPromocion,
+        minCompra: minCompra,
+        aplicaTodo: aplicaTodo,
+        requiereMedioPago: requiereMedioPago,
+        idMedioPagoRequerido: idMedioPagoRequerido,
       );
 
       if (idPromocion != null && codigoPromocion != null) {
@@ -281,5 +343,23 @@ class PromotionService {
     } catch (e) {
       print('❌ Error limpiando promoción: $e');
     }
+  }
+
+  double? _parseMinCompraValue(dynamic value) {
+    print('Minimo de compra: $value');
+    if (value == null) {
+      return null;
+    }
+
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    if (value is String) {
+      final normalized = value.replaceAll(',', '.');
+      return double.tryParse(normalized);
+    }
+
+    return null;
   }
 }

@@ -32,6 +32,9 @@ class PriceUtils {
     } else if (tipoDescuento == 3) {
       // Recargo porcentual - aumenta el precio
       discountedPrice = originalPrice + (originalPrice * valorDescuento / 100);
+    } else if (tipoDescuento == 4) {
+      // Recargo exacto (fijo) - aumenta el precio
+      discountedPrice = originalPrice + valorDescuento;
     } else {
       return null;
     }
@@ -47,10 +50,7 @@ class PriceUtils {
     int? tipoDescuento,
   ) {
     if (valorDescuento == null || tipoDescuento == null) {
-      return {
-        'precio_venta': originalPrice,
-        'precio_oferta': originalPrice,
-      };
+      return {'precio_venta': originalPrice, 'precio_oferta': originalPrice};
     }
 
     double calculatedPrice;
@@ -74,20 +74,27 @@ class PriceUtils {
       // Recargo porcentual - intercambiar precios
       calculatedPrice = originalPrice + (originalPrice * valorDescuento / 100);
       return {
-        'precio_venta': roundDiscountPrice(calculatedPrice), // El precio mayor es ahora precio_venta
-        'precio_oferta': originalPrice, // El precio original es ahora precio_oferta (menor)
+        'precio_venta': roundDiscountPrice(
+          calculatedPrice,
+        ), // El precio mayor es ahora precio_venta
+        'precio_oferta':
+            originalPrice, // El precio original es ahora precio_oferta (menor)
+      };
+    } else if (tipoDescuento == 4) {
+      // Recargo exacto - intercambiar precios
+      calculatedPrice = originalPrice + valorDescuento;
+      return {
+        'precio_venta': roundDiscountPrice(calculatedPrice),
+        'precio_oferta': originalPrice,
       };
     }
 
-    return {
-      'precio_venta': originalPrice,
-      'precio_oferta': originalPrice,
-    };
+    return {'precio_venta': originalPrice, 'precio_oferta': originalPrice};
   }
 
   /// Determina si hay promoción activa
   static bool hasActivePromotion(int? tipoDescuento) {
-    return tipoDescuento != null && [1, 2, 3].contains(tipoDescuento);
+    return tipoDescuento != null && [1, 2, 3, 4].contains(tipoDescuento);
   }
 
   /// Obtiene el texto descriptivo del tipo de promoción
@@ -99,8 +106,18 @@ class PriceUtils {
         return 'Descuento exacto';
       case 3:
         return 'Recargo porcentual';
+      case 4:
+        return 'Recargo fijo';
       default:
         return '';
     }
+  }
+
+  /// Formats a quantity smartly: "2" for 2.0, "1.5" for 1.5, "0.25" for 0.25
+  static String formatQuantity(double quantity) {
+    if (quantity == quantity.roundToDouble()) {
+      return quantity.toInt().toString();
+    }
+    return quantity.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
   }
 }

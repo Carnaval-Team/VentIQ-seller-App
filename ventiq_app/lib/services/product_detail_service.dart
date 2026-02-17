@@ -503,7 +503,8 @@ class ProductDetailService {
               id,
               denominacion,
               descripcion,
-              sku_codigo
+              sku_codigo,
+              es_fraccionable
             )
           ''')
           .eq('id_producto', productId)

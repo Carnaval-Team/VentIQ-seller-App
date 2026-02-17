@@ -24,6 +24,12 @@ class StoreCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = AppTheme.getCardColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final accentColor = AppTheme.getAccentColor(context);
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -32,13 +38,15 @@ class StoreCard extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Colors.white, Colors.grey[50]!],
+            colors: isDark
+                ? [cardColor, AppTheme.darkSurfaceColor]
+                : [Colors.white, Colors.grey[50]!],
           ),
           borderRadius: BorderRadius.circular(AppTheme.radiusL),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 15,
+              color: Colors.black.withOpacity(isDark ? 0.3 : 0.1),
+              blurRadius: isDark ? 8 : 15,
               offset: const Offset(0, 4),
             ),
           ],
@@ -54,10 +62,15 @@ class StoreCard extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    AppTheme.primaryColor.withOpacity(0.1),
-                    AppTheme.secondaryColor.withOpacity(0.05),
-                  ],
+                  colors: isDark
+                      ? [
+                          AppTheme.darkAccentColor.withOpacity(0.15),
+                          AppTheme.darkSurfaceColor,
+                        ]
+                      : [
+                          AppTheme.primaryColor.withOpacity(0.1),
+                          AppTheme.secondaryColor.withOpacity(0.05),
+                        ],
                 ),
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(AppTheme.radiusL),
@@ -74,12 +87,14 @@ class StoreCard extends StatelessWidget {
                       gradient: LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [Colors.white, Colors.grey[100]!],
+                        colors: isDark
+                            ? [AppTheme.darkSurfaceColor, AppTheme.darkBackgroundColor]
+                            : [Colors.white, Colors.grey[100]!],
                       ),
                       borderRadius: BorderRadius.circular(AppTheme.radiusM),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
+                          color: Colors.black.withOpacity(isDark ? 0.3 : 0.1),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
@@ -102,7 +117,7 @@ class StoreCard extends StatelessWidget {
                         : Icon(
                             Icons.store_rounded,
                             size: 35,
-                            color: AppTheme.primaryColor,
+                            color: accentColor,
                           ),
                   ),
                   const SizedBox(width: 12),
@@ -116,10 +131,10 @@ class StoreCard extends StatelessWidget {
                           height: 22,
                           child: MarqueeText(
                             text: storeName,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.bold,
-                              color: AppTheme.textPrimary,
+                              color: textPrimary,
                             ),
                           ),
                         ),
@@ -131,7 +146,7 @@ class StoreCard extends StatelessWidget {
                             vertical: 3,
                           ),
                           decoration: BoxDecoration(
-                            color: AppTheme.warningColor.withOpacity(0.15),
+                            color: AppTheme.warningColor.withOpacity(isDark ? 0.2 : 0.15),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Row(
@@ -145,10 +160,10 @@ class StoreCard extends StatelessWidget {
                               const SizedBox(width: 3),
                               Text(
                                 rating.toStringAsFixed(1),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.bold,
-                                  color: AppTheme.textPrimary,
+                                  color: textPrimary,
                                 ),
                               ),
                             ],
@@ -171,81 +186,26 @@ class StoreCard extends StatelessWidget {
                     children: [
                       Expanded(
                         child: _buildModernStatCard(
+                          context: context,
                           icon: Icons.inventory_2_rounded,
                           label: 'Productos',
                           value: _formatNumber(productCount),
-                          color: AppTheme.primaryColor,
+                          color: accentColor,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: _buildModernStatCard(
+                          context: context,
                           icon: Icons.shopping_cart_rounded,
                           label: 'Ventas',
                           value: _formatNumber(salesCount),
-                          color: AppTheme.successColor,
+                          color: AppTheme.getPriceColor(context),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 10),
-
-                  // Botón de visitar mejorado
-                  // Container(
-                  //   width: double.infinity,
-                  //   decoration: BoxDecoration(
-                  //     gradient: LinearGradient(
-                  //       colors: [
-                  //         AppTheme.primaryColor,
-                  //         AppTheme.primaryColor.withOpacity(0.8),
-                  //       ],
-                  //     ),
-                  //     borderRadius: BorderRadius.circular(10),
-                  //     boxShadow: [
-                  //       BoxShadow(
-                  //         color: AppTheme.primaryColor.withOpacity(0.3),
-                  //         blurRadius: 6,
-                  //         offset: const Offset(0, 3),
-                  //       ),
-                  //     ],
-                  //   ),
-                  //   child: Material(
-                  //     color: Colors.transparent,
-                  //     child: InkWell(
-                  //       onTap: onTap,
-                  //       borderRadius: BorderRadius.circular(10),
-                  //       child: Padding(
-                  //         padding: const EdgeInsets.symmetric(vertical: 10),
-                  //         child: Row(
-                  //           mainAxisAlignment: MainAxisAlignment.center,
-                  //           children: [
-                  //             const Icon(
-                  //               Icons.storefront_rounded,
-                  //               color: Colors.white,
-                  //               size: 18,
-                  //             ),
-                  //             const SizedBox(width: 6),
-                  //             const Text(
-                  //               'Visitar Tienda',
-                  //               style: TextStyle(
-                  //                 color: Colors.white,
-                  //                 fontSize: 13,
-                  //                 fontWeight: FontWeight.bold,
-                  //                 letterSpacing: 0.5,
-                  //               ),
-                  //             ),
-                  //             const SizedBox(width: 4),
-                  //             const Icon(
-                  //               Icons.arrow_forward_rounded,
-                  //               color: Colors.white,
-                  //               size: 16,
-                  //             ),
-                  //           ],
-                  //         ),
-                  //       ),
-                  //     ),
-                  //   ),
-                  // ),
                 ],
               ),
             ),
@@ -256,28 +216,38 @@ class StoreCard extends StatelessWidget {
   }
 
   Widget _buildModernStatCard({
+    required BuildContext context,
     required IconData icon,
     required String label,
     required String value,
     required Color color,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [color.withOpacity(0.1), color.withOpacity(0.05)],
+          colors: [
+            color.withOpacity(isDark ? 0.15 : 0.1),
+            color.withOpacity(isDark ? 0.08 : 0.05),
+          ],
         ),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.2), width: 1),
+        border: Border.all(
+          color: color.withOpacity(isDark ? 0.3 : 0.2),
+          width: 1,
+        ),
       ),
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
+              color: color.withOpacity(isDark ? 0.2 : 0.15),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, size: 20, color: color),
@@ -294,9 +264,9 @@ class StoreCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10,
-              color: AppTheme.textSecondary,
+              color: textSecondary,
               fontWeight: FontWeight.w500,
             ),
           ),

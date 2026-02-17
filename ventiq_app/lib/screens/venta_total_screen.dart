@@ -12,6 +12,7 @@ import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
 import '../services/currency_service.dart';
 import '../utils/platform_utils.dart';
+import '../utils/price_utils.dart';
 import '../widgets/egresos_list_screen.dart';
 import '../widgets/filtered_orders_screen.dart';
 import '../screens/orders_screen.dart';
@@ -32,7 +33,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   List<OrderItem> _productosVendidos = [];
   List<Order> _ordenesVendidas = [];
   double _totalVentas = 0.0;
-  int _totalProductos = 0;
+  double _totalProductos = 0.0;
   double _totalEgresado = 0.0; // Cambio: era _totalCosto
   double _totalEfectivoReal = 0.0; // Cambio: era _totalDescuentos
   bool _isLoading = true;
@@ -66,6 +67,23 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     return int.tryParse(value.toString()) ?? 0;
   }
 
+  bool _isExcludedPendingOrder(Map<String, dynamic> orderData) {
+    final rawStatus = orderData['estado'] ?? orderData['status'];
+
+    if (rawStatus is String) {
+      final normalized = rawStatus.toLowerCase();
+      return normalized == 'cancelada' || normalized == 'devuelta';
+    }
+
+    if (rawStatus is num) {
+      final statusIndex = rawStatus.toInt();
+      return statusIndex == OrderStatus.cancelada.index ||
+          statusIndex == OrderStatus.devuelta.index;
+    }
+
+    return false;
+  }
+
   Map<String, dynamic> _calculatePendingOrdersTotals(
     List<Map<String, dynamic>> pendingOrders,
   ) {
@@ -75,6 +93,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     int productosOffline = 0;
 
     for (final orderData in pendingOrders) {
+      if (_isExcludedPendingOrder(orderData)) {
+        continue;
+      }
       final total = _parseDouble(
         orderData['total'] ??
             orderData['total_operacion'] ??
@@ -267,7 +288,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             final offlineVentas =
                 (offlineTotals['ventasOffline'] ?? 0.0).toDouble();
             final offlineProductos =
-                (offlineTotals['productosOffline'] ?? 0).toInt();
+                (offlineTotals['productosOffline'] ?? 0).toDouble();
             final offlineEfectivo =
                 (offlineTotals['efectivoOffline'] ?? 0.0).toDouble();
 
@@ -284,7 +305,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
             _totalVentas = ventasTotales;
             _totalProductos =
-                (data['productos_vendidos'] ?? 0).toInt() + offlineProductos;
+                (data['productos_vendidos'] ?? 0).toDouble() + offlineProductos;
 
             // Calcular egresado: ventas_totales - efectivo_real + egresos en efectivo
             _totalEgresado = ventasTotales - efectivoReal + _egresosEfectivo;
@@ -316,7 +337,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       final productosVendidos = <OrderItem>[];
       final ordenesVendidas = <Order>[];
       double totalVentas = 0.0;
-      int totalProductos = 0;
+      double totalProductos = 0.0;
 
       for (final order in orders) {
         final isCompletedOrOffline =
@@ -1092,7 +1113,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                     'ING-${ingrediente['id_ingrediente']}-${DateTime.now().millisecondsSinceEpoch}',
                 producto:
                     item.producto, // Usar el producto padre para referencia
-                cantidad: cantidadVendida.toInt(),
+                cantidad: cantidadVendida.toDouble(),
                 precioUnitario:
                     precioUnitario, // Precio unitario del ingrediente
                 ubicacionAlmacen: item.ubicacionAlmacen,
@@ -1663,7 +1684,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Total Productos: $_totalProductos'),
+                          Text('Total Productos: ${PriceUtils.formatQuantity(_totalProductos)}'),
                           Text(
                             'Total Ventas: \$${_totalVentas.toStringAsFixed(0)}',
                           ),
@@ -1759,7 +1780,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         styles: PosStyles(align: PosAlign.center),
       );
       bytes += generator.text(
-        'Total Productos: $_totalProductos',
+        'Total Productos: ${PriceUtils.formatQuantity(_totalProductos)}',
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.text(
@@ -1811,7 +1832,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       // Imprimir cada producto
       for (final producto in productosAgrupados.values) {
         final item = producto['item'] as OrderItem;
-        final cantidad = producto['cantidad'] as int;
+        final cantidad = (producto['cantidad'] as num).toDouble();
         final subtotal = producto['subtotal'] as double;
         final costo = producto['costo'] as double;
         final descuento = producto['descuento'] as double;
@@ -1821,7 +1842,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           styles: PosStyles(align: PosAlign.left, bold: true),
         );
         bytes += generator.text(
-          'Cantidad: $cantidad',
+          'Cantidad: ${PriceUtils.formatQuantity(cantidad)}',
           styles: PosStyles(align: PosAlign.left),
         );
         bytes += generator.text(
@@ -1985,12 +2006,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                       0.0)
                   .toDouble();
           final productosBase =
-              (resumenCierre['productos_vendidos'] ?? 0).toInt();
+              (resumenCierre['productos_vendidos'] ?? 0).toDouble();
 
           final offlineVentas =
               (offlineTotals['ventasOffline'] ?? 0.0).toDouble();
           final offlineProductos =
-              (offlineTotals['productosOffline'] ?? 0).toInt();
+              (offlineTotals['productosOffline'] ?? 0).toDouble();
           final offlineEfectivo =
               (offlineTotals['efectivoOffline'] ?? 0.0).toDouble();
 
@@ -2059,7 +2080,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       final productosVendidos = <OrderItem>[];
       final ordenesVendidas = <Order>[];
       double totalVentas = 0.0;
-      int totalProductos = 0;
+      double totalProductos = 0.0;
 
       for (final order in orders) {
         if (order.status == OrderStatus.completada ||
@@ -2101,7 +2122,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         _isLoading = false;
         // Valores por defecto en caso de error total
         _totalVentas = 0.0;
-        _totalProductos = 0;
+        _totalProductos = 0.0;
         _productosVendidos = [];
         _ordenesVendidas = [];
         _totalEgresado = 0.0;

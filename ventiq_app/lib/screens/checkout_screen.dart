@@ -4,8 +4,9 @@ import '../models/order.dart';
 import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
-import '../services/promotion_service.dart';
+import '../services/currency_service.dart';
 import '../utils/price_utils.dart';
+import '../utils/promotion_rules.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
@@ -22,7 +23,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final OrderService _orderService = OrderService();
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
-  final PromotionService _promotionService = PromotionService();
   final _formKey = GlobalKey<FormState>();
 
   // Controllers for form fields
@@ -39,6 +39,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _noSolicitarCliente = false; // Valor por defecto mientras se carga
   Map<int, List<Map<String, dynamic>>> _productPromotions =
       {}; // productId -> promotions
+  Map<String, dynamic>? _globalPromotionData;
+  double _usdRate = 0.0;
+  bool _isLoadingUsdRate = false;
 
   // Discount percentages (you can make these configurable)
   static const double promoDiscountPercentage = 0.10; // 10% promo discount
@@ -52,6 +55,41 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     super.initState();
     _loadStoreConfig();
     _loadProductPromotions();
+    _loadGlobalPromotion();
+    _loadUsdRate();
+  }
+
+  Future<void> _loadUsdRate() async {
+    setState(() {
+      _isLoadingUsdRate = true;
+    });
+
+    try {
+      final rate = await CurrencyService.getUsdRate();
+      setState(() {
+        _usdRate = rate;
+        _isLoadingUsdRate = false;
+      });
+    } catch (e) {
+      print('❌ Error loading USD rate: $e');
+      setState(() {
+        _usdRate = 420.0;
+        _isLoadingUsdRate = false;
+      });
+    }
+  }
+
+  Future<void> _loadGlobalPromotion() async {
+    try {
+      final promotionData = await _userPreferencesService.getPromotionData();
+      if (mounted) {
+        setState(() {
+          _globalPromotionData = promotionData;
+        });
+      }
+    } catch (e) {
+      print('❌ Error cargando promoción global: $e');
+    }
   }
 
   Future<void> _loadStoreConfig() async {
@@ -161,32 +199,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final productId = item.producto.id;
     final paymentMethodId = item.paymentMethod?.id;
 
-    // Si no hay promociones para este producto, usar precio sin descuento
     final productPromotions = _productPromotions[productId];
-    if (productPromotions == null || productPromotions.isEmpty) {
-      return item.subtotal;
-    }
 
-    // Buscar promoción aplicable según método de pago
-    Map<String, dynamic>? applicablePromotion;
-
-    for (final promo in productPromotions) {
-      // Nota: shouldApplyPromotion maneja internamente la conversión de 999 a 4
-      if (_promotionService.shouldApplyPromotion(promo, paymentMethodId)) {
-        applicablePromotion = promo;
-        break; // Tomar primera promoción aplicable
-      }
-    }
-
-    // Definir tipo de pago explícitamente (Lógica espejo de OrderService)
-    // ID 1 -> Tipo 1 (Efectivo Oferta)
-    // ID 999 -> Tipo 2 (Efectivo Regular)
-    // Otro -> Tipo 2 (Regular)
-    int tipoPago = 1;
-    if (paymentMethodId == 999 ||
-        (paymentMethodId != null && paymentMethodId != 1)) {
-      tipoPago = 2; // Pago Regular o Tarjeta/Otros
-    }
+    final applicablePromotion = PromotionRules.pickPromotionForPayment(
+      productPromotions: productPromotions,
+      globalPromotion: _globalPromotionData,
+      paymentMethodId: paymentMethodId,
+      quantity: item.cantidad.round(),
+    );
 
     // Si no hay promoción aplicable, es un caso de precio base
     // Pero debemos asegurar que si es "Pago Regular" (999), se mantenga esa intención
@@ -195,36 +215,37 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     // Aplicar promoción
-    final promoBase = (applicablePromotion['precio_base'] as num?)?.toDouble();
-    final precioBase = item.precioBase ?? promoBase ?? item.precioUnitario;
-    final valorDescuento =
-        applicablePromotion['valor_descuento'] as double? ?? 0.0;
-    final esRecargo = applicablePromotion['es_recargo'] as bool? ?? false;
-    final tipoDescuento = applicablePromotion['tipo_descuento'] as int? ?? 1;
-
-    final prices = PriceUtils.calculatePromotionPrices(
-      precioBase,
-      valorDescuento,
-      tipoDescuento,
+    final esRecargo = PromotionRules.isRecargoPromotionType(
+      applicablePromotion,
     );
 
-    // FIX: Seleccionar precio final basado explícitamente en el TIPO DE PAGO
-    // Tipo 1 -> Aplica Oferta (Descuento o Precio Base según sea el recargo)
-    // Tipo 2 -> Aplica Precio Venta (Base o Recargo)
-    final double precioFinal;
+    final precioBase = PromotionRules.resolveBasePrice(
+      unitPrice: item.precioUnitario,
+      basePrice: item.precioBase,
+      promotion: applicablePromotion,
+    );
 
-    if (tipoPago == 1) {
-      // Tipo 1: Efectivo Oferta -> Usar precio_oferta (siempre el más favorable/base para efectivo)
-      precioFinal = prices['precio_oferta']!;
-    } else {
-      // Tipo 2: Regular (Tarjeta u Otros) -> Usar precio_venta (Standard o Recargado)
-      precioFinal = prices['precio_venta']!;
-    }
+    final prices = PromotionRules.calculatePromotionPrices(
+      basePrice: precioBase,
+      promotion: applicablePromotion,
+    );
 
-    final itemTotal = precioFinal * item.cantidad;
+    final precioFinal = PromotionRules.selectPriceForPayment(
+      prices: prices,
+      paymentMethodId: paymentMethodId,
+      promotion: applicablePromotion,
+    );
+
+    // Redondear por exceso al entero más cercano para cantidades fraccionadas
+    final rawTotal = precioFinal * item.cantidad;
+    final itemTotal = (item.cantidad != item.cantidad.roundToDouble())
+        ? rawTotal.ceilToDouble()
+        : rawTotal;
 
     print('  💰 ${item.producto.denominacion}:');
-    print('     - Método Pago ID: $paymentMethodId -> Tipo Pago: $tipoPago');
+    print(
+      '     - Método Pago ID: $paymentMethodId -> Tipo Pago: ${PromotionRules.resolvePaymentType(paymentMethodId)}',
+    );
     print('     - Precio base: \$${precioBase.toStringAsFixed(2)}');
     print(
       '     - Precio calculado: \$${precioFinal.toStringAsFixed(2)} ${esRecargo ? "(recargo)" : "(promoción)"}',
@@ -246,7 +267,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     for (final item in widget.order.items) {
       if (item.paymentMethod != null) {
         final methodName = item.paymentMethod!.denominacion;
-        final itemTotal = item.subtotal;
+        final itemTotal = _calculateItemPrice(item);
         breakdown[methodName] = (breakdown[methodName] ?? 0.0) + itemTotal;
       }
     }
@@ -314,7 +335,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               const SizedBox(height: 20),
               _buildBuyerInfoSection(),
               const SizedBox(height: 20),
-              _buildExtraContactsSection(),
+              // _buildExtraContactsSection(),
               const SizedBox(height: 30),
               _buildFinalTotalSection(),
               const SizedBox(height: 20),
@@ -350,7 +371,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '${widget.order.totalItems} producto${widget.order.totalItems == 1 ? '' : 's'}',
+                '${widget.order.distinctItemCount} producto${widget.order.distinctItemCount == 1 ? '' : 's'}',
                 style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
               Text(
@@ -695,6 +716,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildFinalTotalSection() {
+    final double? usdTotal = _usdRate > 0 ? finalTotal / _usdRate : null;
+    final usdLabel =
+        _usdRate > 0
+            ? 'Total USD (USD ${_usdRate.toStringAsFixed(0)})'
+            : 'Total USD';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -750,6 +777,35 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   color: Color(0xFF4A90E2),
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                usdLabel,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey[700],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (_isLoadingUsdRate)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Text(
+                  usdTotal == null ? 'N/D' : '\$${usdTotal.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF4A90E2),
+                  ),
+                ),
             ],
           ),
         ],
@@ -951,15 +1007,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       // Preparar desglose de pagos por método
       Map<String, Map<String, dynamic>> paymentBreakdown = {};
+      final itemTotals = <String, double>{};
 
       for (final item in widget.order.items) {
-        // ✅ CORREGIDO: Usar item.subtotal que ya tiene el precio correcto según método de pago
-        final itemTotal = item.subtotal;
+        final itemTotal = _calculateItemPrice(item);
         subtotal += itemTotal;
+        itemTotals[item.id] = itemTotal;
 
         print('🔌 OFFLINE - Producto: ${item.producto.denominacion}');
         print('  - Precio unitario base: \$${item.precioUnitario}');
-        print('  - Subtotal con método de pago: \$${item.subtotal}');
+        print(
+          '  - Subtotal con método de pago: \$${itemTotal.toStringAsFixed(2)}',
+        );
         print(
           '  - Método de pago: ${item.paymentMethod?.denominacion ?? "Sin método"}',
         );
@@ -1004,17 +1063,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'promo_discount': _promoDiscount,
         'items':
             widget.order.items.map((item) {
+              final itemTotal =
+                  itemTotals[item.id] ?? _calculateItemPrice(item);
               // ✅ CORREGIDO: Usar el precio unitario correcto calculado desde el subtotal
               final precioUnitarioCorrect =
                   item.cantidad > 0
-                      ? (item.subtotal / item.cantidad)
+                      ? (itemTotal / item.cantidad).ceilToDouble()
                       : item.precioUnitario;
 
               print(
                 '💾 GUARDANDO OFFLINE - Producto: ${item.producto.denominacion}',
               );
               print('  - Precio unitario base: \$${item.precioUnitario}');
-              print('  - Subtotal con método de pago: \$${item.subtotal}');
+              print(
+                '  - Subtotal con método de pago: \$${itemTotal.toStringAsFixed(2)}',
+              );
               print(
                 '  - Precio unitario correcto guardado: \$${precioUnitarioCorrect}',
               );
@@ -1028,7 +1091,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 'cantidad': item.cantidad,
                 'precio_unitario':
                     precioUnitarioCorrect, // ✅ Precio correcto según método de pago
-                'subtotal': item.subtotal, // ✅ Subtotal con precio correcto
+                'subtotal': itemTotal, // ✅ Subtotal con precio correcto
                 'id_medio_pago': item.paymentMethod?.id,
                 'metodo_pago': item.paymentMethod?.denominacion,
                 'inventory_metadata': item.inventoryData,

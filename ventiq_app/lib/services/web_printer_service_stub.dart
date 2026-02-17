@@ -4,7 +4,10 @@ import '../models/order.dart';
 /// Implementación stub para plataformas no web
 class WebPrinterServiceImpl {
   /// Muestra diálogo de confirmación de impresión para web (stub)
-  Future<bool> showPrintConfirmationDialog(BuildContext context, Order order) async {
+  Future<bool> showPrintConfirmationDialog(
+    BuildContext context,
+    Order order,
+  ) async {
     // En plataformas no web, no se puede usar impresión web
     return false;
   }
@@ -12,6 +15,12 @@ class WebPrinterServiceImpl {
   /// Imprime la factura usando la API de impresión del navegador (stub)
   Future<bool> printInvoice(Order order) async {
     print('❌ Impresión web no disponible en esta plataforma');
+    return false;
+  }
+
+  /// Imprime múltiples recibos del cliente en una sola impresión (stub)
+  Future<bool> printCustomerReceiptsBatch(List<Order> orders) async {
+    print('❌ Impresión web por lote no disponible en esta plataforma');
     return false;
   }
 

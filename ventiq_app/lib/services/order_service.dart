@@ -1,6 +1,7 @@
 import '../models/order.dart';
 import '../models/product.dart';
 import '../models/payment_method.dart';
+import '../utils/promotion_rules.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import 'turno_service.dart'; // Import TurnoService
@@ -37,7 +38,7 @@ class OrderService {
   void addItemToCurrentOrder({
     required Product producto,
     ProductVariant? variante,
-    required int cantidad,
+    required double cantidad,
     required String ubicacionAlmacen,
     Map<String, dynamic>? inventoryData,
     double? precioUnitario,
@@ -87,7 +88,7 @@ class OrderService {
   }
 
   // Actualizar cantidad de un item
-  void updateItemQuantity(String itemId, int newQuantity) {
+  void updateItemQuantity(String itemId, double newQuantity) {
     if (_currentOrder == null) return;
 
     final itemIndex = _currentOrder!.items.indexWhere(
@@ -104,6 +105,55 @@ class OrderService {
 
       // Guardar automáticamente en persistencia
       _savePersistentPreorder();
+    }
+  }
+
+  /// Refrescar promociones desde cache offline para items sin datos de promoción
+  Future<void> refreshPromotionsFromCache({bool force = false}) async {
+    if (_currentOrder == null || _currentOrder!.items.isEmpty) {
+      return;
+    }
+
+    try {
+      final userPrefs = UserPreferencesService();
+      final globalPromotion = await userPrefs.getPromotionData();
+
+      final productIds =
+          _currentOrder!.items.map((item) => item.producto.id).toSet();
+      final Map<int, List<Map<String, dynamic>>> productPromotions = {};
+
+      for (final productId in productIds) {
+        final promotions = await userPrefs.getProductPromotions(productId);
+        if (promotions != null && promotions.isNotEmpty) {
+          productPromotions[productId] = promotions;
+        }
+      }
+
+      final updatedItems =
+          _currentOrder!.items.map((item) {
+            if (!force && item.promotionData != null) {
+              return item;
+            }
+
+            final productPromos = productPromotions[item.producto.id];
+            final activePromotion = PromotionRules.pickPromotionForDisplay(
+              productPromotions: productPromos,
+              globalPromotion: globalPromotion,
+              quantity: item.cantidad.round(),
+            );
+
+            if (activePromotion == null) {
+              return force ? item.copyWith(promotionData: null) : item;
+            }
+
+            return item.copyWith(promotionData: activePromotion);
+          }).toList();
+
+      _currentOrder = _currentOrder!.copyWith(items: updatedItems);
+      _updateOrderTotal(_currentOrder!);
+      await _savePersistentPreorder();
+    } catch (e) {
+      print('❌ Error actualizando promociones offline: $e');
     }
   }
 
@@ -216,10 +266,18 @@ class OrderService {
             .eq('id', pagoId);
       }
 
-      // Actualizar cache local de la orden
+      // Actualizar cache local de la orden (incluir descuento para impresión)
       final idx = _orders.indexWhere((o) => o.id == order.id);
       if (idx != -1) {
-        _orders[idx] = _orders[idx].copyWith(total: precioFinal);
+        _orders[idx] = _orders[idx].copyWith(
+          total: precioFinal,
+          descuento: {
+            'monto_real': montoBase,
+            'monto_descontado': montoDescontado,
+            'tipo_descuento': discountType,
+            'valor_descuento': discountValue,
+          },
+        );
       }
 
       return {
@@ -995,8 +1053,10 @@ class OrderService {
         // Transformar respuesta de Supabase a modelo Order
         _transformSupabaseToOrders(response);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Error en listOrdersFromSupabase: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
     }
   }
 
@@ -1099,7 +1159,7 @@ class OrderService {
               id: item['id_producto'],
               denominacion: item['producto_nombre'] ?? 'Producto',
               precio: (item['precio_unitario'] ?? 0.0).toDouble(),
-              cantidad: (item['cantidad'] ?? 1).toInt(),
+              cantidad: (item['cantidad'] ?? 1).toDouble(),
               esRefrigerado: false,
               esFragil: false,
               esPeligroso: false,
@@ -1130,7 +1190,7 @@ class OrderService {
                     (variantData['opcion'] ?? '') +
                     ')',
                 precio: (item['precio_unitario'] ?? 0.0).toDouble(),
-                cantidad: (item['cantidad'] ?? 1).toInt(),
+                cantidad: (item['cantidad'] ?? 1).toDouble(),
                 descripcion: variantData['opcion'],
               );
             }
@@ -1150,7 +1210,7 @@ class OrderService {
                   'ITEM-${item['id_producto']}-${DateTime.now().millisecondsSinceEpoch}',
               producto: product,
               variante: variant,
-              cantidad: (item['cantidad'] ?? 1).toInt(),
+              cantidad: (item['cantidad'] ?? 1).toDouble(),
               precioUnitario: (item['precio_unitario'] ?? 0.0).toDouble(),
               ubicacionAlmacen: 'Principal', // Valor por defecto
               // Mapear nuevos campos de inventario desde la función SQL
@@ -1208,6 +1268,8 @@ class OrderService {
               supabaseOrder['detalles']['pagos']
                   as List<dynamic>?, // ✅ Agregar campo pagos
           descuento: descuento,
+          sellerName: supabaseOrder['usuario_nombre']?.toString(),
+          tpvName: supabaseOrder['tpv_nombre']?.toString(),
         );
 
         _orders.add(order);
@@ -1241,7 +1303,7 @@ class OrderService {
 
   // Estadísticas rápidas
   int get totalOrders => _orders.length;
-  int get currentOrderItemCount => _currentOrder?.totalItems ?? 0;
+  int get currentOrderItemCount => _currentOrder?.distinctItemCount ?? 0;
   double get currentOrderTotal => _currentOrder?.total ?? 0.0;
 
   // ==================== MÉTODOS PARA MODO OFFLINE ====================
@@ -1267,7 +1329,7 @@ class OrderService {
                 id: itemData['id_producto'] as int,
                 denominacion: itemData['denominacion'] as String,
                 precio: (itemData['precio_unitario'] as num).toDouble(),
-                cantidad: (itemData['cantidad'] as num).toInt(),
+                cantidad: (itemData['cantidad'] as num).toDouble(),
                 esRefrigerado: false,
                 esFragil: false,
                 esPeligroso: false,
@@ -1298,7 +1360,7 @@ class OrderService {
                 id: '${orderData['id']}_${itemData['id_producto']}',
                 producto: product,
                 variante: null,
-                cantidad: (itemData['cantidad'] as num).toInt(),
+                cantidad: (itemData['cantidad'] as num).toDouble(),
                 precioUnitario: (itemData['precio_unitario'] as num).toDouble(),
                 ubicacionAlmacen: ubicacionAlmacen,
                 inventoryData: inventoryMetadata,

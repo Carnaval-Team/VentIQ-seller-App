@@ -13,7 +13,7 @@ class WebSummaryPrinterService {
   Future<bool> printDetailedSummary({
     required List<OrderItem> productosVendidos,
     required double totalVentas,
-    required int totalProductos,
+    required double totalProductos,
     required double totalEgresado,
     required double totalEfectivoReal,
   }) async {

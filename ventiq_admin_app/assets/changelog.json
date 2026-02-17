@@ -1,14 +1,151 @@
 {
-  "current_version": "1.8.8",
-  "build": 188,
+  "current_version": "1.9.5",
+  "build": 195,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.9.5",
+      "date": "2026-02-16",
+      "title": "Márgenes y precios que se ajustan solos",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Configura tu margen de ganancia",
+          "description": "Define el porcentaje de ganancia que quieres obtener por cada producto y deja que la app calcule el precio de venta ideal por ti."
+        },
+        {
+          "type": "feature",
+          "title": "Precios de venta que se actualizan solos",
+          "description": "Cuando cambia el costo de un producto, el precio de venta se recalcula automáticamente según el margen que configuraste. Sin cálculos manuales, sin sorpresas."
+        },
+        {
+          "type": "improvement",
+          "title": "Más control sobre tu rentabilidad",
+          "description": "Revisa de un vistazo el margen real de cada producto y ajústalo cuando lo necesites para mantener tus ganancias siempre en orden."
+        }
+      ]
+    },
+    {
+      "version": "1.9.4",
+      "date": "2026-02-11",
+      "title": "🤖 Tu nuevo asistente de ayuda inteligente",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Asistente de ayuda siempre disponible",
+          "description": "Ahora tienes un asistente que responde tus preguntas sobre como usar la app. Toca el boton de ayuda en el Dashboard y pregunta lo que necesites."
+        },
+        {
+          "type": "improvement",
+          "title": "Respuestas paso a paso",
+          "description": "Pregunta cosas como '¿Como creo un producto?' o '¿Como registro mercancia?' y recibe instrucciones claras para completar la tarea."
+        },
+        {
+          "type": "improvement",
+          "title": "Navega directo a la pantalla",
+          "description": "Cuando el asistente te explica algo, puedes tocar 'Ir a la pantalla' para llegar rapidamente al lugar correcto sin buscar en el menu."
+        },
+        {
+          "type": "improvement",
+          "title": "Preguntas frecuentes personalizadas",
+          "description": "El asistente te sugiere preguntas segun tu rol (Gerente, Supervisor, Auditor o Almacenero) para que encuentres ayuda mas rapido."
+        }
+      ]
+    },
+    {
+      "version": "1.9.3",
+      "date": "2026-02-11",
+      "title": "🧪 Crear tienda con IA (Beta)",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Asistente de creación de tienda desde el paso 0",
+          "description": "Nuevo botón \"Crear tienda asistida (IA)\" que abre un chat para recopilar los datos necesarios (usuario, tienda, ubicación, almacenes, zonas y TPVs) y generar la tienda más rápido. Función en beta: aún está en desarrollo y puede ajustarse en próximas versiones."
+        },
+        {
+          "type": "improvement",
+          "title": "Autocompletado inteligente para ahorrar tiempo",
+          "description": "La IA puede sugerir valores automáticos (por ejemplo, códigos de zonas, nombres por defecto y asignaciones) para reducir el trabajo manual durante el registro."
+        }
+      ]
+    },
+    {
+      "version": "1.9.2",
+      "date": "2026-02-05",
+      "title": "🎯 Precios siempre con el final perfecto",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Elige como quieres que se vean tus precios",
+          "description": "Ahora puedes definir el estilo de redondeo desde la configuración global: mantener el precio exacto, redondear al entero o subirlo cuando quieras asegurar margen."
+        },
+        {
+          "type": "improvement",
+          "title": "Finales atractivos para vender mas",
+          "description": "Activa precios a multiplo de 5 para que tus etiquetas se vean mas limpias y faciles de recordar (10, 15, 20, etc.)."
+        },
+        {
+          "type": "improvement",
+          "title": "Cambios claros y faciles de entender",
+          "description": "Cada opcion explica con ejemplos como quedara el precio, para que elijas lo que mejor funciona con tu negocio."
+        }
+      ]
+    },
+    {
+      "version": "1.9.1",
+      "date": "2026-02-03",
+      "title": "🔐 Permisos de UI y gestión para Rol Almacenero",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Nuevo rol Almacenero con permisos específicos",
+          "description": "Implementado rol Almacenero con acceso restringido a funcionalidades de gestión de almacenes e inventario."
+        },
+        {
+          "type": "improvement",
+          "title": "Acceso a Productos en modo solo lectura",
+          "description": "El almacenero puede ver productos pero no puede crear, editar o eliminar. Muestra badge 'Solo Lectura' en la pantalla de productos."
+        },
+        {
+          "type": "improvement",
+          "title": "Acceso a Inventario con filtro de almacén",
+          "description": "El almacenero solo ve el inventario de su almacén asignado. El filtro de almacén está bloqueado con ícono de candado."
+        }
+      ]
+    },
+    {
+      "version": "1.9.0",
+      "date": "2026-02-02",
+      "title": "✨ Nuevos productos con IA y costos más claros",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Crea productos con IA en minutos",
+          "description": "Describe lo que necesitas y obtén una vista previa lista para revisar antes de generar tus productos."
+        },
+        {
+          "type": "improvement",
+          "title": "Costo USD más transparente",
+          "description": "La IA ahora sugiere el costo en USD por presentación para que tengas márgenes más claros desde el inicio."
+        },
+        {
+          "type": "improvement",
+          "title": "Edición rápida y sin sorpresas",
+          "description": "Ajusta nombre, precio y costo desde la vista previa para publicar exactamente lo que quieres."
+        }
+      ]
+    },
     {
       "version": "1.8.8",
       "date": "2026-01-30",
       "title": "🤖 Analista IA de Ventas (Beta) y mejora en las promos de productos",
       "changes": [
+        {
+          "type": "feature",
+          "title": "Mejoras visuales y correcciones de errores en promociones",
+          "description": "Se han arreglado varios problemas a la hora de crear una promoción, y se añadieron nuevos tipos de promocion."
+        },
         {
           "type": "feature",
           "title": "Tu nuevo copiloto para vender mejor",
