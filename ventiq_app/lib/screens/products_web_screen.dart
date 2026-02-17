@@ -25,12 +25,12 @@ class WebScrollBehavior extends MaterialScrollBehavior {
   };
 }
 
-class ProductsScreen extends StatefulWidget {
+class ProductsWebScreen extends StatefulWidget {
   final int categoryId;
   final String categoryName;
   final Color categoryColor;
 
-  const ProductsScreen({
+  const ProductsWebScreen({
     Key? key,
     required this.categoryId,
     required this.categoryName,
@@ -38,10 +38,10 @@ class ProductsScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<ProductsScreen> createState() => _ProductsScreenState();
+  State<ProductsWebScreen> createState() => _ProductsWebScreenState();
 }
 
-class _ProductsScreenState extends State<ProductsScreen> {
+class _ProductsWebScreenState extends State<ProductsWebScreen> {
   Map<String, List<Product>> productsBySubcategory = {};
   Map<String, List<Product>> filteredProductsBySubcategory = {};
   bool isLoading = true;
@@ -103,7 +103,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   void _loadPromotionData() async {
     final promotionData = await _userPreferencesService.getPromotionData();
-    print('🎯 ProductsScreen: Promotion data loaded: $promotionData');
+    print('🎯 ProductsWebScreen: Promotion data loaded: $promotionData');
     setState(() {
       _promotionData = promotionData;
     });
@@ -379,7 +379,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
           const NotificationWidget(),
           IconButton(
             icon: const Icon(
-              Icons.local_shipping,
+              Icons.local_shipping_outlined,
               color: Colors.white,
               size: 28,
             ),
@@ -430,10 +430,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
           Container(
             decoration: const BoxDecoration(
               color: Color(0xFFF8F9FA),
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(20),
-                topRight: Radius.circular(20),
-              ),
             ),
             child:
                 isLoading
@@ -550,94 +546,92 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     ),
           ),
           // Floating search overlay
-          if (_isSearchVisible)
-            GestureDetector(
-              onTap: _hideSearchOverlay,
-              child: Container(
-                color: Colors.black.withOpacity(0.5),
-                child: Center(
-                  child: GestureDetector(
-                    onTap:
-                        () {}, // Prevent closing when tapping on the search card
-                    child: Container(
-                      margin: const EdgeInsets.all(20),
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(15),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
-                            blurRadius: 10,
-                            offset: const Offset(0, 5),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.search,
-                                color: widget.categoryColor,
-                                size: 24,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: TextField(
-                                  controller: _searchController,
-                                  focusNode: _searchFocusNode,
-                                  autofocus: true,
-                                  textInputAction: TextInputAction.done,
-                                  onSubmitted: (_) => _hideSearchOverlay(),
-                                  decoration: InputDecoration(
-                                    hintText: 'Buscar productos...',
-                                    border: InputBorder.none,
-                                    hintStyle: TextStyle(
-                                      color: Colors.grey[400],
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    color: Color(0xFF2C3E50),
-                                  ),
-                                ),
-                              ),
-                              if (_searchQuery.isNotEmpty)
-                                IconButton(
-                                  icon: const Icon(Icons.backspace_outlined),
-                                  onPressed: _clearSearch,
-                                  color: Colors.grey[600],
-                                  tooltip: 'Limpiar búsqueda',
-                                ),
-                              IconButton(
-                                icon: const Icon(Icons.close),
-                                onPressed: _hideSearchOverlay,
-                                color: Colors.grey[600],
-                                tooltip: 'Cerrar búsqueda',
-                              ),
-                            ],
-                          ),
-                          if (_searchQuery.isNotEmpty) ...[
-                            const Divider(),
-                            Text(
-                              '${filteredProductsBySubcategory.values.fold(0, (sum, products) => sum + products.length)} productos encontrados',
-                              style: TextStyle(
-                                color: widget.categoryColor,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
+          if (_isSearchVisible) ...[
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: _hideSearchOverlay,
+                behavior: HitTestBehavior.translucent,
+                child: const SizedBox.expand(),
+              ),
+            ),
+            Positioned(
+              top: 16,
+              right: 24,
+              child: GestureDetector(
+                onTap:
+                    () {}, // Prevent closing when tapping on the search card
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: Colors.grey[200]!, width: 1),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.12),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.search,
+                          color: Colors.grey[500],
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _searchController,
+                            focusNode: _searchFocusNode,
+                            autofocus: true,
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => _hideSearchOverlay(),
+                            decoration: InputDecoration(
+                              hintText: 'Buscar productos...',
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: EdgeInsets.zero,
+                              hintStyle: TextStyle(
+                                color: Colors.grey[500],
+                                fontSize: 13,
                               ),
                             ),
-                          ],
-                        ],
-                      ),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF1F2937),
+                            ),
+                          ),
+                        ),
+                        if (_searchQuery.isNotEmpty)
+                          IconButton(
+                            icon: Icon(
+                              Icons.close_rounded,
+                              size: 18,
+                              color: Colors.grey[600],
+                            ),
+                            onPressed: _clearSearch,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 24,
+                              minHeight: 24,
+                            ),
+                            tooltip: 'Limpiar búsqueda',
+                          ),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
+          ],
           // USD Rate Chip positioned at bottom left
           Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
           // Sync Status Chip positioned at bottom left
@@ -744,17 +738,24 @@ class _SubcategorySectionState extends State<_SubcategorySection> {
   }
 
   int _itemsPerColumn(BuildContext context) {
-    return 3;
+    final width = MediaQuery.of(context).size.width;
+    return width >= 1200 ? 2 : 3;
   }
 
   double _columnGap(BuildContext context) {
-    return 16;
+    return MediaQuery.of(context).size.width >= 1200 ? 20 : 16;
   }
 
   double _columnWidth(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
     final horizontalPadding = kIsWeb ? 56.0 : 16.0;
-    final availableWidth =
-        MediaQuery.of(context).size.width - (horizontalPadding * 2);
+    final availableWidth = width - (horizontalPadding * 2);
+    if (width >= 1200) {
+      final gap = _columnGap(context);
+      final baseWidth = (availableWidth - gap) / 2;
+      const maxColumnWidth = 550.0;
+      return baseWidth > maxColumnWidth ? maxColumnWidth : baseWidth;
+    }
     return availableWidth * 0.85;
   }
 
@@ -871,33 +872,78 @@ class _SubcategorySectionState extends State<_SubcategorySection> {
 
   Widget _buildProductsList(BuildContext context) {
     final products = widget.products;
+    final screenWidth = MediaQuery.of(context).size.width;
     final itemsPerColumn = _itemsPerColumn(context);
     final columnWidth = _columnWidth(context);
     final listHeight = _listHeight(context);
     final columnGap = _columnGap(context);
+    final shouldConstrainColumn =
+        screenWidth >= 1200 && products.length <= itemsPerColumn;
+
+    if (products.length == 2 && screenWidth >= 1200) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+            width: (columnWidth * 2) + columnGap,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: columnWidth,
+                  child: _PlayStoreProductCard(
+                    product: products[0],
+                    categoryColor: widget.categoryColor,
+                    promotionData: widget.promotionData,
+                    isLimitDataUsageEnabled: widget.isLimitDataUsageEnabled,
+                  ),
+                ),
+                SizedBox(width: columnGap),
+                SizedBox(
+                  width: columnWidth,
+                  child: _PlayStoreProductCard(
+                    product: products[1],
+                    categoryColor: widget.categoryColor,
+                    promotionData: widget.promotionData,
+                    isLimitDataUsageEnabled: widget.isLimitDataUsageEnabled,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     // Si hay pocos productos, mostrar en una sola columna sin espacios extra
     if (products.length <= itemsPerColumn) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children:
-              products.asMap().entries.map((entry) {
-                final index = entry.key;
-                final product = entry.value;
-                return Container(
-                  margin: EdgeInsets.only(
-                    bottom: index < products.length - 1 ? 6 : 0,
-                  ),
-                  child: _PlayStoreProductCard(
-                    product: product,
-                    categoryColor: widget.categoryColor,
-                    promotionData: widget.promotionData,
-                    isLimitDataUsageEnabled: widget.isLimitDataUsageEnabled,
-                  ),
-                );
-              }).toList(),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+            width: shouldConstrainColumn ? columnWidth : double.infinity,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children:
+                  products.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final product = entry.value;
+                    return Container(
+                      margin: EdgeInsets.only(
+                        bottom: index < products.length - 1 ? 6 : 0,
+                      ),
+                      child: _PlayStoreProductCard(
+                        product: product,
+                        categoryColor: widget.categoryColor,
+                        promotionData: widget.promotionData,
+                        isLimitDataUsageEnabled: widget.isLimitDataUsageEnabled,
+                      ),
+                    );
+                  }).toList(),
+            ),
+          ),
         ),
       );
     }

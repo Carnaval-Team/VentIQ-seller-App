@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'products_screen.dart';
 import 'barcode_scanner_screen.dart';
 import 'fluid_mode_screen.dart';
 import '../widgets/bottom_navigation.dart';
@@ -21,7 +20,6 @@ import '../services/smart_offline_manager.dart';
 import '../services/connectivity_service.dart';
 import '../services/product_service.dart';
 import '../models/product.dart';
-import 'product_details_screen.dart';
 import 'dart:async';
 
 class CategoriesScreen extends StatefulWidget {
@@ -788,17 +786,13 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                               ),
                               onTap: () {
                                 _toggleSearch();
-                                Navigator.push(
+                                Navigator.pushNamed(
                                   context,
-                                  MaterialPageRoute(
-                                    builder:
-                                        (_) => ProductDetailsScreen(
-                                          product: product,
-                                          categoryColor: const Color(
-                                            0xFF4A90E2,
-                                          ),
-                                        ),
-                                  ),
+                                  '/product-details',
+                                  arguments: {
+                                    'product': product,
+                                    'categoryColor': const Color(0xFF4A90E2),
+                                  },
                                 );
                               },
                             );
@@ -1445,16 +1439,14 @@ class _CategoryCardState extends State<_CategoryCard>
     } else {
       print('📱 Modo tradicional - Navegando a ProductsScreen');
       // Navigate to products list for this category (traditional mode)
-      Navigator.push(
+      Navigator.pushNamed(
         context,
-        MaterialPageRoute(
-          builder:
-              (_) => ProductsScreen(
-                categoryId: widget.id,
-                categoryName: widget.name,
-                categoryColor: widget.color,
-              ),
-        ),
+        '/products',
+        arguments: {
+          'categoryId': widget.id,
+          'categoryName': widget.name,
+          'categoryColor': widget.color,
+        },
       );
     }
   }

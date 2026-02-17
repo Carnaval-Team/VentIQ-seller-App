@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'orders_web_screen.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -27,14 +26,14 @@ import '../widgets/notification_widget.dart';
 import '../widgets/sync_status_chip.dart';
 import '../widgets/bill_count_dialog.dart';
 
-class OrdersScreen extends StatefulWidget {
-  const OrdersScreen({Key? key}) : super(key: key);
+class OrdersWebScreen extends StatefulWidget {
+  const OrdersWebScreen({Key? key}) : super(key: key);
 
   @override
-  State<OrdersScreen> createState() => _OrdersScreenState();
+  State<OrdersWebScreen> createState() => _OrdersWebScreenState();
 }
 
-class _OrdersScreenState extends State<OrdersScreen> {
+class _OrdersWebScreenState extends State<OrdersWebScreen> {
   final OrderService _orderService = OrderService();
   final PrinterManager _printerManager = PrinterManager();
   final UserPreferencesService _userPreferencesService =
@@ -742,15 +741,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Verificar si es vista web (ancho > 600)
-    final bool isWeb = MediaQuery.of(context).size.width > 600;
-
     _filterOrders();
     final orders = _filteredOrders;
-
-    if (isWeb) {
-      return const OrdersWebScreen();
-    }
 
     return Scaffold(
       appBar: AppBar(
@@ -779,43 +771,42 @@ class _OrdersScreenState extends State<OrdersScreen> {
         children: [
           _isLoading
               ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Color(0xFF4A90E2),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          const Color(0xFF4A90E2),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Cargando órdenes...',
-                      style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                    ),
-                  ],
-                ),
-              )
+                      const SizedBox(height: 16),
+                      Text(
+                        'Cargando órdenes...',
+                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                )
               : RefreshIndicator(
-                onRefresh: _refreshOrders,
-                child: Column(
-                  children: [
-                    _buildSearchBar(),
-                    Expanded(
-                      child:
-                          orders.isEmpty
-                              ? _buildEmptyState()
-                              : _buildOrdersList(orders),
-                    ),
-                  ],
+                  onRefresh: _refreshOrders,
+                  child: Column(
+                    children: [
+                      _buildSearchBar(),
+                      Expanded(
+                        child:
+                            orders.isEmpty
+                                ? _buildEmptyState()
+                                : _buildOrdersList(orders),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-          // Sync Status Chip positioned at bottom left
           const Positioned(bottom: 10, left: 16, child: SyncStatusChip()),
         ],
       ),
       endDrawer: const AppDrawer(),
       bottomNavigationBar: AppBottomNavigation(
-        currentIndex: 2, // Órdenes tab
+        currentIndex: 2,
         onTap: _onBottomNavTap,
       ),
       floatingActionButton: const SalesMonitorFAB(),
@@ -824,33 +815,34 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Widget _buildSearchBar() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       color: Colors.white,
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
-          hintText: 'Buscar por nombre o teléfono del cliente...',
-          prefixIcon: const Icon(Icons.search, color: Color(0xFF4A90E2)),
-          suffixIcon:
-              _searchQuery.isNotEmpty
-                  ? IconButton(
-                    icon: const Icon(Icons.clear),
-                    onPressed: () {
-                      _searchController.clear();
-                    },
-                  )
-                  : null,
+          hintText: 'Buscar órdenes por nombre o telefono del cliente...',
+          hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+          prefixIcon: const Icon(Icons.search, color: Color(0xFF4A90E2), size: 20),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () => _searchController.clear(),
+                )
+              : null,
+          filled: true,
+          fillColor: Colors.grey[50],
+          contentPadding: const EdgeInsets.symmetric(vertical: 0),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey[300]!),
+            borderRadius: BorderRadius.circular(30),
+            borderSide: BorderSide(color: Colors.grey[200]!),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(30),
+            borderSide: BorderSide(color: Colors.grey[200]!),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF4A90E2)),
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 12,
+            borderRadius: BorderRadius.circular(30),
+            borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 1),
           ),
         ),
       ),
@@ -1009,19 +1001,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!, width: 1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey[100]!, width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: InkWell(
         onTap: () => _showOrderDetails(order),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -1034,13 +1026,27 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   Expanded(
                     child: Row(
                       children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4A90E2).withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.receipt_long_outlined,
+                            size: 18,
+                            color: Color(0xFF4A90E2),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
                         Flexible(
                           child: Text(
                             order.id,
                             style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
                               color: Color(0xFF1F2937),
+                              letterSpacing: 0.5,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1050,14 +1056,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
+                              horizontal: 8,
+                              vertical: 3,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.purple.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(4),
+                              color: Colors.purple.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(6),
                               border: Border.all(
-                                color: Colors.purple.withOpacity(0.3),
+                                color: Colors.purple.withOpacity(0.2),
                               ),
                             ),
                             child: const Text(
@@ -1075,42 +1081,43 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+                      horizontal: 10,
+                      vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
+                      color: statusColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      order.status.displayName,
+                      order.status.displayName.toUpperCase(),
                       style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
                         color: statusColor,
+                        letterSpacing: 0.5,
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
               // Cliente y fecha
               Row(
                 children: [
                   if (order.buyerName != null) ...[
                     Icon(
-                      Icons.person_outline,
+                      Icons.person_rounded,
                       size: 16,
-                      color: Colors.grey[600],
+                      color: Colors.grey[400],
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         order.buyerName!,
                         style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
+                          color: Colors.grey[700],
+                          fontWeight: FontWeight.w600,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -1118,15 +1125,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     ),
                     const SizedBox(width: 12),
                   ],
-                  Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
-                  const SizedBox(width: 4),
+                  Icon(Icons.calendar_today_rounded, size: 14, color: Colors.grey[400]),
+                  const SizedBox(width: 6),
                   Text(
                     _formatDate(order.fechaCreacion),
-                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                    style: TextStyle(
+                      fontSize: 13, 
+                      color: Colors.grey[500],
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               // Información de productos y total
               Builder(
                 builder: (_) {
@@ -1134,90 +1145,96 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   final hasDiscount = discountData['hasDiscount'] as bool;
                   final displayTotal =
                       discountData['finalTotal'] as double? ?? order.total;
-                  final originalTotal =
-                      discountData['originalTotal'] as double? ?? displayTotal;
                   final saved = discountData['saved'] as double? ?? 0;
                   final label = discountData['label'] as String?;
 
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '${order.totalItems} producto${order.totalItems == 1 ? '' : 's'}',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF1F2937),
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '${order.totalItems} ${order.totalItems == 1 ? 'producto' : 'productos'}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey[600],
+                              ),
                             ),
-                          ),
-                          Text(
-                            '\$${displayTotal.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color:
-                                  hasDiscount
-                                      ? const Color(0xFF10B981)
-                                      : const Color(0xFF4A90E2),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  '\$${displayTotal.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    color: hasDiscount
+                                          ? const Color(0xFF10B981)
+                                          : const Color(0xFF4A90E2),
+                                  ),
+                                ),
+                              ],
                             ),
+                          ],
+                        ),
+                        if (hasDiscount) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              const Icon(Icons.local_offer_outlined, size: 12, color: Color(0xFF10B981)),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  '$label · Ahorras \$${saved.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF10B981),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
-                      ),
-                      if (hasDiscount) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          '$label · Ahorras \$${saved.toStringAsFixed(2)} (Antes \$${originalTotal.toStringAsFixed(2)})',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF10B981),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
                       ],
-                    ],
+                    ),
                   );
                 },
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               // Preview de productos y botón de impresión
               if (order.items.isNotEmpty) ...[
-                const Divider(height: 16),
                 Row(
                   children: [
                     Expanded(
                       child: Text(
-                        'Productos: ${order.items.take(2).map((item) => item.nombre).join(', ')}${order.items.length > 2 ? '...' : ''}',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        order.items.take(3).map((item) => item.nombre).join(', ') + (order.items.length > 3 ? '...' : ''),
+                        style: TextStyle(
+                          fontSize: 12, 
+                          color: Colors.grey[500],
+                          fontStyle: FontStyle.italic,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    // Botón de impresión pequeño para órdenes con pago confirmado o completadas
                     if (_canPrintOrder(order))
-                      Container(
-                        margin: const EdgeInsets.only(left: 8),
-                        child: InkWell(
-                          onTap: () => _printOrder(order),
-                          borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF4A90E2).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: const Color(0xFF4A90E2).withOpacity(0.3),
-                              ),
-                            ),
-                            child: const Icon(
-                              Icons.print,
-                              size: 16,
-                              color: Color(0xFF4A90E2),
-                            ),
-                          ),
-                        ),
+                      IconButton(
+                        onPressed: () => _printOrder(order),
+                        icon: const Icon(Icons.print_outlined),
+                        iconSize: 20,
+                        color: const Color(0xFF4A90E2),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        tooltip: 'Imprimir factura',
                       ),
                   ],
                 ),
@@ -1295,6 +1312,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   void _showOrderDetails(Order order) {
     int paymentBreakdownRefreshKey = 0;
+    final statusColor = _getStatusColor(order.status);
 
     showModalBottomSheet(
       context: context,
@@ -1310,8 +1328,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
               }
 
               return DraggableScrollableSheet(
-                initialChildSize: 0.7,
-                maxChildSize: 0.9,
+                initialChildSize: 0.82,
+                maxChildSize: 0.95,
                 minChildSize: 0.5,
                 builder:
                     (context, scrollController) => Container(
@@ -1335,18 +1353,69 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           ),
                           // Header
                           Padding(
-                            padding: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.fromLTRB(20, 4, 12, 16),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Expanded(
-                                  child: Text(
-                                    'Detalles de ${order.id}',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF1F2937),
-                                    ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Detalles de ${order.id}',
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF1F2937),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: statusColor.withOpacity(0.1),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              order.status.displayName,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                                color: statusColor,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Icon(Icons.schedule_rounded, size: 14, color: Colors.grey[400]),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            _formatDate(order.fechaCreacion),
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.grey[500],
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                          if (_getCarnavalOrderId(order.notas) != null) ...[
+                                            const SizedBox(width: 10),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                              decoration: BoxDecoration(
+                                                color: Colors.purple.withOpacity(0.08),
+                                                borderRadius: BorderRadius.circular(6),
+                                                border: Border.all(color: Colors.purple.withOpacity(0.2)),
+                                              ),
+                                              child: const Text(
+                                                'Carnaval',
+                                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.purple),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 IconButton(
@@ -1361,131 +1430,152 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           Expanded(
                             child: ListView(
                               controller: scrollController,
-                              padding: const EdgeInsets.all(16),
+                              padding: const EdgeInsets.all(20),
                               children: [
-                                // Información general
-                                _buildDetailRow(
-                                  'Estado:',
-                                  order.status.displayName,
-                                ),
-                                _buildDetailRow(
-                                  'Fecha:',
-                                  _formatDate(order.fechaCreacion),
-                                ),
-                                _buildDetailRow(
-                                  'Total productos:',
-                                  '${order.totalItems}',
-                                ),
+                                // --- Fila superior: Info general + Total ---
                                 Builder(
                                   builder: (_) {
-                                    final discountData = _getDiscountData(
-                                      order,
-                                    );
-                                    final hasDiscount =
-                                        discountData['hasDiscount'] as bool;
-                                    final displayTotal =
-                                        discountData['finalTotal'] as double? ??
-                                        order.total;
-                                    final originalTotal =
-                                        discountData['originalTotal']
-                                            as double? ??
-                                        displayTotal;
-                                    final saved =
-                                        discountData['saved'] as double? ?? 0;
-                                    final label =
-                                        discountData['label'] as String? ?? '';
+                                    final discountData = _getDiscountData(order);
+                                    final hasDiscount = discountData['hasDiscount'] as bool;
+                                    final displayTotal = discountData['finalTotal'] as double? ?? order.total;
+                                    final originalTotal = discountData['originalTotal'] as double? ?? displayTotal;
+                                    final saved = discountData['saved'] as double? ?? 0;
+                                    final label = discountData['label'] as String? ?? '';
 
                                     return Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
                                       children: [
-                                        _buildDetailRow(
-                                          'Total:',
-                                          '\$${displayTotal.toStringAsFixed(2)}',
-                                        ),
-                                        if (hasDiscount) ...[
-                                          const SizedBox(height: 4),
-                                          _buildDetailRow(
-                                            'Antes:',
-                                            '\$${originalTotal.toStringAsFixed(2)}',
+                                        // Fila completa: Cliente
+                                        if (order.buyerName != null || order.buyerPhone != null) ...[
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey[50],
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Text(
+                                                  'Cliente',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.grey[500],
+                                                    letterSpacing: 0.3,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                if (order.buyerName != null) ...[
+                                                  Icon(Icons.person_outline_rounded, size: 15, color: Colors.grey[400]),
+                                                  const SizedBox(width: 4),
+                                                  Flexible(
+                                                    child: Text(
+                                                      order.buyerName!,
+                                                      style: const TextStyle(
+                                                        fontSize: 13.5,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: Color(0xFF1F2937),
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ],
+                                                if (order.buyerPhone != null && order.buyerPhone!.isNotEmpty) ...[
+                                                  const SizedBox(width: 12),
+                                                  Icon(Icons.phone_outlined, size: 14, color: Colors.grey[400]),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    order.buyerPhone!,
+                                                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                                                  ),
+                                                ],
+                                                if (order.extraContacts != null && order.extraContacts!.isNotEmpty) ...[
+                                                  const SizedBox(width: 12),
+                                                  Icon(Icons.contacts_outlined, size: 14, color: Colors.grey[400]),
+                                                  const SizedBox(width: 4),
+                                                  Flexible(
+                                                    child: Text(
+                                                      order.extraContacts!,
+                                                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
                                           ),
-                                          const SizedBox(height: 2),
-                                          _buildDetailRow(
-                                            'Descuento:',
-                                            '$label · -\$${saved.toStringAsFixed(2)}',
-                                          ),
+                                          const SizedBox(height: 10),
                                         ],
+                                        // Resumen financiero
+                                        Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey[50],
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Text(
+                                                  'Resumen',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.grey[500],
+                                                    letterSpacing: 0.3,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 16),
+                                                Text(
+                                                  'Productos: ${order.totalItems}',
+                                                  style: const TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFF1F2937),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 20),
+                                                Text(
+                                                  'Total: \$${displayTotal.toStringAsFixed(2)}',
+                                                  style: const TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: Color(0xFF1F2937),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
                                       ],
                                     );
                                   },
                                 ),
+                                const SizedBox(height: 16),
 
-                                // Desglose de pagos
-                                if (order.operationId != null) ...[
-                                  const SizedBox(height: 16),
-                                  _buildPaymentBreakdown(
-                                    order,
-                                    refreshKey: paymentBreakdownRefreshKey,
-                                    onPaymentUpdated: refreshPaymentBreakdown,
-                                  ),
-                                ],
-
-                                // Estado Carnaval (si aplica)
-                                if (_getCarnavalOrderId(order.notas) !=
-                                    null) ...[
-                                  const SizedBox(height: 16),
+                                // --- Estado Carnaval ---
+                                if (_getCarnavalOrderId(order.notas) != null) ...[
                                   FutureBuilder<String?>(
-                                    future: _orderService
-                                        .getCarnavalOrderStatus(
-                                          _getCarnavalOrderId(order.notas)!,
-                                        ),
+                                    future: _orderService.getCarnavalOrderStatus(
+                                      _getCarnavalOrderId(order.notas)!,
+                                    ),
                                     builder: (context, snapshot) {
-                                      if (snapshot.connectionState ==
-                                          ConnectionState.waiting) {
-                                        return _buildDetailRow(
-                                          'Estado Carnaval:',
-                                          'Cargando...',
-                                        );
+                                      if (snapshot.connectionState == ConnectionState.waiting) {
+                                        return _buildDetailRow('Estado Carnaval:', 'Cargando...');
                                       }
                                       if (snapshot.hasData) {
                                         return Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 8,
-                                            horizontal: 12,
-                                          ),
+                                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                                           decoration: BoxDecoration(
-                                            color: Colors.purple.withOpacity(
-                                              0.05,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            border: Border.all(
-                                              color: Colors.purple.withOpacity(
-                                                0.2,
-                                              ),
-                                            ),
+                                            color: Colors.purple.withOpacity(0.05),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: Colors.purple.withOpacity(0.2)),
                                           ),
                                           child: Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                             children: [
-                                              const Text(
-                                                'Estado en Carnaval:',
-                                                style: TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.purple,
-                                                ),
-                                              ),
-                                              Text(
-                                                snapshot.data!,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.purple,
-                                                ),
-                                              ),
+                                              const Text('Estado en Carnaval:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.purple)),
+                                              Text(snapshot.data!, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.purple)),
                                             ],
                                           ),
                                         );
@@ -1493,45 +1583,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                       return const SizedBox.shrink();
                                     },
                                   ),
-                                ],
-
-                                // Datos del cliente
-                                if (order.buyerName != null ||
-                                    order.buyerPhone != null) ...[
                                   const SizedBox(height: 16),
-                                  const Text(
-                                    'Datos del Cliente:',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF1F2937),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  if (order.buyerName != null)
-                                    _buildDetailRow(
-                                      'Nombre:',
-                                      order.buyerName!,
-                                    ),
-                                  if (order.buyerPhone != null)
-                                    _buildDetailRow(
-                                      'Teléfono:',
-                                      order.buyerPhone!,
-                                    ),
-                                  if (order.extraContacts != null &&
-                                      order.extraContacts!.isNotEmpty)
-                                    _buildDetailRow(
-                                      'Contactos extra:',
-                                      order.extraContacts!,
-                                    ),
-                                  // if (order.paymentMethod != null)
-                                  //   _buildDetailRow(
-                                  //     'Método de pago:',
-                                  //     order.paymentMethod!,
-                                  //   ),
                                 ],
 
-                                const SizedBox(height: 16),
+                                // --- Desglose de pagos ---
+                                if (order.operationId != null) ...[
+                                  _buildPaymentBreakdown(
+                                    order,
+                                    refreshKey: paymentBreakdownRefreshKey,
+                                    onPaymentUpdated: refreshPaymentBreakdown,
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
+
+                                // --- Productos ---
                                 const Text(
                                   'Productos:',
                                   style: TextStyle(
@@ -1540,126 +1605,96 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     color: Color(0xFF1F2937),
                                   ),
                                 ),
-                                const SizedBox(height: 8),
-                                // Lista de productos (filtrar productos con precio 0)
+                                const SizedBox(height: 10),
                                 ...order.items
                                     .where((item) => item.subtotal > 0)
                                     .map(
                                       (item) => Container(
-                                        margin: const EdgeInsets.only(
-                                          bottom: 8,
-                                        ),
-                                        padding: const EdgeInsets.all(12),
+                                        margin: const EdgeInsets.only(bottom: 10),
+                                        padding: const EdgeInsets.all(14),
                                         decoration: BoxDecoration(
                                           color: Colors.grey[50],
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          border: Border.all(
-                                            color: Colors.grey[200]!,
-                                          ),
+                                          borderRadius: BorderRadius.circular(10),
                                         ),
                                         child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
+                                          crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Text(
-                                              item.nombre,
-                                              style: const TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w500,
-                                                color: Color(0xFF1F2937),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
                                             Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
+                                              crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                Text(
-                                                  'Cantidad: ${item.cantidad} • ${item.ubicacionAlmacen}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.grey[600],
+                                                Expanded(
+                                                  child: Text(
+                                                    item.nombre,
+                                                    style: const TextStyle(
+                                                      fontSize: 14,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Color(0xFF1F2937),
+                                                    ),
                                                   ),
                                                 ),
+                                                const SizedBox(width: 12),
                                                 Text(
                                                   '\$${item.subtotal.toStringAsFixed(2)}',
                                                   style: const TextStyle(
                                                     fontSize: 14,
-                                                    fontWeight: FontWeight.w600,
+                                                    fontWeight: FontWeight.w700,
                                                     color: Color(0xFF4A90E2),
                                                   ),
                                                 ),
                                               ],
                                             ),
-                                            // Mostrar ingredientes si existen
-                                            if (item.ingredientes != null &&
-                                                item
-                                                    .ingredientes!
-                                                    .isNotEmpty) ...[
-                                              const SizedBox(height: 8),
-                                              Container(
-                                                padding: const EdgeInsets.all(
-                                                  8,
+                                            const SizedBox(height: 6),
+                                            Row(
+                                              children: [
+                                                Icon(Icons.inventory_2_outlined, size: 13, color: Colors.grey[400]),
+                                                const SizedBox(width: 5),
+                                                Text(
+                                                  'Cant: ${item.cantidad}',
+                                                  style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500),
                                                 ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.orange[50],
-                                                  borderRadius:
-                                                      BorderRadius.circular(6),
-                                                  border: Border.all(
-                                                    color: Colors.orange[200]!,
-                                                    width: 1,
+                                                const SizedBox(width: 16),
+                                                Icon(Icons.warehouse_outlined, size: 13, color: Colors.grey[400]),
+                                                const SizedBox(width: 5),
+                                                Expanded(
+                                                  child: Text(
+                                                    item.ubicacionAlmacen,
+                                                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
                                                   ),
                                                 ),
+                                              ],
+                                            ),
+                                            // Ingredientes
+                                            if (item.ingredientes != null && item.ingredientes!.isNotEmpty) ...[
+                                              const SizedBox(height: 8),
+                                              Container(
+                                                padding: const EdgeInsets.all(8),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.orange[50],
+                                                  borderRadius: BorderRadius.circular(6),
+                                                  border: Border.all(color: Colors.orange[200]!, width: 1),
+                                                ),
                                                 child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
                                                   children: [
                                                     Row(
                                                       children: [
-                                                        Icon(
-                                                          Icons.restaurant,
-                                                          size: 14,
-                                                          color:
-                                                              Colors
-                                                                  .orange[700],
-                                                        ),
-                                                        const SizedBox(
-                                                          width: 4,
-                                                        ),
+                                                        Icon(Icons.restaurant, size: 14, color: Colors.orange[700]),
+                                                        const SizedBox(width: 4),
                                                         Text(
                                                           'Ingredientes utilizados:',
-                                                          style: TextStyle(
-                                                            fontSize: 12,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            color:
-                                                                Colors
-                                                                    .orange[700],
-                                                          ),
+                                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.orange[700]),
                                                         ),
                                                       ],
                                                     ),
                                                     const SizedBox(height: 4),
-                                                    ...item.ingredientes!.map((
-                                                      ingrediente,
-                                                    ) {
+                                                    ...item.ingredientes!.map((ingrediente) {
                                                       return Padding(
-                                                        padding:
-                                                            const EdgeInsets.only(
-                                                              left: 18,
-                                                              bottom: 2,
-                                                            ),
+                                                        padding: const EdgeInsets.only(left: 18, bottom: 2),
                                                         child: Text(
                                                           '• ${ingrediente['nombre_ingrediente']} - ${ingrediente['cantidad_vendida']} ${ingrediente['unidad_medida'] ?? 'unidades'}',
-                                                          style: TextStyle(
-                                                            fontSize: 11,
-                                                            color:
-                                                                Colors
-                                                                    .grey[700],
-                                                          ),
+                                                          style: TextStyle(fontSize: 11, color: Colors.grey[700]),
                                                         ),
                                                       );
                                                     }).toList(),
@@ -2072,93 +2107,93 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
         Widget header = Row(
           children: [
+            Icon(Icons.payments_outlined, size: 18, color: Colors.grey[500]),
+            const SizedBox(width: 8),
             const Expanded(
               child: Text(
-                'Desglose de Pagos:',
+                'Desglose de Pagos',
                 style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
                   color: Color(0xFF1F2937),
                 ),
               ),
             ),
             if (canEdit)
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEEF2FF),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFC7D2FE)),
+              InkWell(
+                onTap: () => _showPaymentBreakdownEditor(
+                  order,
+                  payments,
+                  onUpdated: onPaymentUpdated,
                 ),
-                child: IconButton(
-                  tooltip: 'Editar desglose de pagos',
-                  icon: const Icon(
-                    Icons.edit,
-                    size: 18,
-                    color: Color(0xFF4F46E5),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEEF2FF),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  onPressed:
-                      () => _showPaymentBreakdownEditor(
-                        order,
-                        payments,
-                        onUpdated: onPaymentUpdated,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.edit_outlined, size: 14, color: Color(0xFF4F46E5)),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'Editar',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF4F46E5)),
                       ),
+                    ],
+                  ),
                 ),
               ),
           ],
         );
 
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              header,
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey[200]!),
-                ),
-                child: const Row(
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                header,
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    SizedBox(width: 8),
-                    Text('Cargando desglose de pagos...'),
+                    SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey[400])),
+                    const SizedBox(width: 10),
+                    Text('Cargando pagos...', style: TextStyle(fontSize: 13, color: Colors.grey[500])),
                   ],
                 ),
-              ),
-            ],
+              ],
+            ),
           );
         }
 
         if (snapshot.hasError || payments.isEmpty) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              header,
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey[200]!),
-                ),
-                child: const Text(
-                  'No hay información de pagos disponible',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                    fontStyle: FontStyle.italic,
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                header,
+                const SizedBox(height: 12),
+                Center(
+                  child: Text(
+                    'No hay información de pagos disponible',
+                    style: TextStyle(fontSize: 13, color: Colors.grey[400], fontStyle: FontStyle.italic),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           );
         }
 
@@ -2168,163 +2203,164 @@ class _OrdersScreenState extends State<OrdersScreen> {
         );
         final double? usdTotal =
             _usdRate > 0 ? totalPaid / _usdRate : null;
-        final usdLabel =
-            _usdRate > 0
-                ? 'Total USD (USD ${_usdRate.toStringAsFixed(0)})'
-                : 'Total USD';
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            header,
-            const SizedBox(height: 8),
-            ...payments.map(
-              (payment) => Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              header,
+              const SizedBox(height: 14),
+              // Lista de pagos
+              ...payments.map(
+                (payment) {
+                  final methodColor = _getPaymentMethodColor(payment);
+                  final hasDiscount = payment['importe_sin_descuento'] != null &&
+                      (payment['importe_sin_descuento'] as num).toDouble() !=
+                          (payment['monto'] ?? 0.0).toDouble();
+                  final double paymentAmount = (payment['monto'] != null && payment['monto'] is num)
+                      ? (payment['monto'] as num).toDouble()
+                      : 0.0;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey[200]!),
+                    ),
+                    child: Row(
+                      children: [
+                        // Icono con fondo suave
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: methodColor.withOpacity(0.08),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            _getPaymentMethodIcon(payment),
+                            size: 16,
+                            color: methodColor,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Nombre + referencia
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _resolvePaymentMethodName(payment),
+                                style: const TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
+                              ),
+                              if (payment['referencia_pago'] != null &&
+                                  payment['referencia_pago'].toString().isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    'Ref: ${payment['referencia_pago']}',
+                                    style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        // Descuento (si aplica)
+                        if (hasDiscount) ...[
+                          Text(
+                            '\$${(payment['importe_sin_descuento'] as num).toDouble().toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Colors.grey[400],
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                        ],
+                        // Monto
+                        Text(
+                          '\$${paymentAmount.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w700,
+                            color: methodColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              // Resumen total
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue[200]!),
+                  color: const Color(0xFFEEF7ED),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFCDE7C8)),
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: _getPaymentMethodColor(payment),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Icon(
-                        _getPaymentMethodIcon(payment),
-                        size: 16,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
+                    Icon(Icons.check_circle_outline, size: 18, color: const Color(0xFF2E7D32)),
+                    const SizedBox(width: 8),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _resolvePaymentMethodName(payment),
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF1F2937),
-                            ),
-                          ),
-                          if (payment['referencia_pago'] != null &&
-                              payment['referencia_pago']
-                                  .toString()
-                                  .isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              'Ref: ${payment['referencia_pago']}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ],
+                      child: Text(
+                        'Total pagado',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF2E7D32),
+                        ),
                       ),
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          '\$${(payment['monto'] ?? 0.0).toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF4A90E2),
-                          ),
-                        ),
-                        if (payment['importe_sin_descuento'] != null &&
-                            (payment['importe_sin_descuento'] as num)
-                                    .toDouble() !=
-                                (payment['monto'] ?? 0.0).toDouble()) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            'Antes: \$${(payment['importe_sin_descuento'] as num).toDouble().toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ],
-                      ],
+                    Text(
+                      '\$${totalPaid.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1B5E20),
+                      ),
                     ),
+                    if (_usdRate > 0) ...[
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2E7D32).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: _isLoadingUsdRate
+                            ? SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: const Color(0xFF2E7D32)),
+                              )
+                            : Text(
+                                'USD \$${usdTotal?.toStringAsFixed(2) ?? 'N/D'} (${_usdRate.toStringAsFixed(2)})',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF2E7D32),
+                                ),
+                              ),
+                      ),
+                    ],
                   ],
                 ),
               ),
-            ),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey[200]!),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Total pagos',
-                        style: TextStyle(
-                          color: Colors.grey[700],
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        '\$${totalPaid.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          color: Color(0xFF1F2937),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        usdLabel,
-                        style: TextStyle(
-                          color: Colors.grey[700],
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (_isLoadingUsdRate)
-                        const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Color(0xFF4A90E2),
-                          ),
-                        )
-                      else
-                        Text(
-                          usdTotal == null
-                              ? 'N/D'
-                              : '\$${usdTotal.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            color: Color(0xFF4A90E2),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );

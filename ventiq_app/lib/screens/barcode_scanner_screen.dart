@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../services/barcode_service.dart';
-import 'product_details_screen.dart';
 
 class BarcodeScannerScreen extends StatefulWidget {
   const BarcodeScannerScreen({Key? key}) : super(key: key);
@@ -228,14 +227,13 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
       if (product != null) {
         // Producto encontrado - navegar a detalles
         print('Producto encontrado: ${product.denominacion}');
-        Navigator.push(
+        Navigator.pushNamed(
           context,
-          MaterialPageRoute(
-            builder: (context) => ProductDetailsScreen(
-              product: product,
-              categoryColor: const Color(0xFF4A90E2),
-            ),
-          ),
+          '/product-details',
+          arguments: {
+            'product': product,
+            'categoryColor': const Color(0xFF4A90E2),
+          },
         );
       } else {
         // Producto no encontrado - mostrar mensaje

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'checkout_web_screen.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
@@ -255,6 +256,30 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Verificar si es vista web (ancho > 600)
+    final bool isWeb = MediaQuery.of(context).size.width > 600;
+
+    if (isWeb) {
+      return CheckoutWebScreen(
+        order: widget.order,
+        isProcessing: _isProcessing,
+        onCreateOrder: (buyerName, buyerPhone, breakdown, extraContacts,
+            promoCode, promoDiscount) {
+          // Actualizar controladores con los datos de la vista web
+          _buyerNameController.text = buyerName;
+          _buyerPhoneController.text = buyerPhone;
+          _extraContactsController.text = extraContacts;
+          if (promoCode != null) {
+            _promoCodeController.text = promoCode;
+            _promoApplied = true;
+            _promoDiscount = promoDiscount;
+          }
+          // Ejecutar la creación de la orden indicando que viene de web
+          _createOrder(fromWeb: true);
+        },
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
@@ -859,8 +884,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  void _createOrder() async {
-    if (!_formKey.currentState!.validate()) {
+  void _createOrder({bool fromWeb = false}) async {
+    // Si viene de web, no validamos el formulario local de CheckoutScreen
+    // ya que CheckoutWebScreen ya validó su propio formulario
+    if (!fromWeb && !_formKey.currentState!.validate()) {
       return;
     }
 

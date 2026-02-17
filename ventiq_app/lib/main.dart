@@ -4,7 +4,12 @@ import 'screens/login_screen.dart';
 import 'screens/login_web_screen.dart';
 import 'screens/categories_screen.dart';
 import 'screens/categories_web_screen.dart';
+import 'screens/products_screen.dart';
+import 'screens/products_web_screen.dart';
+import 'screens/product_details_screen.dart';
+import 'screens/product_details_web_screen.dart';
 import 'screens/preorder_screen.dart';
+import 'screens/preorder_web_screen.dart';
 import 'screens/orders_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/apertura_screen.dart';
@@ -14,9 +19,105 @@ import 'screens/cierre_screen.dart';
 import 'screens/shift_workers_screen.dart';
 import 'screens/subscription_detail_screen.dart';
 import 'screens/wifi_printers_screen.dart';
+import 'models/product.dart';
 import 'services/auth_service.dart';
 import 'utils/platform_utils.dart';
 import 'widgets/sync_blocking_overlay.dart';
+
+const double _webLayoutBreakpoint = 1200;
+
+bool _shouldUseWebLayout(BuildContext context) {
+  final width = MediaQuery.of(context).size.width;
+  return PlatformUtils.isWeb && width >= _webLayoutBreakpoint;
+}
+
+Route<dynamic> _buildErrorRoute(String message) {
+  return MaterialPageRoute(
+    builder:
+        (context) => Scaffold(
+          appBar: AppBar(title: const Text('Ruta no disponible')),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16),
+              ),
+            ),
+          ),
+        ),
+  );
+}
+
+Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
+  switch (settings.name) {
+    case '/products':
+      final args = settings.arguments;
+      if (args is! Map<String, dynamic>) {
+        return _buildErrorRoute('Faltan datos para abrir productos.');
+      }
+
+      final categoryId = args['categoryId'] as int?;
+      final categoryName = args['categoryName'] as String?;
+      final categoryColor = args['categoryColor'] as Color?;
+
+      if (categoryId == null || categoryName == null || categoryColor == null) {
+        return _buildErrorRoute('Faltan datos para abrir productos.');
+      }
+
+      return MaterialPageRoute(
+        builder: (context) {
+          final useWebLayout = _shouldUseWebLayout(context);
+          return useWebLayout
+              ? ProductsWebScreen(
+                categoryId: categoryId,
+                categoryName: categoryName,
+                categoryColor: categoryColor,
+              )
+              : ProductsScreen(
+                categoryId: categoryId,
+                categoryName: categoryName,
+                categoryColor: categoryColor,
+              );
+        },
+      );
+    case '/product-details':
+      final args = settings.arguments;
+      if (args is! Map<String, dynamic>) {
+        return _buildErrorRoute('Faltan datos para abrir el producto.');
+      }
+
+      final product = args['product'] as Product?;
+      final categoryColor = args['categoryColor'] as Color?;
+
+      if (product == null || categoryColor == null) {
+        return _buildErrorRoute('Faltan datos para abrir el producto.');
+      }
+
+      return MaterialPageRoute(
+        builder: (context) {
+          final useWebLayout = _shouldUseWebLayout(context);
+          return useWebLayout
+              ? ProductDetailsWebScreen(
+                product: product,
+                categoryColor: categoryColor,
+              )
+              : ProductDetailsScreen(
+                product: product,
+                categoryColor: categoryColor,
+              );
+        },
+      );
+  }
+
+  return null;
+}
+
+Route<dynamic> _onUnknownRoute(RouteSettings settings) {
+  final routeName = settings.name ?? 'desconocida';
+  return _buildErrorRoute('Ruta no disponible: $routeName');
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,6 +145,8 @@ class MyApp extends StatelessWidget {
         return SyncBlockingOverlay(child: child ?? const SizedBox.shrink());
       },
       initialRoute: '/',
+      onGenerateRoute: _onGenerateRoute,
+      onUnknownRoute: _onUnknownRoute,
       routes: {
         '/': (context) => const SplashScreen(),
         '/login': (context) => const PlatformAwareLoginScreen(),
@@ -52,7 +155,11 @@ class MyApp extends StatelessWidget {
         '/categories': (context) => const PlatformAwareCategoriesScreen(),
         '/categories-mobile': (context) => const CategoriesScreen(),
         '/categories-web': (context) => const CategoriesWebScreen(),
-        '/preorder': (context) => const PreorderScreen(),
+        '/preorder':
+            (context) =>
+                _shouldUseWebLayout(context)
+                    ? const PreorderWebScreen()
+                    : const PreorderScreen(),
         '/orders': (context) => const OrdersScreen(),
         '/settings': (context) => const SettingsScreen(),
         '/apertura': (context) => const AperturaScreen(),
