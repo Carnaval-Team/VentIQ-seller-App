@@ -3,7 +3,11 @@
     "allow": [
       "Bash(find:*)",
       "Bash(flutter analyze:*)",
-      "Bash(flutter pub get:*)"
+      "Bash(flutter pub get:*)",
+      "WebFetch(domain:openrouteservice.org)",
+      "WebFetch(domain:giscience.github.io)",
+      "WebFetch(domain:account.heigit.org)",
+      "Bash(dart analyze:*)"
     ]
   },
   "prefersReducedMotion": false

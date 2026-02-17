@@ -2,171 +2,105 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
-/// Resultado de una ruta OSRM con geometría y distancia.
+/// Resultado de una ruta con geometría y distancia.
 class RouteResult {
   final List<LatLng> points;
   final double distanceMeters; // distancia total en metros
+  final double durationSeconds; // duración total en segundos
 
-  RouteResult({required this.points, required this.distanceMeters});
+  RouteResult({
+    required this.points,
+    required this.distanceMeters,
+    this.durationSeconds = 0,
+  });
 
   double get distanceKm => distanceMeters / 1000;
 }
 
-/// Servicio para calcular rutas reales usando OSRM (Open Source Routing Machine).
+/// Servicio para calcular rutas reales usando OpenRouteService (ORS).
+/// Usa el endpoint Directions con GeoJSON para obtener rutas por calles
+/// con hasta 50 waypoints en una sola request.
 class RoutingService {
-  static const String _osrmBaseUrl = 'https://router.project-osrm.org';
+  static const String _orsBaseUrl = 'https://api.openrouteservice.org';
+  static const String _apiKey =
+      'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImZjNDMyNWE5NmI3NjQxZjM5NDQyNzM3MzJkYTA1MGM4IiwiaCI6Im11cm11cjY0In0=';
 
-  /// Obtiene la ruta óptima usando Trip API de OSRM.
-  /// [start] = posición actual del chofer (source=first)
-  /// [end] = punto más antiguo del historial (destination=last)
-  /// [waypoints] = puntos intermedios del historial (sampleados)
+  /// Headers comunes para todas las requests a ORS.
+  Map<String, String> get _headers => {
+        'Authorization': _apiKey,
+        'Content-Type': 'application/json; charset=utf-8',
+        'Accept': 'application/json',
+      };
+
+  /// Obtiene la ruta trazada por calles usando ORS Directions API.
+  /// [start] = posición actual del chofer
+  /// [end] = punto más antiguo del historial
+  /// [waypoints] = puntos intermedios del historial
   /// Retorna la polyline de la ruta trazada por las calles.
+  ///
+  /// ORS soporta hasta 50 waypoints en una sola request,
+  /// así que mandamos todos los puntos de una vez.
   Future<List<LatLng>> getTripRoute(
     LatLng start,
     LatLng end,
     List<LatLng> waypoints,
   ) async {
     try {
-      // Construir coordenadas: start;waypoints...;end
       final allPoints = [start, ...waypoints, end];
-      final coordinates =
-          allPoints.map((p) => '${p.longitude},${p.latitude}').join(';');
+      final result = await _getOrsDirections(allPoints);
 
-      final url = Uri.parse(
-        '$_osrmBaseUrl/trip/v1/driving/$coordinates'
-        '?source=first&destination=last&roundtrip=false&geometries=polyline',
-      );
-
-      print('[RoutingService] Trip API: ${allPoints.length} puntos');
-
-      final response =
-          await http.get(url).timeout(const Duration(seconds: 15));
-
-      if (response.statusCode != 200) {
-        throw Exception('Trip API error: ${response.statusCode}');
-      }
-
-      final data = json.decode(response.body);
-
-      if (data['code'] != 'Ok') {
-        print('[RoutingService] Trip API code: ${data['code']} message: ${data['message']}');
-        throw Exception('Trip API retornó: ${data['code']}');
-      }
-
-      final trip = data['trips'][0];
-      final geometry = trip['geometry'] as String;
-      final polyline = _decodePolyline(geometry);
-
-      print('[RoutingService] Trip API OK: ${polyline.length} puntos de ruta');
-      return polyline;
+      print(
+          '[RoutingService] ORS Trip OK: ${result.points.length} puntos de ruta');
+      return result.points;
     } catch (e) {
-      print('[RoutingService] Trip API falló: $e, usando fallback par a par');
-      // Fallback: línea recta entre los puntos
+      print('[RoutingService] ORS Trip falló: $e, usando fallback');
       return [start, ...waypoints, end];
     }
   }
 
-  /// Obtiene una ruta real entre dos puntos usando OSRM.
-  Future<List<LatLng>> getRouteBetweenPoints(LatLng start, LatLng end) async {
+  /// Obtiene una ruta real entre dos puntos usando ORS.
+  Future<List<LatLng>> getRouteBetweenPoints(
+      LatLng start, LatLng end) async {
     try {
-      final coordinates =
-          '${start.longitude},${start.latitude};${end.longitude},${end.latitude}';
-
-      final url = Uri.parse(
-        '$_osrmBaseUrl/route/v1/driving/$coordinates'
-        '?geometries=polyline&overview=full&alternatives=false&steps=false',
-      );
-
-      final response =
-          await http.get(url).timeout(const Duration(seconds: 15));
-
-      if (response.statusCode != 200) {
-        throw Exception('Error en OSRM API: ${response.statusCode}');
-      }
-
-      final data = json.decode(response.body);
-
-      if (data['code'] != 'Ok') {
-        throw Exception('OSRM retornó código: ${data['code']}');
-      }
-
-      final geometry = data['routes'][0]['geometry'] as String;
-      return _decodePolyline(geometry);
+      final result = await _getOrsDirections([start, end]);
+      return result.points;
     } catch (_) {
       return [start, end];
     }
   }
 
-  /// Obtiene la ruta real pasando por múltiples puntos.
-  /// Samplea a ~20 puntos representativos y traza OSRM par a par entre ellos.
+  /// Obtiene la ruta real pasando por múltiples puntos con distancia.
+  /// Usa una SOLA request a ORS con hasta 50 waypoints.
+  /// Si hay más de 50 puntos, los samplea inteligentemente.
   Future<RouteResult> getRouteMultiplePointsWithDistance(
       List<LatLng> points) async {
     if (points.length < 2) {
       return RouteResult(points: points, distanceMeters: 0);
     }
 
-    // Samplear para no hacer cientos de llamadas a OSRM.
-    // Con 20 puntos = 19 llamadas par a par, rápido y fiable.
-    final sampled = _samplePoints(points, maxWaypoints: 20);
+    try {
+      // ORS soporta hasta 50 waypoints por request.
+      // Si hay más, sampleamos a 50 (conservando primero y último).
+      final sampled = _samplePoints(points, maxWaypoints: 50);
 
-    print('[RoutingService] Original: ${points.length} puntos -> Sampled: ${sampled.length} -> ${sampled.length - 1} segmentos OSRM');
+      print(
+          '[RoutingService] ORS: ${points.length} puntos originales -> ${sampled.length} enviados');
 
-    final allRoutePoints = <LatLng>[];
-    double totalDistance = 0;
+      final result = await _getOrsDirections(sampled);
 
-    for (int i = 0; i < sampled.length - 1; i++) {
-      final start = sampled[i];
-      final end = sampled[i + 1];
+      print(
+          '[RoutingService] ORS OK: ${result.points.length} puntos ruta, '
+          '${result.distanceKm.toStringAsFixed(2)} km, '
+          '${(result.durationSeconds / 60).toStringAsFixed(0)} min');
 
-      try {
-        final segmentResult = await _getRouteChunkWithDistance([start, end]);
-
-        // Evitar duplicar el punto de unión entre segmentos
-        if (allRoutePoints.isNotEmpty && segmentResult.points.isNotEmpty) {
-          allRoutePoints.addAll(segmentResult.points.sublist(1));
-        } else {
-          allRoutePoints.addAll(segmentResult.points);
-        }
-        totalDistance += segmentResult.distanceMeters;
-      } catch (e) {
-        print('[RoutingService] Segmento $i→${i + 1} falló: $e');
-        // Fallback: línea recta para este segmento
-        if (allRoutePoints.isEmpty) {
-          allRoutePoints.add(start);
-        }
-        allRoutePoints.add(end);
-        totalDistance += _straightLineDistance([start, end]);
-      }
-    }
-
-    if (allRoutePoints.isEmpty) {
+      return result;
+    } catch (e) {
+      print('[RoutingService] ORS falló: $e, usando líneas rectas');
       return RouteResult(
         points: points,
         distanceMeters: _straightLineDistance(points),
       );
     }
-
-    print('[RoutingService] Ruta completa: ${allRoutePoints.length} puntos, ${(totalDistance / 1000).toStringAsFixed(2)} km');
-
-    return RouteResult(points: allRoutePoints, distanceMeters: totalDistance);
-  }
-
-  /// Samplea puntos uniformemente conservando primero y último.
-  List<LatLng> _samplePoints(List<LatLng> points, {int maxWaypoints = 20}) {
-    if (points.length <= maxWaypoints) return points;
-
-    final sampled = <LatLng>[points.first];
-    final step = (points.length - 1) / (maxWaypoints - 1);
-
-    for (int i = 1; i < maxWaypoints - 1; i++) {
-      final idx = (i * step).round();
-      if (idx > 0 && idx < points.length - 1) {
-        sampled.add(points[idx]);
-      }
-    }
-
-    sampled.add(points.last);
-    return sampled;
   }
 
   /// Wrapper legacy que retorna solo los puntos.
@@ -175,56 +109,61 @@ class RoutingService {
     return result.points;
   }
 
-  Future<RouteResult> _getRouteChunkWithDistance(List<LatLng> points) async {
+  /// Llama a ORS Directions API (POST con JSON response + encoded polyline).
+  Future<RouteResult> _getOrsDirections(List<LatLng> points) async {
+    // Coordenadas en formato [longitude, latitude] (convención GeoJSON)
     final coordinates =
-        points.map((p) => '${p.longitude},${p.latitude}').join(';');
+        points.map((p) => [p.longitude, p.latitude]).toList();
 
     final url = Uri.parse(
-      '$_osrmBaseUrl/route/v1/driving/$coordinates'
-      '?geometries=polyline&overview=full&alternatives=false&steps=false',
+      '$_orsBaseUrl/v2/directions/driving-car',
     );
 
-    print('[RoutingService] OSRM request: ${points.length} waypoints');
+    final body = json.encode({
+      'coordinates': coordinates,
+    });
 
-    final response =
-        await http.get(url).timeout(const Duration(seconds: 20));
+    print('[RoutingService] ORS request: ${points.length} waypoints');
 
-    print('[RoutingService] OSRM response status: ${response.statusCode}');
+    final response = await http
+        .post(url, headers: _headers, body: body)
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode != 200) {
-      throw Exception('Error en OSRM API: ${response.statusCode}');
+      final errorBody = response.body;
+      print('[RoutingService] ORS error ${response.statusCode}: $errorBody');
+      throw Exception('ORS API error: ${response.statusCode}');
     }
 
     final data = json.decode(response.body);
 
-    if (data['code'] != 'Ok') {
-      print(
-          '[RoutingService] OSRM code: ${data['code']} message: ${data['message']}');
-      throw Exception('OSRM retornó código: ${data['code']}');
+    final routes = data['routes'] as List;
+    if (routes.isEmpty) {
+      throw Exception('ORS: sin rutas en respuesta');
     }
 
-    final route = data['routes'][0];
+    final route = routes[0];
     final geometry = route['geometry'] as String;
-    final distance = (route['distance'] as num).toDouble();
-    final decoded = _decodePolyline(geometry);
+    final summary = route['summary'];
 
-    print(
-        '[RoutingService] OSRM decoded: ${decoded.length} puntos, distance: ${(distance / 1000).toStringAsFixed(2)} km');
+    // Decodificar polyline (Google Polyline Algorithm, precisión 1e-5)
+    final routePoints = _decodePolyline(geometry);
 
-    return RouteResult(points: decoded, distanceMeters: distance);
+    final distanceMeters = (summary['distance'] as num).toDouble();
+    final durationSeconds = (summary['duration'] as num).toDouble();
+
+    print('[RoutingService] ORS decoded: ${routePoints.length} puntos, '
+        '${(distanceMeters / 1000).toStringAsFixed(2)} km');
+
+    return RouteResult(
+      points: routePoints,
+      distanceMeters: distanceMeters,
+      durationSeconds: durationSeconds,
+    );
   }
 
-  /// Calcula distancia en línea recta entre puntos consecutivos (fallback).
-  double _straightLineDistance(List<LatLng> points) {
-    double total = 0;
-    const dist = Distance();
-    for (int i = 0; i < points.length - 1; i++) {
-      total += dist.as(LengthUnit.Meter, points[i], points[i + 1]);
-    }
-    return total;
-  }
-
-  /// Decodifica una polyline codificada (Google Polyline Algorithm Format).
+  /// Decodifica una polyline codificada (Google Polyline Algorithm Format, precisión 1e-5).
+  /// Compatible con Dart Web (evita bitwise NOT que falla con enteros grandes en JS).
   List<LatLng> _decodePolyline(String encoded) {
     final List<LatLng> points = [];
     int index = 0;
@@ -232,6 +171,7 @@ class RoutingService {
     int lng = 0;
 
     while (index < encoded.length) {
+      // Decodificar latitud
       int shift = 0;
       int result = 0;
       int byte;
@@ -242,9 +182,10 @@ class RoutingService {
         shift += 5;
       } while (byte >= 0x20);
 
-      int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
-      lat += dlat;
+      // Usar aritmética en vez de bitwise NOT (~) para compatibilidad web
+      lat += (result & 1) != 0 ? -((result >> 1) + 1) : (result >> 1);
 
+      // Decodificar longitud
       shift = 0;
       result = 0;
 
@@ -254,12 +195,69 @@ class RoutingService {
         shift += 5;
       } while (byte >= 0x20);
 
-      int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
-      lng += dlng;
+      lng += (result & 1) != 0 ? -((result >> 1) + 1) : (result >> 1);
 
       points.add(LatLng(lat / 1e5, lng / 1e5));
     }
 
     return points;
+  }
+
+  /// Elimina puntos duplicados o demasiado cercanos (< minDistanceMeters).
+  /// Siempre conserva el primer y último punto.
+  List<LatLng> _deduplicatePoints(List<LatLng> points,
+      {double minDistanceMeters = 50}) {
+    if (points.length <= 2) return points;
+
+    final result = <LatLng>[points.first];
+    const dist = Distance();
+
+    for (int i = 1; i < points.length - 1; i++) {
+      final d = dist.as(LengthUnit.Meter, result.last, points[i]);
+      if (d >= minDistanceMeters) {
+        result.add(points[i]);
+      }
+    }
+
+    // Siempre agregar el último punto si es distinto al último agregado
+    final dLast = dist.as(LengthUnit.Meter, result.last, points.last);
+    if (dLast >= 1) {
+      result.add(points.last);
+    }
+
+    return result;
+  }
+
+  /// Samplea puntos uniformemente conservando primero y último.
+  List<LatLng> _samplePoints(List<LatLng> points, {int maxWaypoints = 50}) {
+    // Primero deduplicar para eliminar puntos cercanos/estacionados
+    final deduped = _deduplicatePoints(points);
+
+    print('[RoutingService] Dedup: ${points.length} -> ${deduped.length} puntos');
+
+    if (deduped.length <= maxWaypoints) return deduped;
+
+    final sampled = <LatLng>[deduped.first];
+    final step = (deduped.length - 1) / (maxWaypoints - 1);
+
+    for (int i = 1; i < maxWaypoints - 1; i++) {
+      final idx = (i * step).round();
+      if (idx > 0 && idx < deduped.length - 1) {
+        sampled.add(deduped[idx]);
+      }
+    }
+
+    sampled.add(deduped.last);
+    return sampled;
+  }
+
+  /// Calcula distancia en línea recta entre puntos consecutivos (fallback).
+  double _straightLineDistance(List<LatLng> points) {
+    double total = 0;
+    const dist = Distance();
+    for (int i = 0; i < points.length - 1; i++) {
+      total += dist.as(LengthUnit.Meter, points[i], points[i + 1]);
+    }
+    return total;
   }
 }

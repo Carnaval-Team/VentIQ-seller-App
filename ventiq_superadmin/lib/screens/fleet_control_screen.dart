@@ -27,6 +27,7 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
   List<LatLng>? _rutaSeleccionada;
   List<LatLng>? _checkpoints; // Puntos originales del historial (sin interpolación OSRM)
   double? _distanciaRutaKm; // Distancia total de la ruta en km
+  double? _duracionRutaMin; // Duración total de la ruta en minutos
   Color _rutaColor = AppColors.chartColors[0];
 
   // Puntos acumulados localmente por repartidor (desde que se abrió la vista)
@@ -157,6 +158,7 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
         _rutaSeleccionada = null;
         _checkpoints = null;
         _distanciaRutaKm = null;
+        _duracionRutaMin = null;
       });
       return;
     }
@@ -170,6 +172,7 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
       _rutaSeleccionada = null;
       _checkpoints = null;
       _distanciaRutaKm = null;
+      _duracionRutaMin = null;
       _isLoadingRoute = true;
     });
 
@@ -232,55 +235,57 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
         print('[Fleet]   primero: ${historyPoints.first}');
         print('[Fleet]   ultimo: ${historyPoints.last}');
 
-        // Posición actual del chofer = inicio, punto más antiguo = fin
+        // Posición actual del chofer
         final posActual = LatLng(driver.latitud, driver.longitud);
 
-        if (historyPoints.length >= 2) {
-          // Trip API para dibujar la ruta óptima por las calles
-          // start = posición actual, end = punto más antiguo del historial
-          // waypoints = puntos intermedios (sampleados a ~18 para no exceder límite Trip API)
-          final puntoMasAntiguo = historyPoints.first;
-          final intermedios = historyPoints.length > 2
-              ? _sampleWaypoints(historyPoints.sublist(1), maxPoints: 18)
-              : <LatLng>[];
+        // Todos los puntos: posición actual + historial
+        // Evitar duplicar si la posición actual ya está muy cerca del primer punto del historial
+        final allPoints = <LatLng>[];
+        allPoints.add(posActual);
+        for (final p in historyPoints) {
+          final d = const Distance().as(LengthUnit.Meter, allPoints.last, p);
+          if (d >= 30) {
+            allPoints.add(p);
+          }
+        }
 
-          print('[Fleet] Trip API: start=posActual, ${intermedios.length} intermedios, end=puntoMásAntiguo');
-
-          final tripPolyline = await _routingService.getTripRoute(
-            posActual,
-            puntoMasAntiguo,
-            intermedios,
-          );
-
-          if (!mounted) return;
-
-          // Distancia vía Route API par a par (más precisa)
-          print('[Fleet] Calculando distancia con Route API...');
+        if (allPoints.length >= 2) {
+          // UNA SOLA request a OpenRouteService (hasta 50 waypoints)
+          // Devuelve geometría por calles + distancia + duración
           final routeResult =
-              await _routingService.getRouteMultiplePointsWithDistance(historyPoints);
-          final distanciaKm = routeResult.distanceKm;
+              await _routingService.getRouteMultiplePointsWithDistance(allPoints);
 
           if (!mounted) return;
 
-          print('[Fleet] Trip: ${tripPolyline.length} puntos ruta, Distancia: ${distanciaKm.toStringAsFixed(2)} km');
+          print('[Fleet] ORS: ${routeResult.points.length} puntos ruta, '
+              '${routeResult.distanceKm.toStringAsFixed(2)} km, '
+              '${(routeResult.durationSeconds / 60).toStringAsFixed(0)} min');
 
           // Acoplar puntos locales acumulados
           final localPoints = _rutasLocales[driver.repartidorId] ?? [];
-          final rutaFinal = [...tripPolyline, ...localPoints];
+          final rutaFinal = [...routeResult.points, ...localPoints];
+
+          print('[Fleet] rutaFinal: ${rutaFinal.length} puntos');
+          if (rutaFinal.isNotEmpty) {
+            print('[Fleet]   primer punto ruta: lat=${rutaFinal.first.latitude}, lng=${rutaFinal.first.longitude}');
+            print('[Fleet]   ultimo punto ruta: lat=${rutaFinal.last.latitude}, lng=${rutaFinal.last.longitude}');
+          }
 
           setState(() {
             _rutaSeleccionada = rutaFinal;
             _checkpoints = historyPoints;
-            _distanciaRutaKm = distanciaKm;
+            _distanciaRutaKm = routeResult.distanceKm;
+            _duracionRutaMin = routeResult.durationSeconds / 60;
             _isLoadingRoute = false;
           });
         } else {
-          // Solo 1 punto de historial: línea recta
+          // Solo 1 punto: línea recta
           final localPoints = _rutasLocales[driver.repartidorId] ?? [];
           setState(() {
             _rutaSeleccionada = [posActual, ...historyPoints, ...localPoints];
             _checkpoints = historyPoints;
             _distanciaRutaKm = 0;
+            _duracionRutaMin = 0;
             _isLoadingRoute = false;
           });
         }
@@ -300,24 +305,6 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
         ),
       );
     }
-  }
-
-  /// Samplea waypoints uniformemente conservando primero y último.
-  List<LatLng> _sampleWaypoints(List<LatLng> points, {int maxPoints = 18}) {
-    if (points.length <= maxPoints) return points;
-
-    final sampled = <LatLng>[points.first];
-    final step = (points.length - 1) / (maxPoints - 1);
-
-    for (int i = 1; i < maxPoints - 1; i++) {
-      final idx = (i * step).round();
-      if (idx > 0 && idx < points.length - 1) {
-        sampled.add(points[idx]);
-      }
-    }
-
-    sampled.add(points.last);
-    return sampled;
   }
 
   void _onPointsLimitChanged(int newLimit) {
@@ -422,6 +409,7 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
                   onPointsLimitChanged: _onPointsLimitChanged,
                   isLoadingRoute: _isLoadingRoute,
                   distanciaRutaKm: _distanciaRutaKm,
+                  duracionRutaMin: _duracionRutaMin,
                 ),
                 // Mapa
                 Expanded(

@@ -10,6 +10,7 @@ class FleetDriverPanel extends StatefulWidget {
   final ValueChanged<int> onPointsLimitChanged;
   final bool isLoadingRoute;
   final double? distanciaRutaKm;
+  final double? duracionRutaMin;
 
   const FleetDriverPanel({
     super.key,
@@ -20,6 +21,7 @@ class FleetDriverPanel extends StatefulWidget {
     required this.onPointsLimitChanged,
     this.isLoadingRoute = false,
     this.distanciaRutaKm,
+    this.duracionRutaMin,
   });
 
   @override
@@ -298,6 +300,15 @@ class _FleetDriverPanelState extends State<FleetDriverPanel> {
     );
   }
 
+  String _formatDuration(double minutes) {
+    if (minutes < 60) {
+      return '${minutes.round()} min';
+    }
+    final hours = (minutes / 60).floor();
+    final mins = (minutes % 60).round();
+    return mins > 0 ? '${hours}h ${mins}min' : '${hours}h';
+  }
+
   Widget _buildDriverCard(RepartidorFlota driver, bool isSelected) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -418,7 +429,7 @@ class _FleetDriverPanelState extends State<FleetDriverPanel> {
                   const SizedBox(height: 10),
                   const Divider(height: 1),
                   const SizedBox(height: 8),
-                  // Distancia recorrida
+                  // Distancia y duración
                   if (widget.distanciaRutaKm != null)
                     Container(
                       margin: const EdgeInsets.only(bottom: 8),
@@ -430,26 +441,55 @@ class _FleetDriverPanelState extends State<FleetDriverPanel> {
                           color: AppColors.primary.withOpacity(0.2),
                         ),
                       ),
-                      child: Row(
+                      child: Column(
                         children: [
-                          const Icon(Icons.route, size: 16, color: AppColors.primary),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Distancia recorrida:',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
+                          Row(
+                            children: [
+                              const Icon(Icons.route, size: 16, color: AppColors.primary),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Distancia:',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                '${widget.distanciaRutaKm!.toStringAsFixed(2)} km',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ],
                           ),
-                          const Spacer(),
-                          Text(
-                            '${widget.distanciaRutaKm!.toStringAsFixed(2)} km',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.primary,
+                          if (widget.duracionRutaMin != null) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                const Icon(Icons.timer_outlined, size: 16, color: AppColors.secondary),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Tiempo en ruta:',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  _formatDuration(widget.duracionRutaMin!),
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.secondary,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),
