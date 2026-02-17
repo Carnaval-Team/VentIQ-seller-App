@@ -117,6 +117,17 @@ class AppDrawer extends StatelessWidget {
                 ),
                 _buildMenuSection(
                   context,
+                  title: 'Operaciones',
+                  items: [
+                    _DrawerItem(
+                      icon: Icons.local_shipping,
+                      title: 'Control de Flota',
+                      route: '/control-flota',
+                    ),
+                  ],
+                ),
+                _buildMenuSection(
+                  context,
                   title: 'Sistema',
                   items: [
                     _DrawerItem(
@@ -268,7 +279,8 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/configuracion' ||
                 item.route == '/carnaval-tiendas' ||
                 item.route == '/productos-carnaval-inventtia' ||
-                item.route == '/pago-proveedores') {
+                item.route == '/pago-proveedores' ||
+                item.route == '/control-flota') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas
