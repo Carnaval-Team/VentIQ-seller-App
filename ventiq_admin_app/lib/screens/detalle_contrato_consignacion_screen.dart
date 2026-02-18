@@ -7,6 +7,7 @@ import 'liquidaciones_list_screen.dart';
 import 'operaciones_venta_consignacion_screen.dart';
 import 'productos_zona_destino_screen.dart';
 import '../utils/navigation_guard.dart';
+import '../services/currency_service.dart';
 
 class DetalleContratoConsignacionScreen extends StatefulWidget {
   final Map<String, dynamic> contrato;
@@ -26,6 +27,7 @@ class _DetalleContratoConsignacionScreenState
   bool _isLoading = true;
   bool _puedeRescindirse = false;
   double _totalDineroEnviado = 0.0;
+  double _tasaUsdCup = 0.0;
 
   bool _canDeleteConsignacion = false;
 
@@ -40,6 +42,7 @@ class _DetalleContratoConsignacionScreenState
     _verificarRescision();
     _calcularTotalDineroEnviado();
     _loadTotalesContrato();
+    _loadTasaCambio();
   }
 
   Future<void> _loadPermissions() async {
@@ -114,6 +117,18 @@ class _DetalleContratoConsignacionScreenState
       }
     } catch (e) {
       debugPrint('❌ [LIQUIDACIONES] Error cargando totales: $e');
+    }
+  }
+
+  Future<void> _loadTasaCambio() async {
+    try {
+      final tasa = await CurrencyService.getEffectiveUsdToCupRate();
+      if (mounted) {
+        setState(() => _tasaUsdCup = tasa);
+        debugPrint('💱 [TASA] USD→CUP: $_tasaUsdCup');
+      }
+    } catch (e) {
+      debugPrint('❌ [TASA] Error obteniendo tasa: $e');
     }
   }
 
@@ -700,7 +715,7 @@ class _DetalleContratoConsignacionScreenState
     final totalVendido = _estadisticas['totalVendido'] as num? ?? 0;
     final totalDevuelto = _estadisticas['totalDevuelto'] as num? ?? 0;
     final totalPendiente = _estadisticas['totalPendiente'] as num? ?? 0;
-    final totalMontoVentas = _estadisticas['totalMontoVentas'] as num? ?? 0;
+    final totalMontoVentasUsd = (_estadisticas['totalMontoVentas'] as num? ?? 0).toDouble();
 
     final totalLiquidado = _totalesContrato['total_liquidado'] as num? ?? 0;
     final saldoPendiente = _totalesContrato['saldo_pendiente'] as num? ?? 0;
@@ -796,7 +811,7 @@ class _DetalleContratoConsignacionScreenState
               Expanded(
                 child: _buildStatBox(
                   'Monto Total Vendido',
-                  '\$${totalMontoVentas.toStringAsFixed(2)} USD',
+                  '\$${totalMontoVentasUsd.toStringAsFixed(2)} USD',
                   Colors.teal,
                   Icons.attach_money,
                 ),
