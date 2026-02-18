@@ -461,107 +461,98 @@ class _SettingsScreenState extends State<SettingsScreen>
             ),
           const SizedBox(height: 24),
 
-          // Sección de Catálogo (solo si tiene plan Pro o Avanzado)
-          FutureBuilder<bool>(
-            future: _catalogoService.tienePlanCatalogo(_storeId!),
-            builder: (context, snapshot) {
-              return Column(
+          // Sección de Catálogo (disponible para todos los usuarios)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Publicar en Catálogo',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              FutureBuilder<bool>(
-                                future: _catalogoService
-                                    .obtenerMostrarEnCatalogoTienda(_storeId!),
-                                builder: (context, snapshot) {
-                                  if (snapshot.connectionState ==
-                                      ConnectionState.waiting) {
-                                    return const SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    );
-                                  }
-
-                                  final mostrar = snapshot.data ?? false;
-                                  return Switch(
-                                    value: mostrar,
-                                    onChanged: (value) async {
-                                      if (value) {
-                                        _showZoneSelectionDialog();
-                                      } else {
-                                        _handleCatalogToggle(false, null);
-                                      }
-                                    },
-                                    activeColor: Colors.green,
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Publica tus productos en el catálogo de VentIQ para que otros clientes puedan verlos y comprarlos.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Publicar en Catálogo',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  FutureBuilder<bool>(
-                    future: _catalogoService.obtenerMostrarEnCatalogoTienda(
-                      _storeId!,
-                    ),
-                    builder: (context, snapshot) {
-                      final mostrarEnCatalogo = snapshot.data ?? false;
-
-                      if (!mostrarEnCatalogo) {
-                        return const SizedBox.shrink();
-                      }
-
-                      return SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder:
-                                    (context) =>
-                                        const CatalogoProductosScreen(),
+                      FutureBuilder<bool>(
+                        future: _catalogoService
+                            .obtenerMostrarEnCatalogoTienda(_storeId!),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
                               ),
                             );
-                          },
-                          icon: const Icon(Icons.storefront),
-                          label: const Text('Gestionar Productos en Catálogo'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                      );
-                    },
+                          }
+
+                          final mostrar = snapshot.data ?? false;
+                          return Switch(
+                            value: mostrar,
+                            onChanged: (value) async {
+                              if (value) {
+                                _showZoneSelectionDialog();
+                              } else {
+                                _handleCatalogToggle(false, null);
+                              }
+                            },
+                            activeColor: Colors.green,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Publica tus productos en el catálogo de VentIQ para que otros clientes puedan verlos y comprarlos.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                    ),
                   ),
                 ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<bool>(
+            future: _catalogoService.obtenerMostrarEnCatalogoTienda(
+              _storeId!,
+            ),
+            builder: (context, snapshot) {
+              final mostrarEnCatalogo = snapshot.data ?? false;
+
+              if (!mostrarEnCatalogo) {
+                return const SizedBox.shrink();
+              }
+
+              return SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder:
+                            (context) =>
+                                const CatalogoProductosScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.storefront),
+                  label: const Text('Gestionar Productos en Catálogo'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
               );
             },
           ),
