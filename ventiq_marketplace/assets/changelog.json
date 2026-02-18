@@ -1,10 +1,10 @@
 {
-  "current_version": "1.5.0",
-  "build": 12,
+  "current_version": "1.5.1",
+  "build": 13,
   "app_name": "ventiq_marketplace",
   "changelogs": [
     {
-      "version": "1.5.0",
+      "version": "1.5.1",
       "date": "2026-02-16",
       "title": "\ud83d\udef5 Ve por dónde van tus repartidores",
       "changes": [
