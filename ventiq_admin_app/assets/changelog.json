@@ -1,12 +1,12 @@
 {
-  "current_version": "1.9.5",
-  "build": 195,
+  "current_version": "1.9.6",
+  "build": 196,
 
   "app_name": "ventiq_admin",
   "changelogs": [
     {
-      "version": "1.9.5",
-      "date": "2026-02-16",
+      "version": "1.9.6",
+      "date": "2026-02-18",
       "title": "Márgenes y precios que se ajustan solos",
       "changes": [
         {
