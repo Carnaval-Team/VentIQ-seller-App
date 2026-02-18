@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/app_theme.dart';
@@ -7,7 +6,6 @@ import 'config/supabase_config.dart';
 import 'providers/theme_provider.dart';
 import 'services/app_navigation_service.dart';
 import 'services/notification_service.dart';
-import 'services/background_service.dart';
 import 'screens/splash_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/auth_screen.dart';
@@ -25,13 +23,6 @@ void main() async {
   );
 
   await NotificationService().initialize();
-
-  // Registrar el servicio de segundo plano
-  if (!kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS)) {
-    await BackgroundServiceManager.initializeService();
-  }
 
   runApp(
     ChangeNotifierProvider(

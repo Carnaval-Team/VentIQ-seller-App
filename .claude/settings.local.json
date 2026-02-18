@@ -7,7 +7,9 @@
       "WebFetch(domain:openrouteservice.org)",
       "WebFetch(domain:giscience.github.io)",
       "WebFetch(domain:account.heigit.org)",
-      "Bash(dart analyze:*)"
+      "Bash(dart analyze:*)",
+      "Bash(findstr:*)",
+      "Bash(del \"C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\ventiq_marketplace\\\\lib\\\\services\\\\background_service.dart\")"
     ]
   },
   "prefersReducedMotion": false

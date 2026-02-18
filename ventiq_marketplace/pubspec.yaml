@@ -50,7 +50,6 @@ dependencies:
   cached_network_image: ^3.4.1
   qr_flutter: ^4.1.0
   app_links: ^6.4.1
-  flutter_background_service: ^5.1.0
   share_plus: ^7.2.1
   path_provider: ^2.1.4
   provider: ^6.1.1

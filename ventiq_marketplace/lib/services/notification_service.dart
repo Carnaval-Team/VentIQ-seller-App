@@ -9,10 +9,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/notification_model.dart';
 import '../services/app_navigation_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'user_preferences_service.dart';
 import 'user_session_service.dart';
-import 'background_service.dart';
 
 class NotificationService with WidgetsBindingObserver {
   static final NotificationService _instance = NotificationService._internal();
@@ -108,12 +106,6 @@ class NotificationService with WidgetsBindingObserver {
     }
 
     try {
-      // Intentar persistir el userId para el servicio de segundo plano
-      final uuid = await _resolveUserId();
-      if (uuid != null) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('user_id', uuid);
-      }
       const androidSettings = AndroidInitializationSettings(
         '@mipmap/ic_launcher',
       );
@@ -436,18 +428,6 @@ class NotificationService with WidgetsBindingObserver {
       _realtimeUserId = uuid;
 
       await _startOrSchedulePersistentBar();
-
-      // Inicializar el servicio de segundo plano
-      if (!kIsWeb &&
-          (defaultTargetPlatform == TargetPlatform.android ||
-              defaultTargetPlatform == TargetPlatform.iOS)) {
-        // Asegurar que el userId esté persistido
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('user_id', uuid);
-
-        await BackgroundServiceManager.initializeService();
-        await BackgroundServiceManager.startService();
-      }
     } catch (_) {}
   }
 
@@ -529,14 +509,6 @@ class NotificationService with WidgetsBindingObserver {
 
     try {
       await _cancelPersistentBar();
-    } catch (_) {}
-
-    try {
-      if (!kIsWeb &&
-          (defaultTargetPlatform == TargetPlatform.android ||
-              defaultTargetPlatform == TargetPlatform.iOS)) {
-        await BackgroundServiceManager.stopService();
-      }
     } catch (_) {}
   }
 
