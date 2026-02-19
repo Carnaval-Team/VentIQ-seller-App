@@ -9,7 +9,9 @@
       "WebFetch(domain:account.heigit.org)",
       "Bash(dart analyze:*)",
       "Bash(findstr:*)",
-      "Bash(del \"C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\ventiq_marketplace\\\\lib\\\\services\\\\background_service.dart\")"
+      "Bash(del \"C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\ventiq_marketplace\\\\lib\\\\services\\\\background_service.dart\")",
+      "Bash(dir /s /b \"C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\inventtia_muevete\\\\docs\"\")",
+      "Bash(dir /s /b \"C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\ventiq_marketplace\\\\lib\")"
     ]
   },
   "prefersReducedMotion": false
