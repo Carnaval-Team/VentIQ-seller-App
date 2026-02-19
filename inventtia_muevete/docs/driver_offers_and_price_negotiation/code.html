@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Driver Offers</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#195de6",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#111621",
+                        "surface-dark": "#1a2232",
+                        "surface-light": "#ffffff",
+                    },
+                    fontFamily: {
+                        "display": ["Plus Jakarta Sans", "sans-serif"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "2xl": "1rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+<style>
+        /* Custom scrollbar for horizontal scrolling */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        
+        /* Map pattern background simulation */
+        .map-bg {
+            background-color: #111621;
+            background-image: radial-gradient(#1a2232 1px, transparent 1px), radial-gradient(#1a2232 1px, transparent 1px);
+            background-position: 0 0, 25px 25px;
+            background-size: 50px 50px;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-display bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased overflow-hidden">
+<div class="relative flex h-screen w-full flex-col overflow-hidden max-w-md mx-auto shadow-2xl bg-background-dark">
+<!-- Map Background Area -->
+<div class="absolute inset-0 z-0 map-bg w-full h-full">
+<!-- Simulated Map Content -->
+<div class="relative w-full h-full opacity-60 mix-blend-overlay" data-alt="Dark aerial map view of city streets at night" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDlLaqRPp3-h9JW4kUfbPYTKuXuQbQi33AxxHOvzUX2J_ycUkZ-P8ffzOXdCSAjp5xMmqEEKGuaHtQxMHs-YnLHAB8Iaxjw8brXBAg_WcOMJYuz_mAkZsolezQXHvdVnfbyBZzbjqnv6ufb2VgoHXpNv1KbZq5gZ5BAEj7XbnyWiTfmoQ7sgpQypfFlEjapC_2TtYDFZKtWzgyp42G53ozjNVmUQmg4oyUardV-cbewU4qG-k-B0F8mFK3sr1eZVGMp8t5CX_LaMw'); background-size: cover; background-position: center;"></div>
+<!-- Map Overlay Gradient for readability -->
+<div class="absolute inset-0 bg-gradient-to-b from-background-dark/80 via-transparent to-background-dark/90 pointer-events-none"></div>
+<!-- Header / Back Button -->
+<div class="absolute top-0 left-0 w-full p-4 pt-12 flex justify-between items-center z-10">
+<button class="bg-surface-dark/80 backdrop-blur-md p-2 rounded-full text-white shadow-lg border border-white/10">
+<span class="material-symbols-outlined text-xl">arrow_back</span>
+</button>
+<div class="bg-surface-dark/80 backdrop-blur-md px-4 py-2 rounded-full text-white shadow-lg border border-white/10 flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+<span class="text-sm font-medium">Negotiating...</span>
+</div>
+<button class="bg-surface-dark/80 backdrop-blur-md p-2 rounded-full text-white shadow-lg border border-white/10">
+<span class="material-symbols-outlined text-xl">more_horiz</span>
+</button>
+</div>
+<!-- User Location Pin with Pulse Effect -->
+<div class="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center z-0">
+<div class="relative flex items-center justify-center">
+<div class="absolute w-64 h-64 bg-primary/10 rounded-full animate-ping opacity-20"></div>
+<div class="absolute w-40 h-40 bg-primary/20 rounded-full"></div>
+<div class="relative w-16 h-16 bg-surface-dark rounded-full border-4 border-primary flex items-center justify-center shadow-[0_0_30px_rgba(25,93,230,0.5)] overflow-hidden">
+<img alt="User Avatar" class="w-full h-full object-cover" data-alt="Profile picture of the current user" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCm8eoUyHzBa6YQEueJGYk_S6wfOQ2Dpb_Fb19HU8iTdm2EQGrYsO7oxiDLtG2p6Hu5akABb8fQ7JW6z13nqMbq2i-ZxzWxYcSajW9u8_Zq7QQrXYHkFy_a5IgwNAbls2Dvnmf7i0mk9H2XqofPvjvIIlS0Znkr1bdNaCw40YJdbmhMNvXX-tiX8-pQUFTdc6L5U22p4xGQ0FlXLi_s-D6XbBQHfcc8ViFkg5veHh-85NtUxGyfH2I8hKq1Ezr5MWYiGYAk6C4L0A"/>
+</div>
+</div>
+<div class="mt-4 bg-surface-dark/90 backdrop-blur px-3 py-1 rounded-lg border border-white/10 text-xs font-medium text-slate-300">
+                    Market St &amp; 4th Ave
+                </div>
+</div>
+</div>
+<!-- Draggable Bottom Sheet / Offers List -->
+<div class="relative z-10 mt-auto flex flex-col w-full h-[65%] rounded-t-[32px] bg-surface-dark/95 backdrop-blur-xl border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] overflow-hidden">
+<!-- Drag Handle -->
+<div class="w-full flex justify-center pt-3 pb-1">
+<div class="w-12 h-1.5 bg-white/20 rounded-full"></div>
+</div>
+<!-- List Header -->
+<div class="px-6 pb-2">
+<div class="flex items-end justify-between mb-4">
+<div>
+<h2 class="text-white text-2xl font-bold leading-tight">3 Drivers found</h2>
+<p class="text-slate-400 text-sm">Reviewing your route to Airport...</p>
+</div>
+<button class="text-primary text-sm font-bold bg-primary/10 px-3 py-1.5 rounded-full hover:bg-primary/20 transition-colors">
+                        Cancel Ride
+                    </button>
+</div>
+<!-- Filter Chips -->
+<div class="flex gap-3 overflow-x-auto no-scrollbar pb-2">
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-semibold whitespace-nowrap shadow-lg shadow-primary/20 ring-1 ring-white/10">
+<span class="material-symbols-outlined text-base">verified</span>
+                        Best Match
+                    </button>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 text-slate-300 text-xs font-medium whitespace-nowrap border border-white/10 hover:bg-white/10 transition-colors">
+<span class="material-symbols-outlined text-base">savings</span>
+                        Lowest Price
+                    </button>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 text-slate-300 text-xs font-medium whitespace-nowrap border border-white/10 hover:bg-white/10 transition-colors">
+<span class="material-symbols-outlined text-base">speed</span>
+                        Fastest
+                    </button>
+</div>
+</div>
+<!-- Offers Scroll Area -->
+<div class="flex-1 overflow-y-auto px-4 pb-24 space-y-3 no-scrollbar">
+<!-- Offer Card 1: Best Match -->
+<div class="group relative bg-[#243047] rounded-2xl p-4 border border-primary/30 shadow-lg transition-transform active:scale-[0.99]">
+<div class="absolute -top-3 left-4 bg-primary text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm uppercase tracking-wider">
+                        Best Match
+                    </div>
+<div class="flex items-start justify-between gap-3">
+<!-- Avatar & Rating -->
+<div class="relative">
+<div class="w-14 h-14 rounded-full overflow-hidden border-2 border-white/10">
+<img alt="Driver Michael" class="w-full h-full object-cover" data-alt="Portrait of a smiling male driver" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDY9dXGzV9IFMQXj7FoFRkT0hsOP7vPKBgA-0AE4NW1w65_Qg1oOpHp9t0R2rXdPOMhrrp73FWnraBIbRPKo81f2equJw8DmOSp42359CSQaPeo1sbw4JdDukdg6Qmxwv4TaOPn753g8tgFih-PT4fF4AGRR139M5uO55VatDCzZ6LuziCPSxzMsW1gH7Tba5ydl-tPQ2Vhoq4-iNB4kKnEbrqjWfM5M0xO8Ll1zZbJW8GKY7Y7IG1HwSJB92AfCG2B6tCEv9srxg"/>
+</div>
+<div class="absolute -bottom-1 -right-1 bg-surface-dark rounded-full p-0.5 border border-white/10">
+<div class="bg-yellow-500 w-5 h-5 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-[12px] font-bold">star</span>
+</div>
+</div>
+</div>
+<!-- Details -->
+<div class="flex-1">
+<div class="flex justify-between items-start">
+<div>
+<h3 class="text-white font-bold text-lg">Michael B.</h3>
+<div class="flex items-center gap-1 text-slate-400 text-xs mt-0.5">
+<span class="material-symbols-outlined text-sm">directions_car</span>
+                                        Toyota Prius • <span class="text-yellow-400">4.9</span> (1.2k)
+                                    </div>
+</div>
+<div class="text-right">
+<div class="text-2xl font-bold text-white">$12.50</div>
+<div class="text-[10px] text-slate-400 line-through decoration-red-500">$14.00</div>
+</div>
+</div>
+<!-- ETA & Tags -->
+<div class="flex items-center gap-2 mt-3 mb-4">
+<div class="bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded text-[10px] font-semibold border border-emerald-500/20 flex items-center gap-1">
+<span class="material-symbols-outlined text-xs">schedule</span>
+                                    2 min away
+                                </div>
+<div class="bg-white/5 text-slate-300 px-2 py-0.5 rounded text-[10px] font-medium border border-white/10">
+                                    Comfort
+                                </div>
+</div>
+<!-- Actions -->
+<div class="flex gap-2">
+<button class="flex-1 h-10 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-semibold text-sm border border-white/10 transition-colors flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-lg">close</span>
+                                    Decline
+                                </button>
+<button class="flex-[2] h-10 rounded-xl bg-primary hover:bg-blue-600 text-white font-bold text-sm shadow-lg shadow-primary/25 transition-all flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-lg">check</span>
+                                    Accept
+                                </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Offer Card 2: Cheaper Option -->
+<div class="relative bg-surface-dark rounded-2xl p-4 border border-white/5 shadow-md">
+<div class="flex items-start justify-between gap-3">
+<div class="relative">
+<div class="w-14 h-14 rounded-full overflow-hidden border-2 border-white/10 grayscale-[30%]">
+<img alt="Driver Sarah" class="w-full h-full object-cover" data-alt="Portrait of a female driver wearing sunglasses" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBkj3R-216DCOAfBBbNjj1rJ18HfMp6wyRbN6OgueFAg47o1QAJij8mi7gU1vRIoEp-vYp_YbnCei5_kK0xLOHX7nOWDqP5A8uGN_iiwdlW5VC98qRAc5HMqmK8PgKp1vd2DtW3RdDhlcllUdrzxJyhZVHQSmlokIRa99mRSCWaVB66m1MhjSfW7ItSkTyptv5Njg7MqVnS1QmSmHClObuZ-Qsji82iEHWbwDa8ZF93LrobpPXWbcRE-5rRaGHywPKuWLFyzRLVyg"/>
+</div>
+<div class="absolute -bottom-1 -right-1 bg-surface-dark rounded-full p-0.5 border border-white/10">
+<div class="bg-slate-600 w-5 h-5 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-[12px]">two_wheeler</span>
+</div>
+</div>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-start">
+<div>
+<h3 class="text-slate-200 font-bold text-lg">Sarah J.</h3>
+<div class="flex items-center gap-1 text-slate-400 text-xs mt-0.5">
+<span>Honda CB500</span> • <span class="text-yellow-400">4.7</span>
+</div>
+</div>
+<div class="text-right">
+<div class="text-xl font-bold text-emerald-400">$8.00</div>
+</div>
+</div>
+<div class="flex items-center gap-2 mt-3 mb-4">
+<div class="bg-white/5 text-slate-300 px-2 py-0.5 rounded text-[10px] font-medium border border-white/10 flex items-center gap-1">
+<span class="material-symbols-outlined text-xs">schedule</span>
+                                    4 min away
+                                </div>
+<div class="bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded text-[10px] font-semibold border border-purple-500/20">
+                                    Saver
+                                </div>
+</div>
+<div class="flex gap-2">
+<button class="flex-1 h-9 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 font-medium text-xs border border-white/5">
+                                    Counter $7.50
+                                </button>
+<button class="flex-1 h-9 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 font-medium text-xs border border-white/5 flex items-center justify-center">
+                                    Decline
+                                </button>
+<button class="flex-[1.5] h-9 rounded-lg bg-surface-dark border border-primary/50 text-primary hover:bg-primary hover:text-white font-semibold text-xs transition-colors flex items-center justify-center">
+                                    Accept
+                                </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Offer Card 3 -->
+<div class="relative bg-surface-dark rounded-2xl p-4 border border-white/5 shadow-md opacity-80">
+<div class="flex items-start justify-between gap-3">
+<div class="relative">
+<div class="w-14 h-14 rounded-full overflow-hidden border-2 border-white/10 grayscale">
+<img alt="Driver David" class="w-full h-full object-cover" data-alt="Portrait of a serious male driver" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDYvg6E-1LxjMxjui8IPSZzZBRiUIHRQc6S1eJRwfyzGxrna-Z9NFt2LHeMmfKi2KQTE0RODCawCxQwMApNg81oVP7jXjFFXnPtWO5Kb-_nRDZIt7AYz4Ub-DGryrPf3xVjPZeuEiT7A2m62c5C1GQL_QhCohgF1KC0vkr5cF4g69_dMzQogFtJZP1jvaIXos2ozfCI3m87C9vjwUt4M92AYMSAf2PQm5_ysV55aYmRZwvJTQiQZXcITCVWHATFdcw4DhhZdD1f1w"/>
+</div>
+<div class="absolute -bottom-1 -right-1 bg-surface-dark rounded-full p-0.5 border border-white/10">
+<div class="bg-indigo-600 w-5 h-5 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-[12px]">airport_shuttle</span>
+</div>
+</div>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-start">
+<div>
+<h3 class="text-slate-300 font-bold text-lg">David L.</h3>
+<div class="flex items-center gap-1 text-slate-500 text-xs mt-0.5">
+<span>Ford Transit</span> • <span class="text-yellow-400">4.5</span>
+</div>
+</div>
+<div class="text-right">
+<div class="text-xl font-bold text-slate-300">$15.00</div>
+</div>
+</div>
+<div class="flex items-center gap-2 mt-3 mb-4">
+<div class="bg-white/5 text-slate-400 px-2 py-0.5 rounded text-[10px] font-medium border border-white/10 flex items-center gap-1">
+<span class="material-symbols-outlined text-xs">schedule</span>
+                                    8 min away
+                                </div>
+<div class="bg-white/5 text-slate-400 px-2 py-0.5 rounded text-[10px] font-medium border border-white/10">
+                                    XL (6 seats)
+                                </div>
+</div>
+<div class="flex gap-2">
+<button class="flex-1 h-9 rounded-lg bg-white/5 text-slate-400 font-medium text-xs border border-white/5 flex items-center justify-center">
+                                    Decline
+                                </button>
+<button class="flex-[1.5] h-9 rounded-lg bg-white/5 border border-slate-600 text-slate-300 hover:bg-white/10 font-semibold text-xs transition-colors flex items-center justify-center">
+                                    Accept
+                                </button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Navigation Bar (Fixed) -->
+<div class="absolute bottom-0 w-full z-20 border-t border-[#243047] bg-[#1a2232]">
+<div class="flex gap-2 px-4 pb-6 pt-2">
+<a class="just flex flex-1 flex-col items-center justify-end gap-1 rounded-full text-white" href="#">
+<div class="text-primary flex h-8 items-center justify-center">
+<span class="material-symbols-outlined" style="font-size: 24px;">home</span>
+</div>
+<span class="text-[10px] font-medium text-primary">Home</span>
+</a>
+<a class="just flex flex-1 flex-col items-center justify-end gap-1 text-[#93a5c8]" href="#">
+<div class="text-[#93a5c8] flex h-8 items-center justify-center">
+<span class="material-symbols-outlined" style="font-size: 24px;">receipt_long</span>
+</div>
+<span class="text-[10px] font-medium">Activity</span>
+</a>
+<a class="just flex flex-1 flex-col items-center justify-end gap-1 text-[#93a5c8]" href="#">
+<div class="text-[#93a5c8] flex h-8 items-center justify-center">
+<span class="material-symbols-outlined" style="font-size: 24px;">account_balance_wallet</span>
+</div>
+<span class="text-[10px] font-medium">Wallet</span>
+</a>
+<a class="just flex flex-1 flex-col items-center justify-end gap-1 text-[#93a5c8]" href="#">
+<div class="text-[#93a5c8] flex h-8 items-center justify-center">
+<span class="material-symbols-outlined" style="font-size: 24px;">person</span>
+</div>
+<span class="text-[10px] font-medium">Account</span>
+</a>
+</div>
+</div>
+</div>
+</body></html>

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Ride Hailing Registration</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#195de6",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#111621",
+                        "surface-dark": "#1a2232",
+                    },
+                    fontFamily: {
+                        "display": ["Plus Jakarta Sans", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 2px;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark font-display antialiased min-h-screen flex flex-col items-center justify-center p-0 m-0 overflow-hidden">
+<div class="w-full max-w-md h-full min-h-screen bg-background-light dark:bg-background-dark flex flex-col relative overflow-y-auto">
+<div class="h-12 w-full flex items-center justify-end px-4 pt-2 shrink-0">
+</div>
+<div class="flex flex-col px-6 pt-2 pb-6 shrink-0">
+<div class="flex items-center gap-4 mb-4">
+<button class="w-10 h-10 rounded-full bg-white dark:bg-surface-dark flex items-center justify-center shadow-sm text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+<span class="material-symbols-outlined text-xl">arrow_back</span>
+</button>
+<h1 class="text-slate-900 dark:text-white text-2xl font-bold leading-tight">Create Account</h1>
+</div>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-normal leading-relaxed">
+                Join our community to start riding or driving today.
+            </p>
+</div>
+<div class="flex flex-col px-6 gap-6 flex-1 pb-8">
+<div class="flex flex-col gap-4">
+<h2 class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-semibold mb-1">Account Info</h2>
+<div class="relative">
+<input class="w-full h-14 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-surface-dark text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 px-4 pl-12 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base font-medium transition-shadow" placeholder="Full Name" type="text"/>
+<div class="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-slate-400 dark:text-slate-500">person</span>
+</div>
+</div>
+<div class="relative">
+<input class="w-full h-14 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-surface-dark text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 px-4 pl-12 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base font-medium transition-shadow" placeholder="Username" type="text"/>
+<div class="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-slate-400 dark:text-slate-500">alternate_email</span>
+</div>
+</div>
+<div class="relative">
+<input class="w-full h-14 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-surface-dark text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 px-4 pl-12 pr-12 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base font-medium transition-shadow" placeholder="Password" type="password"/>
+<div class="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-slate-400 dark:text-slate-500">lock</span>
+</div>
+<div class="absolute inset-y-0 right-4 flex items-center cursor-pointer">
+<span class="material-symbols-outlined text-slate-400 dark:text-slate-500">visibility</span>
+</div>
+</div>
+</div>
+<div class="flex flex-col gap-4 mt-2">
+<h2 class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-semibold mb-1">Location &amp; Contact</h2>
+<div class="relative">
+<select class="appearance-none w-full h-14 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-surface-dark text-slate-900 dark:text-white px-4 pl-12 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base font-medium transition-shadow">
+<option disabled="" selected="" value="">Select Country</option>
+<option>United States</option>
+<option>United Kingdom</option>
+<option>Canada</option>
+<option>France</option>
+<option>Germany</option>
+</select>
+<div class="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-slate-400 dark:text-slate-500">public</span>
+</div>
+<div class="pointer-events-none absolute inset-y-0 right-4 flex items-center text-slate-500">
+<span class="material-symbols-outlined text-sm">expand_more</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="relative">
+<input class="w-full h-14 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-surface-dark text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 px-4 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base font-medium transition-shadow" placeholder="State/Prov" type="text"/>
+</div>
+<div class="relative">
+<input class="w-full h-14 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-surface-dark text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 px-4 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base font-medium transition-shadow" placeholder="City" type="text"/>
+</div>
+</div>
+<div class="flex gap-3">
+<div class="relative w-[100px]">
+<select class="appearance-none w-full h-14 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-surface-dark text-slate-900 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base font-medium">
+<option>🇺🇸 +1</option>
+<option>🇬🇧 +44</option>
+<option>🇨🇦 +1</option>
+<option>🇫🇷 +33</option>
+</select>
+<div class="pointer-events-none absolute inset-y-0 right-1 flex items-center px-2 text-slate-500">
+<span class="material-symbols-outlined text-sm">expand_more</span>
+</div>
+</div>
+<div class="relative flex-1">
+<input class="w-full h-14 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-surface-dark text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base font-medium transition-shadow" placeholder="Phone Number" type="tel"/>
+<div class="absolute inset-y-0 right-4 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-slate-400 dark:text-slate-500">smartphone</span>
+</div>
+</div>
+</div>
+</div>
+<button class="w-full h-14 bg-primary hover:bg-primary/90 active:scale-[0.98] transition-all rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/25 mt-4 mb-2">
+<span class="text-white text-base font-semibold">Create Account</span>
+<span class="material-symbols-outlined text-white text-xl">check_circle</span>
+</button>
+<div class="text-center pb-6">
+<p class="text-slate-500 dark:text-slate-400 text-sm">
+                    Already have an account? 
+                    <a class="text-primary hover:text-primary/80 font-semibold transition-colors" href="#">Sign In</a>
+</p>
+</div>
+</div>
+</div>
+
+</body></html>
