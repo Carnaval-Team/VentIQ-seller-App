@@ -9,7 +9,8 @@ class FleetMapWidget extends StatelessWidget {
   final List<RepartidorFlota> repartidores;
   final RepartidorFlota? selected;
   final List<LatLng>? rutaSeleccionada;
-  final List<LatLng>? checkpoints;
+  final List<CheckpointData>? checkpointData;
+  final List<ParkedZone>? parkedZones;
   final Color rutaColor;
   final ValueChanged<RepartidorFlota> onMarkerTap;
 
@@ -19,7 +20,8 @@ class FleetMapWidget extends StatelessWidget {
     required this.repartidores,
     required this.selected,
     required this.rutaSeleccionada,
-    this.checkpoints,
+    this.checkpointData,
+    this.parkedZones,
     required this.rutaColor,
     required this.onMarkerTap,
   });
@@ -37,37 +39,15 @@ class FleetMapWidget extends StatelessWidget {
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.ventiq.superadmin',
         ),
-        // 1) Checkpoints DEBAJO de la ruta (sombra)
-        if (checkpoints != null && checkpoints!.length > 2)
-          MarkerLayer(
-            markers: [
-              for (int i = 1; i < checkpoints!.length - 1; i++)
-                Marker(
-                  point: checkpoints![i],
-                  width: 24,
-                  height: 24,
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: Colors.black26,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        // 2) Ruta del chofer seleccionado - borde oscuro para contraste
+        // 1) Ruta del chofer seleccionado (polyline)
         if (rutaSeleccionada != null && rutaSeleccionada!.length >= 2)
           PolylineLayer(
             polylines: [
-              // Borde/contorno oscuro debajo
               Polyline(
                 points: rutaSeleccionada!,
                 color: Colors.black54,
                 strokeWidth: 8.0,
               ),
-              // Línea principal encima con color llamativo
               Polyline(
                 points: rutaSeleccionada!,
                 color: rutaColor,
@@ -75,55 +55,69 @@ class FleetMapWidget extends StatelessWidget {
               ),
             ],
           ),
-        // 3) Checkpoints ENCIMA de la ruta (círculos numerados)
-        if (checkpoints != null && checkpoints!.length > 2)
+        // 2) Todos los puntos GPS como bolitas pequeñas
+        if (checkpointData != null && checkpointData!.isNotEmpty)
           MarkerLayer(
-            markers: [
-              for (int i = 1; i < checkpoints!.length - 1; i++)
-                Marker(
-                  point: checkpoints![i],
-                  width: 22,
-                  height: 22,
-                  child: Tooltip(
-                    message: 'Parada $i de ${checkpoints!.length - 1}',
-                    child: Container(
-                      width: 22,
-                      height: 22,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: rutaColor, width: 2),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black26,
-                            blurRadius: 3,
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: Text(
-                          '$i',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: rutaColor,
-                            height: 1,
-                          ),
+            markers: checkpointData!.map((cp) {
+              return Marker(
+                point: cp.point,
+                width: 8,
+                height: 8,
+                child: Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: rutaColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        // 3) Zonas de estacionamiento (bolitas más grandes con tooltip de tiempo)
+        if (parkedZones != null && parkedZones!.isNotEmpty)
+          MarkerLayer(
+            markers: parkedZones!.map((zone) {
+              final mins = zone.duration.inMinutes;
+              final label = mins < 60
+                  ? '${mins}min'
+                  : '${(mins / 60).floor()}h ${mins % 60}min';
+              return Marker(
+                point: zone.center,
+                width: 20,
+                height: 20,
+                child: Tooltip(
+                  message: 'Estacionado ~$label',
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF9800),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black26,
+                          blurRadius: 3,
+                          offset: Offset(0, 1),
                         ),
-                      ),
+                      ],
+                    ),
+                    child: const Center(
+                      child: Icon(Icons.local_parking, size: 10, color: Colors.white),
                     ),
                   ),
                 ),
-            ],
+              );
+            }).toList(),
           ),
-        // 4) Marcadores de inicio y fin de la ruta con número
-        if (checkpoints != null && checkpoints!.isNotEmpty)
+        // 4) Inicio de ruta (grande con play)
+        if (checkpointData != null && checkpointData!.isNotEmpty)
           MarkerLayer(
             markers: [
-              // Inicio (primer checkpoint)
               Marker(
-                point: checkpoints!.first,
+                point: checkpointData!.first.point,
                 width: 28,
                 height: 28,
                 child: Tooltip(
@@ -135,11 +129,11 @@ class FleetMapWidget extends StatelessWidget {
                       color: const Color(0xFF4CAF50),
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 2),
-                      boxShadow: [
+                      boxShadow: const [
                         BoxShadow(
                           color: Colors.black38,
                           blurRadius: 4,
-                          offset: const Offset(0, 1),
+                          offset: Offset(0, 1),
                         ),
                       ],
                     ),
@@ -153,38 +147,30 @@ class FleetMapWidget extends StatelessWidget {
                   ),
                 ),
               ),
-              // Fin (último checkpoint)
+              // Fin de ruta
               Marker(
-                point: checkpoints!.last,
-                width: 28,
-                height: 28,
+                point: checkpointData!.last.point,
+                width: 22,
+                height: 22,
                 child: Tooltip(
-                  message: 'Fin de ruta (parada ${checkpoints!.length})',
+                  message: 'Fin de ruta',
                   child: Container(
-                    width: 28,
-                    height: 28,
+                    width: 20,
+                    height: 20,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF44336),
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 2),
-                      boxShadow: [
+                      boxShadow: const [
                         BoxShadow(
                           color: Colors.black38,
                           blurRadius: 4,
-                          offset: const Offset(0, 1),
+                          offset: Offset(0, 1),
                         ),
                       ],
                     ),
-                    child: Center(
-                      child: Text(
-                        '${checkpoints!.length}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          height: 1,
-                        ),
-                      ),
+                    child: const Center(
+                      child: Icon(Icons.stop, size: 12, color: Colors.white),
                     ),
                   ),
                 ),

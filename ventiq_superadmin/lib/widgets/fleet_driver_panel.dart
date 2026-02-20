@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../config/app_colors.dart';
 import '../models/fleet_models.dart';
 
@@ -11,6 +12,12 @@ class FleetDriverPanel extends StatefulWidget {
   final bool isLoadingRoute;
   final double? distanciaRutaKm;
   final double? duracionRutaMin;
+  final DateTime fechaDesde;
+  final DateTime fechaHasta;
+  final bool tiempoReal;
+  final ValueChanged<DateTime> onFechaDesdeChanged;
+  final ValueChanged<DateTime> onFechaHastaChanged;
+  final ValueChanged<bool> onTiempoRealChanged;
 
   const FleetDriverPanel({
     super.key,
@@ -22,6 +29,12 @@ class FleetDriverPanel extends StatefulWidget {
     this.isLoadingRoute = false,
     this.distanciaRutaKm,
     this.duracionRutaMin,
+    required this.fechaDesde,
+    required this.fechaHasta,
+    required this.tiempoReal,
+    required this.onFechaDesdeChanged,
+    required this.onFechaHastaChanged,
+    required this.onTiempoRealChanged,
   });
 
   @override
@@ -31,6 +44,8 @@ class FleetDriverPanel extends StatefulWidget {
 class _FleetDriverPanelState extends State<FleetDriverPanel> {
   String _searchQuery = '';
   String _filtroEstado = 'todos';
+  bool _showAllOrders = false;
+  int? _lastSelectedDriverId;
 
   List<RepartidorFlota> get _filteredDrivers {
     var list = widget.repartidores;
@@ -168,6 +183,61 @@ class _FleetDriverPanelState extends State<FleetDriverPanel> {
                   ],
                 ),
                 const SizedBox(height: 8),
+                // Filtro de fechas
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildDateButton(
+                        label: 'Desde',
+                        date: widget.fechaDesde,
+                        enabled: !widget.tiempoReal,
+                        onTap: () => _pickDate(context, widget.fechaDesde, widget.onFechaDesdeChanged),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _buildDateButton(
+                        label: 'Hasta',
+                        date: widget.fechaHasta,
+                        enabled: !widget.tiempoReal,
+                        onTap: () => _pickDate(context, widget.fechaHasta, widget.onFechaHastaChanged),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                // Tiempo real switch
+                Row(
+                  children: [
+                    SizedBox(
+                      height: 28,
+                      width: 40,
+                      child: Switch(
+                        value: widget.tiempoReal,
+                        onChanged: widget.onTiempoRealChanged,
+                        activeColor: AppColors.primary,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Tiempo Real',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                    ),
+                    if (widget.tiempoReal) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF4CAF50),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 8),
                 // Selector de puntos del historial
                 Row(
                   children: [
@@ -300,6 +370,74 @@ class _FleetDriverPanelState extends State<FleetDriverPanel> {
     );
   }
 
+  Widget _buildDateButton({
+    required String label,
+    required DateTime date,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    final fmt = DateFormat('dd/MM/yyyy');
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: enabled ? AppColors.surfaceVariant : AppColors.surfaceVariant.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_today, size: 12,
+                color: enabled ? AppColors.textSecondary : AppColors.textHint),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                '$label: ${fmt.format(date)}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: enabled ? AppColors.textPrimary : AppColors.textHint,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickDate(
+    BuildContext context,
+    DateTime initial,
+    ValueChanged<DateTime> onChanged,
+  ) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      onChanged(picked);
+    }
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'Asignado':
+        return const Color(0xFF2196F3);
+      case 'Entregado':
+        return const Color(0xFF4CAF50);
+      case 'Cancelado':
+        return const Color(0xFFF44336);
+      case 'En Camino':
+        return const Color(0xFFFF9800);
+      default:
+        return AppColors.textSecondary;
+    }
+  }
+
   String _formatDuration(double minutes) {
     if (minutes < 60) {
       return '${minutes.round()} min';
@@ -307,6 +445,75 @@ class _FleetDriverPanelState extends State<FleetDriverPanel> {
     final hours = (minutes / 60).floor();
     final mins = (minutes % 60).round();
     return mins > 0 ? '${hours}h ${mins}min' : '${hours}h';
+  }
+
+  List<Widget> _buildOrdersList(RepartidorFlota driver) {
+    // Reset showAllOrders when driver changes
+    if (_lastSelectedDriverId != driver.id) {
+      _lastSelectedDriverId = driver.id;
+      _showAllOrders = false;
+    }
+
+    // Sort: 'Asignado' first, then others
+    final sorted = List<OrdenAsignada>.from(driver.ordenesAsignadas)
+      ..sort((a, b) {
+        if (a.status == 'Asignado' && b.status != 'Asignado') return -1;
+        if (a.status != 'Asignado' && b.status == 'Asignado') return 1;
+        return b.createdAt.compareTo(a.createdAt);
+      });
+
+    final visible = _showAllOrders ? sorted : sorted.take(5).toList();
+    final remaining = sorted.length - 5;
+
+    return [
+      ...visible.map((orden) => _buildOrdenTile(orden)),
+      if (!_showAllOrders && remaining > 0)
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: GestureDetector(
+            onTap: () => setState(() => _showAllOrders = true),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                'Ver $remaining más',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      if (_showAllOrders && sorted.length > 5)
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: GestureDetector(
+            onTap: () => setState(() => _showAllOrders = false),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              alignment: Alignment.center,
+              child: const Text(
+                'Ver menos',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ),
+        ),
+    ];
   }
 
   Widget _buildDriverCard(RepartidorFlota driver, bool isSelected) {
@@ -493,9 +700,10 @@ class _FleetDriverPanelState extends State<FleetDriverPanel> {
                         ],
                       ),
                     ),
-                  // Órdenes asignadas
-                  if (driver.ordenesAsignadas.isNotEmpty)
-                    ...driver.ordenesAsignadas.map((orden) => _buildOrdenTile(orden)),
+                  // Órdenes (todas del rango de fechas)
+                  if (driver.ordenesAsignadas.isNotEmpty) ...[
+                    ..._buildOrdersList(driver),
+                  ],
                   if (widget.isLoadingRoute)
                     const Padding(
                       padding: EdgeInsets.only(top: 8),
@@ -540,10 +748,26 @@ class _FleetDriverPanelState extends State<FleetDriverPanel> {
               const Icon(Icons.receipt_long, size: 14, color: AppColors.primary),
               const SizedBox(width: 6),
               Text(
-                'Orden #${orden.id}',
+                '#${orden.id}',
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 12,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: _statusColor(orden.status).withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  orden.status,
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w600,
+                    color: _statusColor(orden.status),
+                  ),
                 ),
               ),
               const Spacer(),

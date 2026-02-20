@@ -25,10 +25,16 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
   List<RepartidorFlota> _repartidores = [];
   RepartidorFlota? _selectedRepartidor;
   List<LatLng>? _rutaSeleccionada;
-  List<LatLng>? _checkpoints; // Puntos originales del historial (sin interpolación OSRM)
-  double? _distanciaRutaKm; // Distancia total de la ruta en km
-  double? _duracionRutaMin; // Duración total de la ruta en minutos
+  List<CheckpointData>? _checkpointData;
+  List<ParkedZone>? _parkedZones;
+  double? _distanciaRutaKm;
+  double? _duracionRutaMin;
   Color _rutaColor = AppColors.chartColors[0];
+
+  // Fechas y tiempo real
+  late DateTime _fechaDesde;
+  late DateTime _fechaHasta;
+  bool _tiempoReal = true;
 
   // Puntos acumulados localmente por repartidor (desde que se abrió la vista)
   final Map<int, List<LatLng>> _rutasLocales = {};
@@ -43,6 +49,9 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now();
+    _fechaDesde = DateTime(now.year, now.month, now.day);
+    _fechaHasta = now;
     _loadData();
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 30),
@@ -60,7 +69,10 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final repartidores = await _fleetService.fetchRepartidoresConOrdenes();
+      final repartidores = await _fleetService.fetchRepartidoresConOrdenes(
+        fechaDesde: _fechaDesde,
+        fechaHasta: _fechaHasta,
+      );
       if (!mounted) return;
 
       // Inicializar posiciones previas
@@ -92,7 +104,13 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
 
   Future<void> _refreshPositions() async {
     try {
-      final repartidores = await _fleetService.fetchRepartidoresConOrdenes();
+      if (_tiempoReal) {
+        _fechaHasta = DateTime.now();
+      }
+      final repartidores = await _fleetService.fetchRepartidoresConOrdenes(
+        fechaDesde: _fechaDesde,
+        fechaHasta: _fechaHasta,
+      );
       if (!mounted) return;
 
       // Detectar movimiento y acumular puntos locales
@@ -156,7 +174,8 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
       setState(() {
         _selectedRepartidor = null;
         _rutaSeleccionada = null;
-        _checkpoints = null;
+        _checkpointData = null;
+        _parkedZones = null;
         _distanciaRutaKm = null;
         _duracionRutaMin = null;
       });
@@ -170,7 +189,8 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
     setState(() {
       _selectedRepartidor = driver;
       _rutaSeleccionada = null;
-      _checkpoints = null;
+      _checkpointData = null;
+      _parkedZones = null;
       _distanciaRutaKm = null;
       _duracionRutaMin = null;
       _isLoadingRoute = true;
@@ -203,6 +223,8 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
         final historial = await _fleetService.fetchHistorialRuta(
           driver.repartidorId!,
           limit: _pointsLimit,
+          fechaDesde: _fechaDesde,
+          fechaHasta: _fechaHasta,
         );
 
         if (!mounted) return;
@@ -223,13 +245,17 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
           return;
         }
 
-        // Convertir historial a LatLng (ya viene ordenado cronológicamente)
-        final historyPoints = historial.map((h) {
-          return LatLng(
-            (h['latitud'] as num).toDouble(),
-            (h['longitud'] as num).toDouble(),
+        // Convertir historial a CheckpointData (ya viene ordenado cronológicamente)
+        final checkpointDataList = historial.map((h) {
+          return CheckpointData(
+            point: LatLng(
+              (h['latitud'] as num).toDouble(),
+              (h['longitud'] as num).toDouble(),
+            ),
+            timestamp: DateTime.tryParse(h['registrado_en']?.toString() ?? '') ?? DateTime.now(),
           );
         }).toList();
+        final historyPoints = checkpointDataList.map((c) => c.point).toList();
 
         print('[Fleet] historyPoints convertidos: ${historyPoints.length} puntos');
         print('[Fleet]   primero: ${historyPoints.first}');
@@ -273,7 +299,8 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
 
           setState(() {
             _rutaSeleccionada = rutaFinal;
-            _checkpoints = historyPoints;
+            _checkpointData = checkpointDataList;
+            _parkedZones = _computeParkedZones(checkpointDataList);
             _distanciaRutaKm = routeResult.distanceKm;
             _duracionRutaMin = routeResult.durationSeconds / 60;
             _isLoadingRoute = false;
@@ -283,7 +310,8 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
           final localPoints = _rutasLocales[driver.repartidorId] ?? [];
           setState(() {
             _rutaSeleccionada = [posActual, ...historyPoints, ...localPoints];
-            _checkpoints = historyPoints;
+            _checkpointData = checkpointDataList;
+            _parkedZones = _computeParkedZones(checkpointDataList);
             _distanciaRutaKm = 0;
             _duracionRutaMin = 0;
             _isLoadingRoute = false;
@@ -309,10 +337,108 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
 
   void _onPointsLimitChanged(int newLimit) {
     setState(() => _pointsLimit = newLimit);
-    // Recargar ruta si hay un chofer seleccionado (sin toggle)
     if (_selectedRepartidor != null) {
       _loadDriverRoute(_selectedRepartidor!);
     }
+  }
+
+  void _onFechaDesdeChanged(DateTime d) {
+    setState(() {
+      _fechaDesde = d;
+      _tiempoReal = false;
+    });
+    _loadData();
+    if (_selectedRepartidor != null) {
+      _loadDriverRoute(_selectedRepartidor!);
+    }
+  }
+
+  void _onFechaHastaChanged(DateTime d) {
+    setState(() {
+      _fechaHasta = d;
+      _tiempoReal = false;
+    });
+    _loadData();
+    if (_selectedRepartidor != null) {
+      _loadDriverRoute(_selectedRepartidor!);
+    }
+  }
+
+  void _onTiempoRealChanged(bool v) {
+    if (v) {
+      final now = DateTime.now();
+      setState(() {
+        _fechaDesde = DateTime(now.year, now.month, now.day);
+        _fechaHasta = now;
+        _tiempoReal = true;
+      });
+    } else {
+      setState(() => _tiempoReal = false);
+    }
+    _loadData();
+    if (_selectedRepartidor != null) {
+      _loadDriverRoute(_selectedRepartidor!);
+    }
+  }
+
+  /// Agrupa checkpoints por proximidad espacial (~20m) para detectar zonas de estacionamiento.
+  /// Usa agrupación espacial: todos los puntos cercanos a un centro se agrupan,
+  /// sin importar si son consecutivos en el tiempo.
+  List<ParkedZone> _computeParkedZones(List<CheckpointData> checkpoints) {
+    if (checkpoints.length < 2) return [];
+
+    final distCalc = const Distance();
+    const double radius = 20; // metros
+
+    // Agrupar por proximidad espacial (cluster simple)
+    final used = List<bool>.filled(checkpoints.length, false);
+    final clusters = <List<CheckpointData>>[];
+
+    for (var i = 0; i < checkpoints.length; i++) {
+      if (used[i]) continue;
+      final cluster = <CheckpointData>[checkpoints[i]];
+      used[i] = true;
+
+      for (var j = i + 1; j < checkpoints.length; j++) {
+        if (used[j]) continue;
+        final dist = distCalc.as(
+          LengthUnit.Meter, checkpoints[i].point, checkpoints[j].point,
+        );
+        if (dist < radius) {
+          cluster.add(checkpoints[j]);
+          used[j] = true;
+        }
+      }
+      clusters.add(cluster);
+    }
+
+    // Convertir clusters con >=3 puntos en zonas de estacionamiento
+    final zones = <ParkedZone>[];
+    for (final cluster in clusters) {
+      if (cluster.length < 3) continue;
+
+      double latSum = 0, lngSum = 0;
+      DateTime earliest = cluster.first.timestamp;
+      DateTime latest = cluster.first.timestamp;
+
+      for (final cp in cluster) {
+        latSum += cp.point.latitude;
+        lngSum += cp.point.longitude;
+        if (cp.timestamp.isBefore(earliest)) earliest = cp.timestamp;
+        if (cp.timestamp.isAfter(latest)) latest = cp.timestamp;
+      }
+
+      final center = LatLng(latSum / cluster.length, lngSum / cluster.length);
+      final duration = latest.difference(earliest);
+
+      zones.add(ParkedZone(
+        center: center,
+        pointCount: cluster.length,
+        duration: duration,
+      ));
+    }
+
+    return zones;
   }
 
   void _centerMapOnDrivers() {
@@ -410,6 +536,12 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
                   isLoadingRoute: _isLoadingRoute,
                   distanciaRutaKm: _distanciaRutaKm,
                   duracionRutaMin: _duracionRutaMin,
+                  fechaDesde: _fechaDesde,
+                  fechaHasta: _fechaHasta,
+                  tiempoReal: _tiempoReal,
+                  onFechaDesdeChanged: _onFechaDesdeChanged,
+                  onFechaHastaChanged: _onFechaHastaChanged,
+                  onTiempoRealChanged: _onTiempoRealChanged,
                 ),
                 // Mapa
                 Expanded(
@@ -420,7 +552,8 @@ class _FleetControlScreenState extends State<FleetControlScreen> {
                         repartidores: _repartidores,
                         selected: _selectedRepartidor,
                         rutaSeleccionada: _rutaSeleccionada,
-                        checkpoints: _checkpoints,
+                        checkpointData: _checkpointData,
+                        parkedZones: _parkedZones,
                         rutaColor: _rutaColor,
                         onMarkerTap: _onDriverSelected,
                       ),
