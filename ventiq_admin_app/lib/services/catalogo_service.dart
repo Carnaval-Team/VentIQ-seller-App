@@ -8,52 +8,14 @@ class CatalogoService {
 
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  /// Verifica si una tienda tiene plan Pro o Avanzado activo
-  /// Obtiene el plan directamente de la tabla app_suscripciones con JOIN a app_suscripciones_plan
+  /// Verifica si una tienda puede habilitar el catálogo
+  /// Ahora todos los usuarios pueden habilitar el catálogo con cualquier plan
   Future<bool> tienePlanCatalogo(int idTienda) async {
     try {
-      print('🔍 Verificando plan Pro/Avanzado para tienda: $idTienda');
-      
-      final response = await _supabase
-          .from('app_suscripciones')
-          .select('''
-            id,
-            estado,
-            fecha_fin,
-            app_suscripciones_plan (
-              denominacion
-            )
-          ''')
-          .eq('id_tienda', idTienda)
-          .eq('estado', 1)
-          .order('fecha_fin', ascending: false)
-          .limit(1)
-          .maybeSingle();
-
-      if (response == null) {
-        print('⚠️ No hay suscripción activa');
-        return false;
-      }
-
-      // Verificar que no esté vencida
-      final fechaFin = response['fecha_fin'];
-      if (fechaFin != null) {
-        final vencimiento = DateTime.parse(fechaFin as String);
-        if (vencimiento.isBefore(DateTime.now())) {
-          print('⚠️ Suscripción vencida');
-          return false;
-        }
-      }
-
-      // Obtener denominación del plan
-      final planData = response['app_suscripciones_plan'] as Map<String, dynamic>?;
-      final denominacion = planData?['denominacion'] as String?;
-      final tienePlan = denominacion == 'Pro' || denominacion == 'Avanzado';
-      
-      print('✅ Plan encontrado: $denominacion - Catálogo disponible: $tienePlan');
-      return tienePlan;
+      print('✅ Catálogo habilitado para todos los planes (tienda: $idTienda)');
+      return true;
     } catch (e) {
-      print('❌ Error verificando plan: $e');
+      print('❌ Error verificando catálogo: $e');
       return false;
     }
   }
@@ -150,6 +112,7 @@ class CatalogoService {
   }
 
   /// Actualiza el estado mostrar_en_catalogo de la tienda
+  /// Todos los usuarios pueden habilitar el catálogo sin restricciones de plan
   Future<bool> actualizarMostrarEnCatalogoTienda(
     int idTienda,
     bool mostrarEnCatalogo, {
@@ -157,26 +120,6 @@ class CatalogoService {
   }) async {
     try {
       print('🏪 Actualizando mostrar_en_catalogo para tienda: $idTienda');
-      
-      // Si se intenta activar el catálogo, verificar que tenga un plan válido
-      if (mostrarEnCatalogo) {
-        // Obtener el plan de la tienda usando el helper existente
-        final nombrePlanRaw = await obtenerTipoPlan(idTienda);
-        final nombrePlan = nombrePlanRaw?.toLowerCase() ?? '';
-        
-        if (nombrePlan.isNotEmpty) {
-          // Validar que NO sea plan "Gratis"
-          if (nombrePlan.contains('gratis') || nombrePlan.contains('free')) {
-            print('❌ No se puede activar el catálogo con plan Gratis');
-            throw Exception('No puedes activar el catálogo con el plan Gratis. Por favor, actualiza tu plan de suscripción.');
-          }
-          
-          print('✅ Plan válido para catálogo: $nombrePlan');
-        } else {
-          print('⚠️ Tienda sin plan asignado o activo');
-          throw Exception('La tienda no tiene un plan activo asignado. Por favor, verifica tu suscripción.');
-        }
-      }
       
       final Map<String, dynamic> updates = {
         'mostrar_en_catalogo': mostrarEnCatalogo
@@ -191,7 +134,7 @@ class CatalogoService {
           .update(updates)
           .eq('id', idTienda);
 
-      print('✅ Tienda actualizada');
+      print('✅ Tienda actualizada - Catálogo ${mostrarEnCatalogo ? 'habilitado' : 'deshabilitado'}');
       return true;
     } catch (e) {
       print('❌ Error actualizando tienda: $e');
