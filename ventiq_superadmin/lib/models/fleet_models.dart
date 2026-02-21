@@ -1,6 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 
 enum EstadoRepartidor { activo, estacionado, inactivo }
+
+class CheckpointData {
+  final LatLng point;
+  final DateTime timestamp;
+  CheckpointData({required this.point, required this.timestamp});
+}
+
+class ParkedZone {
+  final LatLng center;
+  final int pointCount;
+  final Duration duration;
+  ParkedZone({required this.center, required this.pointCount, required this.duration});
+}
 
 class RepartidorFlota {
   final int id;
@@ -113,6 +127,7 @@ class RepartidorFlota {
 class OrdenAsignada {
   final int id;
   final double total;
+  final String status;
   final String? direccion;
   final DateTime createdAt;
   final List<DetalleOrden> detalles;
@@ -120,6 +135,7 @@ class OrdenAsignada {
   OrdenAsignada({
     required this.id,
     required this.total,
+    required this.status,
     this.direccion,
     required this.createdAt,
     this.detalles = const [],
@@ -136,6 +152,7 @@ class OrdenAsignada {
           ? map['id']
           : int.tryParse(map['id'].toString()) ?? 0,
       total: (map['total'] as num?)?.toDouble() ?? 0,
+      status: map['status']?.toString() ?? 'Desconocido',
       direccion: map['direccion']?.toString(),
       createdAt:
           DateTime.tryParse(map['created_at']?.toString() ?? '') ?? DateTime.now(),

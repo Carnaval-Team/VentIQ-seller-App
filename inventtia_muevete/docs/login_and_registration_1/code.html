@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Ride Hailing Login</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#195de6",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#111621",
+                    },
+                    fontFamily: {
+                        "display": ["Plus Jakarta Sans", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom scrollbar for webkit */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 2px;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark font-display antialiased min-h-screen flex flex-col items-center justify-center p-0 m-0 overflow-hidden">
+<!-- Mobile Container -->
+<div class="w-full max-w-md h-full min-h-screen bg-background-light dark:bg-background-dark flex flex-col relative overflow-y-auto">
+<!-- Status Bar Area (Visual Only) -->
+<div class="h-12 w-full flex items-center justify-end px-4 pt-2">
+<!-- Simulated Signal/Battery could go here if needed, keeping it clean for now -->
+</div>
+<!-- Hero Section -->
+<div class="flex flex-col px-6 pt-4 pb-6">
+<div class="w-16 h-16 bg-primary rounded-xl flex items-center justify-center mb-6 shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined text-white text-4xl">local_taxi</span>
+</div>
+<h1 class="text-slate-900 dark:text-white text-[32px] font-bold leading-tight tracking-tight mb-3">
+                Your Ride,<br/>Your Way
+            </h1>
+<p class="text-slate-500 dark:text-slate-400 text-base font-normal leading-relaxed">
+                Secure rides at your price. Sign in to start moving freely.
+            </p>
+</div>
+<!-- Main Form Section -->
+<div class="flex flex-col px-6 gap-6 flex-1">
+<!-- Phone Input Group -->
+<div class="flex flex-col gap-4">
+<label class="flex flex-col w-full">
+<p class="text-slate-900 dark:text-slate-200 text-sm font-medium leading-normal pb-2 ml-1">Phone Number</p>
+<div class="flex gap-3">
+<!-- Country Code -->
+<div class="relative w-[88px]">
+<select class="appearance-none w-full h-14 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1a2232] text-slate-900 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base font-medium">
+<option>🇺🇸 +1</option>
+<option>🇬🇧 +44</option>
+<option>🇨🇦 +1</option>
+<option>🇫🇷 +33</option>
+</select>
+<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+<span class="material-symbols-outlined text-sm">expand_more</span>
+</div>
+</div>
+<!-- Phone Input -->
+<div class="relative flex-1">
+<input class="form-input w-full h-14 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1a2232] text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base font-medium" placeholder="(555) 000-0000" type="tel"/>
+<div class="absolute inset-y-0 right-4 flex items-center">
+<span class="material-symbols-outlined text-slate-400 dark:text-slate-500">smartphone</span>
+</div>
+</div>
+</div>
+</label>
+</div>
+<!-- Primary Action Button -->
+<button class="w-full h-14 bg-primary hover:bg-primary/90 active:scale-[0.98] transition-all rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/25 mt-2">
+<span class="text-white text-base font-semibold">Continue</span>
+<span class="material-symbols-outlined text-white text-xl">arrow_forward</span>
+</button>
+<!-- Divider -->
+<div class="flex items-center gap-4 py-2">
+<div class="h-px bg-slate-300 dark:bg-slate-700 flex-1"></div>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Or continue with</p>
+<div class="h-px bg-slate-300 dark:bg-slate-700 flex-1"></div>
+</div>
+<!-- Social Login Buttons -->
+<div class="grid grid-cols-2 gap-4">
+<button class="h-14 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1a2232] hover:bg-slate-50 dark:hover:bg-[#232d42] active:bg-slate-100 dark:active:bg-[#2d3850] transition-colors flex items-center justify-center gap-2.5">
+<svg class="w-5 h-5" fill="none" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+<path d="M23.766 12.2764C23.766 11.4607 23.6999 10.6406 23.5588 9.83807H12.24V14.4591H18.7217C18.4528 15.9494 17.5885 17.2678 16.323 18.1056V21.1039H20.19C22.4608 19.0139 23.766 15.9274 23.766 12.2764Z" fill="#4285F4"></path>
+<path d="M12.24 24.0008C15.4765 24.0008 18.2059 22.9382 20.1945 21.1039L16.3275 18.1055C15.2517 18.8375 13.8627 19.252 12.2445 19.252C9.11388 19.252 6.45946 17.1399 5.50705 14.3003H1.5166V17.3912C3.55371 21.4434 7.7029 24.0008 12.24 24.0008Z" fill="#34A853"></path>
+<path d="M5.50253 14.3003C5.00236 12.8099 5.00236 11.1961 5.50253 9.70575V6.61481H1.5166C-0.18551 10.0056 -0.18551 14.0004 1.5166 17.3912L5.50253 14.3003Z" fill="#FBBC05"></path>
+<path d="M12.24 4.74966C13.9509 4.7232 15.6044 5.36697 16.8434 6.54867L20.2695 3.12262C18.1001 1.0855 15.2208 -0.034466 12.24 0.000808666C7.7029 0.000808666 3.55371 2.55822 1.5166 6.61481L5.50253 9.70575C6.45064 6.86173 9.10947 4.74966 12.24 4.74966Z" fill="#EA4335"></path>
+</svg>
+<span class="text-slate-900 dark:text-white text-sm font-semibold">Google</span>
+</button>
+<button class="h-14 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1a2232] hover:bg-slate-50 dark:hover:bg-[#232d42] active:bg-slate-100 dark:active:bg-[#2d3850] transition-colors flex items-center justify-center gap-2.5">
+<svg class="w-5 h-5" fill="none" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+<path d="M22 12.0611C22 6.50454 17.5228 2 12 2C6.47715 2 2 6.50454 2 12.0611C2 17.0827 5.65684 21.2452 10.4375 22V14.9694H7.89844V12.0611H10.4375V9.84452C10.4375 7.32296 11.9305 5.93015 14.2146 5.93015C15.3088 5.93015 16.4531 6.12663 16.4531 6.12663V8.60261H15.1922C13.95 8.60261 13.5625 9.37822 13.5625 10.1739V12.0611H16.3359L15.8926 14.9694H13.5625V22C18.3432 21.2452 22 17.0827 22 12.0611Z" fill="#1877F2"></path>
+</svg>
+<span class="text-slate-900 dark:text-white text-sm font-semibold">Facebook</span>
+</button>
+</div>
+</div>
+<!-- Footer / Legal -->
+<div class="px-6 py-8 mt-auto">
+<div class="text-center">
+<p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">
+                    By signing up, you agree to our 
+                    <a class="text-primary hover:text-primary/80 transition-colors font-medium" href="#">Terms of Service</a>
+                    and
+                    <a class="text-primary hover:text-primary/80 transition-colors font-medium" href="#">Privacy Policy</a>.
+                </p>
+</div>
+<!-- Map Highlight (Visual Context) -->
+<div class="mt-6 w-full h-32 rounded-xl overflow-hidden relative opacity-50 dark:opacity-40 grayscale-[20%]">
+<div class="absolute inset-0 bg-gradient-to-t from-background-light dark:from-background-dark to-transparent z-10"></div>
+<img alt="Abstract dark map background pattern representing city streets" class="w-full h-full object-cover" data-alt="Abstract dark map background pattern representing city streets" data-location="City Map" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAwNiBIHKc2U6QOASjs1sLrOa0Oz4l57pAK67mSi2cA36npbb1ugRVZXkk3ac_-zg2omon6dkoUpP2Vglgxs-K-1-YTCgqjgX0Y9TQKiQYI-EwMaQ4JwVrKLTRfAKhr8UYOsQzUYkleNKiClffQ8shmOuF-v-dvv0ucEbz0mPdSrVS-TfdlowiuRB_1jyOzlq8GfvABukXFsbxAr4wX0_4-J3mX_gdaKfj0AqzKY5PDe8SIG9q6tRyGSe2Fhah9DfAhGrc5E0ljGw"/>
+</div>
+</div>
+</div>
+</body></html>

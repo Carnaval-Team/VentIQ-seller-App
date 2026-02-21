@@ -8,9 +8,12 @@ class FleetService {
 
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  /// Obtiene todos los repartidores con su última posición y órdenes asignadas.
+  /// Obtiene todos los repartidores con su última posición y órdenes en el rango de fechas.
   /// Usa solo 2 queries + combinación en memoria para evitar N+1.
-  Future<List<RepartidorFlota>> fetchRepartidoresConOrdenes() async {
+  Future<List<RepartidorFlota>> fetchRepartidoresConOrdenes({
+    DateTime? fechaDesde,
+    DateTime? fechaHasta,
+  }) async {
     // Query 1: Posiciones actuales con info del repartidor (JOIN via FK)
     final posicionesRaw = await _supabase
         .schema('carnavalapp')
@@ -34,15 +37,29 @@ class FleetService {
     Map<int, List<OrdenAsignada>> ordenesPorRepartidor = {};
 
     if (repartidorIds.isNotEmpty) {
-      final ordenesRaw = await _supabase
+      var ordenesQuery = _supabase
           .schema('carnavalapp')
           .from('Orders')
           .select(
             'id, total, status, direccion, created_at, repartidor, '
             'OrderDetails(id, quantity, price, Productos(id, name, price, image))',
           )
-          .eq('status', 'Asignado')
           .inFilter('repartidor', repartidorIds);
+
+      if (fechaDesde != null) {
+        ordenesQuery = ordenesQuery.gte(
+          'created_at',
+          fechaDesde.toIso8601String().split('T')[0],
+        );
+      }
+      if (fechaHasta != null) {
+        ordenesQuery = ordenesQuery.lte(
+          'created_at',
+          fechaHasta.toIso8601String().split('T')[0],
+        );
+      }
+
+      final ordenesRaw = await ordenesQuery;
 
       final ordenes = List<Map<String, dynamic>>.from(ordenesRaw);
 
@@ -71,17 +88,28 @@ class FleetService {
     }).toList();
   }
 
-  /// Obtiene el historial de posiciones de un repartidor.
+  /// Obtiene el historial de posiciones de un repartidor en un rango de fechas.
   Future<List<Map<String, dynamic>>> fetchHistorialRuta(
     int repartidorId, {
     int limit = 100,
+    DateTime? fechaDesde,
+    DateTime? fechaHasta,
   }) async {
     print('[FleetService] fetchHistorialRuta repartidorId=$repartidorId limit=$limit');
-    final response = await _supabase
+    var query = _supabase
         .schema('carnavalapp')
         .from('posicion_repartidor_history')
         .select('id, latitud, longitud, registrado_en')
-        .eq('repartidor_id', repartidorId)
+        .eq('repartidor_id', repartidorId);
+
+    if (fechaDesde != null) {
+      query = query.gte('registrado_en', fechaDesde.toIso8601String());
+    }
+    if (fechaHasta != null) {
+      query = query.lte('registrado_en', fechaHasta.toIso8601String());
+    }
+
+    final response = await query
         .order('registrado_en', ascending: true)
         .limit(limit);
 
