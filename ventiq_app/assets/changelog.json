@@ -1,9 +1,41 @@
 {
-  "current_version": "2.0.8",
-  "build": 818,
+  "current_version": "2.0.9",
+  "build": 819,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.0.9",
+      "date": "2026-02-23",
+      "title": "Edita tus órdenes pendientes sin perder nada",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Modifica una orden antes de cobrarla",
+          "description": "¿Tu cliente cambió de opinión? Ahora puedes abrir cualquier orden pendiente y añadir productos, quitar los que ya no quiere o cambiar las cantidades, todo sin cancelar ni crear una nueva orden."
+        },
+        {
+          "type": "feature",
+          "title": "Vista previa antes de guardar",
+          "description": "Todos los cambios se muestran al instante en pantalla —con etiquetas 'NUEVO' y 'EDITADO'— pero no se aplican hasta que presionas 'Guardar cambios'. Si te arrepientes, cancela y la orden queda exactamente como estaba."
+        },
+        {
+          "type": "feature",
+          "title": "Elige cómo paga cada producto nuevo",
+          "description": "Al añadir un producto a una orden existente, seleccionas el método de pago (efectivo, transferencia, etc.). El precio se ajusta automáticamente con el descuento o recargo que corresponda, igual que al crear una venta nueva."
+        },
+        {
+          "type": "feature",
+          "title": "Descuentos aplicados correctamente al editar",
+          "description": "Las promociones de tu tienda se respetan al modificar la orden: efectivo recibe el precio con descuento, otros métodos el precio regular. También puedes elegir 'Efectivo (sin descuento)' para cobrar el precio base en cash."
+        },
+        {
+          "type": "improvement",
+          "title": "Totales y cobros siempre cuadrados",
+          "description": "Cada vez que sumas, quitas o cambias la cantidad de un producto, el total de la orden y el desglose de pagos se actualizan de forma proporcional. Nada queda descuadrado al final del día."
+        }
+      ]
+    },
     {
       "version": "2.0.8",
       "date": "2026-02-16",

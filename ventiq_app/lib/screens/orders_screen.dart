@@ -54,6 +54,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool _isGeneratingCustomerInvoice = false;
   bool _isPrintingAllOrders = false;
   bool _allowPrintPendingOrders = false;
+  bool _allowSellerMakeOrderModifications = false;
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
   bool _isOfflineMode = false;
@@ -69,6 +70,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       _loadOrdersFromSupabase();
       _loadDiscountPermission();
       _loadPrintPendingPermission();
+      _loadSellerModificationsPermission();
     });
   }
 
@@ -129,6 +131,21 @@ class _OrdersScreenState extends State<OrdersScreen> {
       }
     } catch (e) {
       print('❌ Error cargando permiso de impresión de pendientes: $e');
+    }
+  }
+
+  Future<void> _loadSellerModificationsPermission() async {
+    try {
+      final storeId = await _userPreferencesService.getIdTienda();
+      if (storeId == null) return;
+      final allow = await StoreConfigService.getAllowSellerMakeOrderModifications(storeId);
+      if (mounted) {
+        setState(() {
+          _allowSellerMakeOrderModifications = allow;
+        });
+      }
+    } catch (e) {
+      print('❌ Error cargando permiso de modificación de órdenes: $e');
     }
   }
 
@@ -1847,8 +1864,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
         if (order.status != OrderStatus.cancelada &&
             order.status != OrderStatus.devuelta &&
             order.status != OrderStatus.completada) ...[
-          // Botón Editar orden (solo para órdenes pendientes con operationId)
-          if (order.status == OrderStatus.enviada &&
+          // Botón Editar orden (solo para órdenes pendientes con operationId y si la config lo permite)
+          if (_allowSellerMakeOrderModifications &&
+              order.status == OrderStatus.enviada &&
               order.operationId != null &&
               !_isOfflineMode) ...[
             SizedBox(
@@ -4841,9 +4859,12 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
             idExtraccion: op['id_extraccion'] as int,
           );
         case 'add':
+          final payload = Map<String, dynamic>.from(op['payload'] as Map);
+          // id=999 = "Efectivo sin descuento" (UI only) → guardar como efectivo id=1 en BD
+          if (payload['id_medio_pago'] == 999) payload['id_medio_pago'] = 1;
           result = await widget.orderService.addProductToPendingOrder(
             operationId: _operationId!,
-            producto: Map<String, dynamic>.from(op['payload'] as Map),
+            producto: payload,
           );
         default:
           continue;
