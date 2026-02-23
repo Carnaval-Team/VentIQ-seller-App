@@ -27,6 +27,12 @@ import '../widgets/sales_monitor_fab.dart';
 import '../widgets/notification_widget.dart';
 import '../widgets/sync_status_chip.dart';
 import '../widgets/bill_count_dialog.dart';
+import '../models/product.dart';
+import '../services/category_service.dart';
+import '../services/product_service.dart';
+import '../services/product_detail_service.dart';
+import '../services/promotion_service.dart';
+import '../utils/promotion_rules.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({Key? key}) : super(key: key);
@@ -1841,6 +1847,28 @@ class _OrdersScreenState extends State<OrdersScreen> {
         if (order.status != OrderStatus.cancelada &&
             order.status != OrderStatus.devuelta &&
             order.status != OrderStatus.completada) ...[
+          // Botón Editar orden (solo para órdenes pendientes con operationId)
+          if (order.status == OrderStatus.enviada &&
+              order.operationId != null &&
+              !_isOfflineMode) ...[
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context); // Cerrar modal de detalles
+                  _showEditPendingOrderSheet(order);
+                },
+                icon: const Icon(Icons.edit_note),
+                label: const Text('Editar productos de la orden'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0EA5E9),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           if (_allowDiscountOnVendedor && _isPendingForDiscount(order)) ...[
             SizedBox(
               width: double.infinity,
@@ -4305,6 +4333,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
+  // ============================================================
+  // EDICIÓN DE ÓRDENES PENDIENTES
+  // ============================================================
+
+  void _showEditPendingOrderSheet(Order order) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder:
+          (ctx) => _EditPendingOrderSheet(
+            order: order,
+            orderService: _orderService,
+            userPreferencesService: _userPreferencesService,
+            onOrderUpdated: _loadOrdersFromSupabase,
+            isOfflineMode: _isOfflineMode,
+          ),
+    );
+  }
+
   void _showMasterPasswordDialog(
     Order order,
     OrderStatus newStatus,
@@ -4447,6 +4495,1558 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ],
                 ),
           ),
+    );
+  }
+}
+
+// ================================================================
+// _EditPendingOrderSheet
+// Bottom-sheet para editar productos de una orden Pendiente.
+// ================================================================
+
+class _EditPendingOrderSheet extends StatefulWidget {
+  final Order order;
+  final OrderService orderService;
+  final UserPreferencesService userPreferencesService;
+  final VoidCallback onOrderUpdated;
+  final bool isOfflineMode;
+
+  const _EditPendingOrderSheet({
+    required this.order,
+    required this.orderService,
+    required this.userPreferencesService,
+    required this.onOrderUpdated,
+    required this.isOfflineMode,
+  });
+
+  @override
+  State<_EditPendingOrderSheet> createState() => _EditPendingOrderSheetState();
+}
+
+class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
+  // ── estado local (nada se envía a Supabase hasta presionar "Listo") ──
+
+  // Copia trabajada de los items (local hasta presionar "Guardar cambios")
+  late List<OrderItem> _items;
+  double _total = 0;
+
+  // Registro de cambios pendientes de commit
+  // Cada entrada describe UNA operación a ejecutar en orden:
+  //   { 'op': 'update', 'id_extraccion': int, 'nueva_cantidad': double }
+  //   { 'op': 'remove', 'id_extraccion': int }
+  //   { 'op': 'add',    'payload': Map, 'item': OrderItem }
+  final List<Map<String, dynamic>> _pendingOps = [];
+
+  bool _isSaving = false;    // cargando mientras se commitean cambios
+  String? _errorMessage;
+  bool _hasPendingChanges = false;
+
+  // Flujo "añadir producto"
+  bool _showAddProduct = false;
+  final _categoryService = CategoryService();
+  final _productService = ProductService();
+  List<Category> _categories = [];
+  bool _loadingCategories = false;
+  Category? _selectedCategory;
+  Map<String, List<Product>> _productsBySubcat = {};
+  bool _loadingProducts = false;
+  Product? _selectedProduct;
+  List<Map<String, dynamic>> _inventoryOptions = [];
+  bool _loadingDetail = false;
+  Map<String, dynamic>? _selectedInventory;
+  double _addQuantity = 1;
+
+  // Método de pago para el producto nuevo
+  List<PaymentMethod> _paymentMethods = [];
+  bool _loadingPaymentMethods = false;
+  PaymentMethod? _selectedPaymentMethod;
+
+  // Promociones para el producto seleccionado
+  Map<String, dynamic>? _globalPromotion;
+  List<Map<String, dynamic>>? _productPromotions;
+  final _promotionService = PromotionService();
+
+  @override
+  void initState() {
+    super.initState();
+    _items = List.from(widget.order.items);
+    _recalcTotal();
+  }
+
+  void _recalcTotal() {
+    _total = _items.fold(0.0, (s, i) => s + i.subtotal);
+  }
+
+  int? get _operationId => widget.order.operationId;
+
+  // ── helpers ──────────────────────────────────────────────────
+
+  int? _extractionId(OrderItem item) {
+    final raw = item.inventoryData?['id_extraccion'];
+    if (raw == null) return null;
+    if (raw is int) return raw;
+    return int.tryParse(raw.toString());
+  }
+
+  // ── operaciones locales (sin tocar Supabase) ──────────────────
+
+  void _updateQtyLocal(OrderItem item, double delta) {
+    final newQty = item.cantidad + delta;
+    if (newQty <= 0) {
+      _removeItemLocal(item);
+      return;
+    }
+    setState(() {
+      final idx = _items.indexWhere((i) => i.id == item.id);
+      if (idx == -1) return;
+      _items[idx] = _items[idx].copyWith(cantidad: newQty);
+      _recalcTotal();
+      _errorMessage = null;
+      _hasPendingChanges = true;
+
+      // Registrar / actualizar en _pendingOps
+      final extrId = _extractionId(item);
+      if (extrId != null) {
+        // Si ya hay una op 'update' para este extraccion, reemplazarla
+        final opIdx = _pendingOps.indexWhere(
+          (o) => o['op'] == 'update' && o['id_extraccion'] == extrId,
+        );
+        if (opIdx != -1) {
+          _pendingOps[opIdx]['nueva_cantidad'] = newQty;
+        } else {
+          _pendingOps.add({
+            'op': 'update',
+            'id_extraccion': extrId,
+            'nueva_cantidad': newQty,
+          });
+        }
+      }
+    });
+  }
+
+  void _removeItemLocal(OrderItem item) {
+    setState(() {
+      // Quitar cualquier op previa para este item
+      final extrId = _extractionId(item);
+      if (extrId != null) {
+        _pendingOps.removeWhere(
+          (o) =>
+              (o['op'] == 'update' || o['op'] == 'remove') &&
+              o['id_extraccion'] == extrId,
+        );
+        // Si el item existía antes (tiene id_extraccion real), agregar 'remove'
+        // Solo si el id_extraccion no era de un item recién añadido localmente
+        final isNew = item.id.startsWith('ITEM-NEW-');
+        if (!isNew) {
+          _pendingOps.add({'op': 'remove', 'id_extraccion': extrId});
+        }
+      } else {
+        // Item nuevo sin extraccion (nunca commitado): solo quitar de la lista
+        _pendingOps.removeWhere(
+          (o) => o['op'] == 'add' && o['item_id'] == item.id,
+        );
+      }
+      _items.removeWhere((i) => i.id == item.id);
+      _recalcTotal();
+      _errorMessage = null;
+      _hasPendingChanges = true;
+    });
+  }
+
+  void _addItemLocal({
+    required Product product,
+    required Map<String, dynamic> inv,
+    required double cantidad,
+    required int paymentMethodId,
+    double? precioFinal,
+    double? precioBase,
+  }) {
+    final variantId = inv['_variant_id'] as int?;
+    final variantNombre = inv['_variant_nombre'] as String?;
+    final hasVariant = variantId != null;
+    // precioFinal = precio ya calculado con promoción+método de pago
+    // Si no se pasó, usar precio_venta del inventario (sin promo, flujo legacy)
+    final baseFromInv =
+        (inv['precio_venta'] as num? ?? product.precio).toDouble();
+    final precio = precioFinal ?? baseFromInv;
+
+    // Verificar si ya existe en la lista local
+    final existIdx = _items.indexWhere((i) {
+      final sameProduct = i.producto.id == product.id;
+      final sameVariant =
+          (i.inventoryData?['id_variante'] ?? i.variante?.id) ==
+          (inv['id_variante']);
+      final sameUbicacion =
+          (i.inventoryData?['id_ubicacion']) == (inv['id_ubicacion']);
+      return sameProduct && sameVariant && sameUbicacion;
+    });
+
+    setState(() {
+      if (existIdx != -1) {
+        // Producto ya existe → sumar cantidad localmente
+        final existing = _items[existIdx];
+        final newQty = existing.cantidad + cantidad;
+        _items[existIdx] = existing.copyWith(cantidad: newQty);
+
+        // Actualizar / agregar op
+        final extrId = _extractionId(existing);
+        if (extrId != null) {
+          // Item ya estaba en la orden original → update
+          final opIdx = _pendingOps.indexWhere(
+            (o) => o['op'] == 'update' && o['id_extraccion'] == extrId,
+          );
+          if (opIdx != -1) {
+            _pendingOps[opIdx]['nueva_cantidad'] = newQty;
+          } else {
+            _pendingOps.add({
+              'op': 'update',
+              'id_extraccion': extrId,
+              'nueva_cantidad': newQty,
+            });
+          }
+        } else {
+          // Item nuevo que todavía no se commitó → actualizar su op 'add'
+          final opIdx = _pendingOps.indexWhere(
+            (o) => o['op'] == 'add' && o['item_id'] == existing.id,
+          );
+          if (opIdx != -1) {
+            _pendingOps[opIdx]['payload']['cantidad'] = newQty;
+          }
+        }
+      } else {
+        // Producto nuevo en la lista local
+        final tempId = 'ITEM-NEW-${DateTime.now().millisecondsSinceEpoch}';
+        final newItem = OrderItem(
+          id: tempId,
+          producto: product,
+          variante:
+              hasVariant
+                  ? ProductVariant(
+                    id: variantId,
+                    nombre: variantNombre ?? '',
+                    precio: precio,
+                    cantidad: cantidad,
+                  )
+                  : null,
+          cantidad: cantidad,
+          precioUnitario: precio,
+          ubicacionAlmacen:
+              '${inv['almacen_nombre'] ?? ''} - ${inv['ubicacion_nombre'] ?? ''}'
+                  .trim(),
+          inventoryData: {
+            'id_extraccion': null, // se llenará tras commit
+            'id_variante': inv['id_variante'],
+            'id_ubicacion': inv['id_ubicacion'],
+            'id_presentacion': inv['id_presentacion'],
+            'sku_producto': inv['sku_producto'],
+            'sku_ubicacion': inv['sku_ubicacion'],
+          },
+        );
+        _items.add(newItem);
+        _pendingOps.add({
+          'op': 'add',
+          'item_id': tempId,
+          'payload': {
+            'id_producto': product.id,
+            'id_variante': inv['id_variante'],
+            'id_opcion_variante': inv['id_opcion_variante'],
+            'id_ubicacion': inv['id_ubicacion'],
+            'id_presentacion': inv['id_presentacion'],
+            'cantidad': cantidad,
+            'precio_unitario': precio,
+            // precio_real = precio base sin promo (para auditoría)
+            'precio_real': precioBase ?? baseFromInv,
+            'sku_producto': inv['sku_producto'] ?? product.id.toString(),
+            'sku_ubicacion': inv['sku_ubicacion'],
+            'id_medio_pago': paymentMethodId,
+          },
+        });
+      }
+
+      _recalcTotal();
+      _errorMessage = null;
+      _hasPendingChanges = true;
+      _showAddProduct = false;
+      _selectedProduct = null;
+      _selectedCategory = null;
+    });
+  }
+
+  void _setError(String msg) => setState(() => _errorMessage = msg);
+
+  // ── cancelar (descartar cambios locales) ─────────────────────
+
+  Future<void> _cancel() async {
+    if (_hasPendingChanges) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder:
+            (ctx) => AlertDialog(
+              title: const Text('Descartar cambios'),
+              content: const Text(
+                '¿Seguro que quieres cancelar? Se perderán todos los cambios que hiciste.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Seguir editando'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Descartar'),
+                ),
+              ],
+            ),
+      );
+      if (confirm != true || !mounted) return;
+    }
+    Navigator.pop(context);
+  }
+
+  // ── confirmar: aplicar todos los cambios a Supabase ──────────
+
+  Future<void> _commit() async {
+    if (!_hasPendingChanges) {
+      Navigator.pop(context);
+      return;
+    }
+    if (_operationId == null) {
+      _setError('La orden no tiene ID de operación.');
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+      _errorMessage = null;
+    });
+
+    final List<String> errors = [];
+
+    for (final op in _pendingOps) {
+      if (!mounted) break;
+      Map<String, dynamic> result;
+
+      switch (op['op']) {
+        case 'update':
+          result = await widget.orderService.updatePendingOrderItemQuantity(
+            idExtraccion: op['id_extraccion'] as int,
+            nuevaCantidad: (op['nueva_cantidad'] as num).toDouble(),
+          );
+        case 'remove':
+          result = await widget.orderService.removePendingOrderItem(
+            idExtraccion: op['id_extraccion'] as int,
+          );
+        case 'add':
+          result = await widget.orderService.addProductToPendingOrder(
+            operationId: _operationId!,
+            producto: Map<String, dynamic>.from(op['payload'] as Map),
+          );
+        default:
+          continue;
+      }
+
+      if (result['success'] != true) {
+        errors.add(result['error']?.toString() ?? 'Error desconocido');
+      }
+    }
+
+    if (!mounted) return;
+
+    if (errors.isNotEmpty) {
+      setState(() {
+        _isSaving = false;
+        _errorMessage =
+            'Algunos cambios no se aplicaron:\n${errors.join('\n')}';
+      });
+      // No cerramos: el usuario puede ver el error y reintentar o cancelar
+      return;
+    }
+
+    setState(() => _isSaving = false);
+    widget.onOrderUpdated();
+    Navigator.pop(context);
+  }
+
+  // ── FLUJO AÑADIR PRODUCTO ────────────────────────────────────
+
+  Future<void> _startAddProduct() async {
+    setState(() {
+      _showAddProduct = true;
+      _selectedCategory = null;
+      _productsBySubcat = {};
+      _selectedProduct = null;
+      _inventoryOptions = [];
+      _selectedInventory = null;
+      _addQuantity = 1;
+      _selectedPaymentMethod = null;
+      _globalPromotion = null;
+      _productPromotions = null;
+      _loadingCategories = true;
+    });
+
+    // Cargar categorías y métodos de pago en paralelo
+    final futures = await Future.wait([
+      _categoryService.getCategories().catchError((_) => <Category>[]),
+      PaymentMethodService.getPaymentMethodsWithCache(
+        isOfflineModeEnabled: widget.isOfflineMode,
+      ).catchError((_) => <PaymentMethod>[]),
+    ]);
+
+    if (mounted) {
+      setState(() {
+        _categories = futures[0] as List<Category>;
+        final online = futures[1] as List<PaymentMethod>;
+        // Anteponer "Pago Regular (Efectivo)" — efectivo sin descuento
+        final pagoRegular = PaymentMethod(
+          id: 999,
+          denominacion: 'Efectivo (sin descuento)',
+          esEfectivo: true,
+          esDigital: false,
+          esActivo: true,
+        );
+        _paymentMethods = [pagoRegular, ...online];
+        _loadingCategories = false;
+        if (_paymentMethods.length == 1) {
+          _selectedPaymentMethod = _paymentMethods.first;
+        }
+      });
+    }
+  }
+
+  Future<void> _selectCategory(Category cat) async {
+    setState(() {
+      _selectedCategory = cat;
+      _loadingProducts = true;
+      _productsBySubcat = {};
+      _selectedProduct = null;
+      _inventoryOptions = [];
+      _selectedInventory = null;
+    });
+    try {
+      final prods = await _productService.getProductsByCategory(cat.id);
+      if (mounted) {
+        setState(() {
+          _productsBySubcat = prods;
+          _loadingProducts = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingProducts = false;
+          _errorMessage = 'Error al cargar productos: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _selectProduct(Product product) async {
+    setState(() {
+      _selectedProduct = product;
+      _loadingDetail = true;
+      _inventoryOptions = [];
+      _selectedInventory = null;
+      _addQuantity = 1;
+      _globalPromotion = null;
+      _productPromotions = null;
+    });
+    try {
+      // Cargar detalle de producto y promociones en paralelo
+      final results = await Future.wait([
+        ProductDetailService().getProductDetail(product.id),
+        widget.isOfflineMode
+            ? widget.userPreferencesService.getPromotionData()
+            : _promotionService.getGlobalPromotion(
+                await widget.userPreferencesService.getIdTienda() ?? 0,
+              ),
+        widget.isOfflineMode
+            ? widget.userPreferencesService.getProductPromotions(product.id)
+            : _promotionService.getProductPromotions(product.id),
+      ]);
+
+      if (mounted) {
+        final detailed = results[0] as Product;
+        final globalPromo = results[1] as Map<String, dynamic>?;
+        final productPromos =
+            results[2] as List<Map<String, dynamic>>?;
+
+        final options = <Map<String, dynamic>>[];
+        if (detailed.variantes.isNotEmpty) {
+          for (final variant in detailed.variantes) {
+            final meta = variant.inventoryMetadata ?? {};
+            options.add({
+              ...meta,
+              'precio_venta': variant.precio,
+              'cantidad_disponible': variant.cantidad,
+              '_variant_nombre': variant.nombre,
+              '_variant_id': variant.id,
+            });
+          }
+        } else if (detailed.inventoryMetadata != null) {
+          final meta = detailed.inventoryMetadata!;
+          options.add({
+            ...meta,
+            'precio_venta': detailed.precio,
+            'cantidad_disponible': detailed.cantidad,
+          });
+        }
+        setState(() {
+          _inventoryOptions = options;
+          _globalPromotion = globalPromo;
+          _productPromotions =
+              (productPromos?.isNotEmpty ?? false) ? productPromos : null;
+          _loadingDetail = false;
+          if (options.length == 1) _selectedInventory = options.first;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingDetail = false;
+          _errorMessage = 'Error al cargar detalle: $e';
+        });
+      }
+    }
+  }
+
+  /// Calcula el precio final considerando promoción y método de pago,
+  /// replicando la lógica de OrderItem._getFinalPrice().
+  ///
+  /// precioBase  = precio sin descuento (precio_venta del inventario)
+  /// paymentId   = id del método de pago seleccionado
+  double _calcFinalPrice(double precioBase, int? paymentId) {
+    final promotion = PromotionRules.pickPromotionForPayment(
+      productPromotions: _productPromotions,
+      globalPromotion: _globalPromotion,
+      paymentMethodId: paymentId,
+      quantity: _addQuantity.round(),
+    );
+
+    if (promotion == null) {
+      // Sin promoción aplicable: efectivo (id=1) obtiene precio_unitario
+      // (que ya fue calculado con descuento al cargar el catálogo),
+      // otros métodos pagan precio base completo.
+      // Como en este flujo precioBase es el precio del inventario (precio completo),
+      // efectivo recibe ese mismo valor (no hay promoción que cambie el precio).
+      return precioBase;
+    }
+
+    final base = PromotionRules.resolveBasePrice(
+      unitPrice: precioBase,
+      basePrice: precioBase,
+      promotion: promotion,
+    );
+    final prices = PromotionRules.calculatePromotionPrices(
+      basePrice: base,
+      promotion: promotion,
+    );
+    return PromotionRules.selectPriceForPayment(
+      prices: prices,
+      paymentMethodId: paymentId,
+      promotion: promotion,
+    );
+  }
+
+  void _confirmAddProduct() {
+    if (_selectedProduct == null ||
+        _selectedInventory == null ||
+        _selectedPaymentMethod == null) return;
+    final precioBase =
+        ((_selectedInventory!['precio_venta'] ?? _selectedProduct!.precio) as num)
+            .toDouble();
+    final precioFinal = _calcFinalPrice(precioBase, _selectedPaymentMethod!.id);
+    _addItemLocal(
+      product: _selectedProduct!,
+      inv: _selectedInventory!,
+      cantidad: _addQuantity,
+      paymentMethodId: _selectedPaymentMethod!.id,
+      precioFinal: precioFinal,
+      precioBase: precioBase,
+    );
+  }
+
+  // ── build ─────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: _showAddProduct ? 0.92 : 0.75,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder:
+          (ctx, scrollCtrl) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              boxShadow: [
+                BoxShadow(color: Colors.black26, blurRadius: 12),
+              ],
+            ),
+            child: Column(
+              children: [
+                // Handle
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                // Cabecera
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    children: [
+                      if (_showAddProduct) ...[
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back),
+                          onPressed:
+                              () => setState(() {
+                                if (_selectedProduct != null) {
+                                  _selectedProduct = null;
+                                  _inventoryOptions = [];
+                                  _selectedInventory = null;
+                                  _globalPromotion = null;
+                                  _productPromotions = null;
+                                } else if (_selectedCategory != null) {
+                                  _selectedCategory = null;
+                                  _productsBySubcat = {};
+                                } else {
+                                  _showAddProduct = false;
+                                }
+                              }),
+                        ),
+                        Expanded(
+                          child: Text(
+                            _selectedProduct != null
+                                ? 'Detalle del producto'
+                                : _selectedCategory != null
+                                ? 'Productos: ${_selectedCategory!.name}'
+                                : 'Agregar producto',
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1F2937),
+                            ),
+                          ),
+                        ),
+                      ] else ...[
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Editar ${widget.order.id}',
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
+                              ),
+                              Text(
+                                'Total: \$${_total.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: _isSaving ? null : _startAddProduct,
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Añadir'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0EA5E9),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            textStyle: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: _cancel,
+                      ),
+                    ],
+                  ),
+                ),
+                if (_errorMessage != null)
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red[200]!),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.error_outline, color: Colors.red[600], size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: TextStyle(
+                              color: Colors.red[700],
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 16),
+                          onPressed: () => setState(() => _errorMessage = null),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
+                    ),
+                  ),
+                const Divider(height: 1),
+                // Contenido principal
+                Expanded(
+                  child:
+                      _isSaving
+                          ? const Center(child: CircularProgressIndicator())
+                          : _showAddProduct
+                          ? _buildAddProductFlow(scrollCtrl)
+                          : _buildItemList(scrollCtrl),
+                ),
+                // Botón guardar / listo
+                if (!_showAddProduct)
+                  SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                      child: Row(
+                        children: [
+                          // Cancelar — descarta todo
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _isSaving ? null : _cancel,
+                              icon: const Icon(Icons.close, size: 18),
+                              label: const Text('Cancelar'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red,
+                                side: const BorderSide(color: Colors.red),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          // Listo — guarda todos los cambios
+                          Expanded(
+                            flex: 2,
+                            child: ElevatedButton.icon(
+                              onPressed: _isSaving ? null : _commit,
+                              icon:
+                                  _isSaving
+                                      ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                      : Icon(
+                                        _hasPendingChanges
+                                            ? Icons.check
+                                            : Icons.check,
+                                      ),
+                              label: Text(
+                                _isSaving
+                                    ? 'Guardando...'
+                                    : _hasPendingChanges
+                                    ? 'Guardar cambios'
+                                    : 'Listo',
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    _hasPendingChanges
+                                        ? const Color(0xFF10B981)
+                                        : Colors.grey[400],
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                textStyle: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+    );
+  }
+
+  // ── lista de items ────────────────────────────────────────────
+
+  Widget _buildItemList(ScrollController ctrl) {
+    if (_items.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.shopping_cart_outlined, size: 56, color: Colors.grey[300]),
+            const SizedBox(height: 12),
+            Text(
+              'No hay productos en la orden',
+              style: TextStyle(color: Colors.grey[500], fontSize: 15),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _startAddProduct,
+              icon: const Icon(Icons.add),
+              label: const Text('Añadir producto'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0EA5E9),
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.separated(
+      controller: ctrl,
+      padding: const EdgeInsets.all(16),
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemCount: _items.length,
+      itemBuilder: (_, i) => _buildItemTile(_items[i]),
+    );
+  }
+
+  Widget _buildItemTile(OrderItem item) {
+    final isNew = item.id.startsWith('ITEM-NEW-');
+    // Detectar si la cantidad fue modificada respecto al original
+    final origItem = widget.order.items
+        .where((i) => i.producto.id == item.producto.id)
+        .firstOrNull;
+    final wasModified =
+        origItem != null && origItem.cantidad != item.cantidad && !isNew;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Info producto
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.nombre,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                    ),
+                    if (isNew)
+                      Container(
+                        margin: const EdgeInsets.only(left: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0EA5E9).withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'NUEVO',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0EA5E9),
+                          ),
+                        ),
+                      ),
+                    if (wasModified)
+                      Container(
+                        margin: const EdgeInsets.only(left: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'EDITADO',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.orange,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '\$${item.precioUnitario.toStringAsFixed(2)} c/u · Total: \$${item.subtotal.toStringAsFixed(2)}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Controles cantidad
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Botón eliminar (tap largo en "-" o botón rojo)
+              _CtrlButton(
+                icon: Icons.delete_outline,
+                color: Colors.red[400]!,
+                enabled: !_isSaving,
+                onTap: () => _removeItemLocal(item),
+              ),
+              const SizedBox(width: 4),
+              _CtrlButton(
+                icon: Icons.remove,
+                color: const Color(0xFF6B7280),
+                enabled: !_isSaving,
+                onTap: () => _updateQtyLocal(item, -1),
+              ),
+              Container(
+                constraints: const BoxConstraints(minWidth: 36),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  item.cantidad % 1 == 0
+                      ? item.cantidad.toInt().toString()
+                      : item.cantidad.toStringAsFixed(1),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1F2937),
+                  ),
+                ),
+              ),
+              _CtrlButton(
+                icon: Icons.add,
+                color: const Color(0xFF0EA5E9),
+                enabled: !_isSaving,
+                onTap: () => _updateQtyLocal(item, 1),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── flujo añadir producto ─────────────────────────────────────
+
+  Widget _buildAddProductFlow(ScrollController ctrl) {
+    if (_loadingCategories) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_selectedProduct != null) {
+      return _buildProductDetail(ctrl);
+    }
+    if (_selectedCategory != null) {
+      return _buildProductList(ctrl);
+    }
+    return _buildCategoryList(ctrl);
+  }
+
+  Widget _buildCategoryList(ScrollController ctrl) {
+    return ListView.builder(
+      controller: ctrl,
+      padding: const EdgeInsets.all(16),
+      itemCount: _categories.length,
+      itemBuilder: (_, i) {
+        final cat = _categories[i];
+        return ListTile(
+          leading: CircleAvatar(
+            backgroundColor: const Color(0xFF0EA5E9).withOpacity(0.15),
+            child: const Icon(Icons.category, color: Color(0xFF0EA5E9)),
+          ),
+          title: Text(
+            cat.name,
+            style: const TextStyle(fontWeight: FontWeight.w500),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _selectCategory(cat),
+        );
+      },
+    );
+  }
+
+  Widget _buildProductList(ScrollController ctrl) {
+    if (_loadingProducts) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final allProducts =
+        _productsBySubcat.values.expand((l) => l).toList();
+    if (allProducts.isEmpty) {
+      return Center(
+        child: Text(
+          'No hay productos en esta categoría',
+          style: TextStyle(color: Colors.grey[500]),
+        ),
+      );
+    }
+
+    // Agrupar por subcategoría
+    return ListView(
+      controller: ctrl,
+      padding: const EdgeInsets.all(16),
+      children:
+          _productsBySubcat.entries.map((entry) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (entry.key.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      entry.key,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ),
+                ],
+                ...entry.value.map(
+                  (p) => ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 2,
+                    ),
+                    leading: CircleAvatar(
+                      backgroundColor: const Color(
+                        0xFF0EA5E9,
+                      ).withOpacity(0.1),
+                      child: Text(
+                        p.denominacion.isNotEmpty
+                            ? p.denominacion[0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(
+                          color: Color(0xFF0EA5E9),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    title: Text(
+                      p.denominacion,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '\$${p.precio.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        color: Color(0xFF0EA5E9),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _selectProduct(p),
+                  ),
+                ),
+              ],
+            );
+          }).toList(),
+    );
+  }
+
+  Widget _buildProductDetail(ScrollController ctrl) {
+    if (_loadingDetail) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final product = _selectedProduct!;
+
+    return SingleChildScrollView(
+      controller: ctrl,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Nombre y precio
+          Text(
+            product.denominacion,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1F2937),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '\$${product.precio.toStringAsFixed(2)}',
+            style: const TextStyle(
+              fontSize: 16,
+              color: Color(0xFF0EA5E9),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Opciones de inventario / variantes
+          if (_inventoryOptions.isEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_amber, color: Colors.orange[700]),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'No hay inventario disponible para este producto.',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            const Text(
+              'Selecciona ubicación / variante:',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF374151),
+              ),
+            ),
+            const SizedBox(height: 10),
+            ..._inventoryOptions.map((inv) {
+              final isSelected = identical(inv, _selectedInventory);
+              final variantNombre = inv['_variant_nombre'] as String?;
+              final label =
+                  variantNombre != null && variantNombre.isNotEmpty
+                      ? '$variantNombre — ${inv['ubicacion_nombre'] ?? 'Sin ubicación'}'
+                      : '${inv['ubicacion_nombre'] ?? 'Sin ubicación'} / ${inv['almacen_nombre'] ?? ''}'.trim();
+              final stock =
+                  (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0;
+              final precio =
+                  ((inv['precio_venta'] ?? product.precio) as num).toDouble();
+
+              return GestureDetector(
+                onTap: () => setState(() => _selectedInventory = inv),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color:
+                        isSelected
+                            ? const Color(0xFF0EA5E9).withOpacity(0.08)
+                            : Colors.grey[50],
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color:
+                          isSelected
+                              ? const Color(0xFF0EA5E9)
+                              : Colors.grey[200]!,
+                      width: isSelected ? 1.8 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              label.trim(),
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color:
+                                    isSelected
+                                        ? const Color(0xFF0EA5E9)
+                                        : const Color(0xFF1F2937),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Stock: ${stock.toStringAsFixed(stock % 1 == 0 ? 0 : 1)}  ·  \$${precio.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (isSelected)
+                        const Icon(
+                          Icons.check_circle,
+                          color: Color(0xFF0EA5E9),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
+
+          const SizedBox(height: 20),
+
+          // Cantidad
+          if (_selectedInventory != null) ...[
+            const Text(
+              'Cantidad:',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF374151),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _CtrlButton(
+                  icon: Icons.remove,
+                  color: const Color(0xFF6B7280),
+                  enabled: _addQuantity > 1,
+                  onTap:
+                      () => setState(
+                        () => _addQuantity = (_addQuantity - 1).clamp(1, 9999),
+                      ),
+                ),
+                const SizedBox(width: 16),
+                Text(
+                  _addQuantity.toInt().toString(),
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1F2937),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                _CtrlButton(
+                  icon: Icons.add,
+                  color: const Color(0xFF0EA5E9),
+                  enabled: true,
+                  onTap: () => setState(() => _addQuantity++),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            // Método de pago
+            const Text(
+              'Método de pago:',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF374151),
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (_loadingPaymentMethods)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              )
+            else if (_paymentMethods.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.orange[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange[200]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber, color: Colors.orange[700], size: 18),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'No hay métodos de pago disponibles.',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _paymentMethods.map((pm) {
+                  final isSelected = _selectedPaymentMethod?.id == pm.id;
+                  return GestureDetector(
+                    onTap: () => setState(() => _selectedPaymentMethod = pm),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFF10B981).withOpacity(0.1)
+                            : Colors.grey[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isSelected
+                              ? const Color(0xFF10B981)
+                              : Colors.grey[300]!,
+                          width: isSelected ? 1.8 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            pm.typeIcon,
+                            size: 16,
+                            color: isSelected
+                                ? const Color(0xFF10B981)
+                                : Colors.grey[600],
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            pm.denominacion,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: isSelected
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                              color: isSelected
+                                  ? const Color(0xFF10B981)
+                                  : const Color(0xFF374151),
+                            ),
+                          ),
+                          if (isSelected) ...[
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.check_circle,
+                              size: 14,
+                              color: Color(0xFF10B981),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            const SizedBox(height: 20),
+
+            // Resumen con precio ajustado por promoción + método de pago
+            Builder(
+              builder: (context) {
+                final precioBase =
+                    ((_selectedInventory!['precio_venta'] ?? product.precio)
+                            as num)
+                        .toDouble();
+                final precioFinal = _selectedPaymentMethod != null
+                    ? _calcFinalPrice(precioBase, _selectedPaymentMethod!.id)
+                    : precioBase;
+                final hasDiscount =
+                    (precioFinal - precioBase).abs() > 0.001 &&
+                    _selectedPaymentMethod != null;
+                final isRecargo = precioFinal > precioBase;
+
+                return Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: hasDiscount
+                        ? (isRecargo
+                            ? Colors.orange.withOpacity(0.06)
+                            : const Color(0xFF10B981).withOpacity(0.06))
+                        : const Color(0xFF0EA5E9).withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: hasDiscount
+                          ? (isRecargo
+                              ? Colors.orange.withOpacity(0.3)
+                              : const Color(0xFF10B981).withOpacity(0.3))
+                          : const Color(0xFF0EA5E9).withOpacity(0.2),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // Lado izquierdo: cantidad × precio unitario final
+                          Row(
+                            children: [
+                              Text(
+                                '${_addQuantity.toInt()} × \$${precioFinal.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              if (hasDiscount) ...[
+                                const SizedBox(width: 6),
+                                Text(
+                                  '\$${precioBase.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[500],
+                                    decoration: TextDecoration.lineThrough,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          // Total
+                          Text(
+                            '\$${(_addQuantity * precioFinal).toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: hasDiscount
+                                  ? (isRecargo
+                                      ? Colors.orange[700]
+                                      : const Color(0xFF10B981))
+                                  : const Color(0xFF0EA5E9),
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                      // Etiqueta de promoción aplicada
+                      if (hasDiscount) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          isRecargo
+                              ? 'Recargo aplicado por método de pago'
+                              : 'Descuento aplicado por método de pago',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isRecargo
+                                ? Colors.orange[700]
+                                : const Color(0xFF10B981),
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: (_isSaving || _selectedPaymentMethod == null)
+                    ? null
+                    : _confirmAddProduct,
+                icon:
+                    _isSaving
+                        ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                        : const Icon(Icons.add_shopping_cart),
+                label: Text(
+                  _isSaving
+                      ? 'Agregando...'
+                      : _selectedPaymentMethod == null
+                      ? 'Selecciona un método de pago'
+                      : 'Agregar a la orden',
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _selectedPaymentMethod == null
+                      ? Colors.grey[400]
+                      : const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// Botón circular de control de cantidad
+class _CtrlButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _CtrlButton({
+    required this.icon,
+    required this.color,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 100),
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: enabled ? color.withOpacity(0.12) : Colors.grey[100],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: enabled ? color.withOpacity(0.4) : Colors.grey[200]!,
+          ),
+        ),
+        child: Icon(
+          icon,
+          size: 18,
+          color: enabled ? color : Colors.grey[400],
+        ),
+      ),
     );
   }
 }

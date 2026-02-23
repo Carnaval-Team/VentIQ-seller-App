@@ -21,6 +21,82 @@ COMMENT ON COLUMN app_dat_log_modificacion_orden.detalle      IS 'JSON con el an
 
 
 -- ============================================================
+-- HELPER: _fn_distribuir_pagos_orden
+-- Redistribuye los montos de app_dat_pago_venta de forma
+-- proporcional al nuevo total de la operación.
+--
+-- Regla:
+--   nuevo_monto_fila = ROUND(nuevo_total * (monto_viejo / total_viejo), 2)
+--   El resto del redondeo se suma/resta a la fila de mayor monto.
+--
+-- Si solo existe UNA fila de pago, simplemente la actualiza.
+-- Si no hay filas (orden sin pagos registrados), no hace nada.
+-- ============================================================
+CREATE OR REPLACE FUNCTION _fn_distribuir_pagos_orden(
+    p_id_operacion  BIGINT,
+    p_nuevo_total   NUMERIC
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_total_viejo  NUMERIC;
+    v_sum_asignado NUMERIC;
+    v_id_mayor     BIGINT;
+    v_pago         RECORD;
+BEGIN
+    -- Total actual de pagos
+    SELECT COALESCE(SUM(monto), 0)
+      INTO v_total_viejo
+      FROM app_dat_pago_venta
+     WHERE id_operacion_venta = p_id_operacion;
+
+    -- Si no hay pagos o total viejo es 0, nada que distribuir
+    IF v_total_viejo = 0 OR NOT EXISTS (
+        SELECT 1 FROM app_dat_pago_venta WHERE id_operacion_venta = p_id_operacion
+    ) THEN
+        RETURN;
+    END IF;
+
+    -- Si solo hay una fila, actualización directa
+    IF (SELECT COUNT(*) FROM app_dat_pago_venta WHERE id_operacion_venta = p_id_operacion) = 1 THEN
+        UPDATE app_dat_pago_venta
+           SET monto = p_nuevo_total
+         WHERE id_operacion_venta = p_id_operacion;
+        RETURN;
+    END IF;
+
+    -- Distribución proporcional con redondeo a 2 decimales
+    v_sum_asignado := 0;
+    v_id_mayor     := NULL;
+
+    FOR v_pago IN
+        SELECT id, monto
+          FROM app_dat_pago_venta
+         WHERE id_operacion_venta = p_id_operacion
+         ORDER BY monto DESC
+    LOOP
+        DECLARE
+            v_nuevo_monto NUMERIC;
+        BEGIN
+            v_nuevo_monto := ROUND(p_nuevo_total * (v_pago.monto / v_total_viejo), 2);
+            UPDATE app_dat_pago_venta SET monto = v_nuevo_monto WHERE id = v_pago.id;
+            v_sum_asignado := v_sum_asignado + v_nuevo_monto;
+            IF v_id_mayor IS NULL THEN v_id_mayor := v_pago.id; END IF;
+        END;
+    END LOOP;
+
+    -- Ajustar diferencia de redondeo en la fila de mayor monto
+    IF v_sum_asignado <> p_nuevo_total AND v_id_mayor IS NOT NULL THEN
+        UPDATE app_dat_pago_venta
+           SET monto = monto + (p_nuevo_total - v_sum_asignado)
+         WHERE id = v_id_mayor;
+    END IF;
+END;
+$$;
+
+
+-- ============================================================
 -- FUNCIÓN: fn_actualizar_cantidad_producto_orden
 -- Aumenta o disminuye la cantidad de un producto ya existente
 -- en una orden pendiente, ajustando inventario e importe.
@@ -216,14 +292,8 @@ BEGIN
        SET importe_total = v_nuevo_total
      WHERE id_operacion = v_extraccion.op_id;
 
-    -- 8. Actualizar pago más alto
-    UPDATE app_dat_pago_venta
-       SET monto = v_nuevo_total
-     WHERE id = (
-         SELECT id FROM app_dat_pago_venta
-          WHERE id_operacion_venta = v_extraccion.op_id
-          ORDER BY monto DESC LIMIT 1
-     );
+    -- 8. Redistribuir pagos proporcionalmente
+    PERFORM _fn_distribuir_pagos_orden(v_extraccion.op_id, v_nuevo_total);
 
     -- 9. Log
     INSERT INTO app_dat_log_modificacion_orden
@@ -384,18 +454,12 @@ BEGIN
        SET importe_total = v_nuevo_total
      WHERE id_operacion = v_extraccion.op_id;
 
-    -- Actualizar pago más alto (si quedan productos)
+    -- 7. Redistribuir pagos proporcionalmente (solo si quedan productos)
     IF v_nuevo_total > 0 THEN
-        UPDATE app_dat_pago_venta
-           SET monto = v_nuevo_total
-         WHERE id = (
-             SELECT id FROM app_dat_pago_venta
-              WHERE id_operacion_venta = v_extraccion.op_id
-              ORDER BY monto DESC LIMIT 1
-         );
+        PERFORM _fn_distribuir_pagos_orden(v_extraccion.op_id, v_nuevo_total);
     END IF;
 
-    -- 7. Log
+    -- 8. Log
     INSERT INTO app_dat_log_modificacion_orden
         (id_operacion, uuid_usuario, accion, detalle, created_at)
     VALUES (
@@ -432,6 +496,11 @@ $$;
 -- en estado Pendiente, sin crear una nueva operación.
 --
 -- Reutiliza la misma lógica de inventario de fn_registrar_venta.
+--
+-- p_producto debe incluir:
+--   id_producto, cantidad, precio_unitario, id_medio_pago (NUEVO)
+--   (opcionales: id_variante, id_opcion_variante, id_ubicacion,
+--    id_presentacion, sku_producto, sku_ubicacion, precio_real)
 -- ============================================================
 CREATE OR REPLACE FUNCTION fn_agregar_producto_orden_pendiente(
     p_id_operacion   BIGINT,
@@ -452,6 +521,7 @@ DECLARE
     v_inv_ingrediente  RECORD;
     v_extraccion_exist RECORD;   -- para detectar duplicado
     v_nueva_cantidad   NUMERIC;
+    v_id_medio_pago    INT;
 BEGIN
     -- 1. Verificar estado Pendiente
     SELECT eo.estado INTO v_estado
@@ -467,9 +537,12 @@ BEGIN
     -- 2. Validar campos mínimos
     IF p_producto->>'id_producto'     IS NULL OR
        p_producto->>'cantidad'        IS NULL OR
-       p_producto->>'precio_unitario' IS NULL THEN
-        RETURN jsonb_build_object('status','error','message','El producto debe incluir id_producto, cantidad y precio_unitario');
+       p_producto->>'precio_unitario' IS NULL OR
+       p_producto->>'id_medio_pago'   IS NULL THEN
+        RETURN jsonb_build_object('status','error','message','El producto debe incluir id_producto, cantidad, precio_unitario e id_medio_pago');
     END IF;
+
+    v_id_medio_pago := (p_producto->>'id_medio_pago')::INT;
 
     -- 3. Buscar si ya existe una extracción con el mismo producto/variante/ubicación
     SELECT ep.id, ep.cantidad
@@ -520,11 +593,11 @@ BEGIN
         NOW()
     ) RETURNING id INTO v_id_extraccion;
 
-    -- 4. Verificar si es elaborado
+    -- 5. Verificar si es elaborado
     SELECT es_elaborado INTO v_es_elaborado
       FROM app_dat_producto WHERE id = (p_producto->>'id_producto')::BIGINT;
 
-    -- 5. Ajustar inventario
+    -- 6. Ajustar inventario
     IF v_es_elaborado IS NOT TRUE THEN
         INSERT INTO app_dat_inventario_productos (
             id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion,
@@ -597,7 +670,7 @@ BEGIN
         END LOOP;
     END IF;
 
-    -- 6. Recalcular total
+    -- 7. Recalcular total
     SELECT COALESCE(SUM(cantidad * precio_unitario), 0)
       INTO v_nuevo_total
       FROM app_dat_extraccion_productos
@@ -607,16 +680,24 @@ BEGIN
        SET importe_total = v_nuevo_total
      WHERE id_operacion = p_id_operacion;
 
-    -- 7. Actualizar pago más alto
-    UPDATE app_dat_pago_venta
-       SET monto = v_nuevo_total
-     WHERE id = (
-         SELECT id FROM app_dat_pago_venta
-          WHERE id_operacion_venta = p_id_operacion
-          ORDER BY monto DESC LIMIT 1
-     );
+    -- 8. Registrar/acumular pago para el método seleccionado
+    --    Si ya existe una fila para ese medio de pago en esta operación, sumar.
+    --    Si no existe, insertar.
+    IF EXISTS (
+        SELECT 1 FROM app_dat_pago_venta
+         WHERE id_operacion_venta = p_id_operacion
+           AND id_medio_pago = v_id_medio_pago
+    ) THEN
+        UPDATE app_dat_pago_venta
+           SET monto = monto + v_importe
+         WHERE id_operacion_venta = p_id_operacion
+           AND id_medio_pago = v_id_medio_pago;
+    ELSE
+        INSERT INTO app_dat_pago_venta (id_operacion_venta, id_medio_pago, monto, created_at)
+        VALUES (p_id_operacion, v_id_medio_pago, v_importe, NOW());
+    END IF;
 
-    -- 8. Log
+    -- 9. Log
     INSERT INTO app_dat_log_modificacion_orden
         (id_operacion, uuid_usuario, accion, detalle, created_at)
     VALUES (
@@ -624,9 +705,10 @@ BEGIN
         p_uuid_usuario,
         'add_product',
         jsonb_build_object(
-            'id_extraccion',   v_id_extraccion,
-            'producto',        p_producto,
-            'importe',         v_importe,
+            'id_extraccion',    v_id_extraccion,
+            'producto',         p_producto,
+            'importe',          v_importe,
+            'id_medio_pago',    v_id_medio_pago,
             'nuevo_total_orden',v_nuevo_total
         ),
         NOW()

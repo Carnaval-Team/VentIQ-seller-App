@@ -1213,6 +1213,16 @@ class OrderService {
               cantidad: (item['cantidad'] ?? 1).toDouble(),
               precioUnitario: (item['precio_unitario'] ?? 0.0).toDouble(),
               ubicacionAlmacen: 'Principal', // Valor por defecto
+              // Guardar id_extraccion para permitir edición de órdenes pendientes.
+              // id_extraccion llega desde listar_ordenes cuando el parche está aplicado.
+              inventoryData: {
+                'id_extraccion': item['id_extraccion'],  // null si el parche aún no se aplicó
+                'id_variante': item['variante']?['id'],
+                'id_ubicacion': item['id_ubicacion'],
+                'id_presentacion': item['id_presentacion'],
+                'sku_producto': item['sku_producto'],
+                'sku_ubicacion': item['sku_ubicacion'],
+              },
               // Mapear nuevos campos de inventario desde la función SQL
               cantidadInicial: item['cantidad_inicial']?.toDouble(),
               cantidadFinal: item['cantidad_final']?.toDouble(),
@@ -1577,6 +1587,125 @@ class OrderService {
     } catch (e) {
       print('❌ Error verificando preorden persistente: $e');
       return false;
+    }
+  }
+
+  // ==================== EDICIÓN DE ÓRDENES PENDIENTES ====================
+
+  /// Actualiza la cantidad de un producto en una orden pendiente.
+  /// [idExtraccion]: ID en app_dat_extraccion_productos
+  /// [nuevaCantidad]: nueva cantidad deseada (> 0)
+  Future<Map<String, dynamic>> updatePendingOrderItemQuantity({
+    required int idExtraccion,
+    required double nuevaCantidad,
+  }) async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final userId = await userPrefs.getUserId();
+      if (userId == null) {
+        return {'success': false, 'error': 'Usuario no encontrado'};
+      }
+
+      final response = await Supabase.instance.client.rpc(
+        'fn_actualizar_cantidad_producto_orden',
+        params: {
+          'p_id_extraccion': idExtraccion,
+          'p_nueva_cantidad': nuevaCantidad,
+          'p_uuid_usuario': userId,
+        },
+      );
+
+      if (response != null && response['status'] == 'success') {
+        return {
+          'success': true,
+          'totalOrden': (response['total_orden'] as num?)?.toDouble(),
+          'importeNuevo': (response['importe_nuevo'] as num?)?.toDouble(),
+        };
+      } else {
+        return {
+          'success': false,
+          'error': response?['message'] ?? 'Error al actualizar cantidad',
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  /// Elimina un producto de una orden pendiente y restaura el stock.
+  /// [idExtraccion]: ID en app_dat_extraccion_productos
+  Future<Map<String, dynamic>> removePendingOrderItem({
+    required int idExtraccion,
+  }) async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final userId = await userPrefs.getUserId();
+      if (userId == null) {
+        return {'success': false, 'error': 'Usuario no encontrado'};
+      }
+
+      final response = await Supabase.instance.client.rpc(
+        'fn_eliminar_producto_orden',
+        params: {
+          'p_id_extraccion': idExtraccion,
+          'p_uuid_usuario': userId,
+        },
+      );
+
+      if (response != null && response['status'] == 'success') {
+        return {
+          'success': true,
+          'totalOrden': (response['total_orden'] as num?)?.toDouble(),
+        };
+      } else {
+        return {
+          'success': false,
+          'error': response?['message'] ?? 'Error al eliminar producto',
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  /// Agrega un producto nuevo a una orden pendiente existente.
+  /// [operationId]: id_operacion de la orden
+  /// [producto]: mapa con los campos requeridos por fn_agregar_producto_orden_pendiente
+  Future<Map<String, dynamic>> addProductToPendingOrder({
+    required int operationId,
+    required Map<String, dynamic> producto,
+  }) async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final userId = await userPrefs.getUserId();
+      if (userId == null) {
+        return {'success': false, 'error': 'Usuario no encontrado'};
+      }
+
+      final response = await Supabase.instance.client.rpc(
+        'fn_agregar_producto_orden_pendiente',
+        params: {
+          'p_id_operacion': operationId,
+          'p_producto': producto,
+          'p_uuid_usuario': userId,
+        },
+      );
+
+      if (response != null && response['status'] == 'success') {
+        return {
+          'success': true,
+          'idExtraccion': response['id_extraccion'],
+          'totalOrden': (response['total_orden'] as num?)?.toDouble(),
+          'importe': (response['importe'] as num?)?.toDouble(),
+        };
+      } else {
+        return {
+          'success': false,
+          'error': response?['message'] ?? 'Error al agregar producto',
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
     }
   }
 }
