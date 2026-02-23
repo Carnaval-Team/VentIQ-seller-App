@@ -30,6 +30,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _noSolicitarCliente = false;
   bool _allowDiscountOnVendedor = false;
   bool _allowPrintPending = false;
+  bool _allowSellerMakeOrderModifications = false;
   String _metodoRedondeoPrecioVenta = 'NO_REDONDEAR';
   bool _hasMasterPassword = false;
   bool _showMasterPasswordField = false;
@@ -180,6 +181,59 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
     }
   }
 
+  Future<void> _updateAllowSellerMakeOrderModificationsSetting(
+    bool value,
+  ) async {
+    if (_storeId == null) return;
+
+    try {
+      print(
+        '🔧 Actualizando configuración allow_seller_make_order_modifications: $value',
+      );
+
+      await StoreConfigService.updateAllowSellerMakeOrderModifications(
+        _storeId!,
+        value,
+      );
+
+      setState(() {
+        _allowSellerMakeOrderModifications = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? '✅ Los vendedores pueden modificar los productos de una orden abierta'
+                  : '🔒 Los vendedores no pueden modificar los productos de una orden abierta',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+
+      print('✅ allow_seller_make_order_modifications actualizado');
+    } catch (e) {
+      print(
+        '❌ Error al actualizar allow_seller_make_order_modifications: $e',
+      );
+
+      setState(() {
+        _allowSellerMakeOrderModifications = !value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _loadStoreConfig() async {
     try {
       setState(() {
@@ -225,6 +279,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _allowDiscountOnVendedor =
             config['allow_discount_on_vendedor'] ?? false;
         _allowPrintPending = config['permitir_imprimir_pendientes'] ?? false;
+        _allowSellerMakeOrderModifications =
+            config['allow_seller_make_order_modifications'] ?? false;
         _metodoRedondeoPrecioVenta =
             config['metodo_redondeo_precio_venta'] ?? 'NO_REDONDEAR';
         _hasMasterPassword = hasMasterPassword;
@@ -1005,6 +1061,20 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                     : '🔒 Solo se imprimen órdenes pagadas o completadas',
             value: _allowPrintPending,
             onChanged: _updateAllowPrintPendingSetting,
+          ),
+
+          const SizedBox(height: 16),
+
+          _buildConfigCard(
+            icon: Icons.edit_note_outlined,
+            iconColor: Colors.cyan,
+            title: 'Permitir Modificar Orden Abierta',
+            subtitle:
+                _allowSellerMakeOrderModifications
+                    ? '✅ Los vendedores pueden editar los productos de una orden mientras esté abierta'
+                    : '🔒 Los vendedores no pueden modificar los productos de una orden abierta',
+            value: _allowSellerMakeOrderModifications,
+            onChanged: _updateAllowSellerMakeOrderModificationsSetting,
           ),
 
           const SizedBox(height: 24),

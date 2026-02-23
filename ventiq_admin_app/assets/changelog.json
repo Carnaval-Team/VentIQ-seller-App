@@ -1,9 +1,21 @@
 {
-  "current_version": "1.9.6",
-  "build": 196,
+  "current_version": "1.9.7",
+  "build": 197,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.9.7",
+      "date": "2026-02-23",
+      "title": "Más control sobre tus órdenes",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Permite que tus vendedores editen órdenes abiertas",
+          "description": "Nueva opción en Configuración Global: activa 'Permitir Modificar Orden Abierta' para que tus vendedores puedan agregar, quitar o cambiar productos de una orden mientras esté en curso."
+        }
+      ]
+    },
     {
       "version": "1.9.6",
       "date": "2026-02-18",

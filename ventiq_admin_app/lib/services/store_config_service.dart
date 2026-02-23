@@ -64,6 +64,7 @@ class StoreConfigService {
     bool? permitirImprimirPendientes,
     String? metodoRedondeoPrecioVenta,
     Map<String, dynamic>? tpvTrabajadorEncargadoCarnaval,
+    bool? allowSellerMakeOrderModifications,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
@@ -132,6 +133,14 @@ class StoreConfigService {
             tpvTrabajadorEncargadoCarnaval;
         print(
           '  - tpv_trabajador_encargado_carnaval: $tpvTrabajadorEncargadoCarnaval',
+        );
+      }
+
+      if (allowSellerMakeOrderModifications != null) {
+        updateData['allow_seller_make_order_modifications'] =
+            allowSellerMakeOrderModifications;
+        print(
+          '  - allow_seller_make_order_modifications: $allowSellerMakeOrderModifications',
         );
       }
 
@@ -302,6 +311,28 @@ class StoreConfigService {
   /// Actualiza permitir_imprimir_pendientes
   static Future<void> updateAllowPrintPending(int storeId, bool value) async {
     await updateStoreConfig(storeId, permitirImprimirPendientes: value);
+  }
+
+  /// Obtiene solo el valor de allow_seller_make_order_modifications
+  static Future<bool> getAllowSellerMakeOrderModifications(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['allow_seller_make_order_modifications'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener allow_seller_make_order_modifications: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza allow_seller_make_order_modifications
+  static Future<void> updateAllowSellerMakeOrderModifications(
+    int storeId,
+    bool value,
+  ) async {
+    await updateStoreConfig(
+      storeId,
+      allowSellerMakeOrderModifications: value,
+    );
   }
 
   /// Obtiene el método de redondeo configurado
