@@ -11,6 +11,7 @@ import '../../providers/theme_provider.dart';
 import '../../utils/constants.dart';
 import '../../widgets/map_widget.dart';
 import '../../widgets/transport_type_card.dart';
+import 'location_search_screen.dart';
 import 'route_preview_screen.dart';
 
 class HomeMapScreen extends StatefulWidget {
@@ -60,20 +61,22 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   }
 
   void _onMapTap(TapPosition tapPosition, LatLng point) {
-    final transportProvider = context.read<TransportProvider>();
     final locationProvider = context.read<LocationProvider>();
+    final transportProvider = context.read<TransportProvider>();
 
     transportProvider.setPickup(
       locationProvider.locationOrDefault,
-      address: 'Ubicacion actual',
+      address: 'Ubicación actual',
     );
     transportProvider.setDropoff(point, address: 'Destino seleccionado');
 
+    _openSearchScreen();
+  }
+
+  void _openSearchScreen() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const RoutePreviewScreen(),
-      ),
+      MaterialPageRoute(builder: (context) => const LocationSearchScreen()),
     );
   }
 
@@ -89,54 +92,20 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       body: Stack(
         children: [
           // Full-screen map with user location marker
-          AnimatedBuilder(
-            animation: _pulseAnimation,
-            builder: (context, _) {
-              return MapWidget(
-                isDark: isDark,
-                mapController: _mapController,
-                center: userLocation,
-                zoom: AppConstants.defaultZoom,
-                onTap: _onMapTap,
-                markers: [
-                  // Pulsing blue dot for user location
-                  Marker(
-                    point: userLocation,
-                    width: 40,
-                    height: 40,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppTheme.primaryColor
-                            .withValues(alpha: _pulseAnimation.value * 0.3),
-                      ),
-                      child: Center(
-                        child: Container(
-                          width: 16,
-                          height: 16,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: AppTheme.primaryColor,
-                            border: Border.all(
-                              color: Colors.white,
-                              width: 3,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppTheme.primaryColor
-                                    .withValues(alpha: 0.4),
-                                blurRadius: 8,
-                                spreadRadius: 2,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
+          MapWidget(
+            isDark: isDark,
+            mapController: _mapController,
+            center: userLocation,
+            zoom: AppConstants.defaultZoom,
+            onTap: _onMapTap,
+            markers: [
+              Marker(
+                point: userLocation,
+                width: 40,
+                height: 40,
+                child: _PulsingDot(animation: _pulseAnimation),
+              ),
+            ],
           ),
 
           // Top bar overlay
@@ -162,9 +131,7 @@ class _HomeMapScreenState extends State<HomeMapScreen>
                       // Search bar
                       Expanded(
                         child: GestureDetector(
-                          onTap: () {
-                            // Navigate to search screen
-                          },
+                          onTap: _openSearchScreen,
                           child: Container(
                             height: 48,
                             padding:
@@ -519,18 +486,37 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   }
 }
 
-/// AnimatedBuilder that wraps AnimatedWidget for pulse animation.
-class AnimatedBuilder extends AnimatedWidget {
-  final Widget Function(BuildContext context, Widget? child) builder;
-
-  const AnimatedBuilder({
-    super.key,
-    required Animation<double> animation,
-    required this.builder,
-  }) : super(listenable: animation);
+/// Pulsing blue dot marker for the user's location.
+class _PulsingDot extends AnimatedWidget {
+  const _PulsingDot({required Animation<double> animation})
+      : super(listenable: animation);
 
   @override
   Widget build(BuildContext context) {
-    return builder(context, null);
+    final value = (listenable as Animation<double>).value;
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppTheme.primaryColor.withValues(alpha: value * 0.3),
+      ),
+      child: Center(
+        child: Container(
+          width: 16,
+          height: 16,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppTheme.primaryColor,
+            border: Border.all(color: Colors.white, width: 3),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.primaryColor.withValues(alpha: 0.4),
+                blurRadius: 8,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

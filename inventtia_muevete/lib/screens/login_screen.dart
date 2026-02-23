@@ -40,9 +40,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (success) {
       if (authProvider.isDriver) {
-        Navigator.pushReplacementNamed(context, '/driver-home');
+        Navigator.pushReplacementNamed(context, '/driver/home');
       } else {
-        Navigator.pushReplacementNamed(context, '/client-home');
+        Navigator.pushReplacementNamed(context, '/client/home');
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
