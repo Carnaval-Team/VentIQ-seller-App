@@ -57,13 +57,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _passwordController.text,
       name: _nameController.text.trim(),
       role: _selectedRole,
+      phone: '$_selectedCountryCode${_phoneController.text.trim()}',
+      pais: _selectedCountry,
+      province: _stateController.text.trim(),
+      municipality: _cityController.text.trim(),
     );
 
     if (!mounted) return;
 
     if (success) {
       if (authProvider.isDriver) {
-        Navigator.pushReplacementNamed(context, '/driver-home');
+        Navigator.pushReplacementNamed(context, '/driver/home');
       } else {
         Navigator.pushReplacementNamed(context, '/client-home');
       }

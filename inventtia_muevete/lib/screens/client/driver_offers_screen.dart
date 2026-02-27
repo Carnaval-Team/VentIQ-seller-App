@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../config/app_theme.dart';
 import '../../models/driver_offer_model.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/transport_provider.dart';
 import '../../providers/theme_provider.dart';
@@ -142,7 +143,12 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
     final themeProvider = context.watch<ThemeProvider>();
     final transportProvider = context.watch<TransportProvider>();
     final locationProvider = context.watch<LocationProvider>();
+    final authProvider = context.watch<AuthProvider>();
     final isDark = themeProvider.isDark;
+    final profile = authProvider.userProfile;
+    final photoUrl =
+        profile?['photo_url'] as String? ?? profile?['image'] as String?;
+    final userName = profile?['name'] as String? ?? '';
     final userLocation = locationProvider.locationOrDefault;
     final offers = _filterOffers(transportProvider.driverOffers);
 
@@ -167,18 +173,36 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                     border: Border.all(color: Colors.white, width: 3),
                     boxShadow: [
                       BoxShadow(
-                        color:
-                            AppTheme.primaryColor.withValues(alpha: 0.4),
+                        color: AppTheme.primaryColor.withValues(alpha: 0.4),
                         blurRadius: 10,
                         spreadRadius: 2,
                       ),
                     ],
+                    image: photoUrl != null && photoUrl.isNotEmpty
+                        ? DecorationImage(
+                            image: NetworkImage(photoUrl),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
                   ),
-                  child: const Icon(
-                    Icons.person,
-                    color: Colors.white,
-                    size: 24,
-                  ),
+                  child: photoUrl == null || photoUrl.isEmpty
+                      ? (userName.isNotEmpty
+                          ? Center(
+                              child: Text(
+                                userName[0].toUpperCase(),
+                                style: GoogleFonts.plusJakartaSans(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            )
+                          : const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 24,
+                            ))
+                      : null,
                 ),
               ),
             ],

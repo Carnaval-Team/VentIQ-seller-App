@@ -1,18 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../config/app_theme.dart';
+import '../../providers/address_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/transport_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../services/transport_request_service.dart';
 import '../../utils/constants.dart';
+import '../../widgets/client_drawer.dart';
 import '../../widgets/map_widget.dart';
 import '../../widgets/transport_type_card.dart';
 import 'location_search_screen.dart';
-import 'route_preview_screen.dart';
 
 class HomeMapScreen extends StatefulWidget {
   const HomeMapScreen({super.key});
@@ -28,6 +34,14 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
+  /// Tracks whether we have already moved the map to the first real GPS fix.
+  /// Once done we stop auto-centering so the user can pan freely.
+  bool _mapCenteredOnUser = false;
+
+  final TransportRequestService _requestService = TransportRequestService();
+  List<Map<String, dynamic>> _nearbyDrivers = [];
+  Timer? _driversRefreshTimer;
+
   @override
   void initState() {
     super.initState();
@@ -41,15 +55,61 @@ class _HomeMapScreenState extends State<HomeMapScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final locationProvider = context.read<LocationProvider>();
-      if (locationProvider.currentLocation == null) {
-        locationProvider.initLocation();
-      }
+
+      // Always (re)init to ensure the continuous GPS stream is running.
+      locationProvider.initLocation();
+
+      // Listen so we can move the map to the first real GPS fix.
+      locationProvider.addListener(_onLocationChanged);
+
       context.read<TransportProvider>().loadVehicleTypes();
+      final uuid = context.read<AuthProvider>().user?.id;
+      if (uuid != null) {
+        context.read<AddressProvider>().loadAddresses(uuid);
+      }
+
+      // Load nearby online drivers, refresh every 15 s
+      _loadNearbyDrivers();
+      _driversRefreshTimer = Timer.periodic(
+        const Duration(seconds: 15),
+        (_) => _loadNearbyDrivers(),
+      );
     });
+  }
+
+  Future<void> _loadNearbyDrivers() async {
+    final loc = context.read<LocationProvider>().locationOrDefault;
+    try {
+      final drivers = await _requestService.getNearbyDrivers(
+        loc.latitude,
+        loc.longitude,
+        AppConstants.defaultSearchRadiusKm,
+      );
+      if (mounted) setState(() => _nearbyDrivers = drivers);
+    } catch (_) {}
+  }
+
+  /// Called whenever LocationProvider notifies. On the first real GPS fix,
+  /// move the map camera to the user's position.
+  void _onLocationChanged() {
+    if (_mapCenteredOnUser) return;
+    final loc = context.read<LocationProvider>().currentLocation;
+    if (loc == null) return;
+
+    _mapCenteredOnUser = true;
+    try {
+      _mapController.move(loc, AppConstants.defaultZoom);
+    } catch (_) {
+      // MapController may not be ready on the very first callback; ignore.
+    }
   }
 
   @override
   void dispose() {
+    _driversRefreshTimer?.cancel();
+    try {
+      context.read<LocationProvider>().removeListener(_onLocationChanged);
+    } catch (_) {}
     _pulseController.dispose();
     _mapController.dispose();
     super.dispose();
@@ -89,7 +149,13 @@ class _HomeMapScreenState extends State<HomeMapScreen>
     final isDark = themeProvider.isDark;
     final userLocation = locationProvider.locationOrDefault;
 
+    final addressProvider = context.watch<AddressProvider>();
+
+    // Show a top banner if GPS permission is missing or service is off
+    final locationError = locationProvider.error;
+
     return Scaffold(
+      drawer: const ClientDrawer(),
       body: Stack(
         children: [
           // Full-screen map with user location marker
@@ -100,14 +166,131 @@ class _HomeMapScreenState extends State<HomeMapScreen>
             zoom: AppConstants.defaultZoom,
             onTap: _onMapTap,
             markers: [
+              // User location
               Marker(
                 point: userLocation,
                 width: 40,
                 height: 40,
                 child: _PulsingDot(animation: _pulseAnimation),
               ),
+              // Nearby online drivers
+              ..._nearbyDrivers.map((d) {
+                final lat = (d['latitude'] as num?)?.toDouble();
+                final lon = (d['longitude'] as num?)?.toDouble();
+                if (lat == null || lon == null) return null;
+                final driver =
+                    d['drivers'] as Map<String, dynamic>?;
+                final name =
+                    driver?['name'] as String? ?? 'Conductor';
+                final image = driver?['image'] as String?;
+                return Marker(
+                  point: LatLng(lat, lon),
+                  width: 48,
+                  height: 48,
+                  child: Tooltip(
+                    message: name,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor,
+                        shape: BoxShape.circle,
+                        border:
+                            Border.all(color: Colors.white, width: 2.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppTheme.primaryColor
+                                .withValues(alpha: 0.4),
+                            blurRadius: 8,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: image != null && image.isNotEmpty
+                            ? Image.network(image,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                  Icons.directions_car,
+                                  color: Colors.white,
+                                  size: 22,
+                                ))
+                            : const Icon(
+                                Icons.directions_car,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                      ),
+                    ),
+                  ),
+                );
+              }).whereType<Marker>(),
             ],
           ),
+
+          // GPS error banner
+          if (locationError != null)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: GestureDetector(
+                  onTap: () async {
+                    if (locationError.contains('denegado') ||
+                        locationError.contains('permiso')) {
+                      await Geolocator.openAppSettings();
+                    } else {
+                      await Geolocator.openLocationSettings();
+                    }
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.warning.withValues(alpha: 0.95),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.location_off,
+                            color: Colors.white, size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            locationError,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Activar',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            decoration: TextDecoration.underline,
+                            decorationColor: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
           // Top bar overlay
           SafeArea(
@@ -121,12 +304,14 @@ class _HomeMapScreenState extends State<HomeMapScreen>
                   Row(
                     children: [
                       // Hamburger menu
-                      _buildCircleButton(
-                        icon: Icons.menu,
-                        onPressed: () {
-                          Scaffold.of(context).openDrawer();
-                        },
-                        isDark: isDark,
+                      Builder(
+                        builder: (scaffoldContext) => _buildCircleButton(
+                          icon: Icons.menu,
+                          onPressed: () {
+                            Scaffold.of(scaffoldContext).openDrawer();
+                          },
+                          isDark: isDark,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       // Search bar
@@ -188,23 +373,57 @@ class _HomeMapScreenState extends State<HomeMapScreen>
                     ],
                   ),
                   const SizedBox(height: 12),
-                  // Quick destination pills
-                  Row(
-                    children: [
-                      _buildQuickDestinationPill(
-                        icon: Icons.work_outlined,
-                        label: 'Trabajo',
-                        isDark: isDark,
-                        onTap: () {},
-                      ),
-                      const SizedBox(width: 10),
-                      _buildQuickDestinationPill(
-                        icon: Icons.home_outlined,
-                        label: 'Casa',
-                        isDark: isDark,
-                        onTap: () {},
-                      ),
-                    ],
+                  // Quick destination chips — saved addresses + add button
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        // One chip per saved address (max 5)
+                        for (int i = 0;
+                            i < addressProvider.addresses.length && i < 5;
+                            i++) ...[
+                          if (i > 0) const SizedBox(width: 8),
+                          _buildQuickDestinationPill(
+                            icon: _iconForName(
+                                addressProvider.addresses[i].icon),
+                            label: addressProvider.addresses[i].label,
+                            isDark: isDark,
+                            onTap: () async {
+                              final addr = addressProvider.addresses[i];
+                              final tp =
+                                  context.read<TransportProvider>();
+                              final lp =
+                                  context.read<LocationProvider>();
+                              final nav = Navigator.of(context);
+                              tp.setPickup(
+                                lp.locationOrDefault,
+                                address: 'Ubicación actual',
+                              );
+                              tp.setDropoff(
+                                LatLng(addr.latitud, addr.longitud),
+                                address: addr.direccion,
+                              );
+                              await tp.calculateRoute();
+                              if (mounted) {
+                                nav.pushNamed('/client/route-preview');
+                              }
+                            },
+                          ),
+                        ],
+                        // "+ Agregar" chip always visible at the end
+                        if (addressProvider.addresses.length < 5) ...[
+                          if (addressProvider.addresses.isNotEmpty)
+                            const SizedBox(width: 8),
+                          _buildQuickDestinationPill(
+                            icon: Icons.add_location_alt_outlined,
+                            label: 'Agregar',
+                            isDark: isDark,
+                            onTap: () => Navigator.pushNamed(
+                                context, '/client/saved-addresses'),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -366,8 +585,25 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentNavIndex,
         onTap: (index) {
-          setState(() {
-            _currentNavIndex = index;
+          if (index == 0) {
+            setState(() => _currentNavIndex = 0);
+            return;
+          }
+          setState(() => _currentNavIndex = index);
+          switch (index) {
+            case 1:
+              Navigator.pushNamed(context, '/client/request-history');
+              break;
+            case 2:
+              Navigator.pushNamed(context, '/client/wallet');
+              break;
+            case 3:
+              Navigator.pushNamed(context, '/client/profile');
+              break;
+          }
+          // Reset index so tapping the same tab again still navigates
+          Future.microtask(() {
+            if (mounted) setState(() => _currentNavIndex = 0);
           });
         },
         type: BottomNavigationBarType.fixed,
@@ -406,6 +642,23 @@ class _HomeMapScreenState extends State<HomeMapScreen>
         ],
       ),
     );
+  }
+
+  IconData _iconForName(String name) {
+    switch (name) {
+      case 'home':
+        return Icons.home_outlined;
+      case 'work':
+        return Icons.work_outlined;
+      case 'school':
+        return Icons.school_outlined;
+      case 'gym':
+        return Icons.fitness_center_outlined;
+      case 'star':
+        return Icons.star_outline;
+      default:
+        return Icons.place_outlined;
+    }
   }
 
   Widget _buildCircleButton({

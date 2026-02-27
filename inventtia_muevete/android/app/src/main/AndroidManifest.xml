@@ -1,4 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- ── Location permissions (geolocator) ── -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Needed for foreground location updates while app is visible -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- ── Camera & storage (image_picker) ── -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Android ≤12 needs READ_EXTERNAL_STORAGE; Android 13+ uses granular READ_MEDIA_IMAGES -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+
     <application
         android:label="inventtia_muevete"
         android:name="${applicationName}"

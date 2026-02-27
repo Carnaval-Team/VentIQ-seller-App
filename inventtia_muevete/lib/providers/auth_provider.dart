@@ -72,6 +72,10 @@ class AuthProvider extends ChangeNotifier {
     String password, {
     required String name,
     required String role,
+    String? phone,
+    String? pais,
+    String? province,
+    String? municipality,
   }) async {
     _isLoading = true;
     _error = null;
@@ -93,12 +97,18 @@ class AuthProvider extends ChangeNotifier {
             'email': email,
             'uuid': _user!.id,
             'estado': false,
+            if (phone != null && phone.isNotEmpty) 'telefono': phone,
           });
         } else {
           await _authService.createUserProfile({
             'name': name,
             'email': email,
             'uuid': _user!.id,
+            if (phone != null && phone.isNotEmpty) 'phone': phone,
+            if (pais != null && pais.isNotEmpty) 'pais': pais,
+            if (province != null && province.isNotEmpty) 'province': province,
+            if (municipality != null && municipality.isNotEmpty)
+              'municipality': municipality,
           });
         }
         await _loadProfile();
@@ -138,6 +148,12 @@ class AuthProvider extends ChangeNotifier {
       _error = e.toString();
       notifyListeners();
     }
+  }
+
+  /// Reloads the driver profile (e.g. after creating a vehicle).
+  Future<void> refreshDriverProfile() async {
+    _driverProfile = await _authService.getDriverProfile();
+    notifyListeners();
   }
 
   void clearError() {

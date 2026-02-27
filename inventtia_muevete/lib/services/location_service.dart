@@ -13,21 +13,24 @@ class LocationService {
   }
 
   /// Returns the current device position as a LatLng.
+  /// Uses [LocationAccuracy.bestForNavigation] for the fastest first fix.
   Future<LatLng> getCurrentPosition() async {
     final position = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
+        accuracy: LocationAccuracy.bestForNavigation,
+        timeLimit: Duration(seconds: 10),
       ),
     );
     return LatLng(position.latitude, position.longitude);
   }
 
   /// Returns a stream of position updates as LatLng for real-time tracking.
+  /// [distanceFilter] = 5 m — responsive but still gentle on battery.
   Stream<LatLng> getPositionStream() {
     return Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 10, // minimum distance (meters) before update
+        distanceFilter: 5,
       ),
     ).map((position) => LatLng(position.latitude, position.longitude));
   }

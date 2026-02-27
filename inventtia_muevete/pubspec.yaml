@@ -33,6 +33,10 @@ dependencies:
   # URL Launcher (WhatsApp, phone calls)
   url_launcher: ^6.3.1
 
+  # Image picking & compression
+  image_picker: ^1.1.2
+  flutter_image_compress: ^2.3.0
+
   # Fonts & UI
   google_fonts: ^6.2.1
   intl: ^0.19.0

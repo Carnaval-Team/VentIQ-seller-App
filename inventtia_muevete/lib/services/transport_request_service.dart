@@ -43,43 +43,70 @@ class TransportRequestService {
     return response;
   }
 
-  /// Queries the muevete.place table for nearby drivers within [radiusKm].
-  /// Filters drivers by calculating the Haversine distance from ([lat], [lon]).
+  /// Queries muevete.place (online drivers) with JOIN to muevete.drivers
+  /// for name and image. Filters by Haversine distance client-side.
   Future<List<Map<String, dynamic>>> getNearbyDrivers(
     double lat,
     double lon,
     double radiusKm,
   ) async {
-    // Fetch all active drivers from the place table
+    // Single JOIN: place -> drivers (name, image, categoria)
     final response = await _supabase
         .schema('muevete')
         .from('place')
-        .select()
+        .select('''
+          id,
+          latitude,
+          longitude,
+          categoria,
+          estado,
+          vehiculo_id,
+          drivers!place_driver_fkey (
+            id,
+            name,
+            image,
+            categoria,
+            telefono
+          )
+        ''')
         .eq('estado', true);
 
-    final List<Map<String, dynamic>> drivers = List<Map<String, dynamic>>.from(response);
-
-    // Filter by distance using Haversine formula
     final List<Map<String, dynamic>> nearbyDrivers = [];
-    for (final driver in drivers) {
-      final driverLat = double.tryParse(driver['latitude']?.toString() ?? '');
-      final driverLon = double.tryParse(driver['longitude']?.toString() ?? '');
-
+    for (final row in List<Map<String, dynamic>>.from(response)) {
+      final driverLat = (row['latitude'] as num?)?.toDouble();
+      final driverLon = (row['longitude'] as num?)?.toDouble();
       if (driverLat == null || driverLon == null) continue;
-
       final distance = _haversineDistance(lat, lon, driverLat, driverLon);
       if (distance <= radiusKm) {
-        driver['distance_km'] = distance;
-        nearbyDrivers.add(driver);
+        row['distance_km'] = distance;
+        nearbyDrivers.add(row);
       }
     }
 
-    // Sort by distance (closest first)
     nearbyDrivers.sort(
-      (a, b) => (a['distance_km'] as double).compareTo(b['distance_km'] as double),
+      (a, b) =>
+          (a['distance_km'] as double).compareTo(b['distance_km'] as double),
     );
-
     return nearbyDrivers;
+  }
+
+  /// Fetches all existing offers for a request, enriched with driver info.
+  Future<List<DriverOfferModel>> getExistingOffers(int requestId) async {
+    final rows = await _supabase
+        .schema('muevete')
+        .from('ofertas_chofer')
+        .select('*, drivers!ofertas_chofer_driver_id_fkey(name, image, categoria)')
+        .eq('solicitud_id', requestId)
+        .order('created_at', ascending: true);
+
+    return List<Map<String, dynamic>>.from(rows).map((row) {
+      final driver = row['drivers'] as Map<String, dynamic>?;
+      final enriched = Map<String, dynamic>.from(row);
+      enriched['driver_name'] = driver?['name'];
+      enriched['driver_image'] = driver?['image'];
+      enriched['vehicle_info'] = driver?['categoria'];
+      return DriverOfferModel.fromJson(enriched);
+    }).toList();
   }
 
   /// Subscribes to driver offers for a given transport request using
@@ -91,13 +118,31 @@ class TransportRequestService {
           event: PostgresChangeEvent.insert,
           schema: 'muevete',
           table: 'ofertas_chofer',
+          // Supabase Realtime filters require String values
           filter: PostgresChangeFilter(
             type: PostgresChangeFilterType.eq,
             column: 'solicitud_id',
-            value: requestId,
+            value: requestId.toString(),
           ),
-          callback: (payload) {
-            final data = payload.newRecord;
+          callback: (payload) async {
+            final data = Map<String, dynamic>.from(payload.newRecord);
+            // Enrich offer with driver name/image via a follow-up query
+            final driverId = data['driver_id'];
+            if (driverId != null) {
+              try {
+                final driverRow = await _supabase
+                    .schema('muevete')
+                    .from('drivers')
+                    .select('name, image, categoria')
+                    .eq('id', driverId)
+                    .maybeSingle();
+                if (driverRow != null) {
+                  data['driver_name'] = driverRow['name'];
+                  data['driver_image'] = driverRow['image'];
+                  data['vehicle_info'] = driverRow['categoria'];
+                }
+              } catch (_) {}
+            }
             final offer = DriverOfferModel.fromJson(data);
             onOffer(offer);
           },

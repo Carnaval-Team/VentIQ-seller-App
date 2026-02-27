@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/app_theme.dart';
@@ -11,6 +13,8 @@ import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/driver_service.dart';
+import '../../services/vehicle_type_service.dart';
+import '../../models/vehicle_type_model.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import 'active_ride_screen.dart';
@@ -32,6 +36,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   bool _isOnline = false;
   bool _isTogglingStatus = false;
   int _currentNavIndex = 0;
+
+  // Periodic location tracker while online
+  Timer? _locationTimer;
+
+  // Solicitudes pendientes cercanas cargadas al iniciar / cambiar a online
+  List<Map<String, dynamic>> _nearbyRequests = [];
+
+  // IDs de solicitudes a las que el driver ya envió oferta (no mostrar)
+  final Set<int> _offeredRequestIds = {};
 
   final List<TransportRequestModel> _incomingRequests = [];
   AnimationController? _slideController;
@@ -59,19 +72,99 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   Future<void> _initializeDriver() async {
     final locationProvider = context.read<LocationProvider>();
+    final authProvider = context.read<AuthProvider>(); // read before await
     await locationProvider.initLocation();
     locationProvider.startTracking();
 
-    final authProvider = context.read<AuthProvider>();
+    if (!mounted) return;
     final driverProfile = authProvider.driverProfile;
     if (driverProfile != null) {
       final estado = driverProfile['estado'] as bool? ?? false;
-      setState(() {
-        _isOnline = estado;
-      });
+      setState(() => _isOnline = estado);
       if (_isOnline) {
         _subscribeToRequests();
+        _startLocationTracking();
+        await _loadNearbyRequests();
       }
+    }
+  }
+
+  void _startLocationTracking() {
+    _locationTimer?.cancel();
+    _locationTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      if (!mounted) return;
+      // Read all context-dependent values synchronously before any await
+      final authProvider = context.read<AuthProvider>();
+      final driverProfile = authProvider.driverProfile;
+      final driverId = driverProfile?['id'] as int?;
+      final vehiculo = driverProfile?['vehiculos'] as Map<String, dynamic>?;
+      final vehicleId = vehiculo?['id'] as int?;
+      if (driverId == null || vehicleId == null) return;
+      final loc = context.read<LocationProvider>().locationOrDefault;
+      // No more context access after this point
+      try {
+        await _driverService.upsertDriverLocation(
+          driverId: driverId,
+          vehicleId: vehicleId,
+          lat: loc.latitude,
+          lon: loc.longitude,
+          online: true,
+        );
+      } catch (e) {
+        dev.log('[Tracking] Error actualizando posición: $e', name: 'DriverHome');
+      }
+    });
+  }
+
+  void _stopLocationTracking() {
+    _locationTimer?.cancel();
+    _locationTimer = null;
+  }
+
+  Future<void> _loadNearbyRequests() async {
+    if (!mounted) return;
+    final driverProfile = context.read<AuthProvider>().driverProfile;
+    final driverId = driverProfile?['id'] as int?;
+    final loc = context.read<LocationProvider>().locationOrDefault;
+    try {
+      final rows = await _driverService.fetchNearbyPendingRequests(
+        loc.latitude,
+        loc.longitude,
+        AppConstants.defaultSearchRadiusKm,
+      );
+
+      // Load IDs where this driver already has an offer, filter them out
+      final Set<int> alreadyOffered = {};
+      if (driverId != null) {
+        for (final row in rows) {
+          final rid = row['id'] as int?;
+          if (rid != null) {
+            final has = await _driverService.hasExistingOffer(rid, driverId);
+            if (has) alreadyOffered.add(rid);
+          }
+        }
+      }
+
+      final filtered =
+          rows.where((r) => !alreadyOffered.contains(r['id'])).toList();
+
+      for (final row in filtered) {
+        dev.log(
+          '[NearbyRequest] id=${row['id']} '
+          'origen=(${row['lat_origen']}, ${row['lon_origen']}) '
+          'destino=${row['direccion_destino']} precio=${row['precio_oferta']}',
+          name: 'DriverHome',
+        );
+      }
+
+      if (mounted) {
+        setState(() {
+          _offeredRequestIds.addAll(alreadyOffered);
+          _nearbyRequests = filtered;
+        });
+      }
+    } catch (e) {
+      dev.log('[NearbyRequest] Error: $e', name: 'DriverHome');
     }
   }
 
@@ -83,13 +176,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       location.latitude,
       location.longitude,
       AppConstants.defaultSearchRadiusKm,
-      (requestData) {
-        final request = TransportRequestModel.fromJson(
-          requestData as Map<String, dynamic>,
-        );
+      (request) {
+        // Skip if we already offered on this request
+        if (request.id != null && _offeredRequestIds.contains(request.id)) {
+          return;
+        }
         if (mounted) {
           setState(() {
             _incomingRequests.insert(0, request);
+            _nearbyRequests.removeWhere((r) => r['id'] == request.id);
           });
           _slideController?.forward();
         }
@@ -105,23 +200,47 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final driverId = driverProfile['id'] as int?;
     if (driverId == null) return;
 
-    setState(() {
-      _isTogglingStatus = true;
-    });
+    // Block going online if no vehicle assigned
+    final vehiculo = driverProfile['vehiculos'] as Map<String, dynamic>?;
+    if (vehiculo == null && !_isOnline) {
+      _showRegisterVehicleSheet();
+      return;
+    }
+
+    setState(() => _isTogglingStatus = true);
 
     try {
       final newStatus = !_isOnline;
-      await _driverService.toggleOnlineStatus(driverId, newStatus);
-      setState(() {
-        _isOnline = newStatus;
-      });
+      final locationProvider = context.read<LocationProvider>();
+      final loc = locationProvider.locationOrDefault;
+      final vehicleId = vehiculo?['id'] as int?;
+
+      if (newStatus && vehicleId != null) {
+        // Upsert place immediately on go-online (creates row if missing)
+        await _driverService.upsertDriverLocation(
+          driverId: driverId,
+          vehicleId: vehicleId,
+          lat: loc.latitude,
+          lon: loc.longitude,
+          online: true,
+        );
+      } else {
+        // Go offline — update estado only
+        await _driverService.toggleOnlineStatus(driverId, false);
+      }
+
+      setState(() => _isOnline = newStatus);
 
       if (newStatus) {
         _subscribeToRequests();
+        _startLocationTracking();
+        await _loadNearbyRequests();
       } else {
         await _driverService.unsubscribe();
+        _stopLocationTracking();
         setState(() {
           _incomingRequests.clear();
+          _nearbyRequests.clear();
         });
         _slideController?.reverse();
       }
@@ -132,12 +251,228 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isTogglingStatus = false;
-        });
-      }
+      if (mounted) setState(() => _isTogglingStatus = false);
     }
+  }
+
+  Future<void> _showRegisterVehicleSheet() async {
+    final authProvider = context.read<AuthProvider>();
+    final driverId = authProvider.driverProfile?['id'] as int?;
+    if (driverId == null) return;
+
+    final vehicleTypes = await VehicleTypeService().getActiveTypes();
+    if (!mounted) return;
+
+    VehicleTypeModel? selectedType =
+        vehicleTypes.isNotEmpty ? vehicleTypes.first : null;
+    final marcaCtrl = TextEditingController();
+    final modeloCtrl = TextEditingController();
+    final chapaCtrl = TextEditingController();
+    final colorCtrl = TextEditingController();
+    final capacidadCtrl = TextEditingController();
+    bool saving = false;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF1A2232),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40, height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text('Registrar vehículo',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
+                  const SizedBox(height: 4),
+                  Text('Debes tener un vehículo para activarte',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          color: Colors.white54)),
+                  const SizedBox(height: 20),
+                  // Vehicle type selector
+                  Text('Tipo de vehículo',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white70)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: vehicleTypes.map((vt) {
+                      final selected = selectedType?.id == vt.id;
+                      return ChoiceChip(
+                        label: Text(vt.displayName),
+                        selected: selected,
+                        onSelected: (_) =>
+                            setSheet(() => selectedType = vt),
+                        selectedColor: AppTheme.primaryColor,
+                        backgroundColor: const Color(0xFF111621),
+                        labelStyle: GoogleFonts.plusJakartaSans(
+                          color: selected
+                              ? Colors.white
+                              : Colors.white60,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  _sheetField(marcaCtrl, 'Marca', 'Ej: Toyota'),
+                  const SizedBox(height: 12),
+                  _sheetField(modeloCtrl, 'Modelo', 'Ej: Corolla'),
+                  const SizedBox(height: 12),
+                  _sheetField(chapaCtrl, 'Chapa / Matrícula', 'Ej: ABC-1234'),
+                  const SizedBox(height: 12),
+                  _sheetField(colorCtrl, 'Color', 'Ej: Blanco'),
+                  const SizedBox(height: 12),
+                  _sheetField(capacidadCtrl, 'Capacidad (pasajeros)', '4',
+                      keyboard: TextInputType.number),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              if (selectedType == null ||
+                                  marcaCtrl.text.trim().isEmpty ||
+                                  modeloCtrl.text.trim().isEmpty ||
+                                  chapaCtrl.text.trim().isEmpty ||
+                                  colorCtrl.text.trim().isEmpty) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  const SnackBar(
+                                      content:
+                                          Text('Completa todos los campos')),
+                                );
+                                return;
+                              }
+                              setSheet(() => saving = true);
+                              try {
+                                await _driverService.createVehicleForDriver(
+                                  driverId: driverId,
+                                  vehicleTypeId: selectedType!.id,
+                                  marca: marcaCtrl.text.trim(),
+                                  modelo: modeloCtrl.text.trim(),
+                                  chapa: chapaCtrl.text.trim(),
+                                  color: colorCtrl.text.trim(),
+                                  capacidad: capacidadCtrl.text.trim()
+                                          .isEmpty
+                                      ? null
+                                      : capacidadCtrl.text.trim(),
+                                );
+                                await authProvider.refreshDriverProfile();
+                                if (ctx.mounted) Navigator.pop(ctx);
+                              } catch (e) {
+                                setSheet(() => saving = false);
+                                if (ctx.mounted) {
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    SnackBar(
+                                        content: Text('Error: $e'),
+                                        backgroundColor: AppTheme.error),
+                                  );
+                                }
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: saving
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white),
+                            )
+                          : Text('Guardar vehículo',
+                              style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sheetField(
+    TextEditingController ctrl,
+    String label,
+    String hint, {
+    TextInputType keyboard = TextInputType.text,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.white70)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: ctrl,
+          keyboardType: keyboard,
+          style: GoogleFonts.plusJakartaSans(
+              color: Colors.white, fontSize: 14),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: GoogleFonts.plusJakartaSans(
+                color: Colors.white30, fontSize: 14),
+            filled: true,
+            fillColor: const Color(0xFF111621),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide:
+                  BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide:
+                  BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide:
+                  const BorderSide(color: AppTheme.primaryColor, width: 2),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   void _dismissRequest(int index) {
@@ -435,9 +770,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           ),
         );
 
-        // Remove the request from the list
         setState(() {
+          // Mark as offered so it won't show again in map or cards
+          if (request.id != null) _offeredRequestIds.add(request.id!);
           _incomingRequests.removeWhere((r) => r.id == request.id);
+          _nearbyRequests.removeWhere((r) => r['id'] == request.id);
         });
         if (_incomingRequests.isEmpty) {
           _slideController?.reverse();
@@ -504,6 +841,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   @override
   void dispose() {
+    _stopLocationTracking();
     _slideController?.dispose();
     _driverService.unsubscribe();
     super.dispose();
@@ -518,6 +856,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     final driverProfile = authProvider.driverProfile;
     final driverName = driverProfile?['name'] as String? ?? 'Conductor';
+    final vehiculo = driverProfile?['vehiculos'] as Map<String, dynamic>?;
+    final vehicleType =
+        vehiculo?['vehicle_type'] as Map<String, dynamic>?;
     final location = locationProvider.locationOrDefault;
 
     final tileUrl =
@@ -541,6 +882,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ),
               MarkerLayer(
                 markers: [
+                  // Driver marker
                   Marker(
                     point: location,
                     width: 50,
@@ -565,6 +907,68 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       ),
                     ),
                   ),
+                  // Nearby client request markers
+                  ..._nearbyRequests.map((row) {
+                    final lat = (row['lat_origen'] as num?)?.toDouble();
+                    final lon = (row['lon_origen'] as num?)?.toDouble();
+                    if (lat == null || lon == null) return null;
+                    // No user join (FK to auth.users, inaccessible from REST)
+                    final name = row['direccion_origen'] as String? ?? 'Cliente';
+                    const String? photoUrl = null;
+                    final request = TransportRequestModel.fromJson(row);
+                    return Marker(
+                      point: LatLng(lat, lon),
+                      width: 56,
+                      height: 56,
+                      child: GestureDetector(
+                        onTap: () => _showMakeOfferDialog(request),
+                        child: Tooltip(
+                          message: name,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: AppTheme.success,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2.5),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppTheme.success.withValues(alpha: 0.45),
+                                  blurRadius: 10,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: ClipOval(
+                              child: photoUrl != null && photoUrl.isNotEmpty
+                                  ? Image.network(
+                                      photoUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Center(
+                                        child: Text(
+                                          name[0].toUpperCase(),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 18,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  : Center(
+                                      child: Text(
+                                        name[0].toUpperCase(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 18,
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).whereType<Marker>(),
                 ],
               ),
             ],
@@ -593,6 +997,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 ),
                 child: Row(
                   children: [
+                    // Avatar
                     Container(
                       width: 42,
                       height: 42,
@@ -607,6 +1012,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       ),
                     ),
                     const SizedBox(width: 12),
+                    // Name + status + vehicle info
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -615,7 +1021,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                           Text(
                             'Hola, $driverName',
                             style: GoogleFonts.plusJakartaSans(
-                              fontSize: 16,
+                              fontSize: 15,
                               fontWeight: FontWeight.w600,
                               color: Colors.white,
                             ),
@@ -624,8 +1030,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                           Row(
                             children: [
                               Container(
-                                width: 8,
-                                height: 8,
+                                width: 7,
+                                height: 7,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   color: _isOnline
@@ -633,11 +1039,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                       : Colors.grey,
                                 ),
                               ),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 5),
                               Text(
-                                _isOnline ? 'En linea' : 'Desconectado',
+                                _isOnline ? 'En línea' : 'Desconectado',
                                 style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 12,
+                                  fontSize: 11,
                                   fontWeight: FontWeight.w500,
                                   color: _isOnline
                                       ? AppTheme.success
@@ -646,9 +1052,87 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                               ),
                             ],
                           ),
+                          const SizedBox(height: 4),
+                          // Vehicle chip
+                          vehiculo != null
+                              ? GestureDetector(
+                                  onTap: _showRegisterVehicleSheet,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primaryColor
+                                          .withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                          color: AppTheme.primaryColor
+                                              .withValues(alpha: 0.4)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.directions_car,
+                                            color: AppTheme.primaryColor,
+                                            size: 12),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '${vehiculo['marca'] ?? ''} ${vehiculo['modelo'] ?? ''} · ${vehiculo['chapa'] ?? ''}'
+                                              .trim(),
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppTheme.primaryColor,
+                                          ),
+                                        ),
+                                        if (vehicleType != null) ...[
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '(${vehicleType['tipo'] ?? ''})',
+                                            style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 10,
+                                              color: Colors.white54,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : GestureDetector(
+                                  onTap: _showRegisterVehicleSheet,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.error
+                                          .withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                          color: AppTheme.error
+                                              .withValues(alpha: 0.5)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.warning_amber_rounded,
+                                            color: AppTheme.error, size: 12),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Sin vehículo · Registrar',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppTheme.error,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                         ],
                       ),
                     ),
+                    // Online toggle
                     _isTogglingStatus
                         ? const SizedBox(
                             width: 24,
@@ -664,9 +1148,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                             activeColor: AppTheme.success,
                             activeTrackColor:
                                 AppTheme.success.withValues(alpha: 0.3),
-                            inactiveThumbColor: Colors.grey,
-                            inactiveTrackColor:
-                                Colors.grey.withValues(alpha: 0.3),
+                            inactiveThumbColor: vehiculo == null
+                                ? AppTheme.error
+                                : Colors.grey,
+                            inactiveTrackColor: vehiculo == null
+                                ? AppTheme.error.withValues(alpha: 0.3)
+                                : Colors.grey.withValues(alpha: 0.3),
                           ),
                   ],
                 ),

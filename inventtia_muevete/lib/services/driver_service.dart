@@ -83,7 +83,20 @@ class DriverService {
         .subscribe();
   }
 
+  /// Returns true if [driverId] already has an offer for [requestId].
+  Future<bool> hasExistingOffer(int requestId, int driverId) async {
+    final existing = await _supabase
+        .schema('muevete')
+        .from('ofertas_chofer')
+        .select('id')
+        .eq('solicitud_id', requestId)
+        .eq('driver_id', driverId)
+        .maybeSingle();
+    return existing != null;
+  }
+
   /// Inserts a driver offer into muevete.ofertas_chofer.
+  /// Throws if the driver already has an offer for this request.
   Future<Map<String, dynamic>> makeOffer(
     int requestId,
     int driverId,
@@ -91,6 +104,12 @@ class DriverService {
     int estimatedMinutes, {
     String? message,
   }) async {
+    // Guard: no duplicate offers
+    final duplicate = await hasExistingOffer(requestId, driverId);
+    if (duplicate) {
+      throw Exception('Ya enviaste una oferta para esta solicitud');
+    }
+
     final offerData = <String, dynamic>{
       'solicitud_id': requestId,
       'driver_id': driverId,
@@ -152,10 +171,108 @@ class DriverService {
     }
   }
 
+  /// Creates a vehicle in muevete.vehiculos and assigns it to the driver.
+  Future<Map<String, dynamic>> createVehicleForDriver({
+    required int driverId,
+    required int vehicleTypeId,
+    required String marca,
+    required String modelo,
+    required String chapa,
+    required String color,
+    String? categoria,
+    String? capacidad,
+  }) async {
+    // 1. Insert vehicle
+    final vehicleRow = await _supabase
+        .schema('muevete')
+        .from('vehiculos')
+        .insert({
+          'marca': marca,
+          'modelo': modelo,
+          'chapa': chapa,
+          'color': color,
+          if (categoria != null) 'categoria': categoria,
+          if (capacidad != null) 'capacidad': capacidad,
+          'id_tipo_vehiculo': vehicleTypeId,
+        })
+        .select()
+        .single();
+
+    final vehicleId = vehicleRow['id'] as int;
+
+    // 2. Assign to driver
+    await _supabase
+        .schema('muevete')
+        .from('drivers')
+        .update({'vehiculo': vehicleId})
+        .eq('id', driverId);
+
+    return vehicleRow;
+  }
+
+  /// Upserts the driver location into muevete.place.
+  /// If no place row exists for this driver, inserts one.
+  Future<void> upsertDriverLocation({
+    required int driverId,
+    required int vehicleId,
+    required double lat,
+    required double lon,
+    required bool online,
+  }) async {
+    await _supabase.schema('muevete').from('place').upsert(
+      {
+        'driver': driverId,
+        'latitude': lat,
+        'longitude': lon,
+        'estado': online,
+        'vehiculo_id': vehicleId,
+      },
+      onConflict: 'driver',
+    );
+  }
+
+  /// Fetches pending transport requests near [lat]/[lon] within [radiusKm].
+  /// NOTE: user_id references auth.users (not muevete.users), so we can't
+  /// join to get client info from the REST API — fetch solicitudes only.
+  Future<List<Map<String, dynamic>>> fetchNearbyPendingRequests(
+    double lat,
+    double lon,
+    double radiusKm,
+  ) async {
+    final rows = await _supabase
+        .schema('muevete')
+        .from('solicitudes_transporte')
+        .select(
+          'id, user_id, lat_origen, lon_origen, lat_destino, lon_destino, '
+          'tipo_vehiculo, precio_oferta, estado, direccion_origen, '
+          'direccion_destino, distancia_km, expires_at, created_at, id_tipo_vehiculo',
+        )
+        .eq('estado', 'pendiente')
+        .order('created_at', ascending: false)
+        .limit(50);
+
+    // Filter by radius client-side (Supabase Free tier lacks PostGIS)
+    final nearby = <Map<String, dynamic>>[];
+    for (final row in rows) {
+      final originLat = (row['lat_origen'] as num?)?.toDouble();
+      final originLon = (row['lon_origen'] as num?)?.toDouble();
+      if (originLat == null || originLon == null) continue;
+      final dist = _haversineDistance(lat, lon, originLat, originLon);
+      if (dist <= radiusKm) {
+        nearby.add(row);
+      }
+    }
+    return nearby;
+  }
+
   /// Removes the realtime subscription for transport requests.
   Future<void> unsubscribe() async {
     if (_requestsChannel != null) {
-      await _supabase.removeChannel(_requestsChannel!);
+      try {
+        await _supabase.removeChannel(_requestsChannel!);
+      } catch (_) {
+        // realtime_client has a known Web bug with List<Binding> cast on unsubscribe
+      }
       _requestsChannel = null;
     }
   }

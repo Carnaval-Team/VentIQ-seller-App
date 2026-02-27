@@ -45,5 +45,17 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- Location permissions (geolocator) -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Muevete necesita tu ubicación para mostrarte en el mapa y encontrar conductores cercanos.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Muevete necesita tu ubicación para actualizarla en tiempo real durante el viaje.</string>
+
+	<!-- Camera & photo library (image_picker) -->
+	<key>NSCameraUsageDescription</key>
+	<string>Muevete usa la cámara para que puedas tomar tu foto de perfil.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Muevete accede a tu galería para que puedas elegir tu foto de perfil.</string>
 </dict>
 </plist>

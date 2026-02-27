@@ -158,6 +158,9 @@ class TransportProvider extends ChangeNotifier {
       _activeRequest = TransportRequestModel.fromJson(result);
 
       if (_activeRequest?.id != null) {
+        // Load any offers that arrived before we subscribed
+        _driverOffers =
+            await _requestService.getExistingOffers(_activeRequest!.id!);
         _requestService.subscribeToOffers(
           _activeRequest!.id!,
           _onNewOffer,
@@ -174,6 +177,8 @@ class TransportProvider extends ChangeNotifier {
   }
 
   void _onNewOffer(DriverOfferModel offer) {
+    // Avoid duplicates if offer was already loaded via getExistingOffers
+    if (offer.id != null && _driverOffers.any((o) => o.id == offer.id)) return;
     _driverOffers.add(offer);
     notifyListeners();
   }
@@ -188,6 +193,28 @@ class TransportProvider extends ChangeNotifier {
       _error = 'Error aceptando oferta: $e';
       notifyListeners();
     }
+  }
+
+  /// Restores a pending request from history so the user can resume offer search.
+  Future<void> restoreActiveRequest(TransportRequestModel request) async {
+    _activeRequest = request;
+    if (request.latOrigen != null && request.lonOrigen != null) {
+      _pickupLocation = LatLng(request.latOrigen!, request.lonOrigen!);
+    }
+    if (request.latDestino != null && request.lonDestino != null) {
+      _dropoffLocation = LatLng(request.latDestino!, request.lonDestino!);
+    }
+    _pickupAddress = request.direccionOrigen;
+    _dropoffAddress = request.direccionDestino;
+    _routeDistanceKm = request.distanciaKm ?? 0;
+    _offerPrice = request.precioOferta ?? 0;
+    _state = TransportState.waitingOffers;
+    if (request.id != null) {
+      // Load existing offers first, then subscribe for new ones
+      _driverOffers = await _requestService.getExistingOffers(request.id!);
+      _requestService.subscribeToOffers(request.id!, _onNewOffer);
+    }
+    notifyListeners();
   }
 
   Future<void> cancelRequest() async {

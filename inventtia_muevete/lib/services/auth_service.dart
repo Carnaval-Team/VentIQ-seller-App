@@ -57,10 +57,25 @@ class AuthService {
     final user = currentUser;
     if (user == null) return null;
 
+    // Single join: drivers -> vehiculos -> vehicle_type (no N+1)
     final response = await _supabase
         .schema('muevete')
         .from('drivers')
-        .select()
+        .select('''
+          *,
+          vehiculos (
+            id,
+            marca,
+            modelo,
+            chapa,
+            color,
+            categoria,
+            capacidad,
+            descripcion,
+            id_tipo_vehiculo,
+            vehicle_type:vehicle_type ( id, tipo, precio_km_default )
+          )
+        ''')
         .eq('uuid', user.id)
         .maybeSingle();
 

@@ -10,6 +10,7 @@ import 'providers/theme_provider.dart';
 import 'providers/location_provider.dart';
 import 'providers/transport_provider.dart';
 import 'providers/wallet_provider.dart';
+import 'providers/address_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
@@ -18,6 +19,9 @@ import 'screens/client/route_preview_screen.dart';
 import 'screens/client/driver_offers_screen.dart';
 import 'screens/client/ride_confirmed_screen.dart';
 import 'screens/client/wallet_screen.dart';
+import 'screens/client/profile_screen.dart';
+import 'screens/client/saved_addresses_screen.dart';
+import 'screens/client/request_history_screen.dart';
 import 'screens/driver/driver_home_screen.dart';
 import 'screens/driver/incoming_requests_screen.dart';
 import 'screens/driver/active_ride_screen.dart';
@@ -58,6 +62,7 @@ class MueveteApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => LocationProvider()),
         ChangeNotifierProvider(create: (_) => TransportProvider()),
         ChangeNotifierProvider(create: (_) => WalletProvider()),
+        ChangeNotifierProvider(create: (_) => AddressProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
@@ -78,6 +83,11 @@ class MueveteApp extends StatelessWidget {
               '/client/ride-confirmed': (context) =>
                   const RideConfirmedScreen(),
               '/client/wallet': (context) => const WalletScreen(),
+              '/client/profile': (context) => const ProfileScreen(),
+              '/client/saved-addresses': (context) =>
+                  const SavedAddressesScreen(),
+              '/client/request-history': (context) =>
+                  const RequestHistoryScreen(),
               '/driver/home': (context) => const DriverHomeScreen(),
               '/driver/requests': (context) =>
                   const IncomingRequestsScreen(),
