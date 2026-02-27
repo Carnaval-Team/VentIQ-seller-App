@@ -50,7 +50,7 @@ class ProductSearchService {
     print('   └─ Casos de uso: Extracciones, Transferencias, Operaciones con inventario');
     
     // Usar función RPC con soporte para filtrado por proveedor
-    final response = await _supabase.rpc('fn_listar_inventario_productos_paged2', params: {
+    final response = await _supabase.rpc('fn_listar_inventario_productos_paged2_grouped', params: {
       'p_pagina': page,
       'p_limite': pageSize,
       'p_id_tienda': await _getUserStoreId(),
@@ -97,16 +97,16 @@ class ProductSearchService {
     final filteredProducts = _filterByProductType(products, searchType);
     
     // Agrupar productos duplicados por ID
-    final uniqueProducts = _groupDuplicateProducts(filteredProducts);
+    // final uniqueProducts = _groupDuplicateProducts(filteredProducts);
     
-    print('✅ Productos2 encontrados: ${uniqueProducts.length} (${filteredProducts.length} registros originales)');
+    print('✅ Productos2 encontrados: ${filteredProducts.length} (${filteredProducts.length} registros originales)');
     
     return ProductSearchResult(
-      products: uniqueProducts,
-      totalCount: uniqueProducts.length, // Aproximado, la función no retorna count total
+      products: filteredProducts,
+      totalCount: filteredProducts.length, // Aproximado, la función no retorna count total
       currentPage: page,
       pageSize: pageSize,
-      hasNextPage: uniqueProducts.length == pageSize,
+      hasNextPage: filteredProducts.length == pageSize,
       hasPreviousPage: page > 1,
     );
   }
