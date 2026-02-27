@@ -23,6 +23,7 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
   final MapController _mapController = MapController();
   final TextEditingController _offerController = TextEditingController();
   String _selectedPaymentMethod = 'Efectivo';
+  bool _userEditedPrice = false;
 
   @override
   void initState() {
@@ -74,9 +75,13 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     final dropoff = transportProvider.dropoffLocation;
     final polyline = transportProvider.routePolyline;
 
-    // Update offer controller when price changes externally
-    if (_offerController.text.isEmpty && transportProvider.offerPrice > 0) {
-      _offerController.text = transportProvider.offerPrice.toStringAsFixed(2);
+    // Sync offer controller whenever vehicle type or route changes,
+    // unless the user has manually edited the price field.
+    if (!_userEditedPrice && transportProvider.offerPrice > 0) {
+      final priceStr = transportProvider.offerPrice.toStringAsFixed(2);
+      if (_offerController.text != priceStr) {
+        _offerController.text = priceStr;
+      }
     }
 
     // Build markers list
@@ -191,38 +196,61 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
         ),
         centerTitle: true,
       ),
-      body: Column(
+      body: Stack(
         children: [
-          // Route info card
-          _buildRouteInfoCard(isDark, transportProvider),
-
-          // Map
-          Expanded(
-            child: Stack(
-              children: [
-                MapWidget(
-                  isDark: isDark,
-                  mapController: _mapController,
-                  center: pickup ??
-                      LatLng(AppConstants.defaultLat, AppConstants.defaultLon),
-                  zoom: 14.0,
-                  markers: markers,
-                  polylines: polylines,
-                ),
-                // Loading indicator
-                if (transportProvider.state ==
-                    TransportState.calculatingRoute)
-                  const Center(
-                    child: CircularProgressIndicator(
-                      color: AppTheme.primaryColor,
-                    ),
-                  ),
-              ],
+          // Full-screen map
+          Positioned.fill(
+            child: MapWidget(
+              isDark: isDark,
+              mapController: _mapController,
+              center: pickup ??
+                  LatLng(AppConstants.defaultLat, AppConstants.defaultLon),
+              zoom: 14.0,
+              markers: markers,
+              polylines: polylines,
             ),
           ),
 
-          // Bottom sheet
-          _buildBottomSheet(isDark, transportProvider),
+          // Loading indicator
+          if (transportProvider.state == TransportState.calculatingRoute)
+            const Center(
+              child: CircularProgressIndicator(color: AppTheme.primaryColor),
+            ),
+
+          // Route info card pinned at top
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _buildRouteInfoCard(isDark, transportProvider),
+          ),
+
+          // Draggable bottom sheet
+          DraggableScrollableSheet(
+            initialChildSize: 0.45,
+            minChildSize: 0.08,
+            maxChildSize: 0.75,
+            snap: true,
+            snapSizes: const [0.08, 0.45, 0.75],
+            builder: (context, scrollController) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: isDark ? AppTheme.darkSurface : Colors.white,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(24)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 15,
+                      offset: const Offset(0, -4),
+                    ),
+                  ],
+                ),
+                child: _buildBottomSheet(
+                    isDark, transportProvider, scrollController),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -322,8 +350,12 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
   }
 
   Widget _buildBottomSheet(
-      bool isDark, TransportProvider transportProvider) {
-    return Container(
+      bool isDark,
+      TransportProvider transportProvider,
+      ScrollController scrollController) {
+    return SingleChildScrollView(
+      controller: scrollController,
+      child: Container(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
       decoration: BoxDecoration(
         color: isDark ? AppTheme.darkSurface : Colors.white,
@@ -363,53 +395,49 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
               ),
             ),
             const SizedBox(height: 14),
-            // Vehicle options horizontal scrollable
-            SizedBox(
-              height: 90,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  _buildVehicleOption(
-                    isDark: isDark,
-                    icon: Icons.two_wheeler,
-                    label: 'Moto',
-                    price: '\$5.00',
-                    isSelected: transportProvider.selectedVehicleType ==
-                        AppConstants.vehicleMoto,
-                    badgeText: null,
-                    onTap: () => context
-                        .read<TransportProvider>()
-                        .setVehicleType(AppConstants.vehicleMoto),
+            // Vehicle options from DB — horizontal scrollable
+            if (transportProvider.loadingVehicleTypes)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: CircularProgressIndicator(
+                    color: AppTheme.primaryColor,
+                    strokeWidth: 2.5,
                   ),
-                  const SizedBox(width: 10),
-                  _buildVehicleOption(
-                    isDark: isDark,
-                    icon: Icons.directions_car,
-                    label: 'Auto',
-                    price: '\$12.00',
-                    isSelected: transportProvider.selectedVehicleType ==
-                        AppConstants.vehicleAuto,
-                    badgeText: 'Mejor',
-                    onTap: () => context
-                        .read<TransportProvider>()
-                        .setVehicleType(AppConstants.vehicleAuto),
-                  ),
-                  const SizedBox(width: 10),
-                  _buildVehicleOption(
-                    isDark: isDark,
-                    icon: Icons.directions_bus,
-                    label: 'Microbus',
-                    price: '\$3.00',
-                    isSelected: transportProvider.selectedVehicleType ==
-                        AppConstants.vehicleMicrobus,
-                    badgeText: null,
-                    onTap: () => context
-                        .read<TransportProvider>()
-                        .setVehicleType(AppConstants.vehicleMicrobus),
-                  ),
-                ],
+                ),
+              )
+            else
+              SizedBox(
+                height: 90,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: transportProvider.vehicleTypes.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (context, i) {
+                    final vt = transportProvider.vehicleTypes[i];
+                    final isSelected =
+                        transportProvider.selectedVehicleType?.id == vt.id;
+                    final distKm = transportProvider.routeDistanceKm;
+                    final totalPrice = distKm > 0
+                        ? '\$${(vt.precioKmDefault * distKm).toStringAsFixed(2)}'
+                        : '\$${vt.precioKmDefault.toStringAsFixed(2)}/km';
+                    final eta = distKm > 0
+                        ? vt.etaString(distKm)
+                        : '— min';
+                    return _buildVehicleOption(
+                      isDark: isDark,
+                      icon: vt.icon,
+                      label: vt.displayName,
+                      price: totalPrice,
+                      isSelected: isSelected,
+                      badgeText: eta,
+                      onTap: () => context
+                          .read<TransportProvider>()
+                          .setVehicleType(vt),
+                    );
+                  },
+                ),
               ),
-            ),
             const SizedBox(height: 16),
             // Offer price input
             Text(
@@ -462,6 +490,7 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               ),
               onChanged: (value) {
+                _userEditedPrice = true;
                 final price = double.tryParse(value);
                 if (price != null) {
                   context.read<TransportProvider>().setOfferPrice(price);
@@ -566,7 +595,7 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                         ),
                       )
                     : Text(
-                        'Solicitar ${transportProvider.selectedVehicleType}',
+                        'Solicitar ${transportProvider.selectedVehicleType?.displayName ?? ''}',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -577,7 +606,7 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildVehicleOption({
@@ -593,7 +622,8 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
       onTap: onTap,
       child: Container(
         width: 100,
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        height: 90,
+        padding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
         decoration: BoxDecoration(
           color: isSelected
               ? AppTheme.primaryColor.withValues(alpha: 0.15)

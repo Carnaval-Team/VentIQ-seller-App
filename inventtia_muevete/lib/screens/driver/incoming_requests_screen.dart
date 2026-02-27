@@ -542,7 +542,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen> {
   }
 
   Widget _buildRequestItem(TransportRequestModel request) {
-    final vehicleType = request.tipoVehiculo?.name ?? 'auto';
+    final vehicleType = request.tipoVehiculo ?? 'auto';
     final vehicleLabel =
         vehicleType[0].toUpperCase() + vehicleType.substring(1);
     final iconCodePoint =

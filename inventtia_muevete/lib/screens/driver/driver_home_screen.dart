@@ -771,7 +771,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Widget _buildRequestCard(TransportRequestModel request, int index) {
-    final vehicleType = request.tipoVehiculo?.name ?? 'auto';
+    final vehicleType = request.tipoVehiculo ?? 'auto';
     final vehicleLabel = vehicleType[0].toUpperCase() + vehicleType.substring(1);
     final iconCodePoint =
         AppConstants.vehicleIcons[vehicleLabel] ?? 0xe531;

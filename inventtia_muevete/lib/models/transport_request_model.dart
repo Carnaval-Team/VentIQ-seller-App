@@ -1,5 +1,3 @@
-enum TipoVehiculo { moto, auto, microbus }
-
 enum EstadoSolicitud { pendiente, aceptada, cancelada, expirada }
 
 class TransportRequestModel {
@@ -9,7 +7,8 @@ class TransportRequestModel {
   final double? lonOrigen;
   final double? latDestino;
   final double? lonDestino;
-  final TipoVehiculo? tipoVehiculo;
+  final String? tipoVehiculo;
+  final int? idTipoVehiculo;
   final double? precioOferta;
   final EstadoSolicitud? estado;
   final String? direccionOrigen;
@@ -26,6 +25,7 @@ class TransportRequestModel {
     this.latDestino,
     this.lonDestino,
     this.tipoVehiculo,
+    this.idTipoVehiculo,
     this.precioOferta,
     this.estado,
     this.direccionOrigen,
@@ -51,12 +51,8 @@ class TransportRequestModel {
       lonDestino: json['lon_destino'] != null
           ? (json['lon_destino'] as num).toDouble()
           : null,
-      tipoVehiculo: json['tipo_vehiculo'] != null
-          ? TipoVehiculo.values.firstWhere(
-              (e) => e.name == json['tipo_vehiculo'],
-              orElse: () => TipoVehiculo.auto,
-            )
-          : null,
+      tipoVehiculo: json['tipo_vehiculo'] as String?,
+      idTipoVehiculo: json['id_tipo_vehiculo'] as int?,
       precioOferta: json['precio_oferta'] != null
           ? (json['precio_oferta'] as num).toDouble()
           : null,
@@ -87,7 +83,8 @@ class TransportRequestModel {
       'lon_origen': lonOrigen,
       'lat_destino': latDestino,
       'lon_destino': lonDestino,
-      'tipo_vehiculo': tipoVehiculo?.name,
+      'tipo_vehiculo': tipoVehiculo,
+      'id_tipo_vehiculo': idTipoVehiculo,
       'precio_oferta': precioOferta,
       'estado': estado?.name,
       'direccion_origen': direccionOrigen,
@@ -104,7 +101,8 @@ class TransportRequestModel {
     double? lonOrigen,
     double? latDestino,
     double? lonDestino,
-    TipoVehiculo? tipoVehiculo,
+    String? tipoVehiculo,
+    int? idTipoVehiculo,
     double? precioOferta,
     EstadoSolicitud? estado,
     String? direccionOrigen,
@@ -121,6 +119,7 @@ class TransportRequestModel {
       latDestino: latDestino ?? this.latDestino,
       lonDestino: lonDestino ?? this.lonDestino,
       tipoVehiculo: tipoVehiculo ?? this.tipoVehiculo,
+      idTipoVehiculo: idTipoVehiculo ?? this.idTipoVehiculo,
       precioOferta: precioOferta ?? this.precioOferta,
       estado: estado ?? this.estado,
       direccionOrigen: direccionOrigen ?? this.direccionOrigen,

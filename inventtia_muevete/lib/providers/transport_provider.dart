@@ -2,13 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/transport_request_model.dart';
 import '../models/driver_offer_model.dart';
+import '../models/vehicle_type_model.dart';
 import '../services/transport_request_service.dart';
 import '../services/routing_service.dart';
-import '../utils/constants.dart';
+import '../services/vehicle_type_service.dart';
 
 class TransportProvider extends ChangeNotifier {
   final TransportRequestService _requestService = TransportRequestService();
   final RoutingService _routingService = RoutingService();
+  final VehicleTypeService _vehicleTypeService = VehicleTypeService();
+
+  // Vehicle types loaded from DB
+  List<VehicleTypeModel> _vehicleTypes = [];
+  bool _loadingVehicleTypes = false;
 
   // Route planning
   LatLng? _pickupLocation;
@@ -19,10 +25,9 @@ class TransportProvider extends ChangeNotifier {
   double _routeDistanceKm = 0;
   double _routeDurationMin = 0;
 
-  // Transport selection
-  String _selectedVehicleType = AppConstants.vehicleAuto;
+  // Transport selection — full model from DB
+  VehicleTypeModel? _selectedVehicleType;
   double _offerPrice = 0;
-  double _pricePerKm = 1.0;
 
   // Active request
   TransportRequestModel? _activeRequest;
@@ -34,6 +39,8 @@ class TransportProvider extends ChangeNotifier {
   String? _error;
 
   // Getters
+  List<VehicleTypeModel> get vehicleTypes => _vehicleTypes;
+  bool get loadingVehicleTypes => _loadingVehicleTypes;
   LatLng? get pickupLocation => _pickupLocation;
   LatLng? get dropoffLocation => _dropoffLocation;
   String? get pickupAddress => _pickupAddress;
@@ -41,7 +48,7 @@ class TransportProvider extends ChangeNotifier {
   List<LatLng>? get routePolyline => _routePolyline;
   double get routeDistanceKm => _routeDistanceKm;
   double get routeDurationMin => _routeDurationMin;
-  String get selectedVehicleType => _selectedVehicleType;
+  VehicleTypeModel? get selectedVehicleType => _selectedVehicleType;
   double get offerPrice => _offerPrice;
   TransportRequestModel? get activeRequest => _activeRequest;
   List<DriverOfferModel> get driverOffers => _driverOffers;
@@ -49,6 +56,26 @@ class TransportProvider extends ChangeNotifier {
   TransportState get state => _state;
   String? get error => _error;
   bool get hasRoute => _routePolyline != null && _routePolyline!.isNotEmpty;
+
+  /// Loads active vehicle types from muevete.vehicle_type.
+  /// Skips if already loaded or currently loading.
+  Future<void> loadVehicleTypes() async {
+    if (_loadingVehicleTypes || _vehicleTypes.isNotEmpty) return;
+    _loadingVehicleTypes = true;
+    notifyListeners();
+    try {
+      _vehicleTypes = await _vehicleTypeService.getActiveTypes();
+      if (_vehicleTypes.isNotEmpty) {
+        _selectedVehicleType = _vehicleTypes.first;
+        _calculatePrice();
+      }
+    } catch (e) {
+      _error = 'Error cargando tipos de vehículo: $e';
+    } finally {
+      _loadingVehicleTypes = false;
+      notifyListeners();
+    }
+  }
 
   void setPickup(LatLng location, {String? address}) {
     _pickupLocation = location;
@@ -62,7 +89,7 @@ class TransportProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setVehicleType(String type) {
+  void setVehicleType(VehicleTypeModel type) {
     _selectedVehicleType = type;
     _calculatePrice();
     notifyListeners();
@@ -73,27 +100,11 @@ class TransportProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setPricePerKm(double price) {
-    _pricePerKm = price;
-    _calculatePrice();
-    notifyListeners();
-  }
-
   void _calculatePrice() {
-    double multiplier = 1.0;
-    switch (_selectedVehicleType) {
-      case AppConstants.vehicleMoto:
-        multiplier = 0.6;
-        break;
-      case AppConstants.vehicleAuto:
-        multiplier = 1.0;
-        break;
-      case AppConstants.vehicleMicrobus:
-        multiplier = 0.4;
-        break;
-    }
-    _offerPrice =
-        double.parse((_routeDistanceKm * _pricePerKm * multiplier).toStringAsFixed(2));
+    if (_selectedVehicleType == null || _routeDistanceKm == 0) return;
+    final pricePerKm = _selectedVehicleType!.precioKmDefault;
+    _offerPrice = double.parse(
+        (_routeDistanceKm * pricePerKm).toStringAsFixed(2));
   }
 
   Future<void> calculateRoute() async {
@@ -118,23 +129,23 @@ class TransportProvider extends ChangeNotifier {
   }
 
   Future<void> sendRequest(String userId) async {
-    if (_pickupLocation == null || _dropoffLocation == null) return;
+    if (_pickupLocation == null ||
+        _dropoffLocation == null ||
+        _selectedVehicleType == null) return;
 
     _state = TransportState.requesting;
     notifyListeners();
 
     try {
-      final expiresAt = DateTime.now().add(AppConstants.requestTtl);
+      final expiresAt = DateTime.now().add(const Duration(hours: 1));
       final request = TransportRequestModel(
         userId: userId,
         latOrigen: _pickupLocation!.latitude,
         lonOrigen: _pickupLocation!.longitude,
         latDestino: _dropoffLocation!.latitude,
         lonDestino: _dropoffLocation!.longitude,
-        tipoVehiculo: TipoVehiculo.values.firstWhere(
-          (e) => e.name == _selectedVehicleType.toLowerCase(),
-          orElse: () => TipoVehiculo.auto,
-        ),
+        tipoVehiculo: _selectedVehicleType!.tipo,
+        idTipoVehiculo: _selectedVehicleType!.id,
         precioOferta: _offerPrice,
         estado: EstadoSolicitud.pendiente,
         direccionOrigen: _pickupAddress,
@@ -204,6 +215,9 @@ class TransportProvider extends ChangeNotifier {
     _acceptedOffer = null;
     _state = TransportState.idle;
     _error = null;
+    if (_vehicleTypes.isNotEmpty) {
+      _selectedVehicleType = _vehicleTypes.first;
+    }
     _requestService.unsubscribe();
     notifyListeners();
   }

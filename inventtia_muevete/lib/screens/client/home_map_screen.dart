@@ -44,6 +44,7 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       if (locationProvider.currentLocation == null) {
         locationProvider.initLocation();
       }
+      context.read<TransportProvider>().loadVehicleTypes();
     });
   }
 
@@ -236,8 +237,10 @@ class _HomeMapScreenState extends State<HomeMapScreen>
           // Bottom draggable sheet
           DraggableScrollableSheet(
             initialChildSize: 0.35,
-            minChildSize: 0.15,
+            minChildSize: 0.08,
             maxChildSize: 0.55,
+            snap: true,
+            snapSizes: const [0.08, 0.35, 0.55],
             builder: (context, scrollController) {
               return Container(
                 decoration: BoxDecoration(
@@ -280,45 +283,36 @@ class _HomeMapScreenState extends State<HomeMapScreen>
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Transport type cards using factory constructors
-                    TransportTypeCard.moto(
-                      price: 5.20,
-                      eta: '3 min',
-                      isSelected:
-                          transportProvider.selectedVehicleType ==
-                              AppConstants.vehicleMoto,
-                      onTap: () {
-                        context
-                            .read<TransportProvider>()
-                            .setVehicleType(AppConstants.vehicleMoto);
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    TransportTypeCard.auto(
-                      price: 10.50,
-                      eta: '5 min',
-                      isSelected:
-                          transportProvider.selectedVehicleType ==
-                              AppConstants.vehicleAuto,
-                      onTap: () {
-                        context
-                            .read<TransportProvider>()
-                            .setVehicleType(AppConstants.vehicleAuto);
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    TransportTypeCard.microbus(
-                      price: 4.00,
-                      eta: '8 min',
-                      isSelected:
-                          transportProvider.selectedVehicleType ==
-                              AppConstants.vehicleMicrobus,
-                      onTap: () {
-                        context
-                            .read<TransportProvider>()
-                            .setVehicleType(AppConstants.vehicleMicrobus);
-                      },
-                    ),
+                    // Vehicle types loaded from DB
+                    if (transportProvider.loadingVehicleTypes)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                          child: CircularProgressIndicator(
+                            color: AppTheme.primaryColor,
+                            strokeWidth: 2.5,
+                          ),
+                        ),
+                      )
+                    else
+                      ...transportProvider.vehicleTypes.map((vt) {
+                        final isSelected =
+                            transportProvider.selectedVehicleType?.id == vt.id;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: TransportTypeCard(
+                            vehicleType: vt.displayName,
+                            icon: vt.icon,
+                            passengerCount: vt.passengerCount,
+                            price: vt.precioKmDefault,
+                            eta: '${vt.tiempoMinPorKm.toStringAsFixed(1)} min/km',
+                            isSelected: isSelected,
+                            onTap: () => context
+                                .read<TransportProvider>()
+                                .setVehicleType(vt),
+                          ),
+                        );
+                      }),
                     const SizedBox(height: 16),
                     // Payment method row
                     Container(
