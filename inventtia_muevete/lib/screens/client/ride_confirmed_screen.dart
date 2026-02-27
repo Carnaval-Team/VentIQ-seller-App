@@ -7,10 +7,13 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../config/app_theme.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/transport_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../services/transport_request_service.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/map_widget.dart';
 
@@ -27,9 +30,10 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
-  // Simulated driver position (moving toward pickup)
+  // Real driver position polled from muevete.place
   LatLng? _driverPosition;
-  Timer? _driverMovementTimer;
+  Timer? _locationPollTimer;
+  bool _isCompleting = false;
 
   @override
   void initState() {
@@ -43,50 +47,70 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startDriverSimulation();
+      _startDriverTracking();
     });
   }
 
-  void _startDriverSimulation() {
-    final transportProvider = context.read<TransportProvider>();
-    final pickup = transportProvider.pickupLocation;
-    if (pickup == null) return;
-
-    // Start driver slightly away from pickup
-    _driverPosition = LatLng(
-      pickup.latitude + 0.005,
-      pickup.longitude + 0.003,
-    );
-
-    _driverMovementTimer =
-        Timer.periodic(const Duration(seconds: 3), (timer) {
-      if (_driverPosition == null || !mounted) {
-        timer.cancel();
-        return;
-      }
-
-      final currentPickup =
-          context.read<TransportProvider>().pickupLocation;
-      if (currentPickup == null) return;
-
-      setState(() {
-        // Move driver closer to pickup
-        final latDiff =
-            currentPickup.latitude - _driverPosition!.latitude;
-        final lonDiff =
-            currentPickup.longitude - _driverPosition!.longitude;
-        _driverPosition = LatLng(
-          _driverPosition!.latitude + latDiff * 0.15,
-          _driverPosition!.longitude + lonDiff * 0.15,
-        );
-      });
+  Future<void> _startDriverTracking() async {
+    final driverId =
+        context.read<TransportProvider>().acceptedOffer?.driverId;
+    if (driverId == null) return;
+    await _pollDriverPosition(driverId);
+    _locationPollTimer =
+        Timer.periodic(const Duration(seconds: 8), (_) async {
+      if (!mounted) return;
+      await _pollDriverPosition(driverId);
     });
+  }
+
+  Future<void> _pollDriverPosition(int driverId) async {
+    try {
+      final row = await Supabase.instance.client
+          .schema('muevete')
+          .from('place')
+          .select('latitude, longitude')
+          .eq('driver', driverId)
+          .maybeSingle();
+      if (row != null && mounted) {
+        final lat = (row['latitude'] as num?)?.toDouble();
+        final lon = (row['longitude'] as num?)?.toDouble();
+        if (lat != null && lon != null) {
+          setState(() => _driverPosition = LatLng(lat, lon));
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _completeRide() async {
+    final tp = context.read<TransportProvider>();
+    final requestId = tp.activeRequest?.id;
+    if (requestId == null || _isCompleting) return;
+    setState(() => _isCompleting = true);
+    try {
+      await Supabase.instance.client
+          .schema('muevete')
+          .from('solicitudes_transporte')
+          .update({'estado': 'completada'})
+          .eq('id', requestId);
+      if (mounted) {
+        tp.resetTrip();
+        Navigator.of(context).popUntil((r) => r.isFirst);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isCompleting = false);
+    }
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
-    _driverMovementTimer?.cancel();
+    _locationPollTimer?.cancel();
     _mapController.dispose();
     super.dispose();
   }
@@ -116,15 +140,23 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
 
     final acceptedOffer = transportProvider.acceptedOffer;
     final pickup = transportProvider.pickupLocation;
+    final dropoff = transportProvider.dropoffLocation;
     final polyline = transportProvider.routePolyline;
     final userLocation = locationProvider.locationOrDefault;
 
-    // Driver info from accepted offer
-    final driverName = acceptedOffer?.driverName ?? 'Ricardo';
+    // Driver info from accepted offer (real data from DB)
+    final driverName = acceptedOffer?.driverName ?? 'Conductor';
     final driverImage = acceptedOffer?.driverImage;
-    final vehicleInfo = acceptedOffer?.vehicleInfo ?? 'Toyota Corolla Gris';
-    final eta = acceptedOffer?.tiempoEstimado ?? 4;
-    const driverPhone = '+5350001234'; // Placeholder
+    final driverPhone = acceptedOffer?.driverPhone ?? '';
+    final driverKyc = acceptedOffer?.driverKyc ?? false;
+    final marca = acceptedOffer?.vehicleMarca ?? '';
+    final modelo = acceptedOffer?.vehicleModelo ?? '';
+    final chapa = acceptedOffer?.vehicleChapa ?? '';
+    final color = acceptedOffer?.vehicleColor ?? '';
+    final tripCount = acceptedOffer?.tripCount ?? 0;
+    final vehicleInfo =
+        [marca, modelo, color].where((s) => s.isNotEmpty).join(' ');
+    final eta = acceptedOffer?.tiempoEstimado ?? 0;
 
     // Build markers
     final markers = <Marker>[];
@@ -150,13 +182,43 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
         ),
       );
     }
+    // Destination marker
+    if (dropoff != null) {
+      markers.add(
+        Marker(
+          point: dropoff,
+          width: 44,
+          height: 44,
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppTheme.error,
+              border: Border.all(color: Colors.white, width: 3),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.error.withValues(alpha: 0.4),
+                  blurRadius: 8,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.flag,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+        ),
+      );
+    }
+
     // Driver marker with name label
     if (_driverPosition != null) {
       markers.add(
         Marker(
           point: _driverPosition!,
           width: 80,
-          height: 70,
+          height: 80,
           alignment: Alignment.topCenter,
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -397,42 +459,42 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  // Verified badge
-                                  Container(
-                                    padding:
-                                        const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.success
-                                          .withValues(alpha: 0.15),
-                                      borderRadius:
-                                          BorderRadius.circular(6),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize:
-                                          MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.verified,
-                                          color: AppTheme.success,
-                                          size: 12,
-                                        ),
-                                        const SizedBox(width: 3),
-                                        Text(
-                                          'Verificado',
-                                          style: GoogleFonts
-                                              .plusJakartaSans(
-                                            fontSize: 10,
-                                            fontWeight:
-                                                FontWeight.w600,
-                                            color:
-                                                AppTheme.success,
+                                  if (driverKyc)
+                                    Container(
+                                      padding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.success
+                                            .withValues(alpha: 0.15),
+                                        borderRadius:
+                                            BorderRadius.circular(6),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize:
+                                            MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                            Icons.verified,
+                                            color: AppTheme.success,
+                                            size: 12,
                                           ),
-                                        ),
-                                      ],
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            'Verificado',
+                                            style: GoogleFonts
+                                                .plusJakartaSans(
+                                              fontSize: 10,
+                                              fontWeight:
+                                                  FontWeight.w600,
+                                              color:
+                                                  AppTheme.success,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
                                 ],
                               ),
                               const SizedBox(height: 4),
@@ -457,7 +519,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                                   ),
                                   const SizedBox(width: 3),
                                   Text(
-                                    '4.9',
+                                    '—',
                                     style:
                                         GoogleFonts.plusJakartaSans(
                                       fontSize: 13,
@@ -479,7 +541,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                                   ),
                                   const SizedBox(width: 3),
                                   Text(
-                                    '1,240 viajes',
+                                    '$tripCount viajes',
                                     style:
                                         GoogleFonts.plusJakartaSans(
                                       fontSize: 12,
@@ -509,7 +571,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                                       ),
                                     ),
                                     child: Text(
-                                      'P-123456',
+                                      chapa.isNotEmpty ? chapa : '—',
                                       style: GoogleFonts
                                           .plusJakartaSans(
                                         fontSize: 12,
@@ -529,49 +591,51 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                       ],
                     ),
                     const SizedBox(height: 16),
-                    // Chat preview bubble
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? AppTheme.darkCard
-                            : Colors.grey[50],
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
+                    // Chat preview bubble — show only if driver sent a message
+                    if ((acceptedOffer?.mensaje ?? '').isNotEmpty) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
                           color: isDark
-                              ? AppTheme.darkBorder
-                              : Colors.grey[200]!,
+                              ? AppTheme.darkCard
+                              : Colors.grey[50],
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isDark
+                                ? AppTheme.darkBorder
+                                : Colors.grey[200]!,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.chat_bubble_outline,
+                              size: 18,
+                              color: isDark
+                                  ? Colors.white54
+                                  : Colors.grey[500],
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                acceptedOffer!.mensaje!,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.grey[700],
+                                  fontStyle: FontStyle.italic,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.chat_bubble_outline,
-                            size: 18,
-                            color: isDark
-                                ? Colors.white54
-                                : Colors.grey[500],
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Estoy en la esquina cerca de la tienda.',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 13,
-                                color: isDark
-                                    ? Colors.white70
-                                    : Colors.grey[700],
-                                fontStyle: FontStyle.italic,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 16),
+                    ],
                     // Action buttons
                     Row(
                       children: [
@@ -634,6 +698,41 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 12),
+                    // Complete ride button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        onPressed: _isCompleting ? null : _completeRide,
+                        icon: _isCompleting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.check_circle_outline,
+                                size: 20),
+                        label: Text(
+                          _isCompleting ? 'Completando...' : 'Completar viaje',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.success,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
                     ),
                   ],
                 ),

@@ -265,6 +265,58 @@ class DriverService {
     return nearby;
   }
 
+  /// Creates a new viaje in muevete.viajes when a ride starts.
+  /// Returns the created viaje row with its id.
+  Future<Map<String, dynamic>> createViaje({
+    required int driverId,
+    required String userId,       // auth.users UUID
+    required double latDestino,   // client's destination lat
+    required double lonDestino,   // client's destination lon
+    String? userDisplay,
+    String? telefono,
+  }) async {
+    final row = await _supabase
+        .schema('muevete')
+        .from('viajes')
+        .insert({
+          'driver_id': driverId,
+          'user': userId,
+          'estado': true,            // active
+          'completado': false,
+          'latitud_cliente': latDestino.toString(),
+          'longitud_cliente': lonDestino.toString(),
+          if (userDisplay != null) 'user_display': userDisplay,
+          if (telefono != null) 'telefono': telefono,
+        })
+        .select()
+        .single();
+    return row;
+  }
+
+  /// Subscribes to Realtime updates on a specific viaje row.
+  /// [onUpdate] is called with the full updated row when it changes.
+  RealtimeChannel subscribeToViaje(
+    int viajeId,
+    void Function(Map<String, dynamic> row) onUpdate,
+  ) {
+    return _supabase
+        .channel('viaje_$viajeId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'muevete',
+          table: 'viajes',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: viajeId.toString(),
+          ),
+          callback: (payload) {
+            onUpdate(Map<String, dynamic>.from(payload.newRecord));
+          },
+        )
+        .subscribe();
+  }
+
   /// Removes the realtime subscription for transport requests.
   Future<void> unsubscribe() async {
     if (_requestsChannel != null) {

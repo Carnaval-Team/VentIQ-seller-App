@@ -343,7 +343,9 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                             driverRating: 4.8,
                             onAccept: () => _onAcceptOffer(offer),
                             onDecline: () {
-                              // Handle decline - remove from local view
+                              context
+                                  .read<TransportProvider>()
+                                  .declineOffer(offer);
                             },
                           ),
                         );

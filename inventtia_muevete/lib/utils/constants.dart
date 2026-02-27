@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 class AppConstants {
   // Vehicle types
   static const String vehicleMoto = 'Moto';
@@ -10,12 +12,26 @@ class AppConstants {
     vehicleMicrobus,
   ];
 
-  // Vehicle icons (Material Icons code points)
+  // Vehicle icons (Material Icons code points) — kept for legacy reference
   static const Map<String, int> vehicleIcons = {
     vehicleMoto: 0xe333, // two_wheeler
     vehicleAuto: 0xe531, // directions_car
     vehicleMicrobus: 0xe530, // directions_bus
   };
+
+  /// Returns a constant IconData for a vehicle label.
+  /// Use this instead of `IconData(codePoint)` to keep icons tree-shakeable.
+  static IconData vehicleIconData(String vehicleLabel) {
+    switch (vehicleLabel) {
+      case vehicleMoto:
+        return Icons.two_wheeler;
+      case vehicleMicrobus:
+        return Icons.directions_bus;
+      case vehicleAuto:
+      default:
+        return Icons.directions_car;
+    }
+  }
 
   // Request states
   static const String estadoPendiente = 'pendiente';

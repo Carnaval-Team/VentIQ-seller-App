@@ -4,11 +4,13 @@ import '../models/transport_request_model.dart';
 import '../models/driver_offer_model.dart';
 import '../models/vehicle_type_model.dart';
 import '../services/transport_request_service.dart';
+import '../services/driver_service.dart';
 import '../services/routing_service.dart';
 import '../services/vehicle_type_service.dart';
 
 class TransportProvider extends ChangeNotifier {
   final TransportRequestService _requestService = TransportRequestService();
+  final DriverService _driverService = DriverService();
   final RoutingService _routingService = RoutingService();
   final VehicleTypeService _vehicleTypeService = VehicleTypeService();
 
@@ -33,6 +35,8 @@ class TransportProvider extends ChangeNotifier {
   TransportRequestModel? _activeRequest;
   List<DriverOfferModel> _driverOffers = [];
   DriverOfferModel? _acceptedOffer;
+  int? _activeViajeId; // viaje created after offer accepted
+  int? get activeViajeId => _activeViajeId;
 
   // State
   TransportState _state = TransportState.idle;
@@ -158,13 +162,15 @@ class TransportProvider extends ChangeNotifier {
       _activeRequest = TransportRequestModel.fromJson(result);
 
       if (_activeRequest?.id != null) {
+        final rid = _activeRequest!.id!;
         // Load any offers that arrived before we subscribed
-        _driverOffers =
-            await _requestService.getExistingOffers(_activeRequest!.id!);
-        _requestService.subscribeToOffers(
-          _activeRequest!.id!,
-          _onNewOffer,
-        );
+        _driverOffers = await _requestService.getExistingOffers(rid);
+        // New offer INSERTs
+        _requestService.subscribeToOffers(rid, _onNewOffer);
+        // Offer estado UPDATEs (e.g. driver's offer got accepted by client)
+        _requestService.subscribeToOfertaUpdates(rid, _onOfertaUpdate);
+        // Solicitud estado UPDATEs (e.g. cancelled externally)
+        _requestService.subscribeToSolicitudChanges(rid, _onSolicitudEstadoChange);
       }
 
       _state = TransportState.waitingOffers;
@@ -176,6 +182,12 @@ class TransportProvider extends ChangeNotifier {
     }
   }
 
+  /// Removes an offer from the local list (client-side decline, no DB write).
+  void declineOffer(DriverOfferModel offer) {
+    _driverOffers.removeWhere((o) => o.id == offer.id);
+    notifyListeners();
+  }
+
   void _onNewOffer(DriverOfferModel offer) {
     // Avoid duplicates if offer was already loaded via getExistingOffers
     if (offer.id != null && _driverOffers.any((o) => o.id == offer.id)) return;
@@ -183,10 +195,59 @@ class TransportProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Called when an oferta row is updated in DB (e.g. client accepted it).
+  /// If the update marks this offer as 'aceptada' we move to rideConfirmed.
+  void _onOfertaUpdate(Map<String, dynamic> row) {
+    final estado = row['estado'] as String?;
+    if (estado == 'aceptada') {
+      // Find the matching local offer and promote it
+      final offerId = row['id'];
+      final existing = _driverOffers.firstWhere(
+        (o) => o.id == offerId,
+        orElse: () => DriverOfferModel.fromJson(row),
+      );
+      _acceptedOffer = existing.copyWith(estado: EstadoOferta.aceptada);
+      _state = TransportState.rideConfirmed;
+      notifyListeners();
+    }
+  }
+
+  /// Called when the solicitud itself is updated (e.g. cancelled externally).
+  void _onSolicitudEstadoChange(String newEstado) {
+    if (newEstado == 'cancelada') {
+      _state = TransportState.idle;
+      _activeRequest = null;
+      _driverOffers = [];
+      notifyListeners();
+    } else if (newEstado == 'aceptada' && _state == TransportState.waitingOffers) {
+      // Already handled via _onOfertaUpdate; ignore duplicate signal
+    } else if (newEstado == 'completada') {
+      _state = TransportState.rideCompleted;
+      notifyListeners();
+    }
+  }
+
   Future<void> acceptOffer(DriverOfferModel offer) async {
     try {
-      await _requestService.acceptOffer(offer.id!);
+      final solicitud = await _requestService.acceptOffer(offer.id!);
       _acceptedOffer = offer.copyWith(estado: EstadoOferta.aceptada);
+
+      // Create viaje row so driver can track destination in real-time
+      final latDest = (solicitud['lat_destino'] as num?)?.toDouble();
+      final lonDest = (solicitud['lon_destino'] as num?)?.toDouble();
+      final userId = solicitud['user_id'] as String?;
+      final driverId = offer.driverId;
+
+      if (driverId != null && userId != null && latDest != null && lonDest != null) {
+        final viaje = await _driverService.createViaje(
+          driverId: driverId,
+          userId: userId,
+          latDestino: latDest,
+          lonDestino: lonDest,
+        );
+        _activeViajeId = viaje['id'] as int?;
+      }
+
       _state = TransportState.rideConfirmed;
       notifyListeners();
     } catch (e) {
@@ -210,10 +271,46 @@ class TransportProvider extends ChangeNotifier {
     _offerPrice = request.precioOferta ?? 0;
     _state = TransportState.waitingOffers;
     if (request.id != null) {
+      final rid = request.id!;
       // Load existing offers first, then subscribe for new ones
-      _driverOffers = await _requestService.getExistingOffers(request.id!);
-      _requestService.subscribeToOffers(request.id!, _onNewOffer);
+      _driverOffers = await _requestService.getExistingOffers(rid);
+      _requestService.subscribeToOffers(rid, _onNewOffer);
+      _requestService.subscribeToOfertaUpdates(rid, _onOfertaUpdate);
+      _requestService.subscribeToSolicitudChanges(rid, _onSolicitudEstadoChange);
     }
+    notifyListeners();
+  }
+
+  /// Restores an accepted (in-progress) ride from history.
+  /// Loads the accepted offer so RideConfirmedScreen can show real driver data.
+  Future<void> restoreAcceptedRide(TransportRequestModel request) async {
+    _activeRequest = request;
+    if (request.latOrigen != null && request.lonOrigen != null) {
+      _pickupLocation = LatLng(request.latOrigen!, request.lonOrigen!);
+    }
+    if (request.latDestino != null && request.lonDestino != null) {
+      _dropoffLocation = LatLng(request.latDestino!, request.lonDestino!);
+    }
+    _pickupAddress = request.direccionOrigen;
+    _dropoffAddress = request.direccionDestino;
+    _routeDistanceKm = request.distanciaKm ?? 0;
+    _offerPrice = request.precioOferta ?? 0;
+
+    if (request.id != null) {
+      final rid = request.id!;
+      // Find the accepted offer for this solicitud
+      final offers = await _requestService.getExistingOffers(rid);
+      final accepted = offers.where((o) => o.estado == EstadoOferta.aceptada);
+      if (accepted.isNotEmpty) {
+        _acceptedOffer = accepted.first;
+      } else if (offers.isNotEmpty) {
+        _acceptedOffer = offers.first;
+      }
+      // Keep listening for solicitud estado changes (e.g. completada)
+      _requestService.subscribeToSolicitudChanges(rid, _onSolicitudEstadoChange);
+    }
+
+    _state = TransportState.rideConfirmed;
     notifyListeners();
   }
 
@@ -240,6 +337,7 @@ class TransportProvider extends ChangeNotifier {
     _activeRequest = null;
     _driverOffers = [];
     _acceptedOffer = null;
+    _activeViajeId = null;
     _state = TransportState.idle;
     _error = null;
     if (_vehicleTypes.isNotEmpty) {

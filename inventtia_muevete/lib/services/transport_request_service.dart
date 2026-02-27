@@ -6,6 +6,8 @@ import '../models/driver_offer_model.dart';
 class TransportRequestService {
   final SupabaseClient _supabase = Supabase.instance.client;
   RealtimeChannel? _offersChannel;
+  RealtimeChannel? _solicitudChannel;
+  RealtimeChannel? _ofertaUpdateChannel;
 
   /// Creates a new transport request in muevete.solicitudes_transporte.
   Future<Map<String, dynamic>> createRequest(TransportRequestModel request) async {
@@ -90,23 +92,71 @@ class TransportRequestService {
     return nearbyDrivers;
   }
 
-  /// Fetches all existing offers for a request, enriched with driver info.
+  /// Enriches an offer data map with full driver + vehicle info.
+  /// Joins: drivers -> vehiculos for marca/modelo/chapa/color.
+  /// Also counts completed offers for trip count.
+  Future<void> _enrichOfferData(
+      Map<String, dynamic> data, dynamic driverId) async {
+    try {
+      // drivers JOIN vehiculos (via drivers.vehiculo FK)
+      final driverRow = await _supabase
+          .schema('muevete')
+          .from('drivers')
+          .select(
+            'name, image, categoria, telefono, kyc, '
+            'vehiculos!drivers_vehiculo_fkey(marca, modelo, chapa, color)',
+          )
+          .eq('id', driverId)
+          .maybeSingle();
+
+      if (driverRow != null) {
+        data['driver_name'] = driverRow['name'];
+        data['driver_image'] = driverRow['image'];
+        data['vehicle_info'] = driverRow['categoria'];
+        final phone = driverRow['telefono'] as String?;
+        data['driver_phone'] = phone;
+        // "Verificado" means driver has a registered phone number
+        data['driver_kyc'] = phone != null && phone.trim().isNotEmpty;
+        final veh = driverRow['vehiculos'] as Map<String, dynamic>?;
+        data['vehicle_marca'] = veh?['marca'];
+        data['vehicle_modelo'] = veh?['modelo'];
+        data['vehicle_chapa'] = veh?['chapa'];
+        data['vehicle_color'] = veh?['color'];
+      }
+
+      // Count completed trips: ofertas aceptadas where the solicitud is completada
+      final tripRows = await _supabase
+          .schema('muevete')
+          .from('ofertas_chofer')
+          .select('solicitud_id, solicitudes_transporte!ofertas_chofer_solicitud_id_fkey(estado)')
+          .eq('driver_id', driverId)
+          .eq('estado', 'aceptada');
+      int completedCount = 0;
+      for (final row in (tripRows as List)) {
+        final solicitud = row['solicitudes_transporte'] as Map<String, dynamic>?;
+        if (solicitud?['estado'] == 'completada') completedCount++;
+      }
+      data['trip_count'] = completedCount;
+    } catch (_) {}
+  }
+
+  /// Fetches all existing offers for a request, enriched with full driver info.
   Future<List<DriverOfferModel>> getExistingOffers(int requestId) async {
     final rows = await _supabase
         .schema('muevete')
         .from('ofertas_chofer')
-        .select('*, drivers!ofertas_chofer_driver_id_fkey(name, image, categoria)')
+        .select('*')
         .eq('solicitud_id', requestId)
         .order('created_at', ascending: true);
 
-    return List<Map<String, dynamic>>.from(rows).map((row) {
-      final driver = row['drivers'] as Map<String, dynamic>?;
+    final result = <DriverOfferModel>[];
+    for (final row in List<Map<String, dynamic>>.from(rows)) {
       final enriched = Map<String, dynamic>.from(row);
-      enriched['driver_name'] = driver?['name'];
-      enriched['driver_image'] = driver?['image'];
-      enriched['vehicle_info'] = driver?['categoria'];
-      return DriverOfferModel.fromJson(enriched);
-    }).toList();
+      final driverId = enriched['driver_id'];
+      if (driverId != null) await _enrichOfferData(enriched, driverId);
+      result.add(DriverOfferModel.fromJson(enriched));
+    }
+    return result;
   }
 
   /// Subscribes to driver offers for a given transport request using
@@ -126,23 +176,8 @@ class TransportRequestService {
           ),
           callback: (payload) async {
             final data = Map<String, dynamic>.from(payload.newRecord);
-            // Enrich offer with driver name/image via a follow-up query
             final driverId = data['driver_id'];
-            if (driverId != null) {
-              try {
-                final driverRow = await _supabase
-                    .schema('muevete')
-                    .from('drivers')
-                    .select('name, image, categoria')
-                    .eq('id', driverId)
-                    .maybeSingle();
-                if (driverRow != null) {
-                  data['driver_name'] = driverRow['name'];
-                  data['driver_image'] = driverRow['image'];
-                  data['vehicle_info'] = driverRow['categoria'];
-                }
-              } catch (_) {}
-            }
+            if (driverId != null) await _enrichOfferData(data, driverId);
             final offer = DriverOfferModel.fromJson(data);
             onOffer(offer);
           },
@@ -152,7 +187,8 @@ class TransportRequestService {
 
   /// Accepts a driver offer: sets offer estado to 'aceptada' and
   /// updates the parent request estado to 'aceptada'.
-  Future<void> acceptOffer(int offerId) async {
+  /// Returns the full solicitud row (contains destination coords).
+  Future<Map<String, dynamic>> acceptOffer(int offerId) async {
     // Update the offer status
     final offerResponse = await _supabase
         .schema('muevete')
@@ -162,22 +198,89 @@ class TransportRequestService {
         .select()
         .single();
 
-    // Update the parent request status
+    // Update the parent request and return full solicitud row
     final solicitudId = offerResponse['solicitud_id'];
     if (solicitudId != null) {
-      await _supabase
+      final solicitud = await _supabase
           .schema('muevete')
           .from('solicitudes_transporte')
           .update({'estado': 'aceptada'})
-          .eq('id', solicitudId);
+          .eq('id', solicitudId)
+          .select()
+          .single();
+      return Map<String, dynamic>.from(solicitud);
     }
+    return {};
   }
 
-  /// Removes the realtime subscription for offers.
+  /// Subscribes to UPDATE events on a specific solicitud.
+  /// [onEstadoChange] is called with the new estado string when it changes.
+  void subscribeToSolicitudChanges(
+    int solicitudId,
+    void Function(String newEstado) onEstadoChange,
+  ) {
+    _solicitudChannel = _supabase
+        .channel('solicitud_$solicitudId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'muevete',
+          table: 'solicitudes_transporte',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: solicitudId.toString(),
+          ),
+          callback: (payload) {
+            final newEstado = payload.newRecord['estado'] as String?;
+            if (newEstado != null) onEstadoChange(newEstado);
+          },
+        )
+        .subscribe();
+  }
+
+  /// Subscribes to UPDATE events on ofertas for a solicitud.
+  /// [onOfertaUpdate] is called with the updated raw offer row.
+  void subscribeToOfertaUpdates(
+    int solicitudId,
+    void Function(Map<String, dynamic> row) onOfertaUpdate,
+  ) {
+    _ofertaUpdateChannel = _supabase
+        .channel('oferta_update_$solicitudId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'muevete',
+          table: 'ofertas_chofer',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'solicitud_id',
+            value: solicitudId.toString(),
+          ),
+          callback: (payload) {
+            onOfertaUpdate(Map<String, dynamic>.from(payload.newRecord));
+          },
+        )
+        .subscribe();
+  }
+
+  /// Removes all realtime subscriptions.
   Future<void> unsubscribe() async {
     if (_offersChannel != null) {
-      await _supabase.removeChannel(_offersChannel!);
+      try {
+        await _supabase.removeChannel(_offersChannel!);
+      } catch (_) {}
       _offersChannel = null;
+    }
+    if (_solicitudChannel != null) {
+      try {
+        await _supabase.removeChannel(_solicitudChannel!);
+      } catch (_) {}
+      _solicitudChannel = null;
+    }
+    if (_ofertaUpdateChannel != null) {
+      try {
+        await _supabase.removeChannel(_ofertaUpdateChannel!);
+      } catch (_) {}
+      _ofertaUpdateChannel = null;
     }
   }
 

@@ -20,6 +20,7 @@ import '../../utils/helpers.dart';
 import 'active_ride_screen.dart';
 import 'incoming_requests_screen.dart';
 import 'driver_wallet_screen.dart';
+import 'driver_profile_screen.dart';
 
 class DriverHomeScreen extends StatefulWidget {
   const DriverHomeScreen({super.key});
@@ -830,8 +831,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         );
         return;
       case 3:
-        // Profile screen placeholder
-        break;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const DriverProfileScreen(),
+          ),
+        );
+        return;
     }
 
     setState(() {
@@ -907,67 +912,83 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       ),
                     ),
                   ),
-                  // Nearby client request markers
-                  ..._nearbyRequests.map((row) {
+                  // Nearby client request markers (origin green + destination red)
+                  ..._nearbyRequests.expand((row) {
                     final lat = (row['lat_origen'] as num?)?.toDouble();
                     final lon = (row['lon_origen'] as num?)?.toDouble();
-                    if (lat == null || lon == null) return null;
-                    // No user join (FK to auth.users, inaccessible from REST)
+                    final latDest = (row['lat_destino'] as num?)?.toDouble();
+                    final lonDest = (row['lon_destino'] as num?)?.toDouble();
+                    if (lat == null || lon == null) return <Marker?>[];
                     final name = row['direccion_origen'] as String? ?? 'Cliente';
-                    const String? photoUrl = null;
+                    final destName = row['direccion_destino'] as String? ?? 'Destino';
                     final request = TransportRequestModel.fromJson(row);
-                    return Marker(
-                      point: LatLng(lat, lon),
-                      width: 56,
-                      height: 56,
-                      child: GestureDetector(
-                        onTap: () => _showMakeOfferDialog(request),
-                        child: Tooltip(
-                          message: name,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: AppTheme.success,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2.5),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppTheme.success.withValues(alpha: 0.45),
-                                  blurRadius: 10,
-                                  spreadRadius: 2,
+                    return [
+                      // Origin marker (green)
+                      Marker(
+                        point: LatLng(lat, lon),
+                        width: 56,
+                        height: 56,
+                        child: GestureDetector(
+                          onTap: () => _showMakeOfferDialog(request),
+                          child: Tooltip(
+                            message: name,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: AppTheme.success,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 2.5),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppTheme.success.withValues(alpha: 0.45),
+                                    blurRadius: 10,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Text(
+                                  name.isNotEmpty ? name[0].toUpperCase() : 'C',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 18,
+                                  ),
                                 ),
-                              ],
-                            ),
-                            child: ClipOval(
-                              child: photoUrl != null && photoUrl.isNotEmpty
-                                  ? Image.network(
-                                      photoUrl,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Center(
-                                        child: Text(
-                                          name[0].toUpperCase(),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 18,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                  : Center(
-                                      child: Text(
-                                        name[0].toUpperCase(),
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 18,
-                                        ),
-                                      ),
-                                    ),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    );
+                      // Destination marker (red flag) — only if coords exist
+                      if (latDest != null && lonDest != null)
+                        Marker(
+                          point: LatLng(latDest, lonDest),
+                          width: 40,
+                          height: 40,
+                          child: Tooltip(
+                            message: destName,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: AppTheme.error,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 2),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppTheme.error.withValues(alpha: 0.4),
+                                    blurRadius: 8,
+                                    spreadRadius: 1,
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.flag,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ];
                   }).whereType<Marker>(),
                 ],
               ),
@@ -1260,9 +1281,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Widget _buildRequestCard(TransportRequestModel request, int index) {
     final vehicleType = request.tipoVehiculo ?? 'auto';
     final vehicleLabel = vehicleType[0].toUpperCase() + vehicleType.substring(1);
-    final iconCodePoint =
-        AppConstants.vehicleIcons[vehicleLabel] ?? 0xe531;
-
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       padding: const EdgeInsets.all(16),
@@ -1291,7 +1309,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
-                  IconData(iconCodePoint, fontFamily: 'MaterialIcons'),
+                  AppConstants.vehicleIconData(vehicleLabel),
                   color: AppTheme.primaryColor,
                   size: 20,
                 ),

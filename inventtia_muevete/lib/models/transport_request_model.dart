@@ -1,4 +1,4 @@
-enum EstadoSolicitud { pendiente, aceptada, cancelada, expirada }
+enum EstadoSolicitud { pendiente, aceptada, cancelada, expirada, completada }
 
 class TransportRequestModel {
   final int? id;

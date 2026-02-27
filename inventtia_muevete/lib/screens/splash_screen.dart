@@ -80,6 +80,15 @@ class _SplashScreenState extends State<SplashScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // App logo
+              Image.asset(
+                'assets/images/logo.png',
+                width: 140,
+                height: 140,
+              ),
+
+              const SizedBox(height: 24),
+
               // App name
               RichText(
                 text: TextSpan(

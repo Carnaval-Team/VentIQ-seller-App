@@ -8,6 +8,7 @@ import '../../models/transport_request_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/transport_provider.dart';
+import 'ride_confirmed_screen.dart';
 
 class RequestHistoryScreen extends StatefulWidget {
   const RequestHistoryScreen({super.key});
@@ -98,20 +99,23 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                         itemCount: _requests.length,
                         separatorBuilder: (_, __) =>
                             const SizedBox(height: 10),
-                        itemBuilder: (_, i) => _RequestTile(
-                          request: _requests[i],
-                          isDark: isDark,
-                          onResume: _requests[i].estado ==
-                                  EstadoSolicitud.pendiente
-                              ? () => _resumeRequest(_requests[i])
-                              : null,
-                          onCancel: (_requests[i].estado ==
-                                      EstadoSolicitud.pendiente ||
-                                  _requests[i].estado ==
-                                      EstadoSolicitud.expirada)
-                              ? () => _cancelRequest(_requests[i])
-                              : null,
-                        ),
+                        itemBuilder: (_, i) {
+                          final r = _requests[i];
+                          return _RequestTile(
+                            request: r,
+                            isDark: isDark,
+                            onResume: r.estado == EstadoSolicitud.pendiente
+                                ? () => _resumeRequest(r)
+                                : null,
+                            onOpenRide: r.estado == EstadoSolicitud.aceptada
+                                ? () => _openAcceptedRide(r)
+                                : null,
+                            onCancel: (r.estado == EstadoSolicitud.pendiente ||
+                                    r.estado == EstadoSolicitud.expirada)
+                                ? () => _cancelRequest(r)
+                                : null,
+                          );
+                        },
                       ),
                     ),
     );
@@ -122,6 +126,17 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
     final nav = Navigator.of(context);
     await transportProvider.restoreActiveRequest(request);
     if (mounted) nav.pushNamed('/client/driver-offers');
+  }
+
+  Future<void> _openAcceptedRide(TransportRequestModel request) async {
+    final transportProvider = context.read<TransportProvider>();
+    final nav = Navigator.of(context);
+    await transportProvider.restoreAcceptedRide(request);
+    if (mounted) {
+      nav.push(MaterialPageRoute(
+        builder: (_) => const RideConfirmedScreen(),
+      ));
+    }
   }
 
   Future<void> _cancelRequest(TransportRequestModel request) async {
@@ -166,12 +181,14 @@ class _RequestTile extends StatelessWidget {
   final TransportRequestModel request;
   final bool isDark;
   final VoidCallback? onResume;
+  final VoidCallback? onOpenRide;
   final VoidCallback? onCancel;
 
   const _RequestTile({
     required this.request,
     required this.isDark,
     this.onResume,
+    this.onOpenRide,
     this.onCancel,
   });
 
@@ -270,7 +287,7 @@ class _RequestTile extends StatelessWidget {
               ),
             ],
           ),
-          if (onResume != null || onCancel != null) ...[
+          if (onResume != null || onOpenRide != null || onCancel != null) ...[
             const SizedBox(height: 12),
             Row(
               children: [
@@ -295,7 +312,29 @@ class _RequestTile extends StatelessWidget {
                       ),
                     ),
                   ),
-                if (onResume != null && onCancel != null)
+                if (onOpenRide != null)
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: onOpenRide,
+                      icon: const Icon(Icons.directions_car, size: 16),
+                      label: Text(
+                        'Ver viaje',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.success,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ),
+                if ((onResume != null || onOpenRide != null) && onCancel != null)
                   const SizedBox(width: 8),
                 if (onCancel != null)
                   Expanded(
@@ -336,6 +375,8 @@ class _RequestTile extends StatelessWidget {
         return AppTheme.error;
       case EstadoSolicitud.expirada:
         return Colors.grey;
+      case EstadoSolicitud.completada:
+        return Colors.blueGrey;
     }
   }
 
@@ -349,6 +390,8 @@ class _RequestTile extends StatelessWidget {
         return 'Cancelada';
       case EstadoSolicitud.expirada:
         return 'Expirada';
+      case EstadoSolicitud.completada:
+        return 'Completada';
     }
   }
 

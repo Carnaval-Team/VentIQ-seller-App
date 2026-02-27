@@ -13,7 +13,14 @@ class DriverOfferModel {
   // Optional join fields from related tables
   final String? driverName;
   final String? driverImage;
-  final String? vehicleInfo;
+  final String? vehicleInfo; // categoria
+  final String? driverPhone;
+  final bool? driverKyc;
+  final String? vehicleMarca;
+  final String? vehicleModelo;
+  final String? vehicleChapa;
+  final String? vehicleColor;
+  final int? tripCount; // completed trips
 
   DriverOfferModel({
     this.id,
@@ -27,6 +34,13 @@ class DriverOfferModel {
     this.driverName,
     this.driverImage,
     this.vehicleInfo,
+    this.driverPhone,
+    this.driverKyc,
+    this.vehicleMarca,
+    this.vehicleModelo,
+    this.vehicleChapa,
+    this.vehicleColor,
+    this.tripCount,
   });
 
   factory DriverOfferModel.fromJson(Map<String, dynamic> json) {
@@ -51,6 +65,13 @@ class DriverOfferModel {
       driverName: json['driver_name'] as String?,
       driverImage: json['driver_image'] as String?,
       vehicleInfo: json['vehicle_info'] as String?,
+      driverPhone: json['driver_phone'] as String?,
+      driverKyc: json['driver_kyc'] as bool?,
+      vehicleMarca: json['vehicle_marca'] as String?,
+      vehicleModelo: json['vehicle_modelo'] as String?,
+      vehicleChapa: json['vehicle_chapa'] as String?,
+      vehicleColor: json['vehicle_color'] as String?,
+      tripCount: json['trip_count'] as int?,
     );
   }
 
@@ -77,6 +98,13 @@ class DriverOfferModel {
     String? driverName,
     String? driverImage,
     String? vehicleInfo,
+    String? driverPhone,
+    bool? driverKyc,
+    String? vehicleMarca,
+    String? vehicleModelo,
+    String? vehicleChapa,
+    String? vehicleColor,
+    int? tripCount,
   }) {
     return DriverOfferModel(
       id: id ?? this.id,
@@ -90,6 +118,13 @@ class DriverOfferModel {
       driverName: driverName ?? this.driverName,
       driverImage: driverImage ?? this.driverImage,
       vehicleInfo: vehicleInfo ?? this.vehicleInfo,
+      driverPhone: driverPhone ?? this.driverPhone,
+      driverKyc: driverKyc ?? this.driverKyc,
+      vehicleMarca: vehicleMarca ?? this.vehicleMarca,
+      vehicleModelo: vehicleModelo ?? this.vehicleModelo,
+      vehicleChapa: vehicleChapa ?? this.vehicleChapa,
+      vehicleColor: vehicleColor ?? this.vehicleColor,
+      tripCount: tripCount ?? this.tripCount,
     );
   }
 }
