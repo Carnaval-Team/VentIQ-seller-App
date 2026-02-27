@@ -4367,6 +4367,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
             userPreferencesService: _userPreferencesService,
             onOrderUpdated: _loadOrdersFromSupabase,
             isOfflineMode: _isOfflineMode,
+            pendingOrders: _orderService.orders
+                .where((o) => o.status == OrderStatus.enviada)
+                .toList(),
           ),
     );
   }
@@ -4528,6 +4531,7 @@ class _EditPendingOrderSheet extends StatefulWidget {
   final UserPreferencesService userPreferencesService;
   final VoidCallback onOrderUpdated;
   final bool isOfflineMode;
+  final List<Order> pendingOrders;
 
   const _EditPendingOrderSheet({
     required this.order,
@@ -4535,6 +4539,7 @@ class _EditPendingOrderSheet extends StatefulWidget {
     required this.userPreferencesService,
     required this.onOrderUpdated,
     required this.isOfflineMode,
+    required this.pendingOrders,
   });
 
   @override
@@ -4574,6 +4579,20 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
   Map<String, dynamic>? _selectedInventory;
   double _addQuantity = 1;
 
+  // Búsqueda de productos por texto
+  final TextEditingController _productSearchController = TextEditingController();
+  List<Product> _searchResults = [];
+  bool _isSearching = false;
+  bool _showSearchResults = false;
+
+  // Búsqueda de órdenes pendientes
+  final TextEditingController _orderSearchController = TextEditingController();
+  bool _showOrderSearch = false;
+  String _orderSearchQuery = '';
+
+  // Orden activa (puede cambiar si el usuario busca y selecciona otra)
+  late Order _activeOrder;
+
   // Método de pago para el producto nuevo
   List<PaymentMethod> _paymentMethods = [];
   bool _loadingPaymentMethods = false;
@@ -4587,15 +4606,23 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
   @override
   void initState() {
     super.initState();
+    _activeOrder = widget.order;
     _items = List.from(widget.order.items);
     _recalcTotal();
+  }
+
+  @override
+  void dispose() {
+    _productSearchController.dispose();
+    _orderSearchController.dispose();
+    super.dispose();
   }
 
   void _recalcTotal() {
     _total = _items.fold(0.0, (s, i) => s + i.subtotal);
   }
 
-  int? get _operationId => widget.order.operationId;
+  int? get _operationId => _activeOrder.operationId;
 
   // ── helpers ──────────────────────────────────────────────────
 
@@ -4832,7 +4859,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       Navigator.pop(context);
       return;
     }
-    if (_operationId == null) {
+    if (_activeOrder.operationId == null) {
       _setError('La orden no tiene ID de operación.');
       return;
     }
@@ -4907,6 +4934,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       _globalPromotion = null;
       _productPromotions = null;
       _loadingCategories = true;
+      _productSearchController.clear();
+      _searchResults = [];
+      _showSearchResults = false;
+      _isSearching = false;
     });
 
     // Cargar categorías y métodos de pago en paralelo
@@ -4963,6 +4994,164 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
         });
       }
     }
+  }
+
+  void _switchToOrder(Order order) {
+    if (_hasPendingChanges) {
+      showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Cambiar de orden'),
+          content: const Text(
+            'Tienes cambios sin guardar. ¿Descartar cambios y cambiar de orden?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Descartar y cambiar'),
+            ),
+          ],
+        ),
+      ).then((confirmed) {
+        if (confirmed == true && mounted) {
+          _applyOrderSwitch(order);
+        }
+      });
+    } else {
+      _applyOrderSwitch(order);
+    }
+  }
+
+  void _applyOrderSwitch(Order order) {
+    setState(() {
+      _activeOrder = order;
+      _items = List.from(order.items);
+      _pendingOps.clear();
+      _hasPendingChanges = false;
+      _errorMessage = null;
+      _showAddProduct = false;
+      _selectedProduct = null;
+      _selectedCategory = null;
+      _productsBySubcat = {};
+      _inventoryOptions = [];
+      _selectedInventory = null;
+      _showOrderSearch = false;
+      _orderSearchQuery = '';
+      _orderSearchController.clear();
+      _recalcTotal();
+    });
+  }
+
+  Future<void> _searchProductsByText(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _showSearchResults = false;
+        _isSearching = false;
+      });
+      return;
+    }
+    setState(() => _isSearching = true);
+    try {
+      final storeId = await widget.userPreferencesService.getIdTienda();
+      if (storeId == null) {
+        if (mounted) {
+          setState(() {
+            _isSearching = false;
+            _errorMessage = 'No se encontró la tienda';
+          });
+        }
+        return;
+      }
+      final response = await Supabase.instance.client.rpc(
+        'fn_listar_inventario_productos_paged2',
+        params: {
+          'p_pagina': 1,
+          'p_limite': 50,
+          'p_id_tienda': storeId,
+          'p_es_vendible': true,
+          'p_mostrar_sin_stock': false,
+          'p_busqueda': query.trim(),
+        },
+      );
+
+      if (!mounted) return;
+
+      // Agrupar por id_producto sumando stock (equivalente a _groupDuplicateProducts)
+      final Map<int, Map<String, dynamic>> grouped = {};
+      if (response is List) {
+        for (final row in response) {
+          if (row is! Map<String, dynamic>) continue;
+          final id = row['id_producto'] as num?;
+          if (id == null) continue;
+          final productId = id.toInt();
+          if (grouped.containsKey(productId)) {
+            final ex = grouped[productId]!;
+            final exStock = (ex['stock_disponible'] as num?)?.toDouble() ?? 0.0;
+            final newStock = ((row['stock_disponible'] ?? row['cantidad_final']) as num?)?.toDouble() ?? 0.0;
+            ex['stock_disponible'] = exStock + newStock;
+            final exRes = (ex['stock_reservado'] as num?)?.toDouble() ?? 0.0;
+            final newRes = (row['stock_reservado'] as num?)?.toDouble() ?? 0.0;
+            ex['stock_reservado'] = exRes + newRes;
+          } else {
+            grouped[productId] = Map<String, dynamic>.from(row);
+          }
+        }
+      }
+
+      final List<Product> products = grouped.values.map((row) {
+        return Product(
+          id: (row['id_producto'] as num).toInt(),
+          denominacion: row['nombre_producto'] ?? 'Sin nombre',
+          descripcion: row['descripcion'],
+          foto: row['imagen'],
+          precio: (row['precio_venta'] as num?)?.toDouble() ?? 0.0,
+          cantidad: (row['stock_disponible'] as num?)?.toDouble() ?? 0.0,
+          esRefrigerado: row['es_refrigerado'] ?? false,
+          esFragil: row['es_fragil'] ?? false,
+          esPeligroso: row['es_peligroso'] ?? false,
+          esVendible: row['es_vendible'] ?? true,
+          esComprable: row['es_comprable'] ?? false,
+          esInventariable: row['es_inventariable'] ?? false,
+          esPorLotes: row['es_por_lotes'] ?? false,
+          esElaborado: row['es_elaborado'] ?? false,
+          esServicio: row['es_servicio'] ?? false,
+          categoria: row['categoria'] ?? '',
+        );
+      }).toList();
+
+      setState(() {
+        _searchResults = products;
+        _showSearchResults = true;
+        _isSearching = false;
+      });
+    } catch (e) {
+      print('Error buscando productos: $e');
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+          _searchResults = [];
+          _showSearchResults = true;
+        });
+      }
+    }
+  }
+
+  void _clearSearch() {
+    _productSearchController.clear();
+    setState(() {
+      _searchResults = [];
+      _showSearchResults = false;
+      _isSearching = false;
+    });
   }
 
   Future<void> _selectProduct(Product product) async {
@@ -5142,6 +5331,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                                   _selectedCategory = null;
                                   _productsBySubcat = {};
                                 } else {
+                                  _clearSearch();
                                   _showAddProduct = false;
                                 }
                               }),
@@ -5165,14 +5355,51 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Editar ${widget.order.id}',
-                                style: const TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1F2937),
-                                ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Editar ${_activeOrder.id}',
+                                      style: const TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF1F2937),
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  /* if (widget.pendingOrders.length > 1)
+                                    IconButton(
+                                      icon: Icon(
+                                        _showOrderSearch
+                                            ? Icons.search_off
+                                            : Icons.swap_horiz,
+                                        color: const Color(0xFF0EA5E9),
+                                        size: 20,
+                                      ),
+                                      tooltip: 'Buscar otra orden',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () => setState(() {
+                                        _showOrderSearch = !_showOrderSearch;
+                                        if (!_showOrderSearch) {
+                                          _orderSearchQuery = '';
+                                          _orderSearchController.clear();
+                                        }
+                                      }),
+                                    ), */
+                                ],
                               ),
+                              if (_activeOrder.buyerName != null &&
+                                  _activeOrder.buyerName!.isNotEmpty)
+                                Text(
+                                  _activeOrder.buyerName!,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[500],
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               Text(
                                 'Total: \$${_total.toStringAsFixed(2)}',
                                 style: TextStyle(
@@ -5183,20 +5410,21 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                             ],
                           ),
                         ),
-                        ElevatedButton.icon(
-                          onPressed: _isSaving ? null : _startAddProduct,
-                          icon: const Icon(Icons.add, size: 18),
-                          label: const Text('Añadir'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0EA5E9),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
+                        if (!_showOrderSearch)
+                          ElevatedButton.icon(
+                            onPressed: _isSaving ? null : _startAddProduct,
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Añadir'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0EA5E9),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              textStyle: const TextStyle(fontSize: 13),
                             ),
-                            textStyle: const TextStyle(fontSize: 13),
                           ),
-                        ),
                       ],
                       IconButton(
                         icon: const Icon(Icons.close),
@@ -5240,6 +5468,53 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                     ),
                   ),
                 const Divider(height: 1),
+                // Barra de búsqueda de órdenes (visible sólo cuando _showOrderSearch)
+                if (_showOrderSearch && !_showAddProduct)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                    child: TextField(
+                      controller: _orderSearchController,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        hintText: 'Buscar por ID de orden o cliente...',
+                        hintStyle: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 14,
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: Color(0xFF0EA5E9),
+                        ),
+                        suffixIcon: _orderSearchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 20),
+                                onPressed: () => setState(() {
+                                  _orderSearchQuery = '';
+                                  _orderSearchController.clear();
+                                }),
+                              )
+                            : null,
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF0EA5E9),
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                      onChanged: (v) => setState(() => _orderSearchQuery = v),
+                    ),
+                  ),
                 // Contenido principal
                 Expanded(
                   child:
@@ -5247,6 +5522,8 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                           ? const Center(child: CircularProgressIndicator())
                           : _showAddProduct
                           ? _buildAddProductFlow(scrollCtrl)
+                          : _showOrderSearch
+                          ? _buildOrderSearchResults(scrollCtrl)
                           : _buildItemList(scrollCtrl),
                 ),
                 // Botón guardar / listo
@@ -5322,6 +5599,110 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
               ],
             ),
           ),
+    );
+  }
+
+  // ── búsqueda de órdenes pendientes ───────────────────────────
+
+  Widget _buildOrderSearchResults(ScrollController ctrl) {
+    final query = _orderSearchQuery.toLowerCase().trim();
+    final filtered = widget.pendingOrders.where((o) {
+      if (query.isEmpty) return true;
+      final matchId = o.id.toLowerCase().contains(query);
+      final matchBuyer = (o.buyerName ?? '').toLowerCase().contains(query);
+      return matchId || matchBuyer;
+    }).toList();
+
+    if (filtered.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey[300]),
+            const SizedBox(height: 8),
+            Text(
+              query.isEmpty
+                  ? 'No hay órdenes pendientes'
+                  : 'No se encontraron órdenes',
+              style: TextStyle(color: Colors.grey[500], fontSize: 14),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.separated(
+      controller: ctrl,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemCount: filtered.length,
+      itemBuilder: (_, i) {
+        final o = filtered[i];
+        final isActive = o.operationId == _activeOrder.operationId;
+        return ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          leading: CircleAvatar(
+            backgroundColor: isActive
+                ? const Color(0xFF0EA5E9).withOpacity(0.15)
+                : Colors.grey[100],
+            child: Icon(
+              Icons.receipt_outlined,
+              color: isActive ? const Color(0xFF0EA5E9) : Colors.grey[500],
+              size: 20,
+            ),
+          ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  o.id,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: isActive
+                        ? const Color(0xFF0EA5E9)
+                        : const Color(0xFF1F2937),
+                  ),
+                ),
+              ),
+              if (isActive)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0EA5E9).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'ACTUAL',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0EA5E9),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (o.buyerName != null && o.buyerName!.isNotEmpty)
+                Text(
+                  o.buyerName!,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                ),
+              Text(
+                '\$${o.total.toStringAsFixed(2)} · ${o.items.length} producto${o.items.length == 1 ? '' : 's'}',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+          trailing: isActive
+              ? null
+              : const Icon(Icons.chevron_right, color: Color(0xFF0EA5E9)),
+          onTap: isActive ? null : () => _switchToOrder(o),
+        );
+      },
     );
   }
 
@@ -5503,7 +5884,150 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
     if (_selectedCategory != null) {
       return _buildProductList(ctrl);
     }
-    return _buildCategoryList(ctrl);
+    return _buildCategoryAndSearchView(ctrl);
+  }
+
+  Widget _buildCategoryAndSearchView(ScrollController ctrl) {
+    return Column(
+      children: [
+        // Barra de búsqueda
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: TextField(
+            controller: _productSearchController,
+            decoration: InputDecoration(
+              hintText: 'Buscar producto por nombre, SKU...',
+              hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+              prefixIcon: _isSearching
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : const Icon(Icons.search, color: Color(0xFF0EA5E9)),
+              suffixIcon: _productSearchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 20),
+                      onPressed: _clearSearch,
+                    )
+                  : null,
+              filled: true,
+              fillColor: Colors.grey[100],
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 10,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(
+                  color: Color(0xFF0EA5E9),
+                  width: 1.5,
+                ),
+              ),
+            ),
+            onChanged: (value) {
+              if (value.trim().length >= 2) {
+                _searchProductsByText(value);
+              } else if (value.isEmpty) {
+                _clearSearch();
+              }
+            },
+          ),
+        ),
+        // Contenido: resultados de búsqueda o categorías
+        Expanded(
+          child: _showSearchResults
+              ? _buildSearchResults(ctrl)
+              : _buildCategoryList(ctrl),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchResults(ScrollController ctrl) {
+    if (_isSearching) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_searchResults.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.search_off, size: 48, color: Colors.grey[400]),
+            const SizedBox(height: 8),
+            Text(
+              'No se encontraron productos',
+              style: TextStyle(color: Colors.grey[500], fontSize: 14),
+            ),
+          ],
+        ),
+      );
+    }
+    return ListView.builder(
+      controller: ctrl,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: _searchResults.length,
+      itemBuilder: (_, i) {
+        final p = _searchResults[i];
+        return ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 4,
+            vertical: 2,
+          ),
+          leading: CircleAvatar(
+            backgroundColor: const Color(0xFF0EA5E9).withOpacity(0.1),
+            child: Text(
+              p.denominacion.isNotEmpty
+                  ? p.denominacion[0].toUpperCase()
+                  : '?',
+              style: const TextStyle(
+                color: Color(0xFF0EA5E9),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          title: Text(
+            p.denominacion,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          subtitle: Row(
+            children: [
+              Text(
+                '\$${p.precio.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  color: Color(0xFF0EA5E9),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Stock: ${p.cantidad}',
+                style: TextStyle(
+                  color: Colors.grey[500],
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () {
+            _clearSearch();
+            _selectProduct(p);
+          },
+        );
+      },
+    );
   }
 
   Widget _buildCategoryList(ScrollController ctrl) {
