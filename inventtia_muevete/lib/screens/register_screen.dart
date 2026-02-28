@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -91,9 +92,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = context.watch<ThemeProvider>().isDark;
+    final textPrimary = isDark ? Colors.white : const Color(0xFF1A1D27);
+    final textSecondary = isDark
+        ? Colors.white.withValues(alpha: 0.5)
+        : Colors.grey[600]!;
+    final borderColor = isDark ? AppTheme.darkBorder : Colors.grey[300]!;
+    final cardColor = isDark ? AppTheme.darkCard : Colors.grey[50]!;
 
     return Scaffold(
-      backgroundColor: AppTheme.darkBg,
+      backgroundColor: isDark ? AppTheme.darkBg : AppTheme.lightBg,
       body: SafeArea(
         child: Column(
           children: [
@@ -103,14 +111,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    icon: Icon(Icons.arrow_back, color: textPrimary),
                     onPressed: () => Navigator.pop(context),
                   ),
                   const SizedBox(width: 8),
                   Text(
                     'Crear Cuenta',
                     style: theme.textTheme.headlineMedium?.copyWith(
-                      color: Colors.white,
+                      color: textPrimary,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -138,7 +146,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _nameController,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: textPrimary),
                         textCapitalization: TextCapitalization.words,
                         decoration: const InputDecoration(
                           hintText: 'Tu nombre completo',
@@ -163,7 +171,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       TextFormField(
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: textPrimary),
                         decoration: const InputDecoration(
                           hintText: 'correo@ejemplo.com',
                           prefixIcon: Icon(Icons.email_outlined, size: 20),
@@ -188,7 +196,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       TextFormField(
                         controller: _passwordController,
                         obscureText: _obscurePassword,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: textPrimary),
                         decoration: InputDecoration(
                           hintText: 'Minimo 6 caracteres',
                           prefixIcon:
@@ -199,7 +207,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   ? Icons.visibility_off_outlined
                                   : Icons.visibility_outlined,
                               size: 20,
-                              color: Colors.white.withValues(alpha: 0.5),
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.5)
+                                  : Colors.grey[500],
                             ),
                             onPressed: () {
                               setState(() {
@@ -230,8 +240,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
                         value: _selectedCountry,
-                        dropdownColor: AppTheme.darkCard,
-                        style: const TextStyle(color: Colors.white),
+                        dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
+                        style: TextStyle(color: textPrimary),
                         decoration: const InputDecoration(
                           prefixIcon:
                               Icon(Icons.public_outlined, size: 20),
@@ -262,7 +272,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _stateController,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: textPrimary),
                         textCapitalization: TextCapitalization.words,
                         decoration: const InputDecoration(
                           hintText: 'Ej. La Habana',
@@ -284,7 +294,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _cityController,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: textPrimary),
                         textCapitalization: TextCapitalization.words,
                         decoration: const InputDecoration(
                           hintText: 'Ej. Plaza de la Revolucion',
@@ -310,15 +320,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             height: 56,
                             padding: const EdgeInsets.symmetric(horizontal: 14),
                             decoration: BoxDecoration(
-                              color: AppTheme.darkCard,
+                              color: cardColor,
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: AppTheme.darkBorder),
+                              border: Border.all(color: borderColor),
                             ),
                             alignment: Alignment.center,
                             child: Text(
                               _selectedCountryCode,
                               style: theme.textTheme.bodyLarge?.copyWith(
-                                color: Colors.white,
+                                color: textPrimary,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -328,7 +338,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             child: TextFormField(
                               controller: _phoneController,
                               keyboardType: TextInputType.phone,
-                              style: const TextStyle(color: Colors.white),
+                              style: TextStyle(color: textPrimary),
                               decoration: const InputDecoration(
                                 hintText: 'Numero de telefono',
                                 prefixIcon:
@@ -436,7 +446,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             text: TextSpan(
                               text: 'Ya tienes cuenta? ',
                               style: theme.textTheme.bodyMedium?.copyWith(
-                                color: Colors.white.withValues(alpha: 0.5),
+                                color: textSecondary,
                               ),
                               children: [
                                 TextSpan(
@@ -475,10 +485,11 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = context.watch<ThemeProvider>().isDark;
     return Text(
       title,
       style: theme.textTheme.titleLarge?.copyWith(
-        color: Colors.white,
+        color: isDark ? Colors.white : const Color(0xFF1A1D27),
         fontWeight: FontWeight.w600,
       ),
     );
@@ -493,10 +504,13 @@ class _FieldLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = context.watch<ThemeProvider>().isDark;
     return Text(
       label,
       style: theme.textTheme.labelLarge?.copyWith(
-        color: Colors.white.withValues(alpha: 0.8),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.8)
+            : Colors.grey[700],
       ),
     );
   }
@@ -520,6 +534,16 @@ class _RoleToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = context.watch<ThemeProvider>().isDark;
+    final textPrimary = isDark ? Colors.white : const Color(0xFF1A1D27);
+    final textMuted = isDark
+        ? Colors.white.withValues(alpha: 0.4)
+        : Colors.grey[500]!;
+    final unselectedIcon = isDark
+        ? Colors.white.withValues(alpha: 0.6)
+        : Colors.grey[500]!;
+    final cardColor = isDark ? AppTheme.darkCard : Colors.grey[50]!;
+    final borderColor = isDark ? AppTheme.darkBorder : Colors.grey[300]!;
 
     return GestureDetector(
       onTap: onTap,
@@ -529,10 +553,10 @@ class _RoleToggle extends StatelessWidget {
         decoration: BoxDecoration(
           color: isSelected
               ? AppTheme.primaryColor.withValues(alpha: 0.1)
-              : AppTheme.darkCard,
+              : cardColor,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? AppTheme.primaryColor : AppTheme.darkBorder,
+            color: isSelected ? AppTheme.primaryColor : borderColor,
             width: isSelected ? 2 : 1,
           ),
         ),
@@ -543,21 +567,21 @@ class _RoleToggle extends StatelessWidget {
               size: 32,
               color: isSelected
                   ? AppTheme.primaryColor
-                  : Colors.white.withValues(alpha: 0.6),
+                  : unselectedIcon,
             ),
             const SizedBox(height: 8),
             Text(
               label,
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
-                color: isSelected ? AppTheme.primaryColor : Colors.white,
+                color: isSelected ? AppTheme.primaryColor : textPrimary,
               ),
             ),
             const SizedBox(height: 4),
             Text(
               subtitle,
               style: theme.textTheme.bodySmall?.copyWith(
-                color: Colors.white.withValues(alpha: 0.4),
+                color: textMuted,
                 fontSize: 11,
               ),
               textAlign: TextAlign.center,

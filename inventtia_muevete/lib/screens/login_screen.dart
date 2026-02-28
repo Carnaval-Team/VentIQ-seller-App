@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -64,9 +65,18 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = context.watch<ThemeProvider>().isDark;
+    final textPrimary = isDark ? Colors.white : const Color(0xFF1A1D27);
+    final textSecondary = isDark
+        ? Colors.white.withValues(alpha: 0.5)
+        : Colors.grey[600]!;
+    final textTertiary = isDark
+        ? Colors.white.withValues(alpha: 0.4)
+        : Colors.grey[500]!;
+    final borderColor = isDark ? AppTheme.darkBorder : Colors.grey[300]!;
 
     return Scaffold(
-      backgroundColor: AppTheme.darkBg,
+      backgroundColor: isDark ? AppTheme.darkBg : AppTheme.lightBg,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -98,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 40,
                             fontWeight: FontWeight.w700,
-                            color: Colors.white,
+                            color: textPrimary,
                           ),
                         ),
                         TextSpan(
@@ -120,7 +130,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Text(
                     'Inicia sesion para continuar',
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.5),
+                      color: textSecondary,
                     ),
                   ),
                 ),
@@ -131,14 +141,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text(
                   'Correo electronico',
                   style: theme.textTheme.labelLarge?.copyWith(
-                    color: Colors.white.withValues(alpha: 0.8),
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.8)
+                        : Colors.grey[700],
                   ),
                 ),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: textPrimary),
                   decoration: const InputDecoration(
                     hintText: 'correo@ejemplo.com',
                     prefixIcon: Icon(Icons.email_outlined, size: 20),
@@ -161,14 +173,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text(
                   'Contrasena',
                   style: theme.textTheme.labelLarge?.copyWith(
-                    color: Colors.white.withValues(alpha: 0.8),
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.8)
+                        : Colors.grey[700],
                   ),
                 ),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: textPrimary),
                   decoration: InputDecoration(
                     hintText: 'Tu contrasena',
                     prefixIcon: const Icon(Icons.lock_outline, size: 20),
@@ -178,7 +192,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? Icons.visibility_off_outlined
                             : Icons.visibility_outlined,
                         size: 20,
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.5)
+                            : Colors.grey[500],
                       ),
                       onPressed: () {
                         setState(() {
@@ -243,7 +259,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     Expanded(
                       child: Divider(
-                        color: AppTheme.darkBorder,
+                        color: borderColor,
                         thickness: 1,
                       ),
                     ),
@@ -252,13 +268,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Text(
                         'O continuar con',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: Colors.white.withValues(alpha: 0.4),
+                          color: textTertiary,
                         ),
                       ),
                     ),
                     Expanded(
                       child: Divider(
-                        color: AppTheme.darkBorder,
+                        color: borderColor,
                         thickness: 1,
                       ),
                     ),
@@ -278,8 +294,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         icon: const Icon(Icons.g_mobiledata, size: 24),
                         label: const Text('Google'),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: AppTheme.darkBorder),
+                          foregroundColor: textPrimary,
+                          side: BorderSide(color: borderColor),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -296,8 +312,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         icon: const Icon(Icons.facebook, size: 22),
                         label: const Text('Facebook'),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: AppTheme.darkBorder),
+                          foregroundColor: textPrimary,
+                          side: BorderSide(color: borderColor),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -320,7 +336,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       text: TextSpan(
                         text: 'No tienes cuenta? ',
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: Colors.white.withValues(alpha: 0.5),
+                          color: textSecondary,
                         ),
                         children: [
                           TextSpan(
@@ -344,7 +360,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     TextSpan(
                       text: 'Al continuar, aceptas nuestros ',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.3),
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.3)
+                            : Colors.grey[400],
                         fontSize: 11,
                       ),
                       children: [

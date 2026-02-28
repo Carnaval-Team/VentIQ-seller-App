@@ -165,6 +165,11 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       if (_breadcrumbTrail.length > 500) _breadcrumbTrail.removeAt(0);
     });
 
+    // Auto-center map on driver position
+    try {
+      _mapController.move(loc, _mapController.camera.zoom);
+    } catch (_) {}
+
     _updateDistanceAndBearing(loc);
 
     if (!_isRecalculating) {

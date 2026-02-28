@@ -14,7 +14,7 @@ import '../../providers/location_provider.dart';
 import '../../services/driver_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
-import 'active_trip_screen.dart';
+import 'active_ride_screen.dart';
 
 class IncomingRequestsScreen extends StatefulWidget {
   const IncomingRequestsScreen({super.key});
@@ -575,19 +575,17 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
     }
   }
 
-  /// Looks up the viaje for this solicitud, then pushes ActiveTripScreen.
+  /// Looks up the viaje for this solicitud, then pushes ActiveRideScreen
+  /// with the full pickup → ride → completion flow.
   Future<void> _openActiveTrip(_AcceptedRequest ar) async {
     final solicitudId = ar.solicitud.id;
     if (solicitudId == null) return;
 
-    final destLat = ar.solicitud.latDestino;
-    final destLon = ar.solicitud.lonDestino;
-    if (destLat == null || destLon == null) return;
-
-    // Find the active viaje for this solicitud's driver + matching destination
+    // Find the active viaje for this solicitud
     final authProvider = context.read<AuthProvider>();
     final rawId = authProvider.driverProfile?['id'];
-    final driverId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    final driverId =
+        rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
 
     Map<String, dynamic>? viajeRow;
     if (driverId != null) {
@@ -610,13 +608,21 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ActiveTripScreen(
-          viajeId: viajeRow?['id'] as int? ?? 0,
-          destLat: destLat,
-          destLon: destLon,
-          destAddress: ar.solicitud.direccionDestino,
-          clientPhone: ar.clientPhone,
-          clientName: ar.clientName,
+        builder: (_) => ActiveRideScreen(
+          tripData: {
+            'client_name': ar.clientName ?? 'Pasajero',
+            'client_phone': ar.clientPhone ?? '',
+            'direccion_origen': ar.solicitud.direccionOrigen ?? 'Punto de recogida',
+            'direccion_destino': ar.solicitud.direccionDestino ?? 'Destino',
+            'lat_origen': ar.solicitud.latOrigen,
+            'lon_origen': ar.solicitud.lonOrigen,
+            'lat_destino': ar.solicitud.latDestino,
+            'lon_destino': ar.solicitud.lonDestino,
+            'precio': ar.precio ?? ar.solicitud.precioOferta ?? 0.0,
+            'viaje_id': viajeRow?['id'] as int?,
+            'solicitud_id': solicitudId,
+            'user_id': ar.solicitud.userId,
+          },
         ),
       ),
     );

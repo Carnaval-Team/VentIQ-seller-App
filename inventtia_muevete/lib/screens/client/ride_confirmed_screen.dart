@@ -52,6 +52,14 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   double _clientBearing = 0.0;
   bool _clientIsMoving = false;
 
+  // Whether the driver has started the trip (hide driver marker from map)
+  bool _tripStarted = false;
+  StreamSubscription<NotificationModel>? _notifSubscription;
+
+  // Driver-to-client route (shown while driver is on the way)
+  List<LatLng> _driverToClientRoute = [];
+  double _driverEtaSeconds = 0;
+
   @override
   void initState() {
     super.initState();
@@ -62,6 +70,18 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     _pulseAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+
+    // Listen for "trip started" notification to hide driver marker
+    _notifSubscription =
+        NotificationService().notificationStream.listen((notif) {
+      if (notif.tipo == NotificationType.viajeIniciado && mounted) {
+        setState(() {
+          _tripStarted = true;
+          _driverToClientRoute = [];
+          _driverEtaSeconds = 0;
+        });
+      }
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startDriverTracking();
@@ -101,8 +121,27 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
         final lat = (row['latitude'] as num?)?.toDouble();
         final lon = (row['longitude'] as num?)?.toDouble();
         if (lat != null && lon != null) {
-          setState(() => _driverPosition = LatLng(lat, lon));
+          final newPos = LatLng(lat, lon);
+          setState(() => _driverPosition = newPos);
+          // Recalculate driver-to-client route when trip hasn't started
+          if (!_tripStarted) {
+            _recalculateDriverToClientRoute(newPos);
+          }
         }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _recalculateDriverToClientRoute(LatLng driverPos) async {
+    final clientPos = _lastClientPosition;
+    if (clientPos == null) return;
+    try {
+      final result = await _routingService.getRoute(driverPos, clientPos);
+      if (mounted) {
+        setState(() {
+          _driverToClientRoute = result.polyline;
+          _driverEtaSeconds = result.totalDuration;
+        });
       }
     } catch (_) {}
   }
@@ -147,6 +186,11 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       _clientTrail.add(loc);
       if (_clientTrail.length > 500) _clientTrail.removeAt(0);
     });
+
+    // Auto-center map on client position
+    try {
+      _mapController.move(loc, _mapController.camera.zoom);
+    } catch (_) {}
 
     _updateDistance(loc);
 
@@ -233,6 +277,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
 
   @override
   void dispose() {
+    _notifSubscription?.cancel();
     _pulseController.dispose();
     _locationPollTimer?.cancel();
     _routeRefreshTimer?.cancel();
@@ -283,7 +328,11 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     final tripCount = acceptedOffer?.tripCount ?? 0;
     final vehicleInfo =
         [marca, modelo, color].where((s) => s.isNotEmpty).join(' ');
-    final eta = acceptedOffer?.tiempoEstimado ?? 0;
+    final staticEta = acceptedOffer?.tiempoEstimado ?? 0;
+    // Use real-time driver ETA when available, else static offer ETA
+    final driverEtaMin = _driverEtaSeconds > 0
+        ? (_driverEtaSeconds / 60).ceil()
+        : staticEta;
 
     // Can complete?
     final canComplete = _distanceToDestinationM <= _completeThresholdM;
@@ -380,8 +429,8 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       ),
     );
 
-    // Driver marker with name label
-    if (_driverPosition != null) {
+    // Driver marker with name label (hidden once trip starts)
+    if (_driverPosition != null && !_tripStarted) {
       markers.add(
         Marker(
           point: _driverPosition!,
@@ -456,6 +505,24 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       );
     }
 
+    // Orange driver-to-client route (while driver is on the way)
+    if (!_tripStarted && _driverToClientRoute.length >= 2) {
+      polylines.add(
+        Polyline(
+          points: _driverToClientRoute,
+          strokeWidth: 8.0,
+          color: AppTheme.warning.withValues(alpha: 0.2),
+        ),
+      );
+      polylines.add(
+        Polyline(
+          points: _driverToClientRoute,
+          strokeWidth: 4.0,
+          color: AppTheme.warning,
+        ),
+      );
+    }
+
     // Blue current route to destination — glow layer + solid
     if (_currentRoute.isNotEmpty) {
       polylines.add(
@@ -526,7 +593,9 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                               animation: _pulseAnimation),
                           const SizedBox(width: 8),
                           Text(
-                            'Llega en $eta min',
+                            _tripStarted
+                                ? 'Viaje en curso'
+                                : 'Conductor llega en $driverEtaMin min',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,

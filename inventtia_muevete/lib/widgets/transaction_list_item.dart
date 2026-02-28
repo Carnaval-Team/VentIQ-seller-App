@@ -36,7 +36,7 @@ class TransactionListItem extends StatelessWidget {
       case TipoTransaccion.pago_viaje:
         return AppTheme.error;
       case null:
-        return Colors.white54;
+        return Colors.grey;
     }
   }
 
@@ -120,7 +120,6 @@ class TransactionListItem extends StatelessWidget {
                     _getTitle(),
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
                       fontSize: 15,
                     ),
                   ),
@@ -128,9 +127,7 @@ class TransactionListItem extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       _getSubtitle(),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.5),
-                      ),
+                      style: theme.textTheme.bodySmall,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

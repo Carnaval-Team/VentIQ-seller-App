@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import '../services/location_service.dart';
+import '../services/background_service.dart';
 import '../utils/constants.dart';
 
 class LocationProvider extends ChangeNotifier {
@@ -19,6 +20,8 @@ class LocationProvider extends ChangeNotifier {
   StreamSubscription? _positionSubscription;
   // Service-status stream — fires when the user enables/disables GPS
   StreamSubscription<ServiceStatus>? _serviceStatusSubscription;
+  // Background service location stream
+  StreamSubscription? _bgLocationSubscription;
 
   LatLng? get currentLocation => _currentLocation;
   bool get isTracking => _isTracking;
@@ -73,6 +76,7 @@ class LocationProvider extends ChangeNotifier {
       // Start continuous stream + service status listener
       _startPositionStream();
       _listenServiceStatus();
+      _listenBackgroundService();
       return true;
     } catch (e) {
       _error = e.toString();
@@ -123,6 +127,20 @@ class LocationProvider extends ChangeNotifier {
     });
   }
 
+  /// Listens for location updates from the background service isolate.
+  void _listenBackgroundService() {
+    _bgLocationSubscription?.cancel();
+    _bgLocationSubscription = BackgroundService.onLocationUpdate.listen((data) {
+      if (data != null) {
+        final lat = (data['lat'] as num).toDouble();
+        final lon = (data['lon'] as num).toDouble();
+        _currentLocation = LatLng(lat, lon);
+        _error = null;
+        notifyListeners();
+      }
+    });
+  }
+
   // Public API kept for compatibility (home_map_screen calls startTracking
   // indirectly through the driver screens)
   void startTracking() {
@@ -147,6 +165,7 @@ class LocationProvider extends ChangeNotifier {
   void dispose() {
     _positionSubscription?.cancel();
     _serviceStatusSubscription?.cancel();
+    _bgLocationSubscription?.cancel();
     super.dispose();
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
+import '../services/background_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -43,6 +44,12 @@ class AuthProvider extends ChangeNotifier {
       // Subscribe to in-app notifications
       if (_user != null) {
         NotificationService().subscribe(_user!.id);
+        // Start background service
+        BackgroundService.start(
+          userUuid: _user!.id,
+          role: _role ?? 'client',
+          driverId: _driverProfile?['id'] as int?,
+        );
       }
       notifyListeners();
     } catch (e) {
@@ -131,6 +138,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    await BackgroundService.stop();
     await NotificationService().unsubscribe();
     await _authService.signOut();
     _user = null;

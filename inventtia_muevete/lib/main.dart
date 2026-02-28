@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config/supabase_config.dart';
 import 'config/app_theme.dart';
+import 'services/background_service.dart';
+import 'services/local_notification_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/location_provider.dart';
@@ -36,6 +38,10 @@ Future<void> main() async {
     anonKey: SupabaseConfig.supabaseAnonKey,
   );
 
+  // Initialize background service & local notifications
+  await BackgroundService.init();
+  await LocalNotificationService().init();
+
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -51,11 +57,15 @@ Future<void> main() async {
   runApp(const MueveteApp());
 }
 
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 class MueveteApp extends StatelessWidget {
   const MueveteApp({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Wire up the navigator key for notification tap navigation.
+    LocalNotificationService.navigatorKey = navigatorKey;
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
@@ -67,14 +77,19 @@ class MueveteApp extends StatelessWidget {
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
-          return NotificationOverlay(
-          child: MaterialApp(
+          return MaterialApp(
+            navigatorKey: navigatorKey,
             title: 'Muevete',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.themeMode,
             initialRoute: '/',
+            builder: (context, child) {
+              return NotificationOverlay(
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
             routes: {
               '/': (context) => const SplashScreen(),
               '/login': (context) => const LoginScreen(),
@@ -96,7 +111,6 @@ class MueveteApp extends StatelessWidget {
               '/driver/active-ride': (context) => const ActiveRideScreen(),
               '/driver/wallet': (context) => const DriverWalletScreen(),
             },
-          ),
           );
         },
       ),
