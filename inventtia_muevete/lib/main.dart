@@ -26,6 +26,7 @@ import 'screens/driver/driver_home_screen.dart';
 import 'screens/driver/incoming_requests_screen.dart';
 import 'screens/driver/active_ride_screen.dart';
 import 'screens/driver/driver_wallet_screen.dart';
+import 'widgets/notification_overlay.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -66,7 +67,8 @@ class MueveteApp extends StatelessWidget {
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
-          return MaterialApp(
+          return NotificationOverlay(
+          child: MaterialApp(
             title: 'Muevete',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme,
@@ -94,6 +96,7 @@ class MueveteApp extends StatelessWidget {
               '/driver/active-ride': (context) => const ActiveRideScreen(),
               '/driver/wallet': (context) => const DriverWalletScreen(),
             },
+          ),
           );
         },
       ),

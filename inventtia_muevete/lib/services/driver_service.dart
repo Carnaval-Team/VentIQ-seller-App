@@ -1,6 +1,8 @@
 import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/transport_request_model.dart';
+import '../models/notification_model.dart';
+import 'notification_service.dart';
 
 class DriverService {
   final SupabaseClient _supabase = Supabase.instance.client;
@@ -128,6 +130,21 @@ class DriverService {
         .insert(offerData)
         .select()
         .single();
+
+    // Notify client about new offer
+    try {
+      final solicitud = await fetchSolicitudById(requestId);
+      final clientUuid = solicitud?['user_id'] as String?;
+      if (clientUuid != null) {
+        await NotificationService().createNotification(
+          userUuid: clientUuid,
+          tipo: NotificationType.nuevaOferta,
+          titulo: 'Nueva oferta',
+          mensaje: 'Un conductor te ofrece viaje por Gs. ${price.toInt()}',
+          data: {'solicitud_id': requestId, 'oferta_id': response['id']},
+        );
+      }
+    } catch (_) {}
 
     return response;
   }
@@ -315,6 +332,63 @@ class DriverService {
           },
         )
         .subscribe();
+  }
+
+  /// Subscribes to Realtime UPDATE on ofertas_chofer for this driver.
+  /// Fires [onAccepted] when an offer's estado changes to 'aceptada'.
+  RealtimeChannel subscribeToMyOfferAcceptances(
+    int driverId,
+    void Function(Map<String, dynamic> offer) onAccepted,
+  ) {
+    return _supabase
+        .channel('offer_accept_$driverId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'muevete',
+          table: 'ofertas_chofer',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'driver_id',
+            value: driverId.toString(),
+          ),
+          callback: (payload) {
+            final row = Map<String, dynamic>.from(payload.newRecord);
+            if (row['estado'] == 'aceptada') {
+              onAccepted(row);
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  /// Fetches a full solicitud row by ID with all fields needed for the ride.
+  Future<Map<String, dynamic>?> fetchSolicitudById(int solicitudId) async {
+    return await _supabase
+        .schema('muevete')
+        .from('solicitudes_transporte')
+        .select()
+        .eq('id', solicitudId)
+        .maybeSingle();
+  }
+
+  /// Fetches client info from muevete.users by auth UUID.
+  /// Note: muevete.users uses `phone` (not `telefono`) and `image`.
+  Future<Map<String, dynamic>?> fetchClientInfo(String userId) async {
+    return await _supabase
+        .schema('muevete')
+        .from('users')
+        .select('uuid, name, phone, photo_url')
+        .eq('uuid', userId)
+        .maybeSingle();
+  }
+
+  /// Updates solicitud estado (e.g. 'completada').
+  Future<void> updateSolicitudEstado(int solicitudId, String estado) async {
+    await _supabase
+        .schema('muevete')
+        .from('solicitudes_transporte')
+        .update({'estado': estado})
+        .eq('id', solicitudId);
   }
 
   /// Removes the realtime subscription for transport requests.

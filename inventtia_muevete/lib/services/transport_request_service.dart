@@ -2,6 +2,8 @@ import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/transport_request_model.dart';
 import '../models/driver_offer_model.dart';
+import '../models/notification_model.dart';
+import 'notification_service.dart';
 
 class TransportRequestService {
   final SupabaseClient _supabase = Supabase.instance.client;
@@ -208,6 +210,31 @@ class TransportRequestService {
           .eq('id', solicitudId)
           .select()
           .single();
+
+      // Notify the driver that their offer was accepted
+      try {
+        final driverId = offerResponse['driver_id'];
+        if (driverId != null) {
+          // Get driver's auth UUID from muevete.drivers
+          final driverRow = await _supabase
+              .schema('muevete')
+              .from('drivers')
+              .select('uuid')
+              .eq('id', driverId)
+              .maybeSingle();
+          final driverUuid = driverRow?['uuid'] as String?;
+          if (driverUuid != null) {
+            await NotificationService().createNotification(
+              userUuid: driverUuid,
+              tipo: NotificationType.ofertaAceptada,
+              titulo: 'Oferta aceptada',
+              mensaje: 'Un pasajero aceptó tu oferta. Dirígete al punto de recogida.',
+              data: {'solicitud_id': solicitudId, 'oferta_id': offerId},
+            );
+          }
+        }
+      } catch (_) {}
+
       return Map<String, dynamic>.from(solicitud);
     }
     return {};

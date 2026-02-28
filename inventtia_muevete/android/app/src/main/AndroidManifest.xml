@@ -9,6 +9,9 @@
     <!-- Needed for foreground location updates while app is visible -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
+    <!-- ── Vibration ── -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- ── Camera & storage (image_picker) ── -->
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- Android ≤12 needs READ_EXTERNAL_STORAGE; Android 13+ uses granular READ_MEDIA_IMAGES -->

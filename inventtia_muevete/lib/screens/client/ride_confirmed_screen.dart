@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -10,10 +11,12 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_theme.dart';
+import '../../models/notification_model.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/transport_provider.dart';
 import '../../providers/theme_provider.dart';
-import '../../services/transport_request_service.dart';
+import '../../services/notification_service.dart';
+import '../../services/routing_service.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/map_widget.dart';
 
@@ -35,6 +38,20 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   Timer? _locationPollTimer;
   bool _isCompleting = false;
 
+  // Real-time client tracking
+  List<LatLng> _clientTrail = []; // breadcrumb trail (grey)
+  List<LatLng> _currentRoute = []; // current optimal route to destination
+  double _distanceToDestinationM = double.infinity;
+  static const double _completeThresholdM = 30.0;
+  bool _isRecalculating = false;
+  Timer? _routeRefreshTimer; // periodic fallback every 10s
+
+  final RoutingService _routingService = RoutingService();
+
+  LatLng? _lastClientPosition;
+  double _clientBearing = 0.0;
+  bool _clientIsMoving = false;
+
   @override
   void initState() {
     super.initState();
@@ -48,9 +65,18 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startDriverTracking();
+      _startClientTracking();
+      // Periodic fallback: recalculate route every 10s regardless of movement
+      _routeRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+        if (!mounted) return;
+        final loc = context.read<LocationProvider>().currentLocation ??
+            context.read<LocationProvider>().locationOrDefault;
+        _forceRecalculateRoute(loc);
+      });
     });
   }
 
+  // ─── Driver tracking (poll every 8s) ────────────────────────────────────
   Future<void> _startDriverTracking() async {
     final driverId =
         context.read<TransportProvider>().acceptedOffer?.driverId;
@@ -81,6 +107,104 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     } catch (_) {}
   }
 
+  // ─── Client real-time tracking ───────────────────────────────────────────
+  void _startClientTracking() {
+    final locationProvider = context.read<LocationProvider>();
+
+    // Use current fix or fallback default — always seed immediately
+    final current =
+        locationProvider.currentLocation ?? locationProvider.locationOrDefault;
+    _lastClientPosition = current;
+    _clientTrail = [current];
+    // First route calculation — no throttle guard
+    _forceRecalculateRoute(current);
+
+    // Listen to every GPS update
+    locationProvider.addListener(_onClientPositionUpdate);
+  }
+
+  void _onClientPositionUpdate() {
+    if (!mounted) return;
+    final loc = context.read<LocationProvider>().currentLocation;
+    if (loc == null) return;
+
+    // Accumulate trail on any movement > 2m
+    if (_lastClientPosition != null &&
+        _haversineMeters(_lastClientPosition!, loc) < 2) {
+      // Still update distance even if not moving much
+      _updateDistance(loc);
+      return;
+    }
+    // Calculate bearing
+    if (_lastClientPosition != null) {
+      final b = _calcBearing(_lastClientPosition!, loc);
+      _clientBearing = b;
+      _clientIsMoving = true;
+    }
+    _lastClientPosition = loc;
+
+    setState(() {
+      _clientTrail.add(loc);
+      if (_clientTrail.length > 500) _clientTrail.removeAt(0);
+    });
+
+    _updateDistance(loc);
+
+    // Recalculate only when not already in flight
+    if (!_isRecalculating) {
+      _forceRecalculateRoute(loc);
+    }
+  }
+
+  void _updateDistance(LatLng loc) {
+    final dest = context.read<TransportProvider>().dropoffLocation;
+    if (dest == null) return;
+    final dist = _haversineMeters(loc, dest);
+    if (mounted) setState(() => _distanceToDestinationM = dist);
+  }
+
+  /// Always fires a route recalculation, bypassing the _isRecalculating guard.
+  /// Used for the initial seed and the periodic timer fallback.
+  Future<void> _forceRecalculateRoute(LatLng from) async {
+    final dest = context.read<TransportProvider>().dropoffLocation;
+    if (dest == null) return;
+    _isRecalculating = true;
+    try {
+      final result = await _routingService.getRoute(from, dest);
+      if (mounted) {
+        setState(() => _currentRoute = result.polyline);
+      }
+    } catch (_) {
+      // Keep previous route on error
+    }
+    // Always reset — even if catch fires
+    _isRecalculating = false;
+  }
+
+  double _haversineMeters(LatLng a, LatLng b) {
+    const earthR = 6371000.0;
+    final dLat = (b.latitude - a.latitude) * pi / 180;
+    final dLon = (b.longitude - a.longitude) * pi / 180;
+    final sinDLat = sin(dLat / 2);
+    final sinDLon = sin(dLon / 2);
+    final h = sinDLat * sinDLat +
+        cos(a.latitude * pi / 180) *
+            cos(b.latitude * pi / 180) *
+            sinDLon *
+            sinDLon;
+    return 2 * earthR * asin(sqrt(h));
+  }
+
+  double _calcBearing(LatLng from, LatLng to) {
+    final dLon = (to.longitude - from.longitude) * pi / 180;
+    final lat1 = from.latitude * pi / 180;
+    final lat2 = to.latitude * pi / 180;
+    final y = sin(dLon) * cos(lat2);
+    final x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon);
+    return atan2(y, x);
+  }
+
+  // ─── Complete ride ───────────────────────────────────────────────────────
   Future<void> _completeRide() async {
     final tp = context.read<TransportProvider>();
     final requestId = tp.activeRequest?.id;
@@ -111,7 +235,11 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   void dispose() {
     _pulseController.dispose();
     _locationPollTimer?.cancel();
+    _routeRefreshTimer?.cancel();
     _mapController.dispose();
+    try {
+      context.read<LocationProvider>().removeListener(_onClientPositionUpdate);
+    } catch (_) {}
     super.dispose();
   }
 
@@ -141,7 +269,6 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     final acceptedOffer = transportProvider.acceptedOffer;
     final pickup = transportProvider.pickupLocation;
     final dropoff = transportProvider.dropoffLocation;
-    final polyline = transportProvider.routePolyline;
     final userLocation = locationProvider.locationOrDefault;
 
     // Driver info from accepted offer (real data from DB)
@@ -157,6 +284,14 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     final vehicleInfo =
         [marca, modelo, color].where((s) => s.isNotEmpty).join(' ');
     final eta = acceptedOffer?.tiempoEstimado ?? 0;
+
+    // Can complete?
+    final canComplete = _distanceToDestinationM <= _completeThresholdM;
+    final distStr = _distanceToDestinationM == double.infinity
+        ? '—'
+        : _distanceToDestinationM < 1000
+            ? '${_distanceToDestinationM.toStringAsFixed(0)} m'
+            : '${(_distanceToDestinationM / 1000).toStringAsFixed(2)} km';
 
     // Build markers
     final markers = <Marker>[];
@@ -211,6 +346,39 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
         ),
       );
     }
+
+    // Client current position marker — directional arrow when moving
+    markers.add(
+      Marker(
+        point: userLocation,
+        width: 40,
+        height: 40,
+        child: _clientIsMoving
+            ? Transform.rotate(
+                angle: _clientBearing,
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppTheme.primaryColor,
+                    border: Border.all(color: Colors.white, width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.4),
+                        blurRadius: 8,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.navigation,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+              )
+            : _PulsingDot(animation: _pulseAnimation),
+      ),
+    );
 
     // Driver marker with name label
     if (_driverPosition != null) {
@@ -274,13 +442,33 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       );
     }
 
-    // Build polylines (dashed blue)
+    // Build polylines
     final polylines = <Polyline>[];
-    if (polyline != null && polyline.isNotEmpty) {
+
+    // Grey breadcrumb trail (visited path)
+    if (_clientTrail.length >= 2) {
       polylines.add(
         Polyline(
-          points: polyline,
+          points: List.from(_clientTrail),
           strokeWidth: 4.0,
+          color: Colors.grey.withValues(alpha: 0.7),
+        ),
+      );
+    }
+
+    // Blue current route to destination — glow layer + solid
+    if (_currentRoute.isNotEmpty) {
+      polylines.add(
+        Polyline(
+          points: _currentRoute,
+          strokeWidth: 10.0,
+          color: AppTheme.primaryColor.withValues(alpha: 0.2),
+        ),
+      );
+      polylines.add(
+        Polyline(
+          points: _currentRoute,
+          strokeWidth: 4.5,
           color: AppTheme.primaryColor,
         ),
       );
@@ -293,7 +481,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
           MapWidget(
             isDark: isDark,
             mapController: _mapController,
-            center: pickup ?? userLocation,
+            center: userLocation,
             zoom: 15.0,
             markers: markers,
             polylines: polylines,
@@ -313,7 +501,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                     onTap: () => Navigator.pop(context),
                   ),
                   const SizedBox(width: 12),
-                  // ETA status bar
+                  // ETA + distance status bar
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
@@ -340,11 +528,36 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                           Text(
                             'Llega en $eta min',
                             style: GoogleFonts.plusJakartaSans(
-                              fontSize: 15,
+                              fontSize: 14,
                               fontWeight: FontWeight.w700,
                               color: isDark
                                   ? Colors.white
                                   : Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Container(
+                            width: 1,
+                            height: 16,
+                            color: isDark ? Colors.white24 : Colors.grey[300],
+                          ),
+                          const SizedBox(width: 12),
+                          Icon(
+                            Icons.place_outlined,
+                            size: 14,
+                            color: isDark ? Colors.white54 : Colors.grey[600],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            distStr,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: canComplete
+                                  ? AppTheme.success
+                                  : (isDark
+                                      ? Colors.white70
+                                      : Colors.grey[700]),
                             ),
                           ),
                         ],
@@ -700,37 +913,59 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                       ],
                     ),
                     const SizedBox(height: 12),
-                    // Complete ride button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton.icon(
-                        onPressed: _isCompleting ? null : _completeRide,
-                        icon: _isCompleting
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
+                    // Complete ride button — locked until within 30m
+                    Tooltip(
+                      message: canComplete
+                          ? ''
+                          : 'Debes estar a menos de 30 m del destino',
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton.icon(
+                          onPressed:
+                              (canComplete && !_isCompleting)
+                                  ? _completeRide
+                                  : null,
+                          icon: _isCompleting
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Icon(
+                                  canComplete
+                                      ? Icons.check_circle_outline
+                                      : Icons.lock_outline,
+                                  size: 20,
                                 ),
-                              )
-                            : const Icon(Icons.check_circle_outline,
-                                size: 20),
-                        label: Text(
-                          _isCompleting ? 'Completando...' : 'Completar viaje',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
+                          label: Text(
+                            _isCompleting
+                                ? 'Completando...'
+                                : canComplete
+                                    ? 'Completar viaje'
+                                    : 'Faltan $distStr para completar',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.success,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: canComplete
+                                ? AppTheme.success
+                                : Colors.grey[400],
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor:
+                                Colors.grey[400],
+                            disabledForegroundColor:
+                                Colors.white70,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 0,
                           ),
-                          elevation: 0,
                         ),
                       ),
                     ),
@@ -765,6 +1000,41 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
             icon,
             color: isDark ? Colors.white : Colors.black87,
             size: 22,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pulsing blue dot for client position.
+class _PulsingDot extends AnimatedWidget {
+  const _PulsingDot({required Animation<double> animation})
+      : super(listenable: animation);
+
+  @override
+  Widget build(BuildContext context) {
+    final value = (listenable as Animation<double>).value;
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppTheme.primaryColor.withValues(alpha: value * 0.3),
+      ),
+      child: Center(
+        child: Container(
+          width: 16,
+          height: 16,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppTheme.primaryColor,
+            border: Border.all(color: Colors.white, width: 3),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.primaryColor.withValues(alpha: 0.4),
+                blurRadius: 8,
+                spreadRadius: 2,
+              ),
+            ],
           ),
         ),
       ),

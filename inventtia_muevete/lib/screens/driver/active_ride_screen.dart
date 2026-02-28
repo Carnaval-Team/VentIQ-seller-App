@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -8,8 +9,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/app_theme.dart';
+import '../../models/notification_model.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../services/driver_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/routing_service.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/map_widget.dart';
@@ -29,6 +33,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     with SingleTickerProviderStateMixin {
   final MapController _mapController = MapController();
   final RoutingService _routingService = RoutingService();
+  final DriverService _driverService = DriverService();
 
   _RidePhase _currentPhase = _RidePhase.goingToPickup;
   List<LatLng> _routePolyline = [];
@@ -37,14 +42,30 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
-  // Placeholder client data (from tripData or defaults)
+  // Client data from tripData
   late String _clientName;
   late String _clientPhone;
+  String? _clientImage;
   late String _pickupAddress;
   late String _dropoffAddress;
   late double _tripPrice;
   LatLng? _pickupLocation;
   LatLng? _dropoffLocation;
+  int? _viajeId;
+  int? _solicitudId;
+  String? _clientUuid;
+
+  // Real-time tracking
+  List<LatLng> _breadcrumbTrail = [];
+  LatLng? _lastTrailPosition;
+  bool _isRecalculating = false;
+  Timer? _routeRefreshTimer;
+  double _distanceToTargetM = double.infinity;
+  double _bearing = 0.0;
+  bool _isMoving = false;
+  bool _isCompletingAction = false;
+
+  static const double _completionThresholdM = 30.0;
 
   @override
   void initState() {
@@ -60,13 +81,17 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
 
     // Extract trip data
     final data = widget.tripData ?? {};
-    _clientName = data['client_name'] as String? ?? 'Carlos Martinez';
-    _clientPhone = data['client_phone'] as String? ?? '+5350001234';
+    _clientName = data['client_name'] as String? ?? 'Pasajero';
+    _clientPhone = data['client_phone'] as String? ?? '';
+    _clientImage = data['client_image'] as String?;
     _pickupAddress =
         data['direccion_origen'] as String? ?? 'Punto de recogida';
     _dropoffAddress =
         data['direccion_destino'] as String? ?? 'Destino del viaje';
     _tripPrice = (data['precio'] as num?)?.toDouble() ?? 0.0;
+    _viajeId = data['viaje_id'] as int?;
+    _solicitudId = data['solicitud_id'] as int?;
+    _clientUuid = data['user_id'] as String?;
 
     final latOrigen = (data['lat_origen'] as num?)?.toDouble();
     final lonOrigen = (data['lon_origen'] as num?)?.toDouble();
@@ -81,15 +106,106 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startTracking();
       _loadRoute();
     });
+  }
+
+  // ── Real-time tracking ──────────────────────────────────────────────────
+
+  void _startTracking() {
+    final locationProvider = context.read<LocationProvider>();
+
+    // Seed trail + initial distance
+    final loc =
+        locationProvider.currentLocation ?? locationProvider.locationOrDefault;
+    _lastTrailPosition = loc;
+    _breadcrumbTrail = [loc];
+    _updateDistanceAndBearing(loc);
+
+    // Listen to GPS updates
+    locationProvider.addListener(_onLocationUpdate);
+
+    // Periodic fallback every 10s — recalculate route AND distance
+    _routeRefreshTimer?.cancel();
+    _routeRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!mounted) return;
+      final current = context.read<LocationProvider>().currentLocation ??
+          context.read<LocationProvider>().locationOrDefault;
+      _updateDistanceAndBearing(current);
+      _recalculateRoute(current);
+    });
+  }
+
+  void _onLocationUpdate() {
+    if (!mounted) return;
+    final loc = context.read<LocationProvider>().currentLocation;
+    if (loc == null) return;
+
+    // Skip tiny movements (< 2m)
+    if (_lastTrailPosition != null &&
+        _haversineMeters(_lastTrailPosition!, loc) < 2) {
+      _updateDistanceAndBearing(loc);
+      return;
+    }
+
+    // Calculate bearing from last position
+    if (_lastTrailPosition != null) {
+      final newBearing = _calcBearing(_lastTrailPosition!, loc);
+      setState(() {
+        _bearing = newBearing;
+        _isMoving = true;
+      });
+    }
+
+    _lastTrailPosition = loc;
+
+    setState(() {
+      _breadcrumbTrail.add(loc);
+      if (_breadcrumbTrail.length > 500) _breadcrumbTrail.removeAt(0);
+    });
+
+    _updateDistanceAndBearing(loc);
+
+    if (!_isRecalculating) {
+      _recalculateRoute(loc);
+    }
+  }
+
+  void _updateDistanceAndBearing(LatLng loc) {
+    final target = _currentTarget;
+    if (target == null) return;
+    final dist = _haversineMeters(loc, target);
+    if (mounted) setState(() => _distanceToTargetM = dist);
+  }
+
+  LatLng? get _currentTarget {
+    if (_currentPhase == _RidePhase.goingToPickup ||
+        _currentPhase == _RidePhase.waitingAtPickup) {
+      return _pickupLocation;
+    } else if (_currentPhase == _RidePhase.inProgress) {
+      return _dropoffLocation;
+    }
+    return null;
+  }
+
+  Future<void> _recalculateRoute(LatLng from) async {
+    final end = _currentTarget;
+    if (end == null) return;
+    _isRecalculating = true;
+    try {
+      final result = await _routingService.getRoute(from, end);
+      if (mounted) {
+        setState(() => _routePolyline = result.polyline);
+      }
+    } catch (_) {}
+    _isRecalculating = false;
   }
 
   Future<void> _loadRoute() async {
     final locationProvider = context.read<LocationProvider>();
     final driverLocation = locationProvider.locationOrDefault;
 
-    // Determine route endpoints based on phase
     LatLng start = driverLocation;
     LatLng? end;
 
@@ -103,9 +219,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
 
     if (end == null) return;
 
-    setState(() {
-      _isLoadingRoute = true;
-    });
+    setState(() => _isLoadingRoute = true);
 
     try {
       final result = await _routingService.getRoute(start, end);
@@ -115,7 +229,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
           _isLoadingRoute = false;
         });
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         setState(() {
           _routePolyline = [start, end!];
@@ -125,24 +239,109 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     }
   }
 
-  void _advancePhase() {
-    setState(() {
-      switch (_currentPhase) {
-        case _RidePhase.goingToPickup:
-          _currentPhase = _RidePhase.waitingAtPickup;
-          break;
-        case _RidePhase.waitingAtPickup:
-          _currentPhase = _RidePhase.inProgress;
-          _loadRoute(); // Recalculate route pickup -> dropoff
-          break;
-        case _RidePhase.inProgress:
-          _currentPhase = _RidePhase.completed;
-          _showCompletionDialog();
-          break;
-        case _RidePhase.completed:
-          break;
-      }
-    });
+  // ── Phase actions ───────────────────────────────────────────────────────
+
+  Future<void> _advancePhase() async {
+    if (_isCompletingAction) return;
+
+    switch (_currentPhase) {
+      case _RidePhase.goingToPickup:
+        setState(() => _currentPhase = _RidePhase.waitingAtPickup);
+        if (_clientUuid != null) {
+          NotificationService().createNotification(
+            userUuid: _clientUuid!,
+            tipo: NotificationType.driverEsperando,
+            titulo: 'Conductor esperando',
+            mensaje: 'Tu conductor llegó al punto de recogida.',
+            data: {'viaje_id': _viajeId, 'solicitud_id': _solicitudId},
+          );
+        }
+        break;
+
+      case _RidePhase.waitingAtPickup:
+        // "Iniciar Viaje" — mark viaje as started
+        setState(() => _isCompletingAction = true);
+        try {
+          if (_viajeId != null) {
+            await _driverService.updateTripStatus(_viajeId!, estado: true);
+          }
+          if (mounted) {
+            setState(() {
+              _currentPhase = _RidePhase.inProgress;
+              _isCompletingAction = false;
+              _breadcrumbTrail.clear(); // reset trail for trip phase
+            });
+            // Immediately recalculate distance to new target (dropoff)
+            final loc = context.read<LocationProvider>().locationOrDefault;
+            _updateDistanceAndBearing(loc);
+            _loadRoute(); // Recalculate route pickup -> dropoff
+            if (_clientUuid != null) {
+              NotificationService().createNotification(
+                userUuid: _clientUuid!,
+                tipo: NotificationType.viajeIniciado,
+                titulo: 'Viaje iniciado',
+                mensaje: 'Tu viaje ha comenzado. Disfruta el trayecto.',
+                data: {'viaje_id': _viajeId, 'solicitud_id': _solicitudId},
+              );
+            }
+          }
+        } catch (e) {
+          if (mounted) {
+            setState(() => _isCompletingAction = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error: $e')),
+            );
+          }
+        }
+        break;
+
+      case _RidePhase.inProgress:
+        // "Completar Viaje" — only if within 30m
+        if (_distanceToTargetM > _completionThresholdM) return;
+        setState(() => _isCompletingAction = true);
+        try {
+          if (_viajeId != null) {
+            await _driverService.updateTripStatus(_viajeId!, completado: true);
+          }
+          if (_solicitudId != null) {
+            await _driverService.updateSolicitudEstado(
+                _solicitudId!, 'completada');
+          }
+          if (mounted) {
+            setState(() {
+              _currentPhase = _RidePhase.completed;
+              _isCompletingAction = false;
+            });
+            if (_clientUuid != null) {
+              NotificationService().createNotification(
+                userUuid: _clientUuid!,
+                tipo: NotificationType.viajeCompletado,
+                titulo: 'Viaje completado',
+                mensaje: 'Has llegado a tu destino. Gracias por usar Muevete.',
+                data: {'viaje_id': _viajeId, 'solicitud_id': _solicitudId},
+              );
+            }
+            // Local notification for driver
+            NotificationService().pushLocal(
+              tipo: NotificationType.viajeCompletado,
+              titulo: 'Viaje completado',
+              mensaje: 'El viaje ha finalizado correctamente.',
+            );
+            _showCompletionDialog();
+          }
+        } catch (e) {
+          if (mounted) {
+            setState(() => _isCompletingAction = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error: $e')),
+            );
+          }
+        }
+        break;
+
+      case _RidePhase.completed:
+        break;
+    }
   }
 
   String _getPhaseLabel() {
@@ -161,10 +360,19 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   String _getActionButtonLabel() {
     switch (_currentPhase) {
       case _RidePhase.goingToPickup:
-        return 'Llegue al punto';
+        return 'Llegué al punto';
       case _RidePhase.waitingAtPickup:
         return 'Iniciar Viaje';
       case _RidePhase.inProgress:
+        if (_distanceToTargetM > _completionThresholdM) {
+          if (_distanceToTargetM == double.infinity) {
+            return 'Calculando distancia...';
+          }
+          final distStr = _distanceToTargetM < 1000
+              ? '${_distanceToTargetM.toStringAsFixed(0)} m'
+              : '${(_distanceToTargetM / 1000).toStringAsFixed(1)} km';
+          return 'Faltan $distStr';
+        }
         return 'Completar Viaje';
       case _RidePhase.completed:
         return 'Finalizado';
@@ -196,6 +404,19 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
         return Icons.check_circle;
     }
   }
+
+  bool get _canComplete =>
+      _currentPhase == _RidePhase.inProgress &&
+      _distanceToTargetM <= _completionThresholdM;
+
+  bool get _actionEnabled {
+    if (_isCompletingAction) return false;
+    if (_currentPhase == _RidePhase.completed) return false;
+    if (_currentPhase == _RidePhase.inProgress && !_canComplete) return false;
+    return true;
+  }
+
+  // ── Completion dialog ───────────────────────────────────────────────────
 
   void _showCompletionDialog() {
     final isDark = context.read<ThemeProvider>().isDark;
@@ -285,6 +506,31 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     );
   }
 
+  // ── Helpers ─────────────────────────────────────────────────────────────
+
+  double _haversineMeters(LatLng a, LatLng b) {
+    const earthR = 6371000.0;
+    final dLat = (b.latitude - a.latitude) * pi / 180;
+    final dLon = (b.longitude - a.longitude) * pi / 180;
+    final sinDLat = sin(dLat / 2);
+    final sinDLon = sin(dLon / 2);
+    final h = sinDLat * sinDLat +
+        cos(a.latitude * pi / 180) *
+            cos(b.latitude * pi / 180) *
+            sinDLon *
+            sinDLon;
+    return 2 * earthR * asin(sqrt(h));
+  }
+
+  double _calcBearing(LatLng from, LatLng to) {
+    final dLon = (to.longitude - from.longitude) * pi / 180;
+    final lat1 = from.latitude * pi / 180;
+    final lat2 = to.latitude * pi / 180;
+    final y = sin(dLon) * cos(lat2);
+    final x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon);
+    return atan2(y, x);
+  }
+
   Future<void> _launchCall(String phone) async {
     final url = Uri.parse(Helpers.buildPhoneUrl(phone));
     if (await canLaunchUrl(url)) {
@@ -306,8 +552,14 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   void dispose() {
     _pulseController.dispose();
     _mapController.dispose();
+    _routeRefreshTimer?.cancel();
+    try {
+      context.read<LocationProvider>().removeListener(_onLocationUpdate);
+    } catch (_) {}
     super.dispose();
   }
+
+  // ── Build ───────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -321,31 +573,54 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     // Build markers
     final markers = <Marker>[];
 
-    // Driver marker
+    // Driver marker — directional arrow when moving, car when stationary
     markers.add(
       Marker(
         point: driverLocation,
         width: 46,
         height: 46,
-        child: Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppTheme.primaryColor,
-            border: Border.all(color: Colors.white, width: 3),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.primaryColor.withValues(alpha: 0.4),
-                blurRadius: 10,
-                spreadRadius: 1,
+        child: _isMoving
+            ? Transform.rotate(
+                angle: _bearing,
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppTheme.primaryColor,
+                    border: Border.all(color: Colors.white, width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.4),
+                        blurRadius: 10,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.navigation,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+              )
+            : Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppTheme.primaryColor,
+                  border: Border.all(color: Colors.white, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.4),
+                      blurRadius: 10,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.directions_car,
+                  color: Colors.white,
+                  size: 20,
+                ),
               ),
-            ],
-          ),
-          child: const Icon(
-            Icons.directions_car,
-            color: Colors.white,
-            size: 20,
-          ),
-        ),
       ),
     );
 
@@ -397,11 +672,32 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
 
     // Build polylines
     final polylines = <Polyline>[];
+
+    // Grey breadcrumb trail
+    if (_breadcrumbTrail.length >= 2) {
+      polylines.add(
+        Polyline(
+          points: List.from(_breadcrumbTrail),
+          strokeWidth: 4.0,
+          color: Colors.grey.withValues(alpha: 0.6),
+        ),
+      );
+    }
+
+    // Animated route — glow layer underneath
     if (_routePolyline.isNotEmpty) {
       polylines.add(
         Polyline(
           points: _routePolyline,
-          strokeWidth: 4.0,
+          strokeWidth: 10.0,
+          color: phaseColor.withValues(alpha: 0.2),
+        ),
+      );
+      // Solid route on top
+      polylines.add(
+        Polyline(
+          points: _routePolyline,
+          strokeWidth: 4.5,
           color: phaseColor,
         ),
       );
@@ -468,14 +764,12 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                   const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12),
               child: Row(
                 children: [
-                  // Back button
                   _buildTopButton(
                     icon: Icons.arrow_back,
                     isDark: isDark,
                     onTap: () => Navigator.pop(context),
                   ),
                   const SizedBox(width: 12),
-                  // Phase status bar
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
@@ -512,12 +806,38 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          if (_currentPhase == _RidePhase.inProgress) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              width: 1,
+                              height: 16,
+                              color:
+                                  isDark ? Colors.white24 : Colors.grey[300],
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              (_distanceToTargetM == double.infinity ||
+                                      _distanceToTargetM.isNaN)
+                                  ? '—'
+                                  : _distanceToTargetM < 1000
+                                      ? '${_distanceToTargetM.toStringAsFixed(0)} m'
+                                      : '${(_distanceToTargetM / 1000).toStringAsFixed(1)} km',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: _canComplete
+                                    ? AppTheme.success
+                                    : (isDark
+                                        ? Colors.white70
+                                        : Colors.grey[700]),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // Phase icon button
                   _buildTopButton(
                     icon: _getPhaseIcon(),
                     isDark: isDark,
@@ -581,15 +901,25 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                               color: AppTheme.primaryColor,
                               width: 2,
                             ),
+                            image: _clientImage != null &&
+                                    _clientImage!.isNotEmpty
+                                ? DecorationImage(
+                                    image:
+                                        NetworkImage(_clientImage!),
+                                    fit: BoxFit.cover,
+                                  )
+                                : null,
                           ),
-                          child: const Icon(
-                            Icons.person,
-                            color: AppTheme.primaryColor,
-                            size: 26,
-                          ),
+                          child: (_clientImage == null ||
+                                  _clientImage!.isEmpty)
+                              ? const Icon(
+                                  Icons.person,
+                                  color: AppTheme.primaryColor,
+                                  size: 26,
+                                )
+                              : null,
                         ),
                         const SizedBox(width: 14),
-                        // Client details
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -622,7 +952,6 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                             ],
                           ),
                         ),
-                        // Trip price badge
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 6),
@@ -680,8 +1009,8 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                             ],
                           ),
                           Padding(
-                            padding:
-                                const EdgeInsets.only(left: 4, top: 4, bottom: 4),
+                            padding: const EdgeInsets.only(
+                                left: 4, top: 4, bottom: 4),
                             child: Align(
                               alignment: Alignment.centerLeft,
                               child: Container(
@@ -726,7 +1055,9 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                           height: 50,
                           width: 50,
                           child: ElevatedButton(
-                            onPressed: () => _launchCall(_clientPhone),
+                            onPressed: _clientPhone.isNotEmpty
+                                ? () => _launchCall(_clientPhone)
+                                : null,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: isDark
                                   ? AppTheme.darkCard
@@ -749,8 +1080,9 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                           height: 50,
                           width: 50,
                           child: ElevatedButton(
-                            onPressed: () =>
-                                _launchWhatsApp(_clientPhone),
+                            onPressed: _clientPhone.isNotEmpty
+                                ? () => _launchWhatsApp(_clientPhone)
+                                : null,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF25D366),
                               foregroundColor: Colors.white,
@@ -768,29 +1100,45 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                         Expanded(
                           child: SizedBox(
                             height: 50,
-                            child: ElevatedButton(
+                            child: ElevatedButton.icon(
                               onPressed:
-                                  _currentPhase == _RidePhase.completed
-                                      ? null
-                                      : _advancePhase,
+                                  _actionEnabled ? _advancePhase : null,
+                              icon: _isCompletingAction
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : Icon(
+                                      _currentPhase ==
+                                                  _RidePhase.inProgress &&
+                                              !_canComplete
+                                          ? Icons.lock_outline
+                                          : null,
+                                      size: 18,
+                                    ),
+                              label: Text(
+                                _getActionButtonLabel(),
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: phaseColor,
+                                backgroundColor: _actionEnabled
+                                    ? phaseColor
+                                    : Colors.grey[400],
                                 foregroundColor: Colors.white,
-                                disabledBackgroundColor:
-                                    AppTheme.success.withValues(alpha: 0.5),
+                                disabledBackgroundColor: Colors.grey[400],
                                 disabledForegroundColor:
                                     Colors.white.withValues(alpha: 0.7),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(14),
                                 ),
                                 elevation: 0,
-                              ),
-                              child: Text(
-                                _getActionButtonLabel(),
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                ),
                               ),
                             ),
                           ),

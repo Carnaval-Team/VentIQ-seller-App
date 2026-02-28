@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
+import '../services/notification_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -38,6 +39,10 @@ class AuthProvider extends ChangeNotifier {
       } else {
         _role = 'client';
         _userProfile = await _authService.getUserProfile();
+      }
+      // Subscribe to in-app notifications
+      if (_user != null) {
+        NotificationService().subscribe(_user!.id);
       }
       notifyListeners();
     } catch (e) {
@@ -126,6 +131,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    await NotificationService().unsubscribe();
     await _authService.signOut();
     _user = null;
     _userProfile = null;

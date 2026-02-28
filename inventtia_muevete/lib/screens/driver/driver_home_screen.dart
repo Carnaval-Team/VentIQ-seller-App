@@ -6,13 +6,16 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_theme.dart';
 import '../../models/transport_request_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../models/notification_model.dart';
 import '../../services/driver_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/vehicle_type_service.dart';
 import '../../models/vehicle_type_model.dart';
 import '../../utils/constants.dart';
@@ -46,6 +49,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   // IDs de solicitudes a las que el driver ya envió oferta (no mostrar)
   final Set<int> _offeredRequestIds = {};
+
+  // Offer acceptance subscription
+  RealtimeChannel? _offerAcceptChannel;
+  Map<String, dynamic>? _confirmedTripData; // enriched data for confirmed ride
 
   final List<TransportRequestModel> _incomingRequests = [];
   AnimationController? _slideController;
@@ -84,9 +91,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       setState(() => _isOnline = estado);
       if (_isOnline) {
         _subscribeToRequests();
+        _subscribeToOfferAcceptances();
         _startLocationTracking();
         await _loadNearbyRequests();
       }
+      // Always subscribe to offer acceptances (even offline, to catch late accepts)
+      _subscribeToOfferAcceptances();
     }
   }
 
@@ -188,8 +198,91 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             _nearbyRequests.removeWhere((r) => r['id'] == request.id);
           });
           _slideController?.forward();
+          NotificationService().pushLocal(
+            tipo: NotificationType.nuevaSolicitud,
+            titulo: 'Nueva solicitud',
+            mensaje: 'Nuevo pasajero cerca busca transporte.',
+            data: {'solicitud_id': request.id},
+          );
         }
       },
+    );
+  }
+
+  void _subscribeToOfferAcceptances() {
+    final driverProfile = context.read<AuthProvider>().driverProfile;
+    final driverId = driverProfile?['id'] as int?;
+    if (driverId == null) return;
+
+    _offerAcceptChannel?.unsubscribe();
+    _offerAcceptChannel = _driverService.subscribeToMyOfferAcceptances(
+      driverId,
+      (offer) => _onOfferAccepted(offer),
+    );
+  }
+
+  Future<void> _onOfferAccepted(Map<String, dynamic> offer) async {
+    final solicitudId = offer['solicitud_id'] as int?;
+    if (solicitudId == null) return;
+
+    NotificationService().pushLocal(
+      tipo: NotificationType.ofertaAceptada,
+      titulo: 'Oferta aceptada',
+      mensaje: 'Un pasajero aceptó tu oferta. Dirígete al punto de recogida.',
+      data: {'solicitud_id': solicitudId},
+    );
+
+    try {
+      final solicitud = await _driverService.fetchSolicitudById(solicitudId);
+      if (solicitud == null || !mounted) return;
+
+      final userId = solicitud['user_id'] as String?;
+      Map<String, dynamic>? clientInfo;
+      if (userId != null) {
+        clientInfo = await _driverService.fetchClientInfo(userId);
+      }
+
+      final tripData = <String, dynamic>{
+        'solicitud_id': solicitudId,
+        'client_name': clientInfo?['name'] as String? ?? 'Pasajero',
+        'client_phone': clientInfo?['phone'] as String? ?? '',
+        'client_image': clientInfo?['photo_url'] as String?,
+        'direccion_origen': solicitud['direccion_origen'] ?? 'Origen',
+        'direccion_destino': solicitud['direccion_destino'] ?? 'Destino',
+        'lat_origen': solicitud['lat_origen'],
+        'lon_origen': solicitud['lon_origen'],
+        'lat_destino': solicitud['lat_destino'],
+        'lon_destino': solicitud['lon_destino'],
+        'precio': offer['precio'] ?? solicitud['precio_oferta'] ?? 0,
+        'user_id': userId,
+      };
+
+      // Check if there's already a viaje for this
+      final driverProfile = context.read<AuthProvider>().driverProfile;
+      final driverId = driverProfile?['id'] as int?;
+      if (driverId != null) {
+        final activeTrip = await _driverService.getActiveTrip(driverId);
+        if (activeTrip != null) {
+          tripData['viaje_id'] = activeTrip['id'];
+        }
+      }
+
+      if (mounted) {
+        setState(() => _confirmedTripData = tripData);
+      }
+    } catch (e) {
+      dev.log('[OfferAccept] Error: $e', name: 'DriverHome');
+    }
+  }
+
+  void _goToActiveRide() {
+    if (_confirmedTripData == null) return;
+    final data = Map<String, dynamic>.from(_confirmedTripData!);
+    setState(() => _confirmedTripData = null);
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ActiveRideScreen(tripData: data),
+      ),
     );
   }
 
@@ -234,6 +327,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
       if (newStatus) {
         _subscribeToRequests();
+        _subscribeToOfferAcceptances();
         _startLocationTracking();
         await _loadNearbyRequests();
       } else {
@@ -800,10 +894,62 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (driverId == null) return;
 
     final activeTrip = await _driverService.getActiveTrip(driverId);
-    if (activeTrip != null && mounted) {
+    if (activeTrip == null || !mounted) return;
+
+    // Enrich with solicitud + client data
+    final tripData = Map<String, dynamic>.from(activeTrip);
+    tripData['viaje_id'] = activeTrip['id'];
+
+    // Try to find the related solicitud via ofertas_chofer
+    try {
+      final offers = await Supabase.instance.client
+          .schema('muevete')
+          .from('ofertas_chofer')
+          .select('solicitud_id, precio')
+          .eq('driver_id', driverId)
+          .eq('estado', 'aceptada')
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      if (offers != null && (offers as List).isNotEmpty) {
+        final solicitudId = offers.first['solicitud_id'] as int?;
+        if (solicitudId != null) {
+          final solicitud =
+              await _driverService.fetchSolicitudById(solicitudId);
+          if (solicitud != null) {
+            tripData['solicitud_id'] = solicitudId;
+            tripData['direccion_origen'] =
+                solicitud['direccion_origen'] ?? 'Origen';
+            tripData['direccion_destino'] =
+                solicitud['direccion_destino'] ?? 'Destino';
+            tripData['lat_origen'] = solicitud['lat_origen'];
+            tripData['lon_origen'] = solicitud['lon_origen'];
+            tripData['lat_destino'] = solicitud['lat_destino'];
+            tripData['lon_destino'] = solicitud['lon_destino'];
+            tripData['precio'] =
+                offers.first['precio'] ?? solicitud['precio_oferta'] ?? 0;
+
+            final userId = solicitud['user_id'] as String?;
+            if (userId != null) {
+              tripData['user_id'] = userId;
+              final client = await _driverService.fetchClientInfo(userId);
+              if (client != null) {
+                tripData['client_name'] = client['name'] ?? 'Pasajero';
+                tripData['client_phone'] = client['phone'] ?? '';
+                tripData['client_image'] = client['photo_url'];
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      dev.log('[CheckActiveRide] Error enriching: $e', name: 'DriverHome');
+    }
+
+    if (mounted) {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => ActiveRideScreen(tripData: activeTrip),
+          builder: (_) => ActiveRideScreen(tripData: tripData),
         ),
       );
     }
@@ -849,6 +995,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _stopLocationTracking();
     _slideController?.dispose();
     _driverService.unsubscribe();
+    try {
+      _offerAcceptChannel?.unsubscribe();
+    } catch (_) {}
     super.dispose();
   }
 
@@ -1213,6 +1362,160 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   Icons.route,
                   color: AppTheme.primaryColor,
                   size: 20,
+                ),
+              ),
+            ),
+
+          // Confirmed trip panel
+          if (_confirmedTripData != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 80,
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A2232),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: AppTheme.success.withValues(alpha: 0.4),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.4),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppTheme.success.withValues(alpha: 0.2),
+                          ),
+                          child: const Icon(
+                            Icons.check_circle,
+                            color: AppTheme.success,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Viaje Confirmado',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${_confirmedTripData!['client_name'] ?? 'Pasajero'} te espera',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  color: Colors.white60,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppTheme.success.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            Helpers.formatCurrency(
+                              (_confirmedTripData!['precio'] as num?)
+                                      ?.toDouble() ??
+                                  0,
+                            ),
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.success,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Icon(Icons.circle,
+                            color: AppTheme.success, size: 8),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _confirmedTripData!['direccion_origen'] ?? '',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              color: Colors.white70,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.circle,
+                            color: AppTheme.error, size: 8),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _confirmedTripData!['direccion_destino'] ?? '',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              color: Colors.white70,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        onPressed: _goToActiveRide,
+                        icon: const Icon(Icons.navigation, size: 20),
+                        label: Text(
+                          'Ir al viaje',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.success,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
