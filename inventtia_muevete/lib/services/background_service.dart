@@ -10,6 +10,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
+import '../utils/constants.dart';
 import 'local_notification_service.dart';
 
 class BackgroundService {
@@ -27,7 +28,7 @@ class BackgroundService {
         onStart: _onStart,
         isForegroundMode: true,
         autoStart: false,
-        autoStartOnBoot: false,
+        autoStartOnBoot: true,
         foregroundServiceNotificationId: 888,
         initialNotificationTitle: 'Muevete activo',
         initialNotificationContent: 'Conectado y recibiendo solicitudes',
@@ -37,28 +38,62 @@ class BackgroundService {
   }
 
   /// Start the service passing user data.
-  static Future<void> start({
+  /// Retries up to [maxRetries] times with [retryDelay] between attempts.
+  /// Returns true if the service started successfully, false otherwise.
+  static Future<bool> start({
     required String userUuid,
     required String role,
     int? driverId,
     double? lat,
     double? lon,
+    int maxRetries = 10,
+    Duration retryDelay = const Duration(seconds: 10),
   }) async {
-    if (kIsWeb) return;
-    final isRunning = await _service.isRunning();
-    if (isRunning) return;
+    if (kIsWeb) return true;
 
-    await _service.startService();
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        final isRunning = await _service.isRunning();
+        if (isRunning) {
+          _service.invoke('configure', {
+            'userUuid': userUuid,
+            'role': role,
+            if (driverId != null) 'driverId': driverId,
+            if (lat != null) 'lat': lat,
+            if (lon != null) 'lon': lon,
+          });
+          return true;
+        }
 
-    // Give the service a moment to spin up, then send config.
-    await Future.delayed(const Duration(milliseconds: 500));
-    _service.invoke('configure', {
-      'userUuid': userUuid,
-      'role': role,
-      if (driverId != null) 'driverId': driverId,
-      if (lat != null) 'lat': lat,
-      if (lon != null) 'lon': lon,
-    });
+        await _service.startService();
+
+        // Wait and verify the service actually started
+        await Future.delayed(const Duration(seconds: 2));
+        final running = await _service.isRunning();
+        if (running) {
+          _service.invoke('configure', {
+            'userUuid': userUuid,
+            'role': role,
+            if (driverId != null) 'driverId': driverId,
+            if (lat != null) 'lat': lat,
+            if (lon != null) 'lon': lon,
+          });
+          debugPrint('[BackgroundService] Started on attempt $attempt');
+          return true;
+        }
+
+        debugPrint('[BackgroundService] Attempt $attempt/$maxRetries failed - service not running');
+      } catch (e) {
+        debugPrint('[BackgroundService] Attempt $attempt/$maxRetries error: $e');
+      }
+
+      if (attempt < maxRetries) {
+        await Future.delayed(retryDelay);
+      }
+    }
+
+    debugPrint('[BackgroundService] Failed to start after $maxRetries attempts');
+    return false;
   }
 
   /// Stop the background service.
@@ -91,25 +126,34 @@ class BackgroundService {
 @pragma('vm:entry-point')
 Future<bool> _onIosBackground(ServiceInstance service) async {
   WidgetsFlutterBinding.ensureInitialized();
-  DartPluginRegistrant.ensureInitialized();
+  try {
+    DartPluginRegistrant.ensureInitialized();
+  } catch (_) {}
   return true;
 }
 
 @pragma('vm:entry-point')
 Future<void> _onStart(ServiceInstance service) async {
   WidgetsFlutterBinding.ensureInitialized();
-  DartPluginRegistrant.ensureInitialized();
+  try {
+    DartPluginRegistrant.ensureInitialized();
+  } catch (_) {}
 
   // Initialize local notifications inside the isolate.
   final localNotif = LocalNotificationService();
   await localNotif.init();
 
-  // Initialize Supabase (standalone, inside isolate).
-  await Supabase.initialize(
-    url: SupabaseConfig.supabaseUrl,
-    anonKey: SupabaseConfig.supabaseAnonKey,
-  );
-  final supabase = Supabase.instance.client;
+  // Reuse Supabase if already initialized (same isolate as UI), otherwise init.
+  SupabaseClient supabase;
+  try {
+    supabase = Supabase.instance.client;
+  } catch (_) {
+    await Supabase.initialize(
+      url: SupabaseConfig.supabaseUrl,
+      anonKey: SupabaseConfig.supabaseAnonKey,
+    );
+    supabase = Supabase.instance.client;
+  }
 
   String? userUuid;
   String? role;
@@ -118,14 +162,23 @@ Future<void> _onStart(ServiceInstance service) async {
   double currentLon = 0;
 
   RealtimeChannel? requestsChannel;
+  RealtimeChannel? requestsUpdateChannel;
   RealtimeChannel? offersChannel;
   RealtimeChannel? notificationsChannel;
   StreamSubscription<Position>? gpsSubscription;
+  Timer? radiusExpansionTimer;
+
+  // Pending requests for expanding radius (driver only)
+  final List<Map<String, dynamic>> pendingRequests = [];
 
   // ── Stop handler ──
   service.on('stop').listen((_) async {
     gpsSubscription?.cancel();
+    radiusExpansionTimer?.cancel();
     if (requestsChannel != null) supabase.removeChannel(requestsChannel!);
+    if (requestsUpdateChannel != null) {
+      supabase.removeChannel(requestsUpdateChannel!);
+    }
     if (offersChannel != null) supabase.removeChannel(offersChannel!);
     if (notificationsChannel != null) {
       supabase.removeChannel(notificationsChannel!);
@@ -153,6 +206,21 @@ Future<void> _onStart(ServiceInstance service) async {
 
     if (userUuid == null || role == null) return;
 
+    // ── Update foreground notification with role info ──
+    if (service is AndroidServiceInstance) {
+      if (role == 'driver') {
+        service.setForegroundNotificationInfo(
+          title: 'Muevete - Conductor',
+          content: 'Ubicación activa · Esperando solicitudes',
+        );
+      } else {
+        service.setForegroundNotificationInfo(
+          title: 'Muevete - Pasajero',
+          content: 'Conectado · Esperando ofertas',
+        );
+      }
+    }
+
     // ── Subscribe to notificaciones ──
     notificationsChannel = supabase
         .channel('bg_notif_$userUuid')
@@ -179,7 +247,22 @@ Future<void> _onStart(ServiceInstance service) async {
 
     // ── Driver-specific subscriptions ──
     if (role == 'driver') {
-      // Listen for new ride requests
+      final steps = AppConstants.radiusSteps;
+
+      void notifyRequest(Map<String, dynamic> rec) {
+        localNotif.showRideRequest(
+          title: 'Nueva solicitud de viaje',
+          body: rec['direccion_origen']?.toString() ??
+              'Un pasajero solicita un viaje',
+          solicitudId: rec['id']?.toString(),
+        );
+        service.invoke('notification', {
+          'type': 'ride_request',
+          ...rec,
+        });
+      }
+
+      // Listen for new ride requests — add to pending list
       requestsChannel = supabase
           .channel('bg_solicitudes_driver')
           .onPostgresChanges(
@@ -192,27 +275,97 @@ Future<void> _onStart(ServiceInstance service) async {
                   double.tryParse(rec['lat_origen']?.toString() ?? '');
               final originLon =
                   double.tryParse(rec['lon_origen']?.toString() ?? '');
+              final solicitudId = rec['id'];
 
-              if (originLat != null && originLon != null) {
-                final dist = _haversine(
-                    currentLat, currentLon, originLat, originLon);
-                if (dist <= 15.0) {
-                  // within 15 km
-                  localNotif.showRideRequest(
-                    title: 'Nueva solicitud de viaje',
-                    body: rec['direccion_origen']?.toString() ??
-                        'Un pasajero solicita un viaje',
-                    solicitudId: rec['id']?.toString(),
-                  );
-                  service.invoke('notification', {
-                    'type': 'ride_request',
-                    ...rec,
-                  });
-                }
+              if (originLat == null || originLon == null) return;
+
+              final dist =
+                  _haversine(currentLat, currentLon, originLat, originLon);
+              final inRange = dist <= steps[0];
+
+              pendingRequests.add({
+                'data': rec,
+                'solicitudId': solicitudId,
+                'radiusIndex': 0,
+                'notified': inRange,
+                'addedAt': DateTime.now(),
+                'originLat': originLat,
+                'originLon': originLon,
+              });
+
+              if (inRange) notifyRequest(rec);
+            },
+          )
+          .subscribe();
+
+      // Listen for solicitud status changes — remove non-pending
+      requestsUpdateChannel = supabase
+          .channel('bg_solicitudes_update')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'muevete',
+            table: 'solicitudes_transporte',
+            callback: (payload) {
+              final rec = payload.newRecord;
+              final estado = rec['estado']?.toString();
+              if (estado != null && estado != 'pendiente') {
+                pendingRequests.removeWhere(
+                    (r) => r['solicitudId'] == rec['id']);
               }
             },
           )
           .subscribe();
+
+      // Listen for offers — remove solicitud that got an offer
+      offersChannel = supabase
+          .channel('bg_ofertas_driver')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'muevete',
+            table: 'ofertas_chofer',
+            callback: (payload) {
+              final rec = payload.newRecord;
+              final solId = rec['solicitud_id'];
+              if (solId != null) {
+                pendingRequests
+                    .removeWhere((r) => r['solicitudId'] == solId);
+              }
+            },
+          )
+          .subscribe();
+
+      // Expanding radius timer
+      radiusExpansionTimer = Timer.periodic(
+        AppConstants.radiusExpansionInterval,
+        (_) {
+          final now = DateTime.now();
+          // Clean up requests older than 5 minutes
+          pendingRequests.removeWhere((r) =>
+              now.difference(r['addedAt'] as DateTime).inMinutes >= 5);
+
+          for (final req in pendingRequests) {
+            if (req['notified'] == true) continue;
+
+            final idx = req['radiusIndex'] as int;
+            if (idx < steps.length - 1) {
+              req['radiusIndex'] = idx + 1;
+            }
+
+            final newRadius = steps[req['radiusIndex'] as int];
+            final dist = _haversine(
+              currentLat,
+              currentLon,
+              req['originLat'] as double,
+              req['originLon'] as double,
+            );
+
+            if (dist <= newRadius) {
+              req['notified'] = true;
+              notifyRequest(req['data'] as Map<String, dynamic>);
+            }
+          }
+        },
+      );
 
       // Start GPS tracking to update driver location
       _startGpsTracking(
@@ -267,9 +420,15 @@ void _startGpsTracking({
   required void Function(StreamSubscription<Position>) gpsSubscriptionSetter,
 }) {
   final sub = Geolocator.getPositionStream(
-    locationSettings: const LocationSettings(
+    locationSettings: AndroidSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: 5,
+      intervalDuration: const Duration(seconds: 10),
+      foregroundNotificationConfig: const ForegroundNotificationConfig(
+        notificationTitle: 'Muevete - Ubicación activa',
+        notificationText: 'Rastreando tu ubicación en segundo plano',
+        enableWakeLock: true,
+      ),
     ),
   ).listen((position) async {
     final lat = position.latitude;
@@ -278,6 +437,16 @@ void _startGpsTracking({
 
     // Send to UI
     service.invoke('locationUpdate', {'lat': lat, 'lon': lon});
+
+    // Update foreground notification with timestamp
+    if (service is AndroidServiceInstance) {
+      final now = DateTime.now();
+      final time = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      service.setForegroundNotificationInfo(
+        title: 'Muevete - Conductor',
+        content: 'Rastreando ubicación · Última: $time',
+      );
+    }
 
     // Update driver location in Supabase
     if (driverId != null) {

@@ -8,6 +8,7 @@ import '../../config/app_theme.dart';
 import '../../providers/transport_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/wallet_provider.dart';
 import '../../utils/constants.dart';
 import '../../widgets/map_widget.dart';
 import 'driver_offers_screen.dart';
@@ -45,11 +46,49 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
   void _onSendRequest() async {
     final transportProvider = context.read<TransportProvider>();
     final authProvider = context.read<AuthProvider>();
+    final walletProvider = context.read<WalletProvider>();
 
-    // Update offer price from text field
+    // Update offer price from text field, enforce vehicle minimum
     final price = double.tryParse(_offerController.text);
     if (price != null) {
+      final vt = transportProvider.selectedVehicleType;
+      final distKm = transportProvider.routeDistanceKm;
+      final minPrice = vt?.precioInsideSc ??
+          (distKm > 0 ? (vt?.precioKmDefault ?? 0) * distKm : 0);
+      if (price < minPrice) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('La oferta mínima es \$${minPrice.toStringAsFixed(2)}'),
+          ),
+        );
+        _offerController.text = minPrice.toStringAsFixed(2);
+        transportProvider.setOfferPrice(minPrice.toDouble());
+        return;
+      }
       transportProvider.setOfferPrice(price);
+    }
+
+    // If wallet selected, check sufficient balance
+    if (_selectedPaymentMethod == 'Wallet') {
+      final userId = authProvider.user?.id ?? '';
+      await walletProvider.loadClientBalance(userId);
+      final finalPrice = double.tryParse(_offerController.text) ?? transportProvider.offerPrice;
+      if (!walletProvider.hasSufficientBalance(finalPrice)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Saldo insuficiente. Tienes \$${walletProvider.balance.toStringAsFixed(2)} y necesitas \$${finalPrice.toStringAsFixed(2)}',
+              ),
+              backgroundColor: AppTheme.error,
+            ),
+          );
+        }
+        return;
+      }
+      transportProvider.setPaymentMethod('wallet');
+    } else {
+      transportProvider.setPaymentMethod('efectivo');
     }
 
     final userId = authProvider.user?.id ?? '';
@@ -418,8 +457,10 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                     final isSelected =
                         transportProvider.selectedVehicleType?.id == vt.id;
                     final distKm = transportProvider.routeDistanceKm;
+                    final displayPrice = vt.precioInsideSc ??
+                        (distKm > 0 ? vt.precioKmDefault * distKm : vt.precioKmDefault);
                     final totalPrice = distKm > 0
-                        ? '\$${(vt.precioKmDefault * distKm).toStringAsFixed(2)}'
+                        ? '\$${displayPrice.toStringAsFixed(2)}'
                         : '\$${vt.precioKmDefault.toStringAsFixed(2)}/km';
                     final eta = distKm > 0
                         ? vt.etaString(distKm)
@@ -522,49 +563,89 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            // Payment method row
-            GestureDetector(
-              onTap: () {
-                // Show payment method picker
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: isDark ? AppTheme.darkCard : Colors.grey[100],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isDark ? AppTheme.darkBorder : Colors.grey[300]!,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      _selectedPaymentMethod == 'Efectivo'
-                          ? Icons.payments_outlined
-                          : Icons.credit_card,
-                      color: AppTheme.primaryColor,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      _selectedPaymentMethod == 'Efectivo'
-                          ? 'Efectivo'
-                          : 'Visa *4242',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : Colors.black87,
+            // Payment method selector
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selectedPaymentMethod = 'Efectivo'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _selectedPaymentMethod == 'Efectivo'
+                            ? AppTheme.primaryColor.withValues(alpha: 0.15)
+                            : isDark ? AppTheme.darkCard : Colors.grey[100],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _selectedPaymentMethod == 'Efectivo'
+                              ? AppTheme.primaryColor
+                              : isDark ? AppTheme.darkBorder : Colors.grey[300]!,
+                          width: _selectedPaymentMethod == 'Efectivo' ? 2 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.payments_outlined,
+                            color: _selectedPaymentMethod == 'Efectivo'
+                                ? AppTheme.primaryColor
+                                : isDark ? Colors.white70 : Colors.grey[700],
+                            size: 20),
+                          const SizedBox(width: 8),
+                          Text('Efectivo',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: _selectedPaymentMethod == 'Efectivo'
+                                  ? AppTheme.primaryColor
+                                  : isDark ? Colors.white : Colors.black87,
+                            )),
+                        ],
                       ),
                     ),
-                    const Spacer(),
-                    Icon(
-                      Icons.chevron_right,
-                      color: isDark ? Colors.white38 : Colors.grey,
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selectedPaymentMethod = 'Wallet'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _selectedPaymentMethod == 'Wallet'
+                            ? AppTheme.primaryColor.withValues(alpha: 0.15)
+                            : isDark ? AppTheme.darkCard : Colors.grey[100],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _selectedPaymentMethod == 'Wallet'
+                              ? AppTheme.primaryColor
+                              : isDark ? AppTheme.darkBorder : Colors.grey[300]!,
+                          width: _selectedPaymentMethod == 'Wallet' ? 2 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.account_balance_wallet_outlined,
+                            color: _selectedPaymentMethod == 'Wallet'
+                                ? AppTheme.primaryColor
+                                : isDark ? Colors.white70 : Colors.grey[700],
+                            size: 20),
+                          const SizedBox(width: 8),
+                          Text('Wallet',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: _selectedPaymentMethod == 'Wallet'
+                                  ? AppTheme.primaryColor
+                                  : isDark ? Colors.white : Colors.black87,
+                            )),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             // CTA Button

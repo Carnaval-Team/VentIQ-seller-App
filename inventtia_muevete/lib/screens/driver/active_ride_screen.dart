@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_theme.dart';
 import '../../models/notification_model.dart';
@@ -39,8 +40,8 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   List<LatLng> _routePolyline = [];
   bool _isLoadingRoute = false;
 
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
+  AnimationController? _pulseController;
+  Animation<double>? _pulseAnimation;
 
   // Client data from tripData
   late String _clientName;
@@ -66,6 +67,13 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   bool _isCompletingAction = false;
 
   static const double _completionThresholdM = 30.0;
+  bool _clientCompletedEarly = false;
+  RealtimeChannel? _solicitudChannel;
+
+  // Navigation mode state
+  bool _autoRotate = false;
+  bool _tilt3D = false;
+  double _currentTilt = 0.0; // animated 0→1
 
   @override
   void initState() {
@@ -76,7 +84,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
     _pulseAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+      CurvedAnimation(parent: _pulseController!, curve: Curves.easeInOut),
     );
 
     // Extract trip data
@@ -108,6 +116,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startTracking();
       _loadRoute();
+      _subscribeSolicitudChanges();
     });
   }
 
@@ -135,6 +144,50 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       _updateDistanceAndBearing(current);
       _recalculateRoute(current);
     });
+  }
+
+  // ── Listen for client completing ride early ─────────────────────────────
+  void _subscribeSolicitudChanges() {
+    if (_solicitudId == null) return;
+    _solicitudChannel = Supabase.instance.client
+        .channel('solicitud_driver_$_solicitudId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'muevete',
+          table: 'solicitudes_transporte',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: _solicitudId.toString(),
+          ),
+          callback: (payload) {
+            final newEstado = payload.newRecord['estado'] as String?;
+            if (newEstado == 'completada' &&
+                _currentPhase == _RidePhase.inProgress &&
+                !_clientCompletedEarly &&
+                mounted) {
+              setState(() => _clientCompletedEarly = true);
+              // Show notification to driver
+              NotificationService().pushLocal(
+                tipo: NotificationType.viajeCompletado,
+                titulo: 'Cliente completó el viaje',
+                mensaje:
+                    'El pasajero marcó el viaje como completado antes de llegar al destino.',
+              );
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'El pasajero completó el viaje. Puedes finalizar ahora.',
+                    style: GoogleFonts.plusJakartaSans(),
+                  ),
+                  backgroundColor: AppTheme.warning,
+                  duration: const Duration(seconds: 5),
+                ),
+              );
+            }
+          },
+        )
+        .subscribe();
   }
 
   void _onLocationUpdate() {
@@ -165,10 +218,8 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       if (_breadcrumbTrail.length > 500) _breadcrumbTrail.removeAt(0);
     });
 
-    // Auto-center map on driver position
-    try {
-      _mapController.move(loc, _mapController.camera.zoom);
-    } catch (_) {}
+    // Smooth animated camera move (with rotation if auto-rotate is on)
+    _animateCamera(loc);
 
     _updateDistanceAndBearing(loc);
 
@@ -301,8 +352,9 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
         break;
 
       case _RidePhase.inProgress:
-        // "Completar Viaje" — only if within 30m
-        if (_distanceToTargetM > _completionThresholdM) return;
+        // "Completar Viaje" — within 30m OR client completed early
+        if (_distanceToTargetM > _completionThresholdM &&
+            !_clientCompletedEarly) return;
         setState(() => _isCompletingAction = true);
         try {
           if (_viajeId != null) {
@@ -369,6 +421,9 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       case _RidePhase.waitingAtPickup:
         return 'Iniciar Viaje';
       case _RidePhase.inProgress:
+        if (_clientCompletedEarly) {
+          return 'Completar Viaje (cliente finalizó)';
+        }
         if (_distanceToTargetM > _completionThresholdM) {
           if (_distanceToTargetM == double.infinity) {
             return 'Calculando distancia...';
@@ -391,7 +446,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       case _RidePhase.waitingAtPickup:
         return AppTheme.warning;
       case _RidePhase.inProgress:
-        return AppTheme.success;
+        return _clientCompletedEarly ? AppTheme.warning : AppTheme.success;
       case _RidePhase.completed:
         return AppTheme.success;
     }
@@ -412,7 +467,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
 
   bool get _canComplete =>
       _currentPhase == _RidePhase.inProgress &&
-      _distanceToTargetM <= _completionThresholdM;
+      (_distanceToTargetM <= _completionThresholdM || _clientCompletedEarly);
 
   bool get _actionEnabled {
     if (_isCompletingAction) return false;
@@ -431,7 +486,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       barrierDismissible: false,
       builder: (dialogContext) {
         return AlertDialog(
-          backgroundColor: isDark ? AppTheme.darkSurface : Colors.white,
+          backgroundColor: AppTheme.surface(isDark),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
@@ -457,7 +512,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : Colors.black87,
+                  color: AppTheme.textPrimary(isDark),
                 ),
               ),
               const SizedBox(height: 8),
@@ -466,7 +521,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                 textAlign: TextAlign.center,
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 14,
-                  color: isDark ? Colors.white60 : Colors.grey[600],
+                  color: AppTheme.textSecondary(isDark),
                 ),
               ),
               const SizedBox(height: 8),
@@ -553,11 +608,111 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     }
   }
 
+  // ── Navigation mode helpers ───────────────────────────────────────────
+
+  void _animateCamera(LatLng target) {
+    try {
+      final cam = _mapController.camera;
+      final startCenter = cam.center;
+      final startZoom = cam.zoom;
+      final startRotation = cam.rotation;
+
+      final targetRotation = _autoRotate ? -_bearing : 0.0;
+
+      // Use ticker-based animation for smooth transitions
+      const steps = 15;
+      const duration = Duration(milliseconds: 450);
+      final stepDuration = Duration(
+        microseconds: duration.inMicroseconds ~/ steps,
+      );
+
+      int step = 0;
+      Timer.periodic(stepDuration, (timer) {
+        step++;
+        if (step >= steps || !mounted) {
+          timer.cancel();
+          return;
+        }
+
+        // Ease-out cubic curve
+        final t = step / steps;
+        final ease = 1 - pow(1 - t, 3).toDouble();
+
+        final lat = startCenter.latitude +
+            (target.latitude - startCenter.latitude) * ease;
+        final lon = startCenter.longitude +
+            (target.longitude - startCenter.longitude) * ease;
+
+        double rot = startRotation;
+        if (_autoRotate) {
+          // Shortest path rotation
+          var diff = targetRotation - startRotation;
+          while (diff > 180) diff -= 360;
+          while (diff < -180) diff += 360;
+          rot = startRotation + diff * ease;
+        }
+
+        try {
+          _mapController.moveAndRotate(
+            LatLng(lat, lon),
+            startZoom,
+            rot,
+          );
+        } catch (_) {}
+      });
+
+    } catch (_) {
+      // Fallback: snap move
+      try {
+        _mapController.move(target, _mapController.camera.zoom);
+      } catch (_) {}
+    }
+  }
+
+  void _toggleAutoRotate() {
+    setState(() {
+      _autoRotate = !_autoRotate;
+      if (!_autoRotate) {
+        try {
+          _mapController.rotate(0);
+        } catch (_) {}
+      }
+    });
+  }
+
+  void _toggle3DTilt() {
+    setState(() {
+      _tilt3D = !_tilt3D;
+    });
+    // Animate tilt
+    const steps = 12;
+    const duration = Duration(milliseconds: 350);
+    final stepDuration = Duration(
+      microseconds: duration.inMicroseconds ~/ steps,
+    );
+    final startTilt = _currentTilt;
+    final endTilt = _tilt3D ? 1.0 : 0.0;
+
+    int step = 0;
+    Timer.periodic(stepDuration, (timer) {
+      step++;
+      if (step >= steps || !mounted) {
+        timer.cancel();
+        if (mounted) setState(() => _currentTilt = endTilt);
+        return;
+      }
+      final t = step / steps;
+      final ease = 1 - pow(1 - t, 3).toDouble();
+      setState(() => _currentTilt = startTilt + (endTilt - startTilt) * ease);
+    });
+  }
+
   @override
   void dispose() {
-    _pulseController.dispose();
+    _pulseController?.dispose();
     _mapController.dispose();
     _routeRefreshTimer?.cancel();
+    _solicitudChannel?.unsubscribe();
     try {
       context.read<LocationProvider>().removeListener(_onLocationUpdate);
     } catch (_) {}
@@ -591,7 +746,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: AppTheme.primaryColor,
-                    border: Border.all(color: Colors.white, width: 3),
+                    border: Border.all(color: AppTheme.markerBorder(isDark), width: 3),
                     boxShadow: [
                       BoxShadow(
                         color: AppTheme.primaryColor.withValues(alpha: 0.4),
@@ -719,6 +874,34 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
             zoom: 15.0,
             markers: markers,
             polylines: polylines,
+            perspectiveTilt: _currentTilt,
+          ),
+
+          // Navigation mode FABs
+          Positioned(
+            right: 16,
+            bottom: 320,
+            child: Column(
+              children: [
+                _buildNavModeButton(
+                  icon: _autoRotate
+                      ? Icons.explore
+                      : Icons.explore_off,
+                  label: 'Rotación',
+                  isActive: _autoRotate,
+                  onPressed: _toggleAutoRotate,
+                  isDark: isDark,
+                ),
+                const SizedBox(height: 10),
+                _buildNavModeButton(
+                  icon: Icons.view_in_ar,
+                  label: '3D',
+                  isActive: _tilt3D,
+                  onPressed: _toggle3DTilt,
+                  isDark: isDark,
+                ),
+              ],
+            ),
           ),
 
           // Loading overlay for route
@@ -732,9 +915,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isDark
-                        ? AppTheme.darkSurface.withValues(alpha: 0.9)
-                        : Colors.white.withValues(alpha: 0.9),
+                    color: AppTheme.surface(isDark).withValues(alpha: 0.9),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
@@ -753,7 +934,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                         'Calculando ruta...',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 13,
-                          color: isDark ? Colors.white70 : Colors.grey[700],
+                          color: AppTheme.textSecondary(isDark),
                         ),
                       ),
                     ],
@@ -780,9 +961,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 10),
                       decoration: BoxDecoration(
-                        color: isDark
-                            ? AppTheme.darkSurface.withValues(alpha: 0.95)
-                            : Colors.white.withValues(alpha: 0.95),
+                        color: AppTheme.surface(isDark).withValues(alpha: 0.95),
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
@@ -795,7 +974,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           _AnimatedPulseDot(
-                            animation: _pulseAnimation,
+                            animation: _pulseAnimation ?? const AlwaysStoppedAnimation(0.8),
                             color: phaseColor,
                           ),
                           const SizedBox(width: 8),
@@ -806,7 +985,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
                                 color:
-                                    isDark ? Colors.white : Colors.black87,
+                                    AppTheme.textPrimary(isDark),
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -816,8 +995,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                             Container(
                               width: 1,
                               height: 16,
-                              color:
-                                  isDark ? Colors.white24 : Colors.grey[300],
+                              color: AppTheme.shimmer(isDark),
                             ),
                             const SizedBox(width: 8),
                             Text(
@@ -832,9 +1010,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                                 fontWeight: FontWeight.w600,
                                 color: _canComplete
                                     ? AppTheme.success
-                                    : (isDark
-                                        ? Colors.white70
-                                        : Colors.grey[700]),
+                                    : AppTheme.textSecondary(isDark),
                               ),
                             ),
                           ],
@@ -853,15 +1029,16 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
             ),
           ),
 
-          // Bottom card with client info and actions
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          // Bottom draggable card with client info and actions
+          DraggableScrollableSheet(
+            initialChildSize: 0.35,
+            minChildSize: 0.06,
+            maxChildSize: 0.50,
+            snap: true,
+            snapSizes: const [0.06, 0.35, 0.50],
+            builder: (context, scrollController) => Container(
               decoration: BoxDecoration(
-                color: isDark ? AppTheme.darkSurface : Colors.white,
+                color: AppTheme.surface(isDark),
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(24)),
                 boxShadow: [
@@ -872,24 +1049,27 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                   ),
                 ],
               ),
-              child: SafeArea(
-                top: false,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Handle bar
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color:
-                              isDark ? Colors.white24 : Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
+              child: SingleChildScrollView(
+                controller: scrollController,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                  child: SafeArea(
+                    top: false,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Handle bar
+                        Center(
+                          child: Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: AppTheme.shimmer(isDark),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
+                        const SizedBox(height: 16),
 
                     // Client info row
                     Row(
@@ -934,9 +1114,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 17,
                                   fontWeight: FontWeight.w700,
-                                  color: isDark
-                                      ? Colors.white
-                                      : Colors.black87,
+                                  color: AppTheme.textPrimary(isDark),
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -947,9 +1125,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                                     : _pickupAddress,
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 13,
-                                  color: isDark
-                                      ? Colors.white60
-                                      : Colors.grey[600],
+                                  color: AppTheme.textSecondary(isDark),
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -983,12 +1159,10 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
                         color:
-                            isDark ? AppTheme.darkCard : Colors.grey[50],
+                            AppTheme.card(isDark),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: isDark
-                              ? AppTheme.darkBorder
-                              : Colors.grey[200]!,
+                          color: AppTheme.border(isDark),
                         ),
                       ),
                       child: Column(
@@ -1003,9 +1177,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                                   _pickupAddress,
                                   style: GoogleFonts.plusJakartaSans(
                                     fontSize: 13,
-                                    color: isDark
-                                        ? Colors.white.withValues(alpha: 0.9)
-                                        : Colors.grey[800],
+                                    color: AppTheme.textPrimary(isDark),
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -1021,9 +1193,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                               child: Container(
                                 width: 1,
                                 height: 16,
-                                color: isDark
-                                    ? Colors.white24
-                                    : Colors.grey[300],
+                                color: AppTheme.shimmer(isDark),
                               ),
                             ),
                           ),
@@ -1037,9 +1207,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                                   _dropoffAddress,
                                   style: GoogleFonts.plusJakartaSans(
                                     fontSize: 13,
-                                    color: isDark
-                                        ? Colors.white.withValues(alpha: 0.9)
-                                        : Colors.grey[800],
+                                    color: AppTheme.textPrimary(isDark),
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -1064,12 +1232,8 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                                 ? () => _launchCall(_clientPhone)
                                 : null,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: isDark
-                                  ? AppTheme.darkCard
-                                  : Colors.grey[100],
-                              foregroundColor: isDark
-                                  ? Colors.white
-                                  : Colors.black87,
+                              backgroundColor: AppTheme.card(isDark),
+                              foregroundColor: AppTheme.textPrimary(isDark),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
@@ -1089,7 +1253,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                                 ? () => _launchWhatsApp(_clientPhone)
                                 : null,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF25D366),
+                              backgroundColor: AppTheme.whatsappGreen,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -1153,9 +1317,59 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                   ],
                 ),
               ),
+                ),
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNavModeButton({
+    required IconData icon,
+    required String label,
+    required bool isActive,
+    required VoidCallback onPressed,
+    required bool isDark,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+      decoration: BoxDecoration(
+        color: isActive
+            ? AppTheme.primaryColor
+            : AppTheme.surface(isDark),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: isActive
+                ? AppTheme.primaryColor.withValues(alpha: 0.4)
+                : Colors.black.withValues(alpha: 0.15),
+            blurRadius: isActive ? 12 : 6,
+            spreadRadius: isActive ? 2 : 0,
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          onTap: onPressed,
+          customBorder: const CircleBorder(),
+          child: Container(
+            width: 46,
+            height: 46,
+            alignment: Alignment.center,
+            child: Icon(
+              icon,
+              color: isActive
+                  ? Colors.white
+                  : AppTheme.iconColor(isDark),
+              size: 22,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1166,7 +1380,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     required VoidCallback onTap,
   }) {
     return Material(
-      color: isDark ? AppTheme.darkSurface : Colors.white,
+      color: AppTheme.surface(isDark),
       shape: const CircleBorder(),
       elevation: 4,
       shadowColor: Colors.black.withValues(alpha: 0.2),
@@ -1179,7 +1393,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
           alignment: Alignment.center,
           child: Icon(
             icon,
-            color: isDark ? Colors.white : Colors.black87,
+            color: AppTheme.textPrimary(isDark),
             size: 22,
           ),
         ),

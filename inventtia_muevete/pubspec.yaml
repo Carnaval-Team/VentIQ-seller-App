@@ -17,6 +17,7 @@ dependencies:
 
   # Maps & Location
   flutter_map: ^7.0.2
+  flutter_map_tile_caching: ^10.0.0
   latlong2: ^0.9.1
   geolocator: ^13.0.2
   geocoding: ^3.0.0
@@ -47,7 +48,6 @@ dependencies:
 
   # Background service & local notifications
   flutter_background_service: ^5.0.12
-  flutter_background_service_android: ^6.2.7
   flutter_local_notifications: ^18.0.1
 
 dev_dependencies:

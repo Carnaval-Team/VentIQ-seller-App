@@ -22,6 +22,10 @@ class TransactionListItem extends StatelessWidget {
         return Icons.two_wheeler;
       case TipoTransaccion.pago_viaje:
         return Icons.directions_car;
+      case TipoTransaccion.reembolso:
+        return Icons.replay;
+      case TipoTransaccion.comision_viaje:
+        return Icons.percent;
       case null:
         return Icons.receipt_long;
     }
@@ -35,6 +39,10 @@ class TransactionListItem extends StatelessWidget {
         return AppTheme.primaryColor;
       case TipoTransaccion.pago_viaje:
         return AppTheme.error;
+      case TipoTransaccion.reembolso:
+        return AppTheme.success;
+      case TipoTransaccion.comision_viaje:
+        return AppTheme.error;
       case null:
         return Colors.grey;
     }
@@ -42,7 +50,8 @@ class TransactionListItem extends StatelessWidget {
 
   Color _getAmountColor() {
     if (transaction.tipo == TipoTransaccion.recarga ||
-        transaction.tipo == TipoTransaccion.cobro_viaje) {
+        transaction.tipo == TipoTransaccion.cobro_viaje ||
+        transaction.tipo == TipoTransaccion.reembolso) {
       return AppTheme.success;
     }
     return AppTheme.error;
@@ -50,7 +59,8 @@ class TransactionListItem extends StatelessWidget {
 
   String _getAmountPrefix() {
     if (transaction.tipo == TipoTransaccion.recarga ||
-        transaction.tipo == TipoTransaccion.cobro_viaje) {
+        transaction.tipo == TipoTransaccion.cobro_viaje ||
+        transaction.tipo == TipoTransaccion.reembolso) {
       return '+';
     }
     return '-';
@@ -64,6 +74,10 @@ class TransactionListItem extends StatelessWidget {
         return 'Cobro de viaje';
       case TipoTransaccion.pago_viaje:
         return 'Pago de viaje';
+      case TipoTransaccion.reembolso:
+        return 'Reembolso';
+      case TipoTransaccion.comision_viaje:
+        return 'Comisión de viaje';
       case null:
         return 'Transaccion';
     }

@@ -64,8 +64,8 @@ class WalletProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _walletService.addFunds(uuid, amount);
-      _balance += amount;
+      final netAmount = await _walletService.addFunds(uuid, amount);
+      _balance += netAmount;
       await loadTransactions(uuid);
       _error = null;
       _isLoading = false;

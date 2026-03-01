@@ -10,8 +10,10 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_theme.dart';
 import '../../models/transport_request_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../services/driver_service.dart';
+import '../../services/wallet_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import 'active_ride_screen.dart';
@@ -260,6 +262,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
   }
 
   Future<void> _showMakeOfferDialog(TransportRequestModel request) async {
+    final isDark = context.read<ThemeProvider>().isDark;
     final priceController = TextEditingController(
       text: request.precioOferta?.toStringAsFixed(2) ?? '0.00',
     );
@@ -276,8 +279,8 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
             bottom: MediaQuery.of(ctx).viewInsets.bottom,
           ),
           child: Container(
-            decoration: const BoxDecoration(
-              color: Color(0xFF1A2232),
+            decoration: BoxDecoration(
+              color: AppTheme.surface(isDark),
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
             padding: const EdgeInsets.all(24),
@@ -290,7 +293,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.3),
+                      color: AppTheme.shimmer(isDark),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -301,7 +304,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    color: AppTheme.textPrimary(isDark),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -320,6 +323,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                   prefixText: '\$ ',
+                  isDark: isDark,
                 ),
                 const SizedBox(height: 16),
                 _sheetField(
@@ -327,6 +331,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                   controller: estimatedMinController,
                   keyboardType: TextInputType.number,
                   suffixText: 'min',
+                  isDark: isDark,
                 ),
                 const SizedBox(height: 16),
                 _sheetField(
@@ -334,6 +339,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                   controller: messageController,
                   maxLines: 2,
                   hint: 'Ej: Llego en 5 minutos...',
+                  isDark: isDark,
                 ),
                 const SizedBox(height: 24),
                 SizedBox(
@@ -343,6 +349,16 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                     onPressed: () {
                       final price =
                           double.tryParse(priceController.text) ?? 0;
+                      final minPrice = request.precioOferta ?? 0;
+                      if (price < minPrice) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                                'La oferta mínima es \$${minPrice.toStringAsFixed(2)}'),
+                          ),
+                        );
+                        return;
+                      }
                       final minutes =
                           int.tryParse(estimatedMinController.text) ?? 15;
                       Navigator.of(ctx).pop({
@@ -390,6 +406,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
   Widget _sheetField({
     required String label,
     required TextEditingController controller,
+    required bool isDark,
     TextInputType? keyboardType,
     int maxLines = 1,
     String? prefixText,
@@ -404,7 +421,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
           style: GoogleFonts.plusJakartaSans(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: Colors.white.withValues(alpha: 0.8),
+            color: AppTheme.textSecondary(isDark),
           ),
         ),
         const SizedBox(height: 8),
@@ -413,13 +430,13 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
           keyboardType: keyboardType,
           maxLines: maxLines,
           style: GoogleFonts.plusJakartaSans(
-            color: Colors.white,
+            color: AppTheme.textPrimary(isDark),
             fontSize: 16,
           ),
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: GoogleFonts.plusJakartaSans(
-              color: Colors.white.withValues(alpha: 0.3),
+              color: AppTheme.textTertiary(isDark),
             ),
             prefixText: prefixText,
             prefixStyle: GoogleFonts.plusJakartaSans(
@@ -429,19 +446,19 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
             ),
             suffixText: suffixText,
             suffixStyle: GoogleFonts.plusJakartaSans(
-              color: Colors.white.withValues(alpha: 0.5),
+              color: AppTheme.textTertiary(isDark),
             ),
             filled: true,
-            fillColor: const Color(0xFF111621),
+            fillColor: AppTheme.bg(isDark),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide:
-                  BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                  BorderSide(color: AppTheme.border(isDark)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide:
-                  BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                  BorderSide(color: AppTheme.border(isDark)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -466,6 +483,24 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
     if (driverId == null || request.id == null) return;
 
     try {
+      // Check driver has enough balance for 15% commission
+      final walletService = WalletService();
+      final hasEnough = await walletService.driverHasEnoughForCommission(driverId, price);
+      if (!hasEnough) {
+        if (mounted) {
+          final commission = price * 0.15;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Saldo insuficiente para comisión. Necesitas \$${commission.toStringAsFixed(2)} (15% de tu oferta)',
+              ),
+              backgroundColor: AppTheme.error,
+            ),
+          );
+        }
+        return;
+      }
+
       await _driverService.makeOffer(
         request.id!,
         driverId,
@@ -501,22 +536,23 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
   Future<void> _completeRide(_AcceptedRequest ar) async {
     final solicitudId = ar.solicitud.id;
     if (solicitudId == null) return;
+    final isDark = context.read<ThemeProvider>().isDark;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A2232),
+        backgroundColor: AppTheme.surface(isDark),
         title: Text(
           'Completar viaje',
           style: GoogleFonts.plusJakartaSans(
-            color: Colors.white,
+            color: AppTheme.textPrimary(isDark),
             fontWeight: FontWeight.w700,
           ),
         ),
         content: Text(
           '¿Confirmas que el viaje ha finalizado?',
           style: GoogleFonts.plusJakartaSans(
-            color: Colors.white70,
+            color: AppTheme.textSecondary(isDark),
           ),
         ),
         actions: [
@@ -525,7 +561,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
             child: Text(
               'Cancelar',
               style: GoogleFonts.plusJakartaSans(
-                  color: Colors.white54),
+                  color: AppTheme.textTertiary(isDark)),
             ),
           ),
           ElevatedButton(
@@ -644,11 +680,12 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = context.watch<ThemeProvider>().isDark;
     return Scaffold(
-      backgroundColor: const Color(0xFF111621),
+      backgroundColor: AppTheme.bg(isDark),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF111621),
-        foregroundColor: Colors.white,
+        backgroundColor: AppTheme.bg(isDark),
+        foregroundColor: AppTheme.textPrimary(isDark),
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
@@ -660,14 +697,14 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
           style: GoogleFonts.plusJakartaSans(
             fontSize: 18,
             fontWeight: FontWeight.w600,
-            color: Colors.white,
+            color: AppTheme.textPrimary(isDark),
           ),
         ),
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: AppTheme.primaryColor,
           labelColor: AppTheme.primaryColor,
-          unselectedLabelColor: Colors.white38,
+          unselectedLabelColor: AppTheme.textTertiary(isDark),
           labelStyle: GoogleFonts.plusJakartaSans(
             fontWeight: FontWeight.w600,
             fontSize: 14,
@@ -689,55 +726,57 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
               child: CircularProgressIndicator(color: AppTheme.primaryColor),
             )
           : _error != null
-              ? _buildErrorState()
+              ? _buildErrorState(isDark)
               : TabBarView(
                   controller: _tabController,
                   children: [
-                    _buildPendingTab(),
-                    _buildAcceptedTab(),
+                    _buildPendingTab(isDark),
+                    _buildAcceptedTab(isDark),
                   ],
                 ),
     );
   }
 
-  Widget _buildPendingTab() {
+  Widget _buildPendingTab(bool isDark) {
     if (_pendingRequests.isEmpty) {
       return _buildEmptyState(
         icon: Icons.location_off_outlined,
         title: 'No hay solicitudes cercanas',
         subtitle: 'Las nuevas solicitudes aparecerán aquí',
+        isDark: isDark,
       );
     }
     return RefreshIndicator(
       onRefresh: _loadAll,
       color: AppTheme.primaryColor,
-      backgroundColor: const Color(0xFF1A2232),
+      backgroundColor: AppTheme.surface(isDark),
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: _pendingRequests.length,
         itemBuilder: (context, index) =>
-            _buildPendingItem(_pendingRequests[index]),
+            _buildPendingItem(_pendingRequests[index], isDark),
       ),
     );
   }
 
-  Widget _buildAcceptedTab() {
+  Widget _buildAcceptedTab(bool isDark) {
     if (_acceptedRequests.isEmpty) {
       return _buildEmptyState(
         icon: Icons.check_circle_outline,
         title: 'Sin viajes aceptados',
         subtitle: 'Los viajes que aceptes aparecerán aquí',
+        isDark: isDark,
       );
     }
     return RefreshIndicator(
       onRefresh: _loadAll,
       color: AppTheme.primaryColor,
-      backgroundColor: const Color(0xFF1A2232),
+      backgroundColor: AppTheme.surface(isDark),
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: _acceptedRequests.length,
         itemBuilder: (context, index) =>
-            _buildAcceptedItem(_acceptedRequests[index]),
+            _buildAcceptedItem(_acceptedRequests[index], isDark),
       ),
     );
   }
@@ -746,6 +785,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
     required IconData icon,
     required String title,
     required String subtitle,
+    required bool isDark,
   }) {
     return Center(
       child: Column(
@@ -759,7 +799,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
               shape: BoxShape.circle,
             ),
             child: Icon(icon, size: 40,
-                color: Colors.white.withValues(alpha: 0.4)),
+                color: AppTheme.textTertiary(isDark)),
           ),
           const SizedBox(height: 20),
           Text(
@@ -767,7 +807,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
             style: GoogleFonts.plusJakartaSans(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: Colors.white.withValues(alpha: 0.7),
+              color: AppTheme.textSecondary(isDark),
             ),
           ),
           const SizedBox(height: 8),
@@ -775,7 +815,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
             subtitle,
             style: GoogleFonts.plusJakartaSans(
               fontSize: 14,
-              color: Colors.white.withValues(alpha: 0.4),
+              color: AppTheme.textTertiary(isDark),
             ),
           ),
           const SizedBox(height: 24),
@@ -800,7 +840,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
     );
   }
 
-  Widget _buildErrorState() {
+  Widget _buildErrorState(bool isDark) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -812,7 +852,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
             style: GoogleFonts.plusJakartaSans(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              color: AppTheme.textPrimary(isDark),
             ),
           ),
           const SizedBox(height: 8),
@@ -820,7 +860,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
             _error ?? '',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 13,
-              color: Colors.white.withValues(alpha: 0.5),
+              color: AppTheme.textTertiary(isDark),
             ),
             textAlign: TextAlign.center,
           ),
@@ -836,7 +876,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
     );
   }
 
-  Widget _buildPendingItem(TransportRequestModel request) {
+  Widget _buildPendingItem(TransportRequestModel request, bool isDark) {
     final vehicleType = request.tipoVehiculo ?? 'auto';
     final vehicleLabel =
         vehicleType[0].toUpperCase() + vehicleType.substring(1);
@@ -845,9 +885,9 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A2232),
+        color: AppTheme.surface(isDark),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: AppTheme.border(isDark)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -877,7 +917,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: AppTheme.textPrimary(isDark),
                       ),
                     ),
                     if (request.createdAt != null)
@@ -885,7 +925,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                         Helpers.formatRelativeTime(request.createdAt!),
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.5),
+                          color: AppTheme.textTertiary(isDark),
                         ),
                       ),
                   ],
@@ -913,21 +953,21 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
 
           // Route
           _buildRouteInfo(
-              request.direccionOrigen, request.direccionDestino),
+              request.direccionOrigen, request.direccionDestino, isDark),
           const SizedBox(height: 12),
 
           // Footer
           Row(
             children: [
               Icon(Icons.straighten,
-                  color: Colors.white.withValues(alpha: 0.5), size: 16),
+                  color: AppTheme.textTertiary(isDark), size: 16),
               const SizedBox(width: 6),
               Text(
                 Helpers.formatDistance(request.distanciaKm ?? 0),
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: Colors.white.withValues(alpha: 0.7),
+                  color: AppTheme.textSecondary(isDark),
                 ),
               ),
               const Spacer(),
@@ -960,7 +1000,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
     );
   }
 
-  Widget _buildAcceptedItem(_AcceptedRequest ar) {
+  Widget _buildAcceptedItem(_AcceptedRequest ar, bool isDark) {
     final request = ar.solicitud;
     final vehicleType = request.tipoVehiculo ?? 'auto';
     final vehicleLabel =
@@ -972,7 +1012,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A2232),
+        color: AppTheme.surface(isDark),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: AppTheme.success.withValues(alpha: 0.4),
@@ -1008,14 +1048,14 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                        color: AppTheme.textPrimary(isDark),
                       ),
                     ),
                     Text(
                       vehicleLabel,
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: AppTheme.textTertiary(isDark),
                       ),
                     ),
                   ],
@@ -1069,14 +1109,14 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
               ],
               if (ar.tiempoEstimado != null) ...[
                 Icon(Icons.schedule,
-                    color: Colors.white.withValues(alpha: 0.5),
+                    color: AppTheme.textTertiary(isDark),
                     size: 16),
                 const SizedBox(width: 4),
                 Text(
                   '${ar.tiempoEstimado} min',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
-                    color: Colors.white.withValues(alpha: 0.7),
+                    color: AppTheme.textSecondary(isDark),
                   ),
                 ),
               ],
@@ -1086,7 +1126,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
 
           // Route
           _buildRouteInfo(
-              request.direccionOrigen, request.direccionDestino),
+              request.direccionOrigen, request.direccionDestino, isDark),
 
           // Driver mensaje if any
           if (ar.mensaje != null && ar.mensaje!.isNotEmpty) ...[
@@ -1094,14 +1134,14 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFF111621),
+                color: AppTheme.bg(isDark),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
                 children: [
                   Icon(Icons.chat_bubble_outline,
                       size: 14,
-                      color: Colors.white.withValues(alpha: 0.4)),
+                      color: AppTheme.textTertiary(isDark)),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -1109,7 +1149,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         fontStyle: FontStyle.italic,
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: AppTheme.textSecondary(isDark),
                       ),
                     ),
                   ),
@@ -1163,7 +1203,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                       ),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF25D366),
+                      backgroundColor: AppTheme.whatsappGreen,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -1189,7 +1229,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1A6FBF),
+                    backgroundColor: AppTheme.primaryColor,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -1231,11 +1271,11 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
     );
   }
 
-  Widget _buildRouteInfo(String? origin, String? destination) {
+  Widget _buildRouteInfo(String? origin, String? destination, bool isDark) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF111621),
+        color: AppTheme.bg(isDark),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -1248,7 +1288,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                   Container(
                     width: 1,
                     height: 20,
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: AppTheme.border(isDark),
                   ),
                 ],
               ),
@@ -1258,7 +1298,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                   origin ?? 'Punto de recogida',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
-                    color: Colors.white.withValues(alpha: 0.9),
+                    color: AppTheme.textPrimary(isDark),
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1275,7 +1315,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
                   destination ?? 'Destino',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
-                    color: Colors.white.withValues(alpha: 0.9),
+                    color: AppTheme.textPrimary(isDark),
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

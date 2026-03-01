@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart' as fmtc;
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -32,6 +34,12 @@ import 'widgets/notification_overlay.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize tile caching (not supported on web)
+  if (!kIsWeb) {
+    await fmtc.FMTCObjectBoxBackend().initialise();
+    await fmtc.FMTCStore('mapTiles').manage.create();
+  }
 
   await Supabase.initialize(
     url: SupabaseConfig.supabaseUrl,

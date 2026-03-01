@@ -202,20 +202,21 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
 
   Future<void> _completeTrip() async {
     if (_isCompleting) return;
+    final isDark = context.read<ThemeProvider>().isDark;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A2232),
+        backgroundColor: AppTheme.surface(isDark),
         title: Text('Completar viaje',
             style: GoogleFonts.plusJakartaSans(
-                color: Colors.white, fontWeight: FontWeight.w700)),
+                color: AppTheme.textPrimary(isDark), fontWeight: FontWeight.w700)),
         content: Text('¿Confirmas que llegaste al destino?',
-            style: GoogleFonts.plusJakartaSans(color: Colors.white70)),
+            style: GoogleFonts.plusJakartaSans(color: AppTheme.textSecondary(isDark))),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text('Cancelar',
-                style: GoogleFonts.plusJakartaSans(color: Colors.white54)),
+                style: GoogleFonts.plusJakartaSans(color: AppTheme.textTertiary(isDark))),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -392,7 +393,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                 children: [
                   // Back
                   Material(
-                    color: isDark ? AppTheme.darkSurface : Colors.white,
+                    color: AppTheme.surface(isDark),
                     shape: const CircleBorder(),
                     elevation: 4,
                     child: InkWell(
@@ -412,9 +413,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 10),
                       decoration: BoxDecoration(
-                        color: isDark
-                            ? AppTheme.darkSurface.withValues(alpha: 0.95)
-                            : Colors.white.withValues(alpha: 0.95),
+                        color: AppTheme.surface(isDark).withValues(alpha: 0.95),
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
@@ -446,7 +445,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
-                              color: isDark ? Colors.white : Colors.black87,
+                              color: AppTheme.textPrimary(isDark),
                             ),
                           ),
                         ],
@@ -456,7 +455,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                   const SizedBox(width: 12),
                   // Recalculate button
                   Material(
-                    color: isDark ? AppTheme.darkSurface : Colors.white,
+                    color: AppTheme.surface(isDark),
                     shape: const CircleBorder(),
                     elevation: 4,
                     child: InkWell(
@@ -485,7 +484,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
             child: Container(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
               decoration: BoxDecoration(
-                color: isDark ? AppTheme.darkSurface : Colors.white,
+                color: AppTheme.surface(isDark),
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(24)),
                 boxShadow: [
@@ -507,8 +506,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                         width: 40,
                         height: 4,
                         decoration: BoxDecoration(
-                          color:
-                              isDark ? Colors.white24 : Colors.grey[300],
+                          color: AppTheme.border(isDark),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -537,9 +535,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                                 'Destino',
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 11,
-                                  color: isDark
-                                      ? Colors.white54
-                                      : Colors.grey[500],
+                                  color: AppTheme.textTertiary(isDark),
                                 ),
                               ),
                               Text(
@@ -549,9 +545,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
-                                  color: isDark
-                                      ? Colors.white
-                                      : Colors.black87,
+                                  color: AppTheme.textPrimary(isDark),
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -604,9 +598,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: isDark
-                                    ? Colors.white
-                                    : Colors.black87,
+                                color: AppTheme.textPrimary(isDark),
                               ),
                             ),
                           ),
@@ -648,7 +640,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                                         fontSize: 12,
                                         fontWeight: FontWeight.w600)),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF25D366),
+                                  backgroundColor: AppTheme.whatsappGreen,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 10),

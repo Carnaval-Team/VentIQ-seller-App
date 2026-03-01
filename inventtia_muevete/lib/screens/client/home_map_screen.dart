@@ -17,6 +17,7 @@ import '../../providers/transport_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/transport_request_service.dart';
 import '../../services/routing_service.dart';
+import '../../models/transport_request_model.dart';
 import '../../utils/constants.dart';
 import '../../widgets/client_drawer.dart';
 import '../../widgets/map_widget.dart';
@@ -59,6 +60,12 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   Timer? _driverTrackingTimer;
   Timer? _routeRefreshTimer; // periodic fallback every 10s
 
+  // Navigation mode state
+  bool _autoRotate = false;
+  bool _tilt3D = false;
+  double _currentTilt = 0.0;
+  double _bearing = 0.0;
+
   @override
   void initState() {
     super.initState();
@@ -72,7 +79,20 @@ class _HomeMapScreenState extends State<HomeMapScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final locationProvider = context.read<LocationProvider>();
-      locationProvider.initLocation();
+      locationProvider.initLocation().then((_) async {
+        // Start background service now that location permission is granted
+        if (!mounted) return;
+        final started = await context.read<AuthProvider>().ensureBackgroundServiceStarted();
+        if (!started && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No se pudo iniciar el servicio en segundo plano después de 10 intentos. Verifica permisos de ubicación y reinicia la app.'),
+              duration: Duration(seconds: 8),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      });
       locationProvider.addListener(_onLocationChanged);
 
       context.read<TransportProvider>().loadVehicleTypes();
@@ -128,7 +148,8 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       } else {
         setState(() => _hasActiveTrip = false);
       }
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[HomeMap] _checkActiveTrip error: $e\n$st');
       setState(() => _hasActiveTrip = false);
     } finally {
       setState(() => _checkingActiveTrip = false);
@@ -159,7 +180,9 @@ class _HomeMapScreenState extends State<HomeMapScreen>
               Map<String, dynamic>.from(offerRows.first);
         });
       }
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('[HomeMap] _loadAcceptedTripDriver error: $e\n$st');
+    }
   }
 
   void _startActiveTripTracking() {
@@ -206,12 +229,25 @@ class _HomeMapScreenState extends State<HomeMapScreen>
 
     if (_lastTrailPosition != null &&
         _haversineMeters(_lastTrailPosition!, loc) < 2) return;
+
+    // Calculate bearing for auto-rotate
+    if (_lastTrailPosition != null) {
+      setState(() {
+        _bearing = _calcBearing(_lastTrailPosition!, loc);
+      });
+    }
+
     _lastTrailPosition = loc;
 
     setState(() {
       _activeTripTrail.add(loc);
       if (_activeTripTrail.length > 500) _activeTripTrail.removeAt(0);
     });
+
+    // Auto-center with smooth animation
+    if (_autoRotate || _hasActiveTrip) {
+      _animateCameraToLocation(loc);
+    }
 
     if (!_isRecalculating) {
       _forceRecalculateActiveTripRoute(loc);
@@ -227,7 +263,9 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       if (mounted) {
         setState(() => _activeTripRoute = result.polyline);
       }
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('[HomeMap] _forceRecalculateActiveTripRoute error: $e\n$st');
+    }
     _isRecalculating = false;
   }
 
@@ -246,7 +284,9 @@ class _HomeMapScreenState extends State<HomeMapScreen>
           setState(() => _activeTripDriverPos = LatLng(lat, lon));
         }
       }
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('[HomeMap] _pollActiveTripDriverPos error: $e\n$st');
+    }
   }
 
   double _haversineMeters(LatLng a, LatLng b) {
@@ -273,7 +313,9 @@ class _HomeMapScreenState extends State<HomeMapScreen>
         AppConstants.defaultSearchRadiusKm,
       );
       if (mounted) setState(() => _nearbyDrivers = drivers);
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('[HomeMap] _loadNearbyDrivers error: $e\n$st');
+    }
   }
 
   void _onLocationChanged() {
@@ -283,7 +325,9 @@ class _HomeMapScreenState extends State<HomeMapScreen>
     _mapCenteredOnUser = true;
     try {
       _mapController.move(loc, AppConstants.defaultZoom);
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('[HomeMap] _onLocationChanged move error: $e\n$st');
+    }
   }
 
   @override
@@ -296,7 +340,9 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       context
           .read<LocationProvider>()
           .removeListener(_onActiveTripLocationUpdate);
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('[HomeMap] dispose removeListener error: $e\n$st');
+    }
     _pulseController.dispose();
     _mapController.dispose();
     super.dispose();
@@ -305,6 +351,105 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   void _centerOnUser() {
     final loc = context.read<LocationProvider>().locationOrDefault;
     _mapController.move(loc, AppConstants.defaultZoom);
+  }
+
+  void _animateCameraToLocation(LatLng target) {
+    try {
+      final cam = _mapController.camera;
+      final startCenter = cam.center;
+      final startZoom = cam.zoom;
+      final startRotation = cam.rotation;
+      final targetRotation = _autoRotate ? -_bearing : 0.0;
+
+      const steps = 15;
+      const duration = Duration(milliseconds: 450);
+      final stepDuration = Duration(
+        microseconds: duration.inMicroseconds ~/ steps,
+      );
+
+      int step = 0;
+      Timer.periodic(stepDuration, (timer) {
+        step++;
+        if (step >= steps || !mounted) {
+          timer.cancel();
+          return;
+        }
+        final t = step / steps;
+        final ease = 1 - pow(1 - t, 3).toDouble();
+
+        final lat = startCenter.latitude +
+            (target.latitude - startCenter.latitude) * ease;
+        final lon = startCenter.longitude +
+            (target.longitude - startCenter.longitude) * ease;
+
+        double rot = startRotation;
+        if (_autoRotate) {
+          var diff = targetRotation - startRotation;
+          while (diff > 180) diff -= 360;
+          while (diff < -180) diff += 360;
+          rot = startRotation + diff * ease;
+        }
+
+        try {
+          _mapController.moveAndRotate(LatLng(lat, lon), startZoom, rot);
+        } catch (e) {
+          debugPrint('[HomeMap] animateCamera moveAndRotate error: $e');
+        }
+      });
+    } catch (e, st) {
+      debugPrint('[HomeMap] animateCamera outer error: $e\n$st');
+      try {
+        _mapController.move(target, _mapController.camera.zoom);
+      } catch (e2) {
+        debugPrint('[HomeMap] animateCamera fallback move error: $e2');
+      }
+    }
+  }
+
+  void _toggleAutoRotate() {
+    setState(() {
+      _autoRotate = !_autoRotate;
+      if (!_autoRotate) {
+        try {
+          _mapController.rotate(0);
+        } catch (e) {
+          debugPrint('[HomeMap] rotate reset error: $e');
+        }
+      }
+    });
+  }
+
+  void _toggle3DTilt() {
+    setState(() => _tilt3D = !_tilt3D);
+    const steps = 12;
+    const duration = Duration(milliseconds: 350);
+    final stepDuration = Duration(
+      microseconds: duration.inMicroseconds ~/ steps,
+    );
+    final startTilt = _currentTilt;
+    final endTilt = _tilt3D ? 1.0 : 0.0;
+
+    int step = 0;
+    Timer.periodic(stepDuration, (timer) {
+      step++;
+      if (step >= steps || !mounted) {
+        timer.cancel();
+        if (mounted) setState(() => _currentTilt = endTilt);
+        return;
+      }
+      final t = step / steps;
+      final ease = 1 - pow(1 - t, 3).toDouble();
+      setState(() => _currentTilt = startTilt + (endTilt - startTilt) * ease);
+    });
+  }
+
+  static double _calcBearing(LatLng from, LatLng to) {
+    final dLon = (to.longitude - from.longitude) * pi / 180;
+    final lat1 = from.latitude * pi / 180;
+    final lat2 = to.latitude * pi / 180;
+    final y = sin(dLon) * cos(lat2);
+    final x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon);
+    return atan2(y, x) * 180 / pi;
   }
 
   void _onMapTap(TapPosition tapPosition, LatLng point) {
@@ -522,73 +667,8 @@ class _HomeMapScreenState extends State<HomeMapScreen>
             onTap: _onMapTap,
             markers: markers,
             polylines: polylines,
+            perspectiveTilt: _currentTilt,
           ),
-
-          // GPS error banner
-          if (locationError != null)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                bottom: false,
-                child: GestureDetector(
-                  onTap: () async {
-                    if (locationError.contains('denegado') ||
-                        locationError.contains('permiso')) {
-                      await Geolocator.openAppSettings();
-                    } else {
-                      await Geolocator.openLocationSettings();
-                    }
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppTheme.warning.withValues(alpha: 0.95),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.15),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.location_off,
-                            color: Colors.white, size: 18),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            locationError,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Activar',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            decoration: TextDecoration.underline,
-                            decorationColor: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
 
           // Top bar overlay
           SafeArea(
@@ -742,12 +822,96 @@ class _HomeMapScreenState extends State<HomeMapScreen>
             ),
           ),
 
+          // GPS error banner (rendered above top bar so it's visible)
+          if (locationError != null)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: GestureDetector(
+                  onTap: () async {
+                    if (locationError.contains('denegado') ||
+                        locationError.contains('permiso')) {
+                      await Geolocator.openAppSettings();
+                    } else {
+                      await Geolocator.openLocationSettings();
+                    }
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.warning.withValues(alpha: 0.95),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.location_off,
+                            color: Colors.white, size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            locationError,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Activar',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            decoration: TextDecoration.underline,
+                            decorationColor: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
           // Right side floating buttons
           Positioned(
             right: 16,
             bottom: _hasActiveTrip ? 240 : 280,
             child: Column(
               children: [
+                if (_hasActiveTrip) ...[
+                  _buildNavModeButton(
+                    icon: _autoRotate
+                        ? Icons.explore
+                        : Icons.explore_off,
+                    isActive: _autoRotate,
+                    onPressed: _toggleAutoRotate,
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildNavModeButton(
+                    icon: Icons.view_in_ar,
+                    isActive: _tilt3D,
+                    onPressed: _toggle3DTilt,
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 _buildCircleButton(
                   icon: Icons.my_location,
                   onPressed: _centerOnUser,
@@ -1066,7 +1230,16 @@ class _HomeMapScreenState extends State<HomeMapScreen>
                     child: SizedBox(
                       height: 48,
                       child: ElevatedButton.icon(
-                        onPressed: () {
+                        onPressed: () async {
+                          // Restore provider state so RideConfirmedScreen has driver data
+                          if (_activeSolicitud != null) {
+                            final request = TransportRequestModel.fromJson(
+                                _activeSolicitud!);
+                            await context
+                                .read<TransportProvider>()
+                                .restoreAcceptedRide(request);
+                          }
+                          if (!mounted) return;
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -1108,10 +1281,10 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       bool isDark, TransportProvider transportProvider) {
     return DraggableScrollableSheet(
       initialChildSize: 0.35,
-      minChildSize: 0.08,
+      minChildSize: 0.06,
       maxChildSize: 0.55,
       snap: true,
-      snapSizes: const [0.08, 0.35, 0.55],
+      snapSizes: const [0.06, 0.35, 0.55],
       builder: (context, scrollController) {
         return Container(
           decoration: BoxDecoration(
@@ -1237,6 +1410,53 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       default:
         return Icons.place_outlined;
     }
+  }
+
+  Widget _buildNavModeButton({
+    required IconData icon,
+    required bool isActive,
+    required VoidCallback onPressed,
+    required bool isDark,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+      decoration: BoxDecoration(
+        color: isActive
+            ? AppTheme.primaryColor
+            : (isDark ? AppTheme.darkSurface : Colors.white),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: isActive
+                ? AppTheme.primaryColor.withValues(alpha: 0.4)
+                : Colors.black.withValues(alpha: 0.15),
+            blurRadius: isActive ? 12 : 6,
+            spreadRadius: isActive ? 2 : 0,
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          onTap: onPressed,
+          customBorder: const CircleBorder(),
+          child: Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            child: Icon(
+              icon,
+              color: isActive
+                  ? Colors.white
+                  : (isDark ? Colors.white70 : Colors.black54),
+              size: 22,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildCircleButton({

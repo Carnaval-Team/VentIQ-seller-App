@@ -30,8 +30,8 @@ class RideConfirmedScreen extends StatefulWidget {
 class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     with SingleTickerProviderStateMixin {
   final MapController _mapController = MapController();
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
+  AnimationController? _pulseController;
+  Animation<double>? _pulseAnimation;
 
   // Real driver position polled from muevete.place
   LatLng? _driverPosition;
@@ -54,6 +54,11 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
 
   // Whether the driver has started the trip (hide driver marker from map)
   bool _tripStarted = false;
+
+  // Navigation mode state
+  bool _autoRotate = false;
+  bool _tilt3D = false;
+  double _currentTilt = 0.0;
   StreamSubscription<NotificationModel>? _notifSubscription;
 
   // Driver-to-client route (shown while driver is on the way)
@@ -68,7 +73,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
     _pulseAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+      CurvedAnimation(parent: _pulseController!, curve: Curves.easeInOut),
     );
 
     // Listen for "trip started" notification to hide driver marker
@@ -187,10 +192,8 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       if (_clientTrail.length > 500) _clientTrail.removeAt(0);
     });
 
-    // Auto-center map on client position
-    try {
-      _mapController.move(loc, _mapController.camera.zoom);
-    } catch (_) {}
+    // Smooth animated camera follow (with rotation if enabled)
+    _animateCamera(loc);
 
     _updateDistance(loc);
 
@@ -248,6 +251,41 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     return atan2(y, x);
   }
 
+  // ─── Early complete confirmation ────────────────────────────────────────
+  void _confirmEarlyComplete(String distStr) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Completar viaje antes de llegar',
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'Aún faltan $distStr para llegar al destino. '
+          '¿Estás seguro de que deseas completar el viaje ahora?',
+          style: GoogleFonts.plusJakartaSans(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _completeRide();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.warning,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Sí, completar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ─── Complete ride ───────────────────────────────────────────────────────
   Future<void> _completeRide() async {
     final tp = context.read<TransportProvider>();
@@ -255,6 +293,9 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     if (requestId == null || _isCompleting) return;
     setState(() => _isCompleting = true);
     try {
+      // Process wallet payment (client if wallet, driver commission always)
+      await tp.completeRideWithPayment();
+
       await Supabase.instance.client
           .schema('muevete')
           .from('solicitudes_transporte')
@@ -278,7 +319,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   @override
   void dispose() {
     _notifSubscription?.cancel();
-    _pulseController.dispose();
+    _pulseController?.dispose();
     _locationPollTimer?.cancel();
     _routeRefreshTimer?.cancel();
     _mapController.dispose();
@@ -425,7 +466,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                   ),
                 ),
               )
-            : _PulsingDot(animation: _pulseAnimation),
+            : _PulsingDot(animation: _pulseAnimation ?? const AlwaysStoppedAnimation(0.8)),
       ),
     );
 
@@ -552,6 +593,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
             zoom: 15.0,
             markers: markers,
             polylines: polylines,
+            perspectiveTilt: _currentTilt,
           ),
 
           // Top status bar
@@ -590,27 +632,30 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           _AnimatedPulseDot(
-                              animation: _pulseAnimation),
-                          const SizedBox(width: 8),
-                          Text(
-                            _tripStarted
-                                ? 'Viaje en curso'
-                                : 'Conductor llega en $driverEtaMin min',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: isDark
-                                  ? Colors.white
-                                  : Colors.black87,
+                              animation: _pulseAnimation ?? const AlwaysStoppedAnimation(0.8)),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              _tripStarted
+                                  ? 'En curso'
+                                  : 'Llega en $driverEtaMin min',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: isDark
+                                    ? Colors.white
+                                    : Colors.black87,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 8),
                           Container(
                             width: 1,
                             height: 16,
                             color: isDark ? Colors.white24 : Colors.grey[300],
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 8),
                           Icon(
                             Icons.place_outlined,
                             size: 14,
@@ -644,6 +689,29 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                   ),
                 ],
               ),
+            ),
+          ),
+
+          // Navigation mode FABs
+          Positioned(
+            right: 16,
+            bottom: 320,
+            child: Column(
+              children: [
+                _buildNavModeButton(
+                  icon: _autoRotate ? Icons.explore : Icons.explore_off,
+                  isActive: _autoRotate,
+                  onPressed: _toggleAutoRotate,
+                  isDark: isDark,
+                ),
+                const SizedBox(height: 10),
+                _buildNavModeButton(
+                  icon: Icons.view_in_ar,
+                  isActive: _tilt3D,
+                  onPressed: _toggle3DTilt,
+                  isDark: isDark,
+                ),
+              ],
             ),
           ),
 
@@ -982,59 +1050,59 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                       ],
                     ),
                     const SizedBox(height: 12),
-                    // Complete ride button — locked until within 30m
-                    Tooltip(
-                      message: canComplete
-                          ? ''
-                          : 'Debes estar a menos de 30 m del destino',
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: ElevatedButton.icon(
-                          onPressed:
-                              (canComplete && !_isCompleting)
-                                  ? _completeRide
-                                  : null,
-                          icon: _isCompleting
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : Icon(
-                                  canComplete
-                                      ? Icons.check_circle_outline
-                                      : Icons.lock_outline,
-                                  size: 20,
+                    // Complete ride button — always pressable when trip started
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        onPressed: _isCompleting
+                            ? null
+                            : () {
+                                if (canComplete) {
+                                  _completeRide();
+                                } else {
+                                  _confirmEarlyComplete(distStr);
+                                }
+                              },
+                        icon: _isCompleting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
                                 ),
-                          label: Text(
-                            _isCompleting
-                                ? 'Completando...'
-                                : canComplete
-                                    ? 'Completar viaje'
-                                    : 'Faltan $distStr para completar',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                            ),
+                              )
+                            : Icon(
+                                canComplete
+                                    ? Icons.check_circle_outline
+                                    : Icons.warning_amber_rounded,
+                                size: 20,
+                              ),
+                        label: Text(
+                          _isCompleting
+                              ? 'Completando...'
+                              : canComplete
+                                  ? 'Completar viaje'
+                                  : 'Completar viaje · Faltan $distStr',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
                           ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: canComplete
-                                ? AppTheme.success
-                                : Colors.grey[400],
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor:
-                                Colors.grey[400],
-                            disabledForegroundColor:
-                                Colors.white70,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            elevation: 0,
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: canComplete
+                              ? AppTheme.success
+                              : AppTheme.warning,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor:
+                              Colors.grey[400],
+                          disabledForegroundColor:
+                              Colors.white70,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
+                          elevation: 0,
                         ),
                       ),
                     ),
@@ -1044,6 +1112,131 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _toggleAutoRotate() {
+    setState(() {
+      _autoRotate = !_autoRotate;
+      if (!_autoRotate) {
+        try {
+          _mapController.rotate(0);
+        } catch (_) {}
+      }
+    });
+  }
+
+  void _toggle3DTilt() {
+    setState(() => _tilt3D = !_tilt3D);
+    const steps = 12;
+    const duration = Duration(milliseconds: 350);
+    final stepDuration = Duration(
+      microseconds: duration.inMicroseconds ~/ steps,
+    );
+    final startTilt = _currentTilt;
+    final endTilt = _tilt3D ? 1.0 : 0.0;
+    int step = 0;
+    Timer.periodic(stepDuration, (timer) {
+      step++;
+      if (step >= steps || !mounted) {
+        timer.cancel();
+        if (mounted) setState(() => _currentTilt = endTilt);
+        return;
+      }
+      final t = step / steps;
+      final ease = 1 - pow(1 - t, 3).toDouble();
+      setState(() => _currentTilt = startTilt + (endTilt - startTilt) * ease);
+    });
+  }
+
+  void _animateCamera(LatLng target) {
+    try {
+      final cam = _mapController.camera;
+      final startCenter = cam.center;
+      final startZoom = cam.zoom;
+      final startRotation = cam.rotation;
+      final targetRotation = _autoRotate ? -_clientBearing : 0.0;
+
+      const steps = 15;
+      const duration = Duration(milliseconds: 450);
+      final stepDuration = Duration(
+        microseconds: duration.inMicroseconds ~/ steps,
+      );
+      int step = 0;
+      Timer.periodic(stepDuration, (timer) {
+        step++;
+        if (step >= steps || !mounted) {
+          timer.cancel();
+          return;
+        }
+        final t = step / steps;
+        final ease = 1 - pow(1 - t, 3).toDouble();
+        final lat = startCenter.latitude +
+            (target.latitude - startCenter.latitude) * ease;
+        final lon = startCenter.longitude +
+            (target.longitude - startCenter.longitude) * ease;
+        double rot = startRotation;
+        if (_autoRotate) {
+          var diff = targetRotation - startRotation;
+          while (diff > 180) diff -= 360;
+          while (diff < -180) diff += 360;
+          rot = startRotation + diff * ease;
+        }
+        try {
+          _mapController.moveAndRotate(LatLng(lat, lon), startZoom, rot);
+        } catch (_) {}
+      });
+    } catch (_) {
+      try {
+        _mapController.move(target, _mapController.camera.zoom);
+      } catch (_) {}
+    }
+  }
+
+  Widget _buildNavModeButton({
+    required IconData icon,
+    required bool isActive,
+    required VoidCallback onPressed,
+    required bool isDark,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+      decoration: BoxDecoration(
+        color: isActive
+            ? AppTheme.primaryColor
+            : (isDark ? AppTheme.darkSurface : Colors.white),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: isActive
+                ? AppTheme.primaryColor.withValues(alpha: 0.4)
+                : Colors.black.withValues(alpha: 0.15),
+            blurRadius: isActive ? 12 : 6,
+            spreadRadius: isActive ? 2 : 0,
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          onTap: onPressed,
+          customBorder: const CircleBorder(),
+          child: Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            child: Icon(
+              icon,
+              color: isActive
+                  ? Colors.white
+                  : (isDark ? Colors.white70 : Colors.black54),
+              size: 22,
+            ),
+          ),
+        ),
       ),
     );
   }

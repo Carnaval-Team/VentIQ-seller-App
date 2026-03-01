@@ -16,6 +16,7 @@ class TransportRequestModel {
   final double? distanciaKm;
   final DateTime? createdAt;
   final DateTime? expiresAt;
+  final String? metodoPago; // 'efectivo' o 'wallet'
 
   TransportRequestModel({
     this.id,
@@ -33,6 +34,7 @@ class TransportRequestModel {
     this.distanciaKm,
     this.createdAt,
     this.expiresAt,
+    this.metodoPago,
   });
 
   factory TransportRequestModel.fromJson(Map<String, dynamic> json) {
@@ -73,6 +75,7 @@ class TransportRequestModel {
       expiresAt: json['expires_at'] != null
           ? DateTime.parse(json['expires_at'] as String)
           : null,
+      metodoPago: json['metodo_pago'] as String?,
     );
   }
 
@@ -91,6 +94,7 @@ class TransportRequestModel {
       'direccion_destino': direccionDestino,
       'distancia_km': distanciaKm,
       'expires_at': expiresAt?.toIso8601String(),
+      if (metodoPago != null) 'metodo_pago': metodoPago,
     };
   }
 
@@ -110,6 +114,7 @@ class TransportRequestModel {
     double? distanciaKm,
     DateTime? createdAt,
     DateTime? expiresAt,
+    String? metodoPago,
   }) {
     return TransportRequestModel(
       id: id ?? this.id,
@@ -127,6 +132,7 @@ class TransportRequestModel {
       distanciaKm: distanciaKm ?? this.distanciaKm,
       createdAt: createdAt ?? this.createdAt,
       expiresAt: expiresAt ?? this.expiresAt,
+      metodoPago: metodoPago ?? this.metodoPago,
     );
   }
 }

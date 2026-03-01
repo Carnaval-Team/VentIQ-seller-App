@@ -53,11 +53,20 @@ class AppConstants {
   static const Duration requestTtl = Duration(hours: 1);
 
   // Default search radius for nearby drivers (km)
-  static const double defaultSearchRadiusKm = 10.0;
-  static const double maxSearchRadiusKm = 50.0;
+  static const double defaultSearchRadiusKm = 15.0;
+  static const double maxSearchRadiusKm = 100.0;
+
+  // Expanding radius steps (km) and interval
+  static const List<double> radiusSteps = [15, 30, 50, 75, 100];
+  static const Duration radiusExpansionInterval = Duration(seconds: 30);
 
   // Default map center (Cuba)
   static const double defaultLat = 22.406959;
   static const double defaultLon = -79.965681;
   static const double defaultZoom = 14.0;
+
+  // Santa Clara city zone pricing
+  static const double cityCenterLat = 22.40689;
+  static const double cityCenterLon = -79.96450;
+  static const double cityRadiusKm = 2.53;
 }

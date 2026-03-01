@@ -4,6 +4,7 @@ class WalletService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
   /// Fetches the client balance from muevete.suscription_user.
+  /// Creates a row if one doesn't exist yet.
   Future<double> getClientBalance(String uuid) async {
     final response = await _supabase
         .schema('muevete')
@@ -12,7 +13,14 @@ class WalletService {
         .eq('user_id', uuid)
         .maybeSingle();
 
-    if (response == null) return 0.0;
+    if (response == null) {
+      // Create wallet row for new user
+      await _supabase
+          .schema('muevete')
+          .from('suscription_user')
+          .insert({'user_id': uuid, 'balance': 0});
+      return 0.0;
+    }
     return (response['balance'] as num?)?.toDouble() ?? 0.0;
   }
 
@@ -29,11 +37,15 @@ class WalletService {
     return (response['balance'] as num?)?.toDouble() ?? 0.0;
   }
 
-  /// Adds funds to a client wallet: updates balance and creates a transaction record.
-  Future<void> addFunds(String uuid, double amount) async {
+  /// Adds funds to a client wallet: deducts 11% fee, updates balance,
+  /// and creates a transaction record.
+  Future<double> addFunds(String uuid, double amount) async {
+    // Deduct 11% fee — user receives 89% of the amount
+    final netAmount = amount * 0.89;
+
     // Get current balance
     final currentBalance = await getClientBalance(uuid);
-    final newBalance = currentBalance + amount;
+    final newBalance = currentBalance + netAmount;
 
     // Update the balance in suscription_user
     await _supabase
@@ -46,9 +58,12 @@ class WalletService {
     await _supabase.schema('muevete').from('transacciones_wallet').insert({
       'user_id': uuid,
       'tipo': 'recarga',
-      'monto': amount,
+      'monto': netAmount,
       'balance_despues': newBalance,
+      'descripcion': 'Recarga de \$${amount.toStringAsFixed(2)} (11% comisión)',
     });
+
+    return netAmount;
   }
 
   /// Fetches all wallet transactions for a given user UUID.
@@ -63,55 +78,101 @@ class WalletService {
     return List<Map<String, dynamic>>.from(response);
   }
 
-  /// Processes a ride payment: deducts from client, credits driver,
-  /// and creates transaction records for both parties.
-  Future<void> processRidePayment(
-    int tripId,
-    String clientUuid,
-    int driverId,
-    double amount,
-  ) async {
-    // Get current balances
-    final clientBalance = await getClientBalance(clientUuid);
-    final driverBalance = await getDriverBalance(driverId);
+  /// Fetches all wallet transactions for a given driver ID.
+  Future<List<Map<String, dynamic>>> getDriverTransactions(int driverId) async {
+    final response = await _supabase
+        .schema('muevete')
+        .from('transacciones_wallet')
+        .select()
+        .eq('driver_id', driverId)
+        .order('created_at', ascending: false);
 
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  /// Holds (deducts) client funds when an offer is accepted (wallet payment).
+  /// Throws if insufficient balance.
+  Future<void> holdClientFunds(String clientUuid, double amount) async {
+    final clientBalance = await getClientBalance(clientUuid);
     if (clientBalance < amount) {
-      throw Exception('Insufficient client balance');
+      throw Exception('Saldo insuficiente. Necesitas \$${amount.toStringAsFixed(2)}');
     }
 
-    final newClientBalance = clientBalance - amount;
-    final newDriverBalance = driverBalance + amount;
-
-    // Deduct from client
+    final newBalance = clientBalance - amount;
     await _supabase
         .schema('muevete')
         .from('suscription_user')
-        .update({'balance': newClientBalance})
+        .update({'balance': newBalance})
         .eq('user_id', clientUuid);
+  }
 
-    // Credit driver
-    await _supabase
-        .schema('muevete')
-        .from('wallet_drivers')
-        .update({'balance': newDriverBalance})
-        .eq('driver_id', driverId);
-
-    // Create client transaction record (debit)
+  /// Records the client wallet transaction after ride completion.
+  /// Funds were already deducted at holdClientFunds.
+  Future<void> confirmClientPayment(
+    String clientUuid, double amount, int viajeId) async {
+    final currentBalance = await getClientBalance(clientUuid);
     await _supabase.schema('muevete').from('transacciones_wallet').insert({
       'user_id': clientUuid,
       'tipo': 'pago_viaje',
       'monto': -amount,
-      'balance_despues': newClientBalance,
-      'viaje_id': tripId,
+      'balance_despues': currentBalance,
+      'viaje_id': viajeId,
+      'descripcion': 'Pago de viaje por wallet',
     });
+  }
 
-    // Create driver transaction record (credit)
+  /// Refunds held client funds (on cancellation).
+  Future<void> refundClientFunds(
+    String clientUuid, double amount, int solicitudId) async {
+    final currentBalance = await getClientBalance(clientUuid);
+    final newBalance = currentBalance + amount;
+
+    await _supabase
+        .schema('muevete')
+        .from('suscription_user')
+        .update({'balance': newBalance})
+        .eq('user_id', clientUuid);
+
+    await _supabase.schema('muevete').from('transacciones_wallet').insert({
+      'user_id': clientUuid,
+      'tipo': 'reembolso',
+      'monto': amount,
+      'balance_despues': newBalance,
+      'descripcion': 'Reembolso por cancelación de solicitud #$solicitudId',
+    });
+  }
+
+  /// Charges the driver 15% commission on ride completion.
+  /// Throws if insufficient balance.
+  Future<void> chargeDriverCommission(
+    int driverId, double commission, int viajeId) async {
+    final driverBalance = await getDriverBalance(driverId);
+    if (driverBalance < commission) {
+      throw Exception(
+        'Saldo del conductor insuficiente para comisión de \$${commission.toStringAsFixed(2)}');
+    }
+
+    final newBalance = driverBalance - commission;
+    await _supabase
+        .schema('muevete')
+        .from('wallet_drivers')
+        .update({'balance': newBalance})
+        .eq('driver_id', driverId);
+
     await _supabase.schema('muevete').from('transacciones_wallet').insert({
       'driver_id': driverId,
-      'tipo': 'cobro_viaje',
-      'monto': amount,
-      'balance_despues': newDriverBalance,
-      'viaje_id': tripId,
+      'tipo': 'comision_viaje',
+      'monto': -commission,
+      'balance_despues': newBalance,
+      'viaje_id': viajeId,
+      'descripcion': 'Comisión 15% por viaje completado',
     });
+  }
+
+  /// Checks if driver has enough balance for 15% commission.
+  Future<bool> driverHasEnoughForCommission(
+    int driverId, double offerPrice) async {
+    final balance = await getDriverBalance(driverId);
+    return balance >= (offerPrice * 0.15);
   }
 }

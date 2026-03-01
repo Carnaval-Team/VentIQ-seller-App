@@ -1,8 +1,8 @@
-enum TipoTransaccion { recarga, cobro_viaje, pago_viaje }
+enum TipoTransaccion { recarga, cobro_viaje, pago_viaje, reembolso, comision_viaje }
 
 class WalletTransactionModel {
   final int? id;
-  final int? userId;
+  final String? userId;
   final int? driverId;
   final TipoTransaccion? tipo;
   final double? monto;
@@ -24,7 +24,7 @@ class WalletTransactionModel {
   factory WalletTransactionModel.fromJson(Map<String, dynamic> json) {
     return WalletTransactionModel(
       id: json['id'] as int?,
-      userId: json['user_id'] as int?,
+      userId: json['user_id']?.toString(),
       driverId: json['driver_id'] as int?,
       tipo: json['tipo'] != null
           ? TipoTransaccion.values.firstWhere(
@@ -56,7 +56,7 @@ class WalletTransactionModel {
 
   WalletTransactionModel copyWith({
     int? id,
-    int? userId,
+    String? userId,
     int? driverId,
     TipoTransaccion? tipo,
     double? monto,

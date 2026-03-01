@@ -88,6 +88,7 @@ CREATE TABLE muevete.solicitudes_transporte (
   expires_at timestamp with time zone,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   id_tipo_vehiculo bigint,
+  metodo_pago character varying DEFAULT 'efectivo'::character varying,
   CONSTRAINT solicitudes_transporte_pkey PRIMARY KEY (id),
   CONSTRAINT solicitudes_transporte_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );

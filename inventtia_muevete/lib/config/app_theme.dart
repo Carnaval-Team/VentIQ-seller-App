@@ -16,6 +16,31 @@ class AppTheme {
   static const Color lightBg = Color(0xFFF5F7FA);
   static const Color lightSurface = Color(0xFFFFFFFF);
   static const Color lightCard = Color(0xFFFFFFFF);
+  static const Color lightBorder = Color(0xFFE2E8F0);
+
+  // Semantic helpers (use with isDark)
+  static const Color whatsappGreen = Color(0xFF25D366);
+
+  static Color bg(bool isDark) => isDark ? darkBg : lightBg;
+  static Color surface(bool isDark) => isDark ? darkSurface : lightSurface;
+  static Color card(bool isDark) => isDark ? darkCard : lightCard;
+  static Color border(bool isDark) => isDark ? darkBorder : lightBorder;
+  static Color textPrimary(bool isDark) =>
+      isDark ? Colors.white : const Color(0xFF1A1D27);
+  static Color textSecondary(bool isDark) =>
+      isDark ? Colors.white70 : Colors.grey.shade600;
+  static Color textTertiary(bool isDark) =>
+      isDark ? Colors.white54 : Colors.grey.shade500;
+  static Color iconColor(bool isDark) =>
+      isDark ? Colors.white70 : Colors.grey.shade700;
+  static Color overlay(bool isDark) =>
+      isDark
+          ? Colors.white.withValues(alpha: 0.05)
+          : Colors.black.withValues(alpha: 0.05);
+  static Color shimmer(bool isDark) =>
+      isDark ? Colors.white24 : Colors.grey.shade300;
+  static Color markerBorder(bool isDark) =>
+      isDark ? Colors.white : AppTheme.darkBg;
 
   // Status colors
   static const Color success = Color(0xFF22C55E);

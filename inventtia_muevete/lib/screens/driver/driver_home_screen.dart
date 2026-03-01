@@ -83,6 +83,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final authProvider = context.read<AuthProvider>(); // read before await
     await locationProvider.initLocation();
     locationProvider.startTracking();
+    // Start background service now that location permission is granted (retries up to 10 times)
+    final bgStarted = await authProvider.ensureBackgroundServiceStarted();
+    if (!bgStarted && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo iniciar el servicio en segundo plano después de 10 intentos. Verifica los permisos de ubicación y reinicia la app.'),
+          duration: Duration(seconds: 8),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
 
     if (!mounted) return;
     final driverProfile = authProvider.driverProfile;
@@ -380,7 +391,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: Container(
             decoration: BoxDecoration(
-              color: Color(isDark ? 0xFF1A2232 : 0xFFFFFFFF),
+              color: AppTheme.surface(isDark),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             ),
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
@@ -393,7 +404,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     child: Container(
                       width: 40, height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.white24,
+                        color: AppTheme.shimmer(isDark),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -403,19 +414,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       style: GoogleFonts.plusJakartaSans(
                           fontSize: 20,
                           fontWeight: FontWeight.w700,
-                          color: Colors.white)),
+                          color: AppTheme.textPrimary(isDark))),
                   const SizedBox(height: 4),
                   Text('Debes tener un vehículo para activarte',
                       style: GoogleFonts.plusJakartaSans(
                           fontSize: 13,
-                          color: Colors.white54)),
+                          color: AppTheme.textTertiary(isDark))),
                   const SizedBox(height: 20),
                   // Vehicle type selector
                   Text('Tipo de vehículo',
                       style: GoogleFonts.plusJakartaSans(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white70)),
+                          color: AppTheme.textSecondary(isDark))),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -427,11 +438,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         onSelected: (_) =>
                             setSheet(() => selectedType = vt),
                         selectedColor: AppTheme.primaryColor,
-                        backgroundColor: Color(isDark ? 0xFF111621 : 0xFFF5F7FA),
+                        backgroundColor: AppTheme.bg(isDark),
                         labelStyle: GoogleFonts.plusJakartaSans(
                           color: selected
                               ? Colors.white
-                              : Colors.white60,
+                              : AppTheme.textTertiary(isDark),
                           fontWeight: FontWeight.w600,
                         ),
                       );
@@ -538,30 +549,30 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             style: GoogleFonts.plusJakartaSans(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: Colors.white70)),
+                color: AppTheme.textSecondary(isDark))),
         const SizedBox(height: 6),
         TextField(
           controller: ctrl,
           keyboardType: keyboard,
           style: GoogleFonts.plusJakartaSans(
-              color: Colors.white, fontSize: 14),
+              color: AppTheme.textPrimary(isDark), fontSize: 14),
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: GoogleFonts.plusJakartaSans(
-                color: Colors.white30, fontSize: 14),
+                color: AppTheme.textTertiary(isDark), fontSize: 14),
             filled: true,
-            fillColor: Color(isDark ? 0xFF111621 : 0xFFF5F7FA),
+            fillColor: AppTheme.bg(isDark),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
               borderSide:
-                  BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                  BorderSide(color: AppTheme.border(isDark)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
               borderSide:
-                  BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                  BorderSide(color: AppTheme.border(isDark)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
@@ -602,7 +613,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           ),
           child: Container(
             decoration: BoxDecoration(
-              color: Color(isDark ? 0xFF1A2232 : 0xFFFFFFFF),
+              color: AppTheme.surface(isDark),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             ),
             padding: const EdgeInsets.all(24),
@@ -615,7 +626,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.3),
+                      color: AppTheme.shimmer(isDark),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -626,7 +637,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    color: AppTheme.textPrimary(isDark),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -634,7 +645,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   '${request.direccionOrigen ?? "Origen"} -> ${request.direccionDestino ?? "Destino"}',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
-                    color: Colors.white.withValues(alpha: 0.6),
+                    color: AppTheme.textTertiary(isDark),
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -654,7 +665,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
-                    color: Colors.white.withValues(alpha: 0.8),
+                    color: AppTheme.textSecondary(isDark),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -663,7 +674,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                   style: GoogleFonts.plusJakartaSans(
-                    color: Colors.white,
+                    color: AppTheme.textPrimary(isDark),
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                   ),
@@ -675,17 +686,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       fontWeight: FontWeight.w600,
                     ),
                     filled: true,
-                    fillColor: Color(isDark ? 0xFF111621 : 0xFFF5F7FA),
+                    fillColor: AppTheme.bg(isDark),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: AppTheme.border(isDark),
                       ),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: AppTheme.border(isDark),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -703,7 +714,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
-                    color: Colors.white.withValues(alpha: 0.8),
+                    color: AppTheme.textSecondary(isDark),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -711,26 +722,26 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   controller: estimatedMinController,
                   keyboardType: TextInputType.number,
                   style: GoogleFonts.plusJakartaSans(
-                    color: Colors.white,
+                    color: AppTheme.textPrimary(isDark),
                     fontSize: 16,
                   ),
                   decoration: InputDecoration(
                     suffixText: 'min',
                     suffixStyle: GoogleFonts.plusJakartaSans(
-                      color: Colors.white.withValues(alpha: 0.5),
+                      color: AppTheme.textTertiary(isDark),
                     ),
                     filled: true,
-                    fillColor: Color(isDark ? 0xFF111621 : 0xFFF5F7FA),
+                    fillColor: AppTheme.bg(isDark),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: AppTheme.border(isDark),
                       ),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: AppTheme.border(isDark),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -748,7 +759,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
-                    color: Colors.white.withValues(alpha: 0.8),
+                    color: AppTheme.textSecondary(isDark),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -756,26 +767,26 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   controller: messageController,
                   maxLines: 2,
                   style: GoogleFonts.plusJakartaSans(
-                    color: Colors.white,
+                    color: AppTheme.textPrimary(isDark),
                     fontSize: 14,
                   ),
                   decoration: InputDecoration(
                     hintText: 'Ej: Estoy a 5 minutos de tu ubicación...',
                     hintStyle: GoogleFonts.plusJakartaSans(
-                      color: Colors.white.withValues(alpha: 0.3),
+                      color: AppTheme.textTertiary(isDark),
                     ),
                     filled: true,
-                    fillColor: Color(isDark ? 0xFF111621 : 0xFFF5F7FA),
+                    fillColor: AppTheme.bg(isDark),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: AppTheme.border(isDark),
                       ),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: AppTheme.border(isDark),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -795,6 +806,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     onPressed: () {
                       final price =
                           double.tryParse(priceController.text) ?? 0;
+                      final minPrice = request.precioOferta ?? 0;
+                      if (price < minPrice) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                                'La oferta mínima es \$${minPrice.toStringAsFixed(2)}'),
+                          ),
+                        );
+                        return;
+                      }
                       final minutes =
                           int.tryParse(estimatedMinController.text) ?? 15;
                       Navigator.of(ctx).pop({
@@ -1024,7 +1045,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         isDark ? AppTheme.cartoDarkTileUrl : AppTheme.osmTileUrl;
 
     return Scaffold(
-      backgroundColor: Color(isDark ? 0xFF111621 : 0xFFF5F7FA),
+      backgroundColor: AppTheme.bg(isDark),
       body: Stack(
         children: [
           // Full-screen map
@@ -1050,7 +1071,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       decoration: BoxDecoration(
                         color: AppTheme.primaryColor,
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 3),
+                        border: Border.all(color: AppTheme.markerBorder(isDark), width: 3),
                         boxShadow: [
                           BoxShadow(
                             color: AppTheme.primaryColor.withValues(alpha: 0.4),
@@ -1090,7 +1111,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                               decoration: BoxDecoration(
                                 color: AppTheme.success,
                                 shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 2.5),
+                                border: Border.all(color: AppTheme.markerBorder(isDark), width: 2.5),
                                 boxShadow: [
                                   BoxShadow(
                                     color: AppTheme.success.withValues(alpha: 0.45),
@@ -1125,7 +1146,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                               decoration: BoxDecoration(
                                 color: AppTheme.error,
                                 shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 2),
+                                border: Border.all(color: AppTheme.markerBorder(isDark), width: 2),
                                 boxShadow: [
                                   BoxShadow(
                                     color: AppTheme.error.withValues(alpha: 0.4),
@@ -1157,10 +1178,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Color(isDark ? 0xFF1A2232 : 0xFFFFFFFF).withValues(alpha: 0.95),
+                  color: AppTheme.surface(isDark).withValues(alpha: 0.95),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.1),
+                    color: AppTheme.border(isDark),
                   ),
                   boxShadow: [
                     BoxShadow(
@@ -1198,7 +1219,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
-                              color: Colors.white,
+                              color: AppTheme.textPrimary(isDark),
                             ),
                           ),
                           const SizedBox(height: 2),
@@ -1265,7 +1286,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                             '(${vehicleType['tipo'] ?? ''})',
                                             style: GoogleFonts.plusJakartaSans(
                                               fontSize: 10,
-                                              color: Colors.white54,
+                                              color: AppTheme.textTertiary(isDark),
                                             ),
                                           ),
                                         ],
@@ -1347,7 +1368,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   onPressed: () {
                     _mapController.move(location, AppConstants.defaultZoom);
                   },
-                  backgroundColor: Color(isDark ? 0xFF1A2232 : 0xFFFFFFFF),
+                  backgroundColor: AppTheme.surface(isDark),
                   child: const Icon(
                     Icons.my_location,
                     color: AppTheme.primaryColor,
@@ -1360,7 +1381,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   onPressed: () {
                     context.read<ThemeProvider>().toggleTheme();
                   },
-                  backgroundColor: Color(isDark ? 0xFF1A2232 : 0xFFFFFFFF),
+                  backgroundColor: AppTheme.surface(isDark),
                   child: Icon(
                     themeProvider.isDark ? Icons.light_mode : Icons.dark_mode,
                     color: AppTheme.primaryColor,
@@ -1379,7 +1400,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               child: FloatingActionButton.small(
                 heroTag: 'activeride',
                 onPressed: _checkForActiveRide,
-                backgroundColor: Color(isDark ? 0xFF1A2232 : 0xFFFFFFFF),
+                backgroundColor: AppTheme.surface(isDark),
                 child: const Icon(
                   Icons.route,
                   color: AppTheme.primaryColor,
@@ -1398,7 +1419,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 margin: const EdgeInsets.symmetric(horizontal: 16),
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Color(isDark ? 0xFF1A2232 : 0xFFFFFFFF),
+                  color: AppTheme.surface(isDark),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: AppTheme.success.withValues(alpha: 0.4),
@@ -1439,7 +1460,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 18,
                                   fontWeight: FontWeight.w700,
-                                  color: Colors.white,
+                                  color: AppTheme.textPrimary(isDark),
                                 ),
                               ),
                               const SizedBox(height: 4),
@@ -1447,7 +1468,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                 '${_confirmedTripData!['client_name'] ?? 'Pasajero'} te espera',
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 13,
-                                  color: Colors.white60,
+                                  color: AppTheme.textTertiary(isDark),
                                 ),
                               ),
                             ],
@@ -1486,7 +1507,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                             _confirmedTripData!['direccion_origen'] ?? '',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 12,
-                              color: Colors.white70,
+                              color: AppTheme.textSecondary(isDark),
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1505,7 +1526,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                             _confirmedTripData!['direccion_destino'] ?? '',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 12,
-                              color: Colors.white70,
+                              color: AppTheme.textSecondary(isDark),
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1568,9 +1589,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentNavIndex,
         onTap: _onNavTap,
-        backgroundColor: Color(isDark ? 0xFF1A2232 : 0xFFFFFFFF),
+        backgroundColor: AppTheme.surface(isDark),
         selectedItemColor: AppTheme.primaryColor,
-        unselectedItemColor: Colors.white54,
+        unselectedItemColor: AppTheme.textTertiary(isDark),
         type: BottomNavigationBarType.fixed,
         selectedLabelStyle: GoogleFonts.plusJakartaSans(
           fontSize: 12,
@@ -1610,9 +1631,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Color(isDark ? 0xFF1A2232 : 0xFFFFFFFF),
+        color: AppTheme.surface(isDark),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: AppTheme.border(isDark)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.4),
@@ -1645,7 +1666,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: AppTheme.textPrimary(isDark),
                 ),
               ),
               const Spacer(),
@@ -1679,7 +1700,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   request.direccionOrigen ?? 'Punto de recogida',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
-                    color: Colors.white.withValues(alpha: 0.9),
+                    color: AppTheme.textPrimary(isDark),
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1699,7 +1720,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   request.direccionDestino ?? 'Destino',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
-                    color: Colors.white.withValues(alpha: 0.9),
+                    color: AppTheme.textPrimary(isDark),
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1714,7 +1735,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             children: [
               Icon(
                 Icons.straighten,
-                color: Colors.white.withValues(alpha: 0.5),
+                color: AppTheme.textTertiary(isDark),
                 size: 16,
               ),
               const SizedBox(width: 6),
@@ -1722,14 +1743,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 Helpers.formatDistance(request.distanciaKm ?? 0),
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 12,
-                  color: Colors.white.withValues(alpha: 0.6),
+                  color: AppTheme.textTertiary(isDark),
                 ),
               ),
               if (request.createdAt != null) ...[
                 const SizedBox(width: 16),
                 Icon(
                   Icons.access_time,
-                  color: Colors.white.withValues(alpha: 0.5),
+                  color: AppTheme.textTertiary(isDark),
                   size: 16,
                 ),
                 const SizedBox(width: 4),
@@ -1737,7 +1758,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   Helpers.formatRelativeTime(request.createdAt!),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
-                    color: Colors.white.withValues(alpha: 0.6),
+                    color: AppTheme.textTertiary(isDark),
                   ),
                 ),
               ],
@@ -1753,9 +1774,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 child: OutlinedButton(
                   onPressed: () => _dismissRequest(index),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white70,
+                    foregroundColor: AppTheme.textSecondary(isDark),
                     side: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.2),
+                      color: AppTheme.border(isDark),
                     ),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(

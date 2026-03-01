@@ -1,5 +1,7 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
+import '../utils/constants.dart';
 import '../models/transport_request_model.dart';
 import '../models/driver_offer_model.dart';
 import '../models/vehicle_type_model.dart';
@@ -7,12 +9,14 @@ import '../services/transport_request_service.dart';
 import '../services/driver_service.dart';
 import '../services/routing_service.dart';
 import '../services/vehicle_type_service.dart';
+import '../services/wallet_service.dart';
 
 class TransportProvider extends ChangeNotifier {
   final TransportRequestService _requestService = TransportRequestService();
   final DriverService _driverService = DriverService();
   final RoutingService _routingService = RoutingService();
   final VehicleTypeService _vehicleTypeService = VehicleTypeService();
+  final WalletService _walletService = WalletService();
 
   // Vehicle types loaded from DB
   List<VehicleTypeModel> _vehicleTypes = [];
@@ -30,6 +34,7 @@ class TransportProvider extends ChangeNotifier {
   // Transport selection — full model from DB
   VehicleTypeModel? _selectedVehicleType;
   double _offerPrice = 0;
+  String _paymentMethod = 'efectivo'; // 'efectivo' o 'wallet'
 
   // Active request
   TransportRequestModel? _activeRequest;
@@ -54,6 +59,7 @@ class TransportProvider extends ChangeNotifier {
   double get routeDurationMin => _routeDurationMin;
   VehicleTypeModel? get selectedVehicleType => _selectedVehicleType;
   double get offerPrice => _offerPrice;
+  String get paymentMethod => _paymentMethod;
   TransportRequestModel? get activeRequest => _activeRequest;
   List<DriverOfferModel> get driverOffers => _driverOffers;
   DriverOfferModel? get acceptedOffer => _acceptedOffer;
@@ -104,12 +110,53 @@ class TransportProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setPaymentMethod(String method) {
+    _paymentMethod = method;
+    notifyListeners();
+  }
+
   void _calculatePrice() {
     if (_selectedVehicleType == null || _routeDistanceKm == 0) return;
-    final pricePerKm = _selectedVehicleType!.precioKmDefault;
-    _offerPrice = double.parse(
-        (_routeDistanceKm * pricePerKm).toStringAsFixed(2));
+    final vt = _selectedVehicleType!;
+    final pricePerKm = vt.precioKmDefault;
+    final minPrice = vt.precioInsideSc ?? (_routeDistanceKm * pricePerKm);
+
+    final pickupInCity = _isInsideCityZone(_pickupLocation);
+    final dropoffInCity = _isInsideCityZone(_dropoffLocation);
+
+    if (pickupInCity && dropoffInCity) {
+      _offerPrice = double.parse(minPrice.toStringAsFixed(2));
+    } else {
+      final raw = minPrice + (_routeDistanceKm * pricePerKm);
+      _offerPrice = double.parse(raw.toStringAsFixed(2));
+    }
   }
+
+  bool _isInsideCityZone(LatLng? point) {
+    if (point == null) return false;
+    return _haversineKm(
+          AppConstants.cityCenterLat,
+          AppConstants.cityCenterLon,
+          point.latitude,
+          point.longitude,
+        ) <=
+        AppConstants.cityRadiusKm;
+  }
+
+  static double _haversineKm(
+      double lat1, double lon1, double lat2, double lon2) {
+    const r = 6371.0;
+    final dLat = _deg2rad(lat2 - lat1);
+    final dLon = _deg2rad(lon2 - lon1);
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_deg2rad(lat1)) *
+            math.cos(_deg2rad(lat2)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  }
+
+  static double _deg2rad(double deg) => deg * (math.pi / 180);
 
   Future<void> calculateRoute() async {
     if (_pickupLocation == null || _dropoffLocation == null) return;
@@ -156,6 +203,7 @@ class TransportProvider extends ChangeNotifier {
         direccionDestino: _dropoffAddress,
         distanciaKm: _routeDistanceKm,
         expiresAt: expiresAt,
+        metodoPago: _paymentMethod,
       );
 
       final result = await _requestService.createRequest(request);
@@ -232,10 +280,18 @@ class TransportProvider extends ChangeNotifier {
       final solicitud = await _requestService.acceptOffer(offer.id!);
       _acceptedOffer = offer.copyWith(estado: EstadoOferta.aceptada);
 
+      final userId = solicitud['user_id'] as String?;
+      final metodoPago = solicitud['metodo_pago'] as String? ?? 'efectivo';
+      final precioFinal = offer.precio ?? _offerPrice;
+
+      // If wallet payment, hold (deduct) client funds now
+      if (metodoPago == 'wallet' && userId != null) {
+        await _walletService.holdClientFunds(userId, precioFinal);
+      }
+
       // Create viaje row so driver can track destination in real-time
       final latDest = (solicitud['lat_destino'] as num?)?.toDouble();
       final lonDest = (solicitud['lon_destino'] as num?)?.toDouble();
-      final userId = solicitud['user_id'] as String?;
       final driverId = offer.driverId;
 
       if (driverId != null && userId != null && latDest != null && lonDest != null) {
@@ -269,6 +325,7 @@ class TransportProvider extends ChangeNotifier {
     _dropoffAddress = request.direccionDestino;
     _routeDistanceKm = request.distanciaKm ?? 0;
     _offerPrice = request.precioOferta ?? 0;
+    _paymentMethod = request.metodoPago ?? 'efectivo';
     _state = TransportState.waitingOffers;
     if (request.id != null) {
       final rid = request.id!;
@@ -295,6 +352,7 @@ class TransportProvider extends ChangeNotifier {
     _dropoffAddress = request.direccionDestino;
     _routeDistanceKm = request.distanciaKm ?? 0;
     _offerPrice = request.precioOferta ?? 0;
+    _paymentMethod = request.metodoPago ?? 'efectivo';
 
     if (request.id != null) {
       final rid = request.id!;
@@ -317,12 +375,50 @@ class TransportProvider extends ChangeNotifier {
   Future<void> cancelRequest() async {
     if (_activeRequest?.id == null) return;
     try {
+      // If wallet payment and offer was accepted, refund client
+      if (_activeRequest?.metodoPago == 'wallet' &&
+          _acceptedOffer != null &&
+          _activeRequest?.userId != null) {
+        final refundAmount = _acceptedOffer!.precio ?? _offerPrice;
+        await _walletService.refundClientFunds(
+          _activeRequest!.userId!,
+          refundAmount,
+          _activeRequest!.id!,
+        );
+      }
       await _requestService.cancelRequest(_activeRequest!.id!);
       _requestService.unsubscribe();
       resetTrip();
     } catch (e) {
       _error = 'Error cancelando solicitud: $e';
       notifyListeners();
+    }
+  }
+
+  /// Completes a ride: processes wallet payment for client (if wallet)
+  /// and always charges 15% commission to driver.
+  Future<void> completeRideWithPayment() async {
+    final request = _activeRequest;
+    final offer = _acceptedOffer;
+    if (request == null || offer == null) return;
+
+    final precioFinal = offer.precio ?? _offerPrice;
+    final driverId = offer.driverId;
+    final userId = request.userId;
+    final viajeId = _activeViajeId;
+    final metodoPago = request.metodoPago ?? 'efectivo';
+
+    // 1. If wallet: client funds already held at acceptOffer — record transaction
+    if (metodoPago == 'wallet' && userId != null && viajeId != null) {
+      await _walletService.confirmClientPayment(
+        userId, precioFinal, viajeId);
+    }
+
+    // 2. Always charge driver 15% commission
+    if (driverId != null && viajeId != null) {
+      final commission = precioFinal * 0.15;
+      await _walletService.chargeDriverCommission(
+        driverId, commission, viajeId);
     }
   }
 
@@ -338,6 +434,7 @@ class TransportProvider extends ChangeNotifier {
     _driverOffers = [];
     _acceptedOffer = null;
     _activeViajeId = null;
+    _paymentMethod = 'efectivo';
     _state = TransportState.idle;
     _error = null;
     if (_vehicleTypes.isNotEmpty) {

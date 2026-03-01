@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/transport_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../providers/wallet_provider.dart';
 import '../../utils/constants.dart';
 import '../../widgets/map_widget.dart';
 import '../../widgets/driver_offer_card.dart';
@@ -68,6 +69,29 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
 
   void _onAcceptOffer(DriverOfferModel offer) async {
     final transportProvider = context.read<TransportProvider>();
+
+    // If wallet payment, validate balance against offer price
+    if (transportProvider.paymentMethod == 'wallet') {
+      final authProvider = context.read<AuthProvider>();
+      final walletProvider = context.read<WalletProvider>();
+      final userId = authProvider.user?.id ?? '';
+      await walletProvider.loadClientBalance(userId);
+      final offerPrice = offer.precio ?? 0;
+      if (!walletProvider.hasSufficientBalance(offerPrice)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Saldo insuficiente. Tienes \$${walletProvider.balance.toStringAsFixed(2)} y la oferta es \$${offerPrice.toStringAsFixed(2)}',
+              ),
+              backgroundColor: const Color(0xFFE53935),
+            ),
+          );
+        }
+        return;
+      }
+    }
+
     await transportProvider.acceptOffer(offer);
 
     if (mounted &&

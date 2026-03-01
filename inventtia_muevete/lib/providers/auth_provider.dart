@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 import '../services/background_service.dart';
+import '../utils/battery_optimizer.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -44,17 +47,47 @@ class AuthProvider extends ChangeNotifier {
       // Subscribe to in-app notifications
       if (_user != null) {
         NotificationService().subscribe(_user!.id);
-        // Start background service
-        BackgroundService.start(
-          userUuid: _user!.id,
-          role: _role ?? 'client',
-          driverId: _driverProfile?['id'] as int?,
-        );
+        // Start background service only if location permission is already granted.
+        // On Android 14+ (SDK 34), foreground services with type "location"
+        // require the runtime location permission BEFORE starting.
+        final permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.always ||
+            permission == LocationPermission.whileInUse) {
+          // Quick attempt; driver_home_screen will do full retries later
+          BackgroundService.start(
+            userUuid: _user!.id,
+            role: _role ?? 'client',
+            driverId: _driverProfile?['id'] as int?,
+            maxRetries: 1,
+          );
+        }
       }
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading profile: $e');
     }
+  }
+
+  /// Try to start the background service. Call this after location permission
+  /// has been granted (Android 14+ requires it before starting FGS location).
+  /// Returns true if started successfully, false if failed after retries.
+  Future<bool> ensureBackgroundServiceStarted() async {
+    if (_user == null || kIsWeb) return true;
+
+    // Request "Allow all the time" for reliable background GPS
+    final permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.whileInUse) {
+      await Geolocator.requestPermission(); // prompts for "always"
+    }
+
+    // Request disable battery optimization (Samsung, Xiaomi, etc. kill bg services)
+    await BatteryOptimizer.requestDisable();
+
+    return BackgroundService.start(
+      userUuid: _user!.id,
+      role: _role ?? 'client',
+      driverId: _driverProfile?['id'] as int?,
+    );
   }
 
   Future<bool> signIn(String email, String password) async {

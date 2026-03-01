@@ -67,22 +67,45 @@ class LocationProvider extends ChangeNotifier {
         return false;
       }
 
-      // Get first fix immediately (no distanceFilter so it fires right away)
-      _currentLocation = await _locationService.getCurrentPosition();
-      _error = null;
+      // Get first fix — retry up to 3 times on timeout
+      bool gotFix = false;
+      for (int attempt = 1; attempt <= 3; attempt++) {
+        try {
+          _currentLocation = await _locationService.getCurrentPosition();
+          _error = null;
+          gotFix = true;
+          break;
+        } on TimeoutException catch (_) {
+          debugPrint('[LocationProvider] getCurrentPosition timeout (attempt $attempt/3)');
+          if (attempt < 3) {
+            _error = 'Obteniendo ubicación... (intento ${attempt + 1}/3)';
+            notifyListeners();
+          }
+        }
+      }
+
+      if (!gotFix) {
+        _error = 'No se pudo obtener la ubicación. Esperando señal GPS...';
+        debugPrint('[LocationProvider] All 3 getCurrentPosition attempts timed out, starting stream anyway');
+      }
+
       _isLoading = false;
       notifyListeners();
 
-      // Start continuous stream + service status listener
+      // Always start continuous stream (will deliver position even if first fix failed)
       _startPositionStream();
       _listenServiceStatus();
       _listenBackgroundService();
-      return true;
-    } catch (e) {
+      return gotFix;
+    } catch (e, st) {
+      debugPrint('[LocationProvider] initLocation error: $e\n$st');
       _error = e.toString();
       _isLoading = false;
       notifyListeners();
+      // Still start stream + listeners so we recover when GPS becomes available
+      _startPositionStream();
       _listenServiceStatus();
+      _listenBackgroundService();
       return false;
     }
   }
@@ -98,8 +121,8 @@ class LocationProvider extends ChangeNotifier {
         _error = null;
         notifyListeners();
       },
-      onError: (e) {
-        debugPrint('Location stream error: $e');
+      onError: (e, st) {
+        debugPrint('[LocationProvider] Position stream error: $e\n$st');
         _isTracking = false;
         notifyListeners();
       },

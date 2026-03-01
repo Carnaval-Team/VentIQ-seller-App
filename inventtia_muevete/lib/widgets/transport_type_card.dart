@@ -77,7 +77,22 @@ class TransportTypeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final cardBg = isDark ? AppTheme.darkCard : Colors.white;
+    final borderColor = isSelected
+        ? AppTheme.primaryColor
+        : (isDark ? AppTheme.darkBorder : Colors.grey[300]!);
+    final textPrimary = isDark ? Colors.white : Colors.black87;
+    final textSecondary = isDark
+        ? Colors.white.withValues(alpha: 0.5)
+        : Colors.grey[600]!;
+    final iconColor = isSelected
+        ? AppTheme.primaryColor
+        : (isDark ? Colors.white.withValues(alpha: 0.7) : Colors.grey[700]!);
+    final iconBg = isSelected
+        ? AppTheme.primaryColor.withValues(alpha: 0.15)
+        : (isDark ? theme.colorScheme.surface : Colors.grey[100]!);
 
     return GestureDetector(
       onTap: onTap,
@@ -85,12 +100,21 @@ class TransportTypeCard extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: AppTheme.darkCard,
+          color: cardBg,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? AppTheme.primaryColor : AppTheme.darkBorder,
+            color: borderColor,
             width: isSelected ? 2 : 1,
           ),
+          boxShadow: isDark
+              ? null
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
         ),
         child: Row(
           children: [
@@ -99,16 +123,12 @@ class TransportTypeCard extends StatelessWidget {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: isSelected
-                    ? AppTheme.primaryColor.withValues(alpha: 0.15)
-                    : colorScheme.surface,
+                color: iconBg,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
                 icon,
-                color: isSelected
-                    ? AppTheme.primaryColor
-                    : Colors.white.withValues(alpha: 0.7),
+                color: iconColor,
                 size: 24,
               ),
             ),
@@ -123,14 +143,14 @@ class TransportTypeCard extends StatelessWidget {
                     vehicleType,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                      color: textPrimary,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     '$passengerCount pasajero${passengerCount > 1 ? 's' : ''}',
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.5),
+                      color: textSecondary,
                     ),
                   ),
                 ],
@@ -145,7 +165,7 @@ class TransportTypeCard extends StatelessWidget {
                   '\$${price.toStringAsFixed(2)}',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    color: textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
