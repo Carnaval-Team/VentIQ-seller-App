@@ -23,7 +23,7 @@ class DriverOffersScreen extends StatefulWidget {
 }
 
 class _DriverOffersScreenState extends State<DriverOffersScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final MapController _mapController = MapController();
   String _selectedFilter = 'Mejor';
   late AnimationController _pulseAnimController;
@@ -32,6 +32,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pulseAnimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -42,7 +43,15 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      context.read<TransportProvider>().resubscribeRealtime();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pulseAnimController.dispose();
     _mapController.dispose();
     super.dispose();
@@ -384,7 +393,20 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: 0,
-        onTap: (index) {},
+        onTap: (index) {
+          if (index == 0) return;
+          switch (index) {
+            case 1:
+              Navigator.pushNamed(context, '/client/request-history');
+              break;
+            case 2:
+              Navigator.pushNamed(context, '/client/wallet');
+              break;
+            case 3:
+              Navigator.pushNamed(context, '/client/profile');
+              break;
+          }
+        },
         type: BottomNavigationBarType.fixed,
         backgroundColor: isDark ? AppTheme.darkSurface : Colors.white,
         selectedItemColor: AppTheme.primaryColor,

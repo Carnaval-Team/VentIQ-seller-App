@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_compass_v2/flutter_compass_v2.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
@@ -71,6 +72,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   // Whether the viaje is still active (completado == false)
   bool _viajeActivo = true;
 
+  // Navigation mode state
+  bool _autoRotate = false;
+  StreamSubscription<CompassEvent>? _compassSub;
+
   @override
   void initState() {
     super.initState();
@@ -82,6 +87,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
 
   @override
   void dispose() {
+    _compassSub?.cancel();
     _locationTimer?.cancel();
     if (_viajeChannel != null) {
       try {
@@ -299,6 +305,29 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     return r * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
+  void _toggleAutoRotate() {
+    setState(() {
+      _autoRotate = !_autoRotate;
+      if (_autoRotate) {
+        _compassSub = FlutterCompass.events?.listen((event) {
+          final h = event.heading;
+          if (h == null || !mounted) return;
+          if (_autoRotate) {
+            try {
+              _mapController.rotate(-h);
+            } catch (_) {}
+          }
+        });
+      } else {
+        _compassSub?.cancel();
+        _compassSub = null;
+        try {
+          _mapController.rotate(0);
+        } catch (_) {}
+      }
+    });
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -315,6 +344,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         point: driverPos,
         width: 50,
         height: 50,
+        rotate: _autoRotate,
         child: Container(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
@@ -328,7 +358,11 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
               ),
             ],
           ),
-          child: const Icon(Icons.directions_car, color: Colors.white, size: 24),
+          child: Icon(
+            _autoRotate ? Icons.navigation : Icons.directions_car,
+            color: Colors.white,
+            size: 24,
+          ),
         ),
       ),
       // Destination
@@ -382,6 +416,24 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
             zoom: 14.0,
             markers: markers,
             polylines: polylines,
+          ),
+
+          // ── Compass toggle button ──
+          Positioned(
+            right: 16,
+            top: MediaQuery.of(context).padding.top + 70,
+            child: FloatingActionButton.small(
+              heroTag: 'autorotate_trip',
+              onPressed: _toggleAutoRotate,
+              backgroundColor: _autoRotate
+                  ? AppTheme.primaryColor
+                  : AppTheme.surface(isDark),
+              child: Icon(
+                _autoRotate ? Icons.explore : Icons.explore_off,
+                color: _autoRotate ? Colors.white : AppTheme.primaryColor,
+                size: 20,
+              ),
+            ),
           ),
 
           // ── Top bar: back + ETA ──

@@ -9,6 +9,7 @@ import 'config/supabase_config.dart';
 import 'config/app_theme.dart';
 import 'services/background_service.dart';
 import 'services/local_notification_service.dart';
+import 'services/pushy_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/location_provider.dart';
@@ -49,6 +50,9 @@ Future<void> main() async {
   // Initialize background service & local notifications
   await BackgroundService.init();
   await LocalNotificationService().init();
+
+  // Initialize Pushy.me push notifications
+  await PushyService.init();
 
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,

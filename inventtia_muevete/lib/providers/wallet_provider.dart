@@ -79,6 +79,40 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> loadDriverTransactions(int driverId) async {
+    try {
+      final results = await _walletService.getDriverTransactions(driverId);
+      _transactions = results
+          .map((e) => WalletTransactionModel.fromJson(e))
+          .toList();
+      _error = null;
+      notifyListeners();
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<bool> addDriverFunds(int driverId, double amount) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final netAmount = await _walletService.addDriverFunds(driverId, amount);
+      _balance += netAmount;
+      await loadDriverTransactions(driverId);
+      _error = null;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   bool hasSufficientBalance(double amount) {
     return _balance >= amount;
   }

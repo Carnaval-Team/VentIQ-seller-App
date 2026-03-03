@@ -78,6 +78,46 @@ class WalletService {
     return List<Map<String, dynamic>>.from(response);
   }
 
+  /// Adds funds to a driver wallet: deducts 11% fee, updates balance,
+  /// and creates a transaction record.
+  Future<double> addDriverFunds(int driverId, double amount) async {
+    final netAmount = amount * 0.89;
+    final currentBalance = await getDriverBalance(driverId);
+    final newBalance = currentBalance + netAmount;
+
+    // Ensure wallet row exists
+    final existing = await _supabase
+        .schema('muevete')
+        .from('wallet_drivers')
+        .select('id')
+        .eq('driver_id', driverId)
+        .maybeSingle();
+
+    if (existing == null) {
+      await _supabase
+          .schema('muevete')
+          .from('wallet_drivers')
+          .insert({'driver_id': driverId, 'balance': newBalance});
+    } else {
+      await _supabase
+          .schema('muevete')
+          .from('wallet_drivers')
+          .update({'balance': newBalance})
+          .eq('driver_id', driverId);
+    }
+
+    await _supabase.schema('muevete').from('transacciones_wallet').insert({
+      'driver_id': driverId,
+      'tipo': 'recarga',
+      'monto': netAmount,
+      'balance_despues': newBalance,
+      'descripcion':
+          'Recarga de \$${amount.toStringAsFixed(2)} (11% comisión)',
+    });
+
+    return netAmount;
+  }
+
   /// Fetches all wallet transactions for a given driver ID.
   Future<List<Map<String, dynamic>>> getDriverTransactions(int driverId) async {
     final response = await _supabase
@@ -169,10 +209,75 @@ class WalletService {
     });
   }
 
+  /// Credits the driver wallet with the ride fare minus 15% commission
+  /// when the client paid via wallet.
+  Future<void> creditDriverForWalletPayment(
+    int driverId, double rideFare, int viajeId) async {
+    final commission = rideFare * 0.15;
+    final netAmount = rideFare - commission;
+
+    final currentBalance = await getDriverBalance(driverId);
+    final newBalance = currentBalance + netAmount;
+
+    // Ensure wallet row exists
+    final existing = await _supabase
+        .schema('muevete')
+        .from('wallet_drivers')
+        .select('id')
+        .eq('driver_id', driverId)
+        .maybeSingle();
+
+    if (existing == null) {
+      await _supabase
+          .schema('muevete')
+          .from('wallet_drivers')
+          .insert({'driver_id': driverId, 'balance': newBalance});
+    } else {
+      await _supabase
+          .schema('muevete')
+          .from('wallet_drivers')
+          .update({'balance': newBalance})
+          .eq('driver_id', driverId);
+    }
+
+    await _supabase.schema('muevete').from('transacciones_wallet').insert({
+      'driver_id': driverId,
+      'tipo': 'pago_viaje',
+      'monto': netAmount,
+      'balance_despues': newBalance,
+      'viaje_id': viajeId,
+      'descripcion':
+          'Pago por viaje (tarifa \$${rideFare.toStringAsFixed(2)} - 15% comisión)',
+    });
+  }
+
   /// Checks if driver has enough balance for 15% commission.
   Future<bool> driverHasEnoughForCommission(
     int driverId, double offerPrice) async {
     final balance = await getDriverBalance(driverId);
     return balance >= (offerPrice * 0.15);
+  }
+
+  /// Processes ride completion payment via RPC (SECURITY DEFINER).
+  /// This bypasses RLS so the client can trigger driver wallet updates.
+  Future<void> completeRidePaymentRpc({
+    required String metodoPago,
+    required String clientUuid,
+    required int driverId,
+    required int viajeId,
+    required double precioFinal,
+  }) async {
+    final result = await _supabase.rpc('complete_ride_payment', params: {
+      'p_metodo_pago': metodoPago,
+      'p_client_uuid': clientUuid,
+      'p_driver_id': driverId,
+      'p_viaje_id': viajeId,
+      'p_precio_final': precioFinal,
+    });
+
+    final data = result as Map<String, dynamic>;
+    if (data['success'] != true) {
+      throw Exception(data['error'] ?? 'Error procesando pago');
+    }
   }
 }

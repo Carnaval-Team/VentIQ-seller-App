@@ -268,12 +268,27 @@ class DriverService {
         .order('created_at', ascending: false)
         .limit(50);
 
-    // Filter by radius client-side (Supabase Free tier lacks PostGIS)
+    // Filter by radius client-side (Supabase Free tier lacks PostGIS).
+    // Requests older than globalVisibilityDelay are shown to ALL drivers
+    // (no distance filter) so they get maximum exposure.
+    final now = DateTime.now();
     final nearby = <Map<String, dynamic>>[];
     for (final row in rows) {
       final originLat = (row['lat_origen'] as num?)?.toDouble();
       final originLon = (row['lon_origen'] as num?)?.toDouble();
       if (originLat == null || originLon == null) continue;
+
+      // Check if request is old enough to skip distance filter
+      final createdAtStr = row['created_at'] as String?;
+      if (createdAtStr != null) {
+        final createdAt = DateTime.tryParse(createdAtStr);
+        if (createdAt != null &&
+            now.difference(createdAt) > const Duration(minutes: 1)) {
+          nearby.add(row);
+          continue;
+        }
+      }
+
       final dist = _haversineDistance(lat, lon, originLat, originLon);
       if (dist <= radiusKm) {
         nearby.add(row);
@@ -298,7 +313,7 @@ class DriverService {
         .insert({
           'driver_id': driverId,
           'user': userId,
-          'estado': true,            // active
+          'estado': false,           // false = going to pickup, true = trip started
           'completado': false,
           'latitud_cliente': latDestino.toString(),
           'longitud_cliente': lonDestino.toString(),

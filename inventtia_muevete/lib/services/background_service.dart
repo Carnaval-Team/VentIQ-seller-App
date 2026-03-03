@@ -167,6 +167,8 @@ Future<void> _onStart(ServiceInstance service) async {
   RealtimeChannel? notificationsChannel;
   StreamSubscription<Position>? gpsSubscription;
   Timer? radiusExpansionTimer;
+  Timer? heartbeatTimer;
+  Timer? pollingTimer;
 
   // Pending requests for expanding radius (driver only)
   final List<Map<String, dynamic>> pendingRequests = [];
@@ -175,6 +177,8 @@ Future<void> _onStart(ServiceInstance service) async {
   service.on('stop').listen((_) async {
     gpsSubscription?.cancel();
     radiusExpansionTimer?.cancel();
+    heartbeatTimer?.cancel();
+    pollingTimer?.cancel();
     if (requestsChannel != null) supabase.removeChannel(requestsChannel!);
     if (requestsUpdateChannel != null) {
       supabase.removeChannel(requestsUpdateChannel!);
@@ -404,6 +408,82 @@ Future<void> _onStart(ServiceInstance service) async {
           )
           .subscribe();
     }
+
+    // ── Heartbeat: check channel health every 5 min ──
+    heartbeatTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      debugPrint('[BackgroundService] Heartbeat check');
+
+      void resubscribeIfNeeded(RealtimeChannel? ch, String name) {
+        if (ch == null) return;
+        // Only re-subscribe if the channel is closed/errored, not if already joined
+        if (ch.isJoined || ch.isJoining) {
+          debugPrint('[BackgroundService] $name already active, skipping');
+          return;
+        }
+        try {
+          ch.subscribe();
+          debugPrint('[BackgroundService] $name re-subscribed');
+        } catch (e) {
+          debugPrint('[BackgroundService] $name re-subscribe error: $e');
+        }
+      }
+
+      resubscribeIfNeeded(notificationsChannel, 'notifications');
+      resubscribeIfNeeded(requestsChannel, 'requests');
+      resubscribeIfNeeded(requestsUpdateChannel, 'requestsUpdate');
+      resubscribeIfNeeded(offersChannel, 'offers');
+    });
+
+    // ── Polling fallback: check for missed data every 60s ──
+    DateTime lastPoll = DateTime.now();
+    pollingTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
+      final since = lastPoll.toIso8601String();
+      lastPoll = DateTime.now();
+
+      try {
+        if (role == 'driver') {
+          // Check for pending solicitudes created since last poll
+          final result = await supabase
+              .schema('muevete')
+              .from('solicitudes_transporte')
+              .select('id, direccion_origen, lat_origen, lon_origen')
+              .eq('estado', 'pendiente')
+              .gte('created_at', since)
+              .limit(10);
+          for (final rec in (result as List)) {
+            final originLat = double.tryParse(rec['lat_origen']?.toString() ?? '');
+            final originLon = double.tryParse(rec['lon_origen']?.toString() ?? '');
+            if (originLat == null || originLon == null) continue;
+            final dist = _haversine(currentLat, currentLon, originLat, originLon);
+            if (dist <= AppConstants.radiusSteps.last) {
+              localNotif.showRideRequest(
+                title: 'Nueva solicitud de viaje',
+                body: rec['direccion_origen']?.toString() ?? 'Un pasajero solicita un viaje',
+                solicitudId: rec['id']?.toString(),
+              );
+            }
+          }
+        } else if (role == 'client') {
+          // Check for new ofertas on user's active solicitudes
+          final result = await supabase
+              .schema('muevete')
+              .from('ofertas_chofer')
+              .select('id, solicitud_id, solicitudes_transporte!inner(user_id)')
+              .eq('solicitudes_transporte.user_id', userUuid!)
+              .gte('created_at', since)
+              .limit(10);
+          if ((result as List).isNotEmpty) {
+            localNotif.showDriverOffer(
+              title: 'Nueva oferta de conductor',
+              body: 'Un conductor te ha hecho una oferta',
+              solicitudId: result.first['solicitud_id']?.toString(),
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('[BackgroundService] Polling error: $e');
+      }
+    });
   });
 
   // Update the foreground notification periodically

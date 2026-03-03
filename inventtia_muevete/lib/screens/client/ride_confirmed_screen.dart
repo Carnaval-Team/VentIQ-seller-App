@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_compass_v2/flutter_compass_v2.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -49,8 +50,8 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   final RoutingService _routingService = RoutingService();
 
   LatLng? _lastClientPosition;
-  double _clientBearing = 0.0;
-  bool _clientIsMoving = false;
+  double _heading = 0.0;
+  StreamSubscription<CompassEvent>? _compassSub;
 
   // Whether the driver has started the trip (hide driver marker from map)
   bool _tripStarted = false;
@@ -89,6 +90,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkIfTripAlreadyStarted();
       _startDriverTracking();
       _startClientTracking();
       // Periodic fallback: recalculate route every 10s regardless of movement
@@ -99,6 +101,44 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
         _forceRecalculateRoute(loc);
       });
     });
+  }
+
+  /// Check if the viaje was already started (estado=true) so we restore _tripStarted on reopen.
+  Future<void> _checkIfTripAlreadyStarted() async {
+    try {
+      final tp = context.read<TransportProvider>();
+      final solicitudId = tp.activeRequest?.id;
+      if (solicitudId == null) return;
+      // Find the viaje linked to this solicitud via ofertas_chofer
+      final offers = await Supabase.instance.client
+          .schema('muevete')
+          .from('ofertas_chofer')
+          .select('solicitud_id')
+          .eq('solicitud_id', solicitudId)
+          .eq('estado', 'aceptada')
+          .limit(1);
+      if (offers == null || (offers as List).isEmpty) return;
+      final driverId = tp.acceptedOffer?.driverId;
+      if (driverId == null) return;
+      final viaje = await Supabase.instance.client
+          .schema('muevete')
+          .from('viajes')
+          .select('estado')
+          .eq('driver_id', driverId)
+          .eq('completado', false)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      if (viaje != null && viaje['estado'] == true && mounted) {
+        setState(() {
+          _tripStarted = true;
+          _driverToClientRoute = [];
+          _driverEtaSeconds = 0;
+        });
+      }
+    } catch (e) {
+      debugPrint('[RideConfirmed] _checkIfTripAlreadyStarted error: $e');
+    }
   }
 
   // ─── Driver tracking (poll every 8s) ────────────────────────────────────
@@ -179,12 +219,6 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       _updateDistance(loc);
       return;
     }
-    // Calculate bearing
-    if (_lastClientPosition != null) {
-      final b = _calcBearing(_lastClientPosition!, loc);
-      _clientBearing = b;
-      _clientIsMoving = true;
-    }
     _lastClientPosition = loc;
 
     setState(() {
@@ -242,14 +276,6 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     return 2 * earthR * asin(sqrt(h));
   }
 
-  double _calcBearing(LatLng from, LatLng to) {
-    final dLon = (to.longitude - from.longitude) * pi / 180;
-    final lat1 = from.latitude * pi / 180;
-    final lat2 = to.latitude * pi / 180;
-    final y = sin(dLon) * cos(lat2);
-    final x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon);
-    return atan2(y, x);
-  }
 
   // ─── Early complete confirmation ────────────────────────────────────────
   void _confirmEarlyComplete(String distStr) {
@@ -318,6 +344,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
 
   @override
   void dispose() {
+    _compassSub?.cancel();
     _notifSubscription?.cancel();
     _pulseController?.dispose();
     _locationPollTimer?.cancel();
@@ -437,33 +464,31 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       );
     }
 
-    // Client current position marker — directional arrow when moving
+    // Client current position marker — navigation arrow when auto-rotate, pulsing dot otherwise
     markers.add(
       Marker(
         point: userLocation,
         width: 40,
         height: 40,
-        child: _clientIsMoving
-            ? Transform.rotate(
-                angle: _clientBearing,
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppTheme.primaryColor,
-                    border: Border.all(color: Colors.white, width: 3),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.primaryColor.withValues(alpha: 0.4),
-                        blurRadius: 8,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.navigation,
-                    color: Colors.white,
-                    size: 18,
-                  ),
+        rotate: _autoRotate,
+        child: _autoRotate
+            ? Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppTheme.primaryColor,
+                  border: Border.all(color: Colors.white, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.4),
+                      blurRadius: 8,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.navigation,
+                  color: Colors.white,
+                  size: 18,
                 ),
               )
             : _PulsingDot(animation: _pulseAnimation ?? const AlwaysStoppedAnimation(0.8)),
@@ -1119,7 +1144,20 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   void _toggleAutoRotate() {
     setState(() {
       _autoRotate = !_autoRotate;
-      if (!_autoRotate) {
+      if (_autoRotate) {
+        _compassSub = FlutterCompass.events?.listen((event) {
+          final h = event.heading;
+          if (h == null || !mounted) return;
+          setState(() => _heading = h);
+          if (_autoRotate) {
+            try {
+              _mapController.rotate(-h);
+            } catch (_) {}
+          }
+        });
+      } else {
+        _compassSub?.cancel();
+        _compassSub = null;
         try {
           _mapController.rotate(0);
         } catch (_) {}
@@ -1156,7 +1194,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       final startCenter = cam.center;
       final startZoom = cam.zoom;
       final startRotation = cam.rotation;
-      final targetRotation = _autoRotate ? -_clientBearing : 0.0;
+      final targetRotation = _autoRotate ? -_heading : 0.0;
 
       const steps = 15;
       const duration = Duration(milliseconds: 450);

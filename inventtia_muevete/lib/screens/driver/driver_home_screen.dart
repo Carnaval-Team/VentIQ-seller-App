@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_compass_v2/flutter_compass_v2.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
@@ -33,7 +34,7 @@ class DriverHomeScreen extends StatefulWidget {
 }
 
 class _DriverHomeScreenState extends State<DriverHomeScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final DriverService _driverService = DriverService();
   final MapController _mapController = MapController();
 
@@ -41,8 +42,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   bool _isTogglingStatus = false;
   int _currentNavIndex = 0;
 
+  // Navigation mode state
+  bool _autoRotate = false;
+  StreamSubscription<CompassEvent>? _compassSub;
+
   // Periodic location tracker while online
   Timer? _locationTimer;
+  Timer? _requestsPollingTimer;
 
   // Solicitudes pendientes cercanas cargadas al iniciar / cambiar a online
   List<Map<String, dynamic>> _nearbyRequests = [];
@@ -73,6 +79,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       curve: Curves.easeOutCubic,
     ));
 
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeDriver();
     });
@@ -105,6 +112,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _subscribeToOfferAcceptances();
         _startLocationTracking();
         await _loadNearbyRequests();
+        _startRequestsPolling();
       }
       // Always subscribe to offer acceptances (even offline, to catch late accepts)
       _subscribeToOfferAcceptances();
@@ -141,6 +149,53 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void _stopLocationTracking() {
     _locationTimer?.cancel();
     _locationTimer = null;
+  }
+
+  void _startRequestsPolling() {
+    _requestsPollingTimer?.cancel();
+    _requestsPollingTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) { if (mounted && _isOnline) _loadNearbyRequests(); },
+    );
+  }
+
+  void _stopRequestsPolling() {
+    _requestsPollingTimer?.cancel();
+    _requestsPollingTimer = null;
+  }
+
+  void _toggleAutoRotate() {
+    setState(() {
+      _autoRotate = !_autoRotate;
+      if (_autoRotate) {
+        _compassSub = FlutterCompass.events?.listen((event) {
+          final h = event.heading;
+          if (h == null || !mounted) return;
+          if (_autoRotate) {
+            try {
+              _mapController.rotate(-h);
+            } catch (e) {
+              debugPrint('[DriverHome] compass rotate error: $e');
+            }
+          }
+        });
+      } else {
+        _compassSub?.cancel();
+        _compassSub = null;
+        try {
+          _mapController.rotate(0);
+        } catch (e) {
+          debugPrint('[DriverHome] rotate reset error: $e');
+        }
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted && _isOnline) {
+      _loadNearbyRequests();
+    }
   }
 
   Future<void> _loadNearbyRequests() async {
@@ -180,15 +235,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       }
 
       if (mounted) {
-        setState(() {
-          _offeredRequestIds.addAll(alreadyOffered);
-          _nearbyRequests = filtered;
-        });
+        // Only rebuild if data actually changed
+        final oldIds = _nearbyRequests.map((r) => r['id']).toSet();
+        final newIds = filtered.map((r) => r['id']).toSet();
+        _offeredRequestIds.addAll(alreadyOffered);
+        if (!_setEquals(oldIds, newIds)) {
+          setState(() => _nearbyRequests = filtered);
+        }
       }
     } catch (e) {
       dev.log('[NearbyRequest] Error: $e', name: 'DriverHome');
     }
   }
+
+  bool _setEquals(Set a, Set b) =>
+      a.length == b.length && a.containsAll(b);
 
   void _subscribeToRequests() {
     final locationProvider = context.read<LocationProvider>();
@@ -342,10 +403,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _subscribeToRequests();
         _subscribeToOfferAcceptances();
         _startLocationTracking();
+        _startRequestsPolling();
         await _loadNearbyRequests();
       } else {
         await _driverService.unsubscribe();
         _stopLocationTracking();
+        _stopRequestsPolling();
         setState(() {
           _incomingRequests.clear();
           _nearbyRequests.clear();
@@ -993,21 +1056,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           MaterialPageRoute(
             builder: (_) => const IncomingRequestsScreen(),
           ),
-        );
+        ).then((_) { if (mounted && _isOnline) _loadNearbyRequests(); });
         return;
       case 2:
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => const DriverWalletScreen(),
           ),
-        );
+        ).then((_) { if (mounted && _isOnline) _loadNearbyRequests(); });
         return;
       case 3:
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => const DriverProfileScreen(),
           ),
-        );
+        ).then((_) { if (mounted && _isOnline) _loadNearbyRequests(); });
         return;
     }
 
@@ -1018,7 +1081,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   @override
   void dispose() {
+    _compassSub?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _stopLocationTracking();
+    _stopRequestsPolling();
     _slideController?.dispose();
     _driverService.unsubscribe();
     try {
@@ -1062,11 +1128,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ),
               MarkerLayer(
                 markers: [
-                  // Driver marker
+                  // Driver marker: navigation arrow when auto-rotate, car icon otherwise
                   Marker(
                     point: location,
                     width: 50,
                     height: 50,
+                    rotate: _autoRotate,
                     child: Container(
                       decoration: BoxDecoration(
                         color: AppTheme.primaryColor,
@@ -1080,8 +1147,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                           ),
                         ],
                       ),
-                      child: const Icon(
-                        Icons.directions_car,
+                      child: Icon(
+                        _autoRotate ? Icons.navigation : Icons.directions_car,
                         color: Colors.white,
                         size: 24,
                       ),
@@ -1363,6 +1430,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             bottom: _incomingRequests.isNotEmpty ? 340 : 100,
             child: Column(
               children: [
+                FloatingActionButton.small(
+                  heroTag: 'autorotate',
+                  onPressed: _toggleAutoRotate,
+                  backgroundColor: _autoRotate
+                      ? AppTheme.primaryColor
+                      : AppTheme.surface(isDark),
+                  child: Icon(
+                    _autoRotate ? Icons.explore : Icons.explore_off,
+                    color: _autoRotate ? Colors.white : AppTheme.primaryColor,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(height: 12),
                 FloatingActionButton.small(
                   heroTag: 'recenter',
                   onPressed: () {

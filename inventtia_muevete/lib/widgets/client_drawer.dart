@@ -7,8 +7,25 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/wallet_provider.dart';
 
-class ClientDrawer extends StatelessWidget {
+class ClientDrawer extends StatefulWidget {
   const ClientDrawer({super.key});
+
+  @override
+  State<ClientDrawer> createState() => _ClientDrawerState();
+}
+
+class _ClientDrawerState extends State<ClientDrawer> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authProvider = context.read<AuthProvider>();
+      final userId = authProvider.user?.id;
+      if (userId != null) {
+        context.read<WalletProvider>().loadClientBalance(userId);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

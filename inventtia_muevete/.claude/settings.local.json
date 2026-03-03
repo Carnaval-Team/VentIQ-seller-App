@@ -6,7 +6,11 @@
       "Bash(cd \"C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\inventtia_muevete\" && flutter analyze lib/services/driver_service.dart lib/screens/driver/active_ride_screen.dart lib/screens/driver/driver_home_screen.dart lib/screens/client/ride_confirmed_screen.dart lib/screens/client/home_map_screen.dart 2>&1 | head -60)",
       "Bash(cd \"C:/Users/cesar/Documents/VentIQ-seller-App/inventtia_muevete\" && flutter pub get 2>&1 | tail -20)",
       "Bash(flutter pub:*)",
-      "Bash(flutter analyze:*)"
+      "Bash(flutter analyze:*)",
+      "WebSearch",
+      "WebFetch(domain:pushy.me)",
+      "WebFetch(domain:pub.dev)",
+      "Bash(do cp:*)"
     ]
   }
 }

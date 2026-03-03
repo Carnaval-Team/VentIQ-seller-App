@@ -26,7 +26,7 @@ class IncomingRequestsScreen extends StatefulWidget {
 }
 
 class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final DriverService _driverService = DriverService();
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -37,15 +37,22 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
 
   late TabController _tabController;
   RealtimeChannel? _newSolicitudChannel;
+  RealtimeChannel? _solicitudUpdateChannel;
   RealtimeChannel? _ofertaUpdateChannel;
+  Timer? _pollingTimer;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _loadAll();
       _subscribeRealtime();
+      _pollingTimer = Timer.periodic(
+        const Duration(seconds: 30),
+        (_) { if (mounted) _loadAll(); },
+      );
     });
   }
 
@@ -72,7 +79,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
         .subscribe();
 
     // 2 — Solicitud updates (accepted/cancelled/completed): reload pending + accepted
-    _supabase
+    _solicitudUpdateChannel = _supabase
         .channel('driver_solicitud_updates')
         .onPostgresChanges(
           event: PostgresChangeEvent.update,
@@ -126,26 +133,43 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _disposeChannels();
+      _subscribeRealtime();
+      _loadAll();
+    }
+  }
+
+  void _disposeChannels() {
+    for (final ch in [_newSolicitudChannel, _solicitudUpdateChannel, _ofertaUpdateChannel]) {
+      if (ch != null) {
+        try { _supabase.removeChannel(ch); } catch (_) {}
+      }
+    }
+    _newSolicitudChannel = null;
+    _solicitudUpdateChannel = null;
+    _ofertaUpdateChannel = null;
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _pollingTimer?.cancel();
     _tabController.dispose();
-    if (_newSolicitudChannel != null) {
-      try {
-        _supabase.removeChannel(_newSolicitudChannel!);
-      } catch (_) {}
-    }
-    if (_ofertaUpdateChannel != null) {
-      try {
-        _supabase.removeChannel(_ofertaUpdateChannel!);
-      } catch (_) {}
-    }
+    _disposeChannels();
     super.dispose();
   }
 
+  bool _isFirstLoad = true;
   Future<void> _loadAll() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+    // Only show loading spinner on first load, not on background polling
+    if (_isFirstLoad) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
     try {
       await Future.wait([
         _loadNearbyPending(),
@@ -154,6 +178,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
+      _isFirstLoad = false;
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -173,15 +198,30 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
         .map((e) => TransportRequestModel.fromJson(e as Map<String, dynamic>))
         .toList();
 
+    final now = DateTime.now();
     final nearby = allRequests.where((r) {
       final lat = r.latOrigen;
       final lon = r.lonOrigen;
       if (lat == null || lon == null) return false;
+
+      // Requests older than 1 min are visible to ALL drivers (no distance filter)
+      if (r.createdAt != null &&
+          now.difference(r.createdAt!) > AppConstants.globalVisibilityDelay) {
+        return true;
+      }
+
       return _haversine(location.latitude, location.longitude, lat, lon) <=
           AppConstants.defaultSearchRadiusKm;
     }).toList();
 
-    if (mounted) setState(() => _pendingRequests = nearby);
+    if (mounted) {
+      // Only rebuild if the set of pending request IDs changed
+      final oldIds = _pendingRequests.map((r) => r.id).toSet();
+      final newIds = nearby.map((r) => r.id).toSet();
+      if (oldIds.length != newIds.length || !oldIds.containsAll(newIds)) {
+        setState(() => _pendingRequests = nearby);
+      }
+    }
   }
 
   Future<void> _loadAccepted() async {

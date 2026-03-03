@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
@@ -18,6 +19,47 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _rememberMe = false;
+
+  static const _keyEmail = 'saved_email';
+  static const _keyPassword = 'saved_password';
+  static const _keyRemember = 'remember_me';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final remember = prefs.getBool(_keyRemember) ?? false;
+    if (remember) {
+      final email = prefs.getString(_keyEmail) ?? '';
+      final password = prefs.getString(_keyPassword) ?? '';
+      if (mounted) {
+        setState(() {
+          _rememberMe = true;
+          _emailController.text = email;
+          _passwordController.text = password;
+        });
+      }
+    }
+  }
+
+  Future<void> _saveCredentials(String email, String password) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyEmail, email);
+    await prefs.setString(_keyPassword, password);
+    await prefs.setBool(_keyRemember, true);
+  }
+
+  Future<void> _clearSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyEmail);
+    await prefs.remove(_keyPassword);
+    await prefs.setBool(_keyRemember, false);
+  }
 
   @override
   void dispose() {
@@ -32,14 +74,28 @@ class _LoginScreenState extends State<LoginScreen> {
     final authProvider = context.read<AuthProvider>();
     authProvider.clearError();
 
-    final success = await authProvider.signIn(
-      _emailController.text.trim(),
-      _passwordController.text,
-    );
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    final success = await authProvider.signIn(email, password);
 
     if (!mounted) return;
 
     if (success) {
+      // Ask user if they want to save credentials
+      if (!_rememberMe) {
+        final shouldSave = await _showSaveCredentialsDialog();
+        if (shouldSave == true) {
+          await _saveCredentials(email, password);
+        } else {
+          await _clearSavedCredentials();
+        }
+      } else {
+        // Already remembered — update with latest credentials
+        await _saveCredentials(email, password);
+      }
+
+      if (!mounted) return;
       if (authProvider.isDriver) {
         Navigator.pushReplacementNamed(context, '/driver/home');
       } else {
@@ -60,6 +116,51 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     }
+  }
+
+  Future<bool?> _showSaveCredentialsDialog() {
+    final isDark = context.read<ThemeProvider>().isDark;
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Guardar credenciales',
+          style: TextStyle(
+            color: isDark ? Colors.white : const Color(0xFF1A1D27),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          '¿Deseas guardar tu usuario y contraseña para la proxima vez?',
+          style: TextStyle(
+            color: isDark ? Colors.white70 : Colors.grey[600],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'No',
+              style: TextStyle(color: isDark ? Colors.white54 : Colors.grey),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('Sí, guardar'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -214,7 +315,47 @@ class _LoginScreenState extends State<LoginScreen> {
                   },
                 ),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: 12),
+
+                // Remember me checkbox
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: Checkbox(
+                        value: _rememberMe,
+                        onChanged: (v) async {
+                          setState(() => _rememberMe = v ?? false);
+                          if (!_rememberMe) {
+                            await _clearSavedCredentials();
+                          }
+                        },
+                        activeColor: AppTheme.primaryColor,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () async {
+                        setState(() => _rememberMe = !_rememberMe);
+                        if (!_rememberMe) {
+                          await _clearSavedCredentials();
+                        }
+                      },
+                      child: Text(
+                        'Recordarme',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 20),
 
                 // Login button
                 Consumer<AuthProvider>(

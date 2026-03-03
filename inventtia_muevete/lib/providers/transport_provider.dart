@@ -184,6 +184,15 @@ class TransportProvider extends ChangeNotifier {
         _dropoffLocation == null ||
         _selectedVehicleType == null) return;
 
+    // Block new requests if client already has an active/confirmed ride
+    if (_state == TransportState.waitingOffers ||
+        _state == TransportState.rideConfirmed ||
+        _state == TransportState.rideInProgress) {
+      _error = 'Ya tienes un viaje activo. Cancela o completa el actual antes de solicitar otro.';
+      notifyListeners();
+      return;
+    }
+
     _state = TransportState.requesting;
     notifyListeners();
 
@@ -228,6 +237,21 @@ class TransportProvider extends ChangeNotifier {
       _state = TransportState.error;
       notifyListeners();
     }
+  }
+
+  /// Re-subscribes to realtime channels (call on app resume).
+  Future<void> resubscribeRealtime() async {
+    if (_activeRequest?.id == null) return;
+    if (_state != TransportState.waitingOffers &&
+        _state != TransportState.rideConfirmed &&
+        _state != TransportState.rideInProgress) return;
+    final rid = _activeRequest!.id!;
+    await _requestService.unsubscribe();
+    _driverOffers = await _requestService.getExistingOffers(rid);
+    _requestService.subscribeToOffers(rid, _onNewOffer);
+    _requestService.subscribeToOfertaUpdates(rid, _onOfertaUpdate);
+    _requestService.subscribeToSolicitudChanges(rid, _onSolicitudEstadoChange);
+    notifyListeners();
   }
 
   /// Removes an offer from the local list (client-side decline, no DB write).
@@ -397,6 +421,7 @@ class TransportProvider extends ChangeNotifier {
 
   /// Completes a ride: processes wallet payment for client (if wallet)
   /// and always charges 15% commission to driver.
+  /// Uses an RPC with SECURITY DEFINER to bypass RLS on wallet_drivers.
   Future<void> completeRideWithPayment() async {
     final request = _activeRequest;
     final offer = _acceptedOffer;
@@ -408,18 +433,15 @@ class TransportProvider extends ChangeNotifier {
     final viajeId = _activeViajeId;
     final metodoPago = request.metodoPago ?? 'efectivo';
 
-    // 1. If wallet: client funds already held at acceptOffer — record transaction
-    if (metodoPago == 'wallet' && userId != null && viajeId != null) {
-      await _walletService.confirmClientPayment(
-        userId, precioFinal, viajeId);
-    }
+    if (driverId == null || userId == null || viajeId == null) return;
 
-    // 2. Always charge driver 15% commission
-    if (driverId != null && viajeId != null) {
-      final commission = precioFinal * 0.15;
-      await _walletService.chargeDriverCommission(
-        driverId, commission, viajeId);
-    }
+    await _walletService.completeRidePaymentRpc(
+      metodoPago: metodoPago,
+      clientUuid: userId,
+      driverId: driverId,
+      viajeId: viajeId,
+      precioFinal: precioFinal,
+    );
   }
 
   void resetTrip() {
@@ -442,6 +464,18 @@ class TransportProvider extends ChangeNotifier {
     }
     _requestService.unsubscribe();
     notifyListeners();
+  }
+
+  /// Polls for new offers on the active request (realtime backup).
+  Future<void> pollOffers() async {
+    if (_activeRequest?.id == null ||
+        _state != TransportState.waitingOffers) return;
+    try {
+      final offers = await _requestService.getExistingOffers(_activeRequest!.id!);
+      for (final offer in offers) {
+        _onNewOffer(offer);
+      }
+    } catch (_) {}
   }
 
   @override

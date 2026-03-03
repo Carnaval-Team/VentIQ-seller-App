@@ -211,6 +211,26 @@ class TransportRequestService {
           .select()
           .single();
 
+      // Reject all other offers for this solicitud
+      await _supabase
+          .schema('muevete')
+          .from('ofertas_chofer')
+          .update({'estado': 'rechazada'})
+          .eq('solicitud_id', solicitudId)
+          .neq('id', offerId)
+          .neq('estado', 'aceptada');
+
+      // Reject all other pending offers this driver has with OTHER clients
+      final driverId = offerResponse['driver_id'];
+      if (driverId != null) {
+        await _supabase
+            .schema('muevete')
+            .from('ofertas_chofer')
+            .update({'estado': 'rechazada'})
+            .eq('driver_id', driverId)
+            .eq('estado', 'pendiente');
+      }
+
       // Notify the driver that their offer was accepted
       try {
         final driverId = offerResponse['driver_id'];

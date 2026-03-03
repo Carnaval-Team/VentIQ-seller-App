@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 import '../services/background_service.dart';
+import '../services/pushy_service.dart';
 import '../utils/battery_optimizer.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -47,19 +48,26 @@ class AuthProvider extends ChangeNotifier {
       // Subscribe to in-app notifications
       if (_user != null) {
         NotificationService().subscribe(_user!.id);
+        // Register Pushy push token — await so notification permission dialog
+        // finishes before location permission is requested by the home screen.
+        await PushyService.register(_user!.id);
         // Start background service only if location permission is already granted.
         // On Android 14+ (SDK 34), foreground services with type "location"
         // require the runtime location permission BEFORE starting.
         final permission = await Geolocator.checkPermission();
+        debugPrint('[AuthProvider] Location permission: $permission');
         if (permission == LocationPermission.always ||
             permission == LocationPermission.whileInUse) {
-          // Quick attempt; driver_home_screen will do full retries later
-          BackgroundService.start(
+          debugPrint('[AuthProvider] Starting background service...');
+          final started = await BackgroundService.start(
             userUuid: _user!.id,
             role: _role ?? 'client',
             driverId: _driverProfile?['id'] as int?,
-            maxRetries: 1,
+            maxRetries: 10,
           );
+          debugPrint('[AuthProvider] Background service started: $started');
+        } else {
+          debugPrint('[AuthProvider] Skipping BG service - no location permission');
         }
       }
       notifyListeners();
@@ -121,6 +129,9 @@ class AuthProvider extends ChangeNotifier {
     String? pais,
     String? province,
     String? municipality,
+    String? tipoDocumento,
+    String? docFrenteUrl,
+    String? docDorsoUrl,
   }) async {
     _isLoading = true;
     _error = null;
@@ -143,6 +154,9 @@ class AuthProvider extends ChangeNotifier {
             'uuid': _user!.id,
             'estado': false,
             if (phone != null && phone.isNotEmpty) 'telefono': phone,
+            if (tipoDocumento != null) 'tipo_documento': tipoDocumento,
+            if (docFrenteUrl != null) 'doc_frente_url': docFrenteUrl,
+            if (docDorsoUrl != null) 'doc_dorso_url': docDorsoUrl,
           });
         } else {
           await _authService.createUserProfile({
@@ -154,6 +168,9 @@ class AuthProvider extends ChangeNotifier {
             if (province != null && province.isNotEmpty) 'province': province,
             if (municipality != null && municipality.isNotEmpty)
               'municipality': municipality,
+            if (tipoDocumento != null) 'tipo_documento': tipoDocumento,
+            if (docFrenteUrl != null) 'doc_frente_url': docFrenteUrl,
+            if (docDorsoUrl != null) 'doc_dorso_url': docDorsoUrl,
           });
         }
         await _loadProfile();
@@ -173,6 +190,9 @@ class AuthProvider extends ChangeNotifier {
   Future<void> signOut() async {
     await BackgroundService.stop();
     await NotificationService().unsubscribe();
+    if (_user != null) {
+      await PushyService.unregister(_user!.id);
+    }
     await _authService.signOut();
     _user = null;
     _userProfile = null;

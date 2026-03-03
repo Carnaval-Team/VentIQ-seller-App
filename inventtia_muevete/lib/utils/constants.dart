@@ -52,12 +52,15 @@ class AppConstants {
   // Request TTL
   static const Duration requestTtl = Duration(hours: 1);
 
+  // After this delay without offers, requests become visible to ALL drivers
+  static const Duration globalVisibilityDelay = Duration(minutes: 1);
+
   // Default search radius for nearby drivers (km)
-  static const double defaultSearchRadiusKm = 15.0;
+  static const double defaultSearchRadiusKm = 50.0;
   static const double maxSearchRadiusKm = 100.0;
 
   // Expanding radius steps (km) and interval
-  static const List<double> radiusSteps = [15, 30, 50, 75, 100];
+  static const List<double> radiusSteps = [50, 75, 100];
   static const Duration radiusExpansionInterval = Duration(seconds: 30);
 
   // Default map center (Cuba)

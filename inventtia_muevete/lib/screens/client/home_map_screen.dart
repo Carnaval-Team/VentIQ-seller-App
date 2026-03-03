@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_compass_v2/flutter_compass_v2.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -33,7 +34,7 @@ class HomeMapScreen extends StatefulWidget {
 }
 
 class _HomeMapScreenState extends State<HomeMapScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final MapController _mapController = MapController();
   int _currentNavIndex = 0;
   late AnimationController _pulseController;
@@ -59,16 +60,19 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   bool _isRecalculating = false;
   Timer? _driverTrackingTimer;
   Timer? _routeRefreshTimer; // periodic fallback every 10s
+  Timer? _activeTripPollingTimer; // polling for active trip / offers
 
   // Navigation mode state
   bool _autoRotate = false;
   bool _tilt3D = false;
   double _currentTilt = 0.0;
-  double _bearing = 0.0;
+  double _heading = 0.0;
+  StreamSubscription<CompassEvent>? _compassSub;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
@@ -109,12 +113,26 @@ class _HomeMapScreenState extends State<HomeMapScreen>
         const Duration(seconds: 15),
         (_) => _loadNearbyDrivers(),
       );
+
+      // Polling: re-check active trip every 15s as realtime backup
+      _activeTripPollingTimer = Timer.periodic(
+        const Duration(seconds: 15),
+        (_) {
+          if (!mounted) return;
+          final uuid = context.read<AuthProvider>().user?.id;
+          if (uuid != null) _checkActiveTrip(uuid);
+        },
+      );
     });
   }
 
   // ── Active trip check ───────────────────────────────────────────────────
+  bool _isFirstTripCheck = true;
   Future<void> _checkActiveTrip(String userId) async {
-    setState(() => _checkingActiveTrip = true);
+    // Only show loading spinner on the very first check, not on polling refreshes
+    if (_isFirstTripCheck) {
+      setState(() => _checkingActiveTrip = true);
+    }
     try {
       // Look for solicitudes that are pendiente OR aceptada (not completada/cancelada)
       final rows = await Supabase.instance.client
@@ -152,7 +170,8 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       debugPrint('[HomeMap] _checkActiveTrip error: $e\n$st');
       setState(() => _hasActiveTrip = false);
     } finally {
-      setState(() => _checkingActiveTrip = false);
+      _isFirstTripCheck = false;
+      if (mounted) setState(() => _checkingActiveTrip = false);
     }
   }
 
@@ -230,12 +249,7 @@ class _HomeMapScreenState extends State<HomeMapScreen>
     if (_lastTrailPosition != null &&
         _haversineMeters(_lastTrailPosition!, loc) < 2) return;
 
-    // Calculate bearing for auto-rotate
-    if (_lastTrailPosition != null) {
-      setState(() {
-        _bearing = _calcBearing(_lastTrailPosition!, loc);
-      });
-    }
+
 
     _lastTrailPosition = loc;
 
@@ -312,10 +326,32 @@ class _HomeMapScreenState extends State<HomeMapScreen>
         loc.longitude,
         AppConstants.defaultSearchRadiusKm,
       );
-      if (mounted) setState(() => _nearbyDrivers = drivers);
+      if (!mounted) return;
+      // Only update state if data actually changed to avoid unnecessary rebuilds
+      if (!_listsEqual(_nearbyDrivers, drivers)) {
+        setState(() => _nearbyDrivers = drivers);
+      }
     } catch (e, st) {
       debugPrint('[HomeMap] _loadNearbyDrivers error: $e\n$st');
     }
+  }
+
+  /// Shallow comparison of two lists of maps by driver id.
+  bool _listsEqual(List<Map<String, dynamic>> a, List<Map<String, dynamic>> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i]['driver'] != b[i]['driver'] ||
+          a[i]['latitude'] != b[i]['latitude'] ||
+          a[i]['longitude'] != b[i]['longitude']) return false;
+    }
+    return true;
+  }
+
+  void _refreshAfterNav() {
+    if (!mounted) return;
+    _loadNearbyDrivers();
+    final uuid = context.read<AuthProvider>().user?.id;
+    if (uuid != null) _checkActiveTrip(uuid);
   }
 
   void _onLocationChanged() {
@@ -331,7 +367,21 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _loadNearbyDrivers();
+      final uuid = context.read<AuthProvider>().user?.id;
+      if (uuid != null) _checkActiveTrip(uuid);
+      // Re-subscribe realtime channels that may have died while suspended
+      context.read<TransportProvider>().resubscribeRealtime();
+    }
+  }
+
+  @override
   void dispose() {
+    _compassSub?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _activeTripPollingTimer?.cancel();
     _driversRefreshTimer?.cancel();
     _driverTrackingTimer?.cancel();
     _routeRefreshTimer?.cancel();
@@ -359,7 +409,7 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       final startCenter = cam.center;
       final startZoom = cam.zoom;
       final startRotation = cam.rotation;
-      final targetRotation = _autoRotate ? -_bearing : 0.0;
+      final targetRotation = _autoRotate ? -_heading : 0.0;
 
       const steps = 15;
       const duration = Duration(milliseconds: 450);
@@ -409,7 +459,22 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   void _toggleAutoRotate() {
     setState(() {
       _autoRotate = !_autoRotate;
-      if (!_autoRotate) {
+      if (_autoRotate) {
+        _compassSub = FlutterCompass.events?.listen((event) {
+          final h = event.heading;
+          if (h == null || !mounted) return;
+          setState(() => _heading = h);
+          if (_autoRotate) {
+            try {
+              _mapController.rotate(-h);
+            } catch (e) {
+              debugPrint('[HomeMap] compass rotate error: $e');
+            }
+          }
+        });
+      } else {
+        _compassSub?.cancel();
+        _compassSub = null;
         try {
           _mapController.rotate(0);
         } catch (e) {
@@ -443,14 +508,6 @@ class _HomeMapScreenState extends State<HomeMapScreen>
     });
   }
 
-  static double _calcBearing(LatLng from, LatLng to) {
-    final dLon = (to.longitude - from.longitude) * pi / 180;
-    final lat1 = from.latitude * pi / 180;
-    final lat2 = to.latitude * pi / 180;
-    final y = sin(dLon) * cos(lat2);
-    final x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon);
-    return atan2(y, x) * 180 / pi;
-  }
 
   void _onMapTap(TapPosition tapPosition, LatLng point) {
     if (_hasActiveTrip) return; // block when active trip
@@ -483,12 +540,33 @@ class _HomeMapScreenState extends State<HomeMapScreen>
 
     // Build map markers
     final markers = <Marker>[
-      // User pulsing dot
+      // User marker: navigation arrow when auto-rotate, pulsing dot otherwise
       Marker(
         point: userLocation,
         width: 40,
         height: 40,
-        child: _PulsingDot(animation: _pulseAnimation),
+        rotate: _autoRotate,
+        child: _autoRotate
+            ? Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.4),
+                      blurRadius: 10,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.navigation,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              )
+            : _PulsingDot(animation: _pulseAnimation),
       ),
     ];
 
@@ -958,13 +1036,13 @@ class _HomeMapScreenState extends State<HomeMapScreen>
           setState(() => _currentNavIndex = index);
           switch (index) {
             case 1:
-              Navigator.pushNamed(context, '/client/request-history');
+              Navigator.pushNamed(context, '/client/request-history').then((_) => _refreshAfterNav());
               break;
             case 2:
-              Navigator.pushNamed(context, '/client/wallet');
+              Navigator.pushNamed(context, '/client/wallet').then((_) => _refreshAfterNav());
               break;
             case 3:
-              Navigator.pushNamed(context, '/client/profile');
+              Navigator.pushNamed(context, '/client/profile').then((_) => _refreshAfterNav());
               break;
           }
           Future.microtask(() {

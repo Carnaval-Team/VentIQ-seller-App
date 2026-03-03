@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_compass_v2/flutter_compass_v2.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -62,8 +63,8 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   bool _isRecalculating = false;
   Timer? _routeRefreshTimer;
   double _distanceToTargetM = double.infinity;
-  double _bearing = 0.0;
-  bool _isMoving = false;
+  double _heading = 0.0;
+  StreamSubscription<CompassEvent>? _compassSub;
   bool _isCompletingAction = false;
 
   static const double _completionThresholdM = 30.0;
@@ -111,6 +112,12 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     }
     if (latDestino != null && lonDestino != null) {
       _dropoffLocation = LatLng(latDestino, lonDestino);
+    }
+
+    // Restore phase from DB: estado=true means trip was already started
+    final viajeEstado = data['estado'] as bool? ?? false;
+    if (viajeEstado) {
+      _currentPhase = _RidePhase.inProgress;
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -200,15 +207,6 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
         _haversineMeters(_lastTrailPosition!, loc) < 2) {
       _updateDistanceAndBearing(loc);
       return;
-    }
-
-    // Calculate bearing from last position
-    if (_lastTrailPosition != null) {
-      final newBearing = _calcBearing(_lastTrailPosition!, loc);
-      setState(() {
-        _bearing = newBearing;
-        _isMoving = true;
-      });
     }
 
     _lastTrailPosition = loc;
@@ -582,14 +580,6 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     return 2 * earthR * asin(sqrt(h));
   }
 
-  double _calcBearing(LatLng from, LatLng to) {
-    final dLon = (to.longitude - from.longitude) * pi / 180;
-    final lat1 = from.latitude * pi / 180;
-    final lat2 = to.latitude * pi / 180;
-    final y = sin(dLon) * cos(lat2);
-    final x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon);
-    return atan2(y, x);
-  }
 
   Future<void> _launchCall(String phone) async {
     final url = Uri.parse(Helpers.buildPhoneUrl(phone));
@@ -617,7 +607,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       final startZoom = cam.zoom;
       final startRotation = cam.rotation;
 
-      final targetRotation = _autoRotate ? -_bearing : 0.0;
+      final targetRotation = _autoRotate ? -_heading : 0.0;
 
       // Use ticker-based animation for smooth transitions
       const steps = 15;
@@ -672,7 +662,20 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   void _toggleAutoRotate() {
     setState(() {
       _autoRotate = !_autoRotate;
-      if (!_autoRotate) {
+      if (_autoRotate) {
+        _compassSub = FlutterCompass.events?.listen((event) {
+          final h = event.heading;
+          if (h == null || !mounted) return;
+          setState(() => _heading = h);
+          if (_autoRotate) {
+            try {
+              _mapController.rotate(-h);
+            } catch (_) {}
+          }
+        });
+      } else {
+        _compassSub?.cancel();
+        _compassSub = null;
         try {
           _mapController.rotate(0);
         } catch (_) {}
@@ -709,6 +712,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
 
   @override
   void dispose() {
+    _compassSub?.cancel();
     _pulseController?.dispose();
     _mapController.dispose();
     _routeRefreshTimer?.cancel();
@@ -733,54 +737,32 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     // Build markers
     final markers = <Marker>[];
 
-    // Driver marker — directional arrow when moving, car when stationary
+    // Driver marker — navigation arrow when auto-rotate, car otherwise
     markers.add(
       Marker(
         point: driverLocation,
         width: 46,
         height: 46,
-        child: _isMoving
-            ? Transform.rotate(
-                angle: _bearing,
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppTheme.primaryColor,
-                    border: Border.all(color: AppTheme.markerBorder(isDark), width: 3),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.primaryColor.withValues(alpha: 0.4),
-                        blurRadius: 10,
-                        spreadRadius: 1,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.navigation,
-                    color: Colors.white,
-                    size: 22,
-                  ),
-                ),
-              )
-            : Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppTheme.primaryColor,
-                  border: Border.all(color: Colors.white, width: 3),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppTheme.primaryColor.withValues(alpha: 0.4),
-                      blurRadius: 10,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.directions_car,
-                  color: Colors.white,
-                  size: 20,
-                ),
+        rotate: _autoRotate,
+        child: Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppTheme.primaryColor,
+            border: Border.all(color: AppTheme.markerBorder(isDark), width: 3),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.primaryColor.withValues(alpha: 0.4),
+                blurRadius: 10,
+                spreadRadius: 1,
               ),
+            ],
+          ),
+          child: Icon(
+            _autoRotate ? Icons.navigation : Icons.directions_car,
+            color: Colors.white,
+            size: 22,
+          ),
+        ),
       ),
     );
 

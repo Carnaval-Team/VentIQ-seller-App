@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/document_upload_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -23,9 +25,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _cityController = TextEditingController();
 
   bool _obscurePassword = true;
-  String _selectedRole = 'client'; // 'client' or 'driver'
+  String _selectedRole = 'client';
   String _selectedCountry = 'Cuba';
   String _selectedCountryCode = '+53';
+
+  // Document upload state
+  String _selectedDocType = 'Carnet de Identidad';
+  String? _docFrenteUrl;
+  String? _docDorsoUrl;
+  bool _isUploadingFrente = false;
+  bool _isUploadingDorso = false;
+
+  // Temp UUID for upload before auth user is created
+  String? _tempUuid;
+
+  final DocumentUploadService _docService = DocumentUploadService();
 
   static const List<Map<String, String>> _countries = [
     {'name': 'Cuba', 'code': '+53'},
@@ -35,6 +49,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
     {'name': 'Espana', 'code': '+34'},
     {'name': 'Estados Unidos', 'code': '+1'},
   ];
+
+  static const List<String> _docTypes = [
+    'Carnet de Identidad',
+    'Pasaporte',
+    'Licencia de Conducir',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Generate a temp UUID for storage path before account creation
+    _tempUuid = DateTime.now().millisecondsSinceEpoch.toString();
+  }
 
   @override
   void dispose() {
@@ -47,8 +74,119 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
+  Future<void> _pickDocument({required bool isFront}) async {
+    final isDark = context.read<ThemeProvider>().isDark;
+
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: isDark ? AppTheme.darkSurface : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  isFront ? 'Foto del frente' : 'Foto del dorso',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(Icons.camera_alt, color: AppTheme.primaryColor),
+                  title: Text('Camara', style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
+                  onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library, color: AppTheme.primaryColor),
+                  title: Text('Galeria', style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
+                  onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (source == null || !mounted) return;
+
+    setState(() {
+      if (isFront) {
+        _isUploadingFrente = true;
+      } else {
+        _isUploadingDorso = true;
+      }
+    });
+
+    try {
+      final filename = isFront ? 'doc_frente' : 'doc_dorso';
+      final url = await _docService.pickCompressAndUpload(
+        uuid: _tempUuid!,
+        filename: filename,
+        source: source,
+      );
+
+      if (url != null && mounted) {
+        setState(() {
+          if (isFront) {
+            _docFrenteUrl = url;
+          } else {
+            _docDorsoUrl = url;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al subir imagen: $e'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          if (isFront) {
+            _isUploadingFrente = false;
+          } else {
+            _isUploadingDorso = false;
+          }
+        });
+      }
+    }
+  }
+
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Validate documents uploaded
+    if (_docFrenteUrl == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debes subir la foto del frente del documento'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+    if (_docDorsoUrl == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debes subir la foto del dorso del documento'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
 
     final authProvider = context.read<AuthProvider>();
     authProvider.clearError();
@@ -62,6 +200,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       pais: _selectedCountry,
       province: _stateController.text.trim(),
       municipality: _cityController.text.trim(),
+      tipoDocumento: _selectedDocType,
+      docFrenteUrl: _docFrenteUrl,
+      docDorsoUrl: _docDorsoUrl,
     );
 
     if (!mounted) return;
@@ -70,7 +211,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (authProvider.isDriver) {
         Navigator.pushReplacementNamed(context, '/driver/home');
       } else {
-        Navigator.pushReplacementNamed(context, '/client-home');
+        Navigator.pushReplacementNamed(context, '/client/home');
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -105,7 +246,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header with back button
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
@@ -125,8 +265,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ],
               ),
             ),
-
-            // Scrollable form
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -137,12 +275,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     children: [
                       const SizedBox(height: 16),
 
-                      // --- Section: Account Info ---
+                      // --- Account Info ---
                       _SectionHeader(title: 'Informacion de Cuenta'),
                       const SizedBox(height: 16),
 
-                      // Full Name
-                      _FieldLabel(label: 'Nombre Completo'),
+                      _FieldLabel(label: 'Nombre Completo *'),
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _nameController,
@@ -162,11 +299,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           return null;
                         },
                       ),
-
                       const SizedBox(height: 16),
 
-                      // Email
-                      _FieldLabel(label: 'Correo Electronico'),
+                      _FieldLabel(label: 'Correo Electronico *'),
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _emailController,
@@ -187,11 +322,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           return null;
                         },
                       ),
-
                       const SizedBox(height: 16),
 
-                      // Password
-                      _FieldLabel(label: 'Contrasena'),
+                      _FieldLabel(label: 'Contrasena *'),
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _passwordController,
@@ -231,12 +364,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                       const SizedBox(height: 28),
 
-                      // --- Section: Location & Contact ---
+                      // --- Location & Contact ---
                       _SectionHeader(title: 'Ubicacion y Contacto'),
                       const SizedBox(height: 16),
 
-                      // Country dropdown
-                      _FieldLabel(label: 'Pais'),
+                      _FieldLabel(label: 'Pais *'),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
                         value: _selectedCountry,
@@ -264,11 +396,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           }
                         },
                       ),
-
                       const SizedBox(height: 16),
 
-                      // State / Province
-                      _FieldLabel(label: 'Provincia / Estado'),
+                      _FieldLabel(label: 'Provincia / Estado *'),
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _stateController,
@@ -286,11 +416,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           return null;
                         },
                       ),
-
                       const SizedBox(height: 16),
 
-                      // City
-                      _FieldLabel(label: 'Ciudad / Municipio'),
+                      _FieldLabel(label: 'Ciudad / Municipio *'),
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _cityController,
@@ -307,15 +435,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           return null;
                         },
                       ),
-
                       const SizedBox(height: 16),
 
-                      // Phone with country code
-                      _FieldLabel(label: 'Telefono'),
+                      _FieldLabel(label: 'Telefono *'),
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          // Country code badge
                           Container(
                             height: 56,
                             padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -357,6 +482,69 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ),
                           ),
                         ],
+                      ),
+
+                      const SizedBox(height: 28),
+
+                      // --- Document Verification ---
+                      _SectionHeader(title: 'Documento de Identidad'),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Sube foto del frente y dorso de tu documento. Es obligatorio para verificar tu cuenta.',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          color: isDark ? Colors.white54 : Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      _FieldLabel(label: 'Tipo de Documento *'),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        value: _selectedDocType,
+                        dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
+                        style: TextStyle(color: textPrimary),
+                        decoration: const InputDecoration(
+                          prefixIcon:
+                              Icon(Icons.badge_outlined, size: 20),
+                        ),
+                        items: _docTypes
+                            .map(
+                              (d) => DropdownMenuItem<String>(
+                                value: d,
+                                child: Text(d),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _selectedDocType = value);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Front photo
+                      _FieldLabel(label: 'Foto del Frente *'),
+                      const SizedBox(height: 8),
+                      _DocUploadTile(
+                        label: 'Frente del documento',
+                        imageUrl: _docFrenteUrl,
+                        isUploading: _isUploadingFrente,
+                        isDark: isDark,
+                        onTap: () => _pickDocument(isFront: true),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Back photo
+                      _FieldLabel(label: 'Foto del Dorso *'),
+                      const SizedBox(height: 8),
+                      _DocUploadTile(
+                        label: 'Dorso del documento',
+                        imageUrl: _docDorsoUrl,
+                        isUploading: _isUploadingDorso,
+                        isDark: isDark,
+                        onTap: () => _pickDocument(isFront: false),
                       ),
 
                       const SizedBox(height: 28),
@@ -436,7 +624,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                       const SizedBox(height: 24),
 
-                      // Login link
                       Center(
                         child: GestureDetector(
                           onTap: () {
@@ -470,6 +657,136 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// --- Document upload tile ---
+
+class _DocUploadTile extends StatelessWidget {
+  final String label;
+  final String? imageUrl;
+  final bool isUploading;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _DocUploadTile({
+    required this.label,
+    required this.imageUrl,
+    required this.isUploading,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: isUploading ? null : onTap,
+      child: Container(
+        height: 120,
+        decoration: BoxDecoration(
+          color: isDark ? AppTheme.darkCard : Colors.grey[100],
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: imageUrl != null
+                ? AppTheme.success
+                : isDark
+                    ? AppTheme.darkBorder
+                    : Colors.grey[300]!,
+            width: imageUrl != null ? 2 : 1,
+          ),
+        ),
+        child: isUploading
+            ? const Center(
+                child: CircularProgressIndicator(
+                  color: AppTheme.primaryColor,
+                  strokeWidth: 2.5,
+                ),
+              )
+            : imageUrl != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(13),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.network(
+                          imageUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Center(
+                            child: Icon(
+                              Icons.check_circle,
+                              color: AppTheme.success,
+                              size: 40,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: AppTheme.success,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.check,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          bottom: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'Cambiar',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 11,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.add_a_photo_outlined,
+                        size: 32,
+                        color: isDark ? Colors.white38 : Colors.grey[500],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        label,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          color: isDark ? Colors.white54 : Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Toca para subir',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          color: AppTheme.primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
       ),
     );
   }

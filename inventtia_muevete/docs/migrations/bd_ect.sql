@@ -38,6 +38,9 @@ CREATE TABLE muevete.drivers (
   motivo text,
   uuid uuid,
   usado_actualmente boolean DEFAULT false,
+  tipo_documento character varying,
+  doc_frente_url text,
+  doc_dorso_url text,
   CONSTRAINT drivers_pkey PRIMARY KEY (id),
   CONSTRAINT drivers_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id),
   CONSTRAINT drivers_vehiculo_fkey FOREIGN KEY (vehiculo) REFERENCES muevete.vehiculos(id)
@@ -151,6 +154,9 @@ CREATE TABLE muevete.users (
   direccion text,
   pais text,
   photo_url text,
+  tipo_documento character varying,
+  doc_frente_url text,
+  doc_dorso_url text,
   CONSTRAINT users_pkey PRIMARY KEY (user_id),
   CONSTRAINT clientes_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id)
 );
