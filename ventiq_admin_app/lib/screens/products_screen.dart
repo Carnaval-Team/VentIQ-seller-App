@@ -253,6 +253,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.price_change_outlined, color: Colors.white),
+            onPressed: () => Navigator.pushNamed(context, '/precios-productos'),
+            tooltip: 'Gestión de Precios',
+          ),
           if (_canCreateProduct)
             IconButton(
               icon: const Icon(Icons.auto_awesome, color: Colors.white),

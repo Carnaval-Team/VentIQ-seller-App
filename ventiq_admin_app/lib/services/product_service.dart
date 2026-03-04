@@ -2629,7 +2629,8 @@ class ProductService {
     }
   }
 
-  /// Actualiza el precio base de venta de un producto
+  /// Actualiza el precio base de venta de un producto.
+  /// Si no existe registro en app_dat_precio_venta, lo crea.
   static Future<bool> updateBasePriceVenta({
     required int productId,
     required double newPrice,
@@ -2638,13 +2639,36 @@ class ProductService {
       debugPrint('💰 Actualizando precio base de venta para producto: $productId');
       debugPrint('📝 Nuevo precio: $newPrice');
 
-      // Actualizar en app_dat_precio_venta
-      await _supabase
+      // Verificar si ya existe un registro para este producto
+      final existing = await _supabase
           .from('app_dat_precio_venta')
-          .update({'precio_venta_cup': newPrice})
-          .eq('id_producto', productId);
+          .select('id')
+          .eq('id_producto', productId)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
 
-      debugPrint('✅ Precio base actualizado exitosamente');
+      final today = DateTime.now().toIso8601String().substring(0, 10);
+
+      if (existing != null) {
+        await _supabase
+            .from('app_dat_precio_venta')
+            .update({
+              'precio_venta_cup': newPrice,
+              'fecha_desde': today,
+            })
+            .eq('id', existing['id']);
+        debugPrint('✅ Precio base actualizado exitosamente');
+      } else {
+        await _supabase.from('app_dat_precio_venta').insert({
+          'id_producto': productId,
+          'precio_venta_cup': newPrice,
+          'fecha_desde': today,
+          'id_variante': null,
+        });
+        debugPrint('✅ Precio base creado exitosamente (no existía registro)');
+      }
+
       return true;
     } catch (e) {
       debugPrint('❌ Error al actualizar precio base: $e');

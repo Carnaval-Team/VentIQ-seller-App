@@ -51,6 +51,7 @@ import 'screens/store_selection_screen.dart';
 import 'screens/wifi_printers_screen.dart';
 import 'screens/consignacion_screen.dart';
 import 'screens/interacciones_clientes_screen.dart';
+import 'screens/precios_productos_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -164,6 +165,7 @@ class MyApp extends StatelessWidget {
         '/dashboard-mobile': (context) => const DashboardScreen(),
         '/dashboard-web': (context) => const DashboardWebScreen(),
         '/products': (context) => const ProductsScreen(),
+        '/precios-productos': (context) => const PreciosProductosScreen(),
         '/products-dashboard': (context) => const ProductsDashboardScreen(),
         '/categories': (context) => const CategoriesScreen(),
         '/inventory': (context) => const InventoryScreen(),
