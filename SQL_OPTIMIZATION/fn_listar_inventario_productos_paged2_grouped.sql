@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION public.fn_listar_inventario_productos_paged2_grouped(
+CREATE OR REPLACE FUNCTION public.fn_listar_inventario_productos_paged2_grouped2(
     p_pagina INTEGER DEFAULT 1,
     p_limite INTEGER DEFAULT 20,
     p_id_tienda INTEGER DEFAULT NULL,
@@ -11,10 +11,10 @@ CREATE OR REPLACE FUNCTION public.fn_listar_inventario_productos_paged2_grouped(
     p_id_categoria INTEGER DEFAULT NULL,
     p_id_subcategoria INTEGER DEFAULT NULL,
     p_id_proveedor INTEGER DEFAULT NULL,
-    p_origen_cambio TEXT DEFAULT NULL,
+    p_origen_cambio SMALLINT DEFAULT NULL,
     p_es_vendible BOOLEAN DEFAULT NULL,
     p_es_inventariable BOOLEAN DEFAULT NULL,
-    p_clasificacion_abc INTEGER DEFAULT NULL,
+    p_clasificacion_abc SMALLINT DEFAULT NULL,
     p_mostrar_sin_stock BOOLEAN DEFAULT TRUE,
     p_con_stock_minimo BOOLEAN DEFAULT NULL,
     p_busqueda TEXT DEFAULT NULL
@@ -122,7 +122,7 @@ BEGIN
             AND (p_origen_cambio IS NULL OR i.origen_cambio = p_origen_cambio)
             AND (p_es_vendible IS NULL OR p.es_vendible = p_es_vendible)
             AND (p_es_inventariable IS NULL OR p.es_inventariable = p_es_inventariable)
-            AND (p_clasificacion_abc IS NULL OR abc.clasificacion_abc = p_clasificacion_abc::SMALLINT)
+            AND (p_clasificacion_abc IS NULL OR abc.clasificacion_abc = p_clasificacion_abc)
             AND (
                 p_busqueda IS NULL OR
                 p.denominacion ILIKE '%' || p_busqueda || '%' OR
@@ -186,7 +186,7 @@ BEGIN
             AND (p_origen_cambio IS NULL OR i.origen_cambio = p_origen_cambio)
             AND (p_es_vendible IS NULL OR p.es_vendible = p_es_vendible)
             AND (p_es_inventariable IS NULL OR p.es_inventariable = p_es_inventariable)
-            AND (p_clasificacion_abc IS NULL OR abc.clasificacion_abc = p_clasificacion_abc::SMALLINT)
+            AND (p_clasificacion_abc IS NULL OR abc.clasificacion_abc = p_clasificacion_abc)
             AND (
                 p_busqueda IS NULL OR
                 p.denominacion ILIKE '%' || p_busqueda || '%' OR
@@ -426,7 +426,7 @@ BEGIN
             AND (p_id_subcategoria IS NULL OR p.id_subcategoria = p_id_subcategoria)
             AND (p_es_vendible IS NULL OR p.es_vendible = p_es_vendible)
             AND (p_es_inventariable IS NULL OR p.es_inventariable = p_es_inventariable)
-            AND (p_clasificacion_abc IS NULL OR c.clasificacion_abc = p_clasificacion_abc::SMALLINT)
+            AND (p_clasificacion_abc IS NULL OR c.clasificacion_abc = p_clasificacion_abc)
             AND (p_mostrar_sin_stock = TRUE OR inv_det.cantidad_final > 0)
             AND (
                 p_busqueda IS NULL OR
