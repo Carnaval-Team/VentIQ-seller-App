@@ -23,7 +23,9 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
   String _searchQuery = '';
   bool _filterSinPrecioVenta = false;
   bool _filterSinPrecioCosto = false;
+  double? _filterPrecioCosto;
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _filterPrecioController = TextEditingController();
 
   @override
   void initState() {
@@ -34,6 +36,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _filterPrecioController.dispose();
     super.dispose();
   }
 
@@ -141,13 +144,24 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
       // Filtro sin precio de costo (alguna presentacion sin costo)
       if (_filterSinPrecioCosto) {
         final pres = p['presentaciones'] as List<Map<String, dynamic>>;
-        final tieneCosto = pres.any(
+        final sinCosto = pres.any(
           (pp) {
             final precio = (pp['precio_promedio'] as num?)?.toDouble() ?? 0.0;
-            return precio != 0 && precio != 1;
+            return precio == 0 || precio == 0.0019;
           },
         );
-        if (tieneCosto) return false;
+        if (!sinCosto) return false;
+      }
+      // Filtro por precio de costo específico
+      if (_filterPrecioCosto != null) {
+        final pres = p['presentaciones'] as List<Map<String, dynamic>>;
+        final tienePrecio = pres.any(
+          (pp) {
+            final precio = (pp['precio_promedio'] as num?)?.toDouble() ?? 0.0;
+            return (precio - _filterPrecioCosto!).abs() < 0.0001;
+          },
+        );
+        if (!tienePrecio) return false;
       }
       return true;
     }).toList()
@@ -534,6 +548,51 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          // Filtro por precio de costo específico
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _filterPrecioController,
+                  decoration: InputDecoration(
+                    hintText: 'Filtrar por precio costo...',
+                    prefixIcon: const Icon(Icons.attach_money, size: 18),
+                    suffixIcon: _filterPrecioCosto != null
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _filterPrecioController.clear();
+                              setState(() {
+                                _filterPrecioCosto = null;
+                                _applyFilter();
+                              });
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (value) {
+                    setState(() {
+                      _filterPrecioCosto = double.tryParse(value);
+                      _applyFilter();
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -790,11 +849,11 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
             ),
           ),
           Text(
-            costo != 0 && costo != 1 ? '\$ ${costo.toStringAsFixed(2)}' : 'Sin costo',
+            costo != 0 && costo != 0.0019 ? '\$ ${costo.toStringAsFixed(4)}' : 'Sin costo',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: costo != 0 && costo != 1 ? const Color(0xFF1F2937) : Colors.red[600],
+              color: costo != 0 && costo != 0.0019 ? const Color(0xFF1F2937) : Colors.red[600],
             ),
           ),
           const SizedBox(width: 6),
