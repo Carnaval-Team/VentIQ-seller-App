@@ -136,13 +136,16 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
       // Filtro sin precio de venta
       if (_filterSinPrecioVenta) {
         final pv = p['precio_venta'] as double?;
-        if (pv != null && pv > 0) return false;
+        if (pv != null && pv != 0 && pv != 1) return false;
       }
       // Filtro sin precio de costo (alguna presentacion sin costo)
       if (_filterSinPrecioCosto) {
         final pres = p['presentaciones'] as List<Map<String, dynamic>>;
         final tieneCosto = pres.any(
-          (pp) => ((pp['precio_promedio'] as num?)?.toDouble() ?? 0.0) > 0,
+          (pp) {
+            final precio = (pp['precio_promedio'] as num?)?.toDouble() ?? 0.0;
+            return precio != 0 && precio != 1;
+          },
         );
         if (tieneCosto) return false;
       }
@@ -232,7 +235,31 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
           backgroundColor: AppColors.success,
         ),
       );
-      await _loadData();
+      // Actualizar solo el producto modificado
+      final productId = producto['id'] as int;
+      final precioVentaList = await _supabase
+          .from('app_dat_precio_venta')
+          .select('id, precio_venta_cup')
+          .eq('id_producto', productId);
+      
+      final precioVenta = precioVentaList.isNotEmpty
+          ? (precioVentaList.first['precio_venta_cup'] as num?)?.toDouble()
+          : null;
+      final precioVentaId = precioVentaList.isNotEmpty
+          ? precioVentaList.first['id'] as int?
+          : null;
+
+      if (mounted) {
+        setState(() {
+          // Encontrar y actualizar el producto en la lista
+          final index = _productos.indexWhere((p) => p['id'] == productId);
+          if (index != -1) {
+            _productos[index]['precio_venta'] = precioVenta;
+            _productos[index]['precio_venta_id'] = precioVentaId;
+            _applyFilter();
+          }
+        });
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -335,7 +362,29 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
           backgroundColor: AppColors.success,
         ),
       );
-      await _loadData();
+      // Actualizar solo la presentación modificada
+      final presentationId = presentacion['id'] as int;
+      final updatedPres = await _supabase
+          .from('app_dat_producto_presentacion')
+          .select('id, id_producto, cantidad, es_base, precio_promedio, app_nom_presentacion!inner(id, denominacion)')
+          .eq('id', presentationId)
+          .single();
+
+      if (mounted) {
+        setState(() {
+          // Encontrar el producto y actualizar su presentación
+          final productId = producto['id'] as int;
+          final productIndex = _productos.indexWhere((p) => p['id'] == productId);
+          if (productIndex != -1) {
+            final presentaciones = _productos[productIndex]['presentaciones'] as List<Map<String, dynamic>>;
+            final presIndex = presentaciones.indexWhere((p) => p['id'] == presentationId);
+            if (presIndex != -1) {
+              presentaciones[presIndex] = updatedPres;
+            }
+            _applyFilter();
+          }
+        });
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -637,12 +686,12 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    precioVenta != null && precioVenta > 1
+                    precioVenta != null && precioVenta != 0 && precioVenta != 1
                         ? '\$ ${precioVenta.toStringAsFixed(2)} CUP'
                         : 'Sin precio',
                     style: TextStyle(
                       fontSize: 13,
-                      color: precioVenta != null && precioVenta > 1
+                      color: precioVenta != null && precioVenta != 0 && precioVenta != 1
                           ? const Color(0xFF1F2937)
                           : Colors.red[600],
                       fontWeight: FontWeight.w600,
@@ -741,11 +790,11 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
             ),
           ),
           Text(
-            costo > 1 ? '\$ ${costo.toStringAsFixed(2)}' : 'Sin costo',
+            costo != 0 && costo != 1 ? '\$ ${costo.toStringAsFixed(2)}' : 'Sin costo',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: costo > 1 ? const Color(0xFF1F2937) : Colors.red[600],
+              color: costo != 0 && costo != 1 ? const Color(0xFF1F2937) : Colors.red[600],
             ),
           ),
           const SizedBox(width: 6),
