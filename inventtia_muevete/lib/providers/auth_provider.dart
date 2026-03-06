@@ -17,6 +17,7 @@ class AuthProvider extends ChangeNotifier {
   String? _role; // 'client' or 'driver'
   bool _isLoading = false;
   String? _error;
+  bool _profileLoadFailed = false;
 
   User? get user => _user;
   Map<String, dynamic>? get userProfile => _userProfile;
@@ -27,11 +28,16 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _user != null;
   bool get isClient => _role == 'client';
   bool get isDriver => _role == 'driver';
+  bool get profileLoadFailed => _profileLoadFailed;
 
   AuthProvider() {
     _user = _authService.currentUser;
     if (_user != null) {
-      _loadProfile();
+      _loadProfile().catchError((e) {
+        _profileLoadFailed = true;
+        debugPrint('[AuthProvider] Profile load failed in constructor: $e');
+        notifyListeners();
+      });
     }
   }
 
@@ -73,6 +79,7 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading profile: $e');
+      rethrow;
     }
   }
 
@@ -107,9 +114,19 @@ class AuthProvider extends ChangeNotifier {
       final response = await _authService.signInWithEmail(email, password);
       _user = response.user;
       if (_user != null) {
-        await _loadProfile();
+        try {
+          await _loadProfile();
+        } catch (e) {
+          debugPrint('[AuthProvider] signIn: profile load failed: $e');
+          _error = 'No se pudo cargar el perfil. Verifica tu conexión.';
+          _profileLoadFailed = true;
+          _isLoading = false;
+          notifyListeners();
+          return false;
+        }
       }
       _isLoading = false;
+      _profileLoadFailed = false;
       notifyListeners();
       return _user != null;
     } catch (e) {

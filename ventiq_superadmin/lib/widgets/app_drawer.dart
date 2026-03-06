@@ -128,6 +128,52 @@ class AppDrawer extends StatelessWidget {
                 ),
                 _buildMenuSection(
                   context,
+                  title: 'Inventtia Muévete',
+                  items: [
+                    _DrawerItem(
+                      icon: Icons.dashboard_customize,
+                      title: 'Panel Muévete',
+                      route: '/muevete/dashboard',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.people,
+                      title: 'Conductores',
+                      route: '/muevete/conductores',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.directions_car,
+                      title: 'Viajes',
+                      route: '/muevete/viajes',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.local_taxi,
+                      title: 'Solicitudes y Ofertas',
+                      route: '/muevete/solicitudes',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.map,
+                      title: 'Mapa en Vivo',
+                      route: '/muevete/mapa',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.star,
+                      title: 'Valoraciones',
+                      route: '/muevete/valoraciones',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.account_balance_wallet,
+                      title: 'Billeteras',
+                      route: '/muevete/billeteras',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.verified_user,
+                      title: 'Verificación KYC',
+                      route: '/muevete/kyc',
+                    ),
+                  ],
+                ),
+                _buildMenuSection(
+                  context,
                   title: 'Sistema',
                   items: [
                     _DrawerItem(
@@ -280,7 +326,8 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/carnaval-tiendas' ||
                 item.route == '/productos-carnaval-inventtia' ||
                 item.route == '/pago-proveedores' ||
-                item.route == '/control-flota') {
+                item.route == '/control-flota' ||
+                item.route.startsWith('/muevete/')) {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas

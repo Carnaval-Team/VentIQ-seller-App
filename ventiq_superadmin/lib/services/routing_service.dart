@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
@@ -110,20 +111,24 @@ class RoutingService {
   }
 
   /// Llama a ORS Directions API (POST con JSON response + encoded polyline).
+  /// En Flutter Web usa proxy CORS para evitar bloqueo del navegador.
   Future<RouteResult> _getOrsDirections(List<LatLng> points) async {
     // Coordenadas en formato [longitude, latitude] (convención GeoJSON)
     final coordinates =
         points.map((p) => [p.longitude, p.latitude]).toList();
 
-    final url = Uri.parse(
-      '$_orsBaseUrl/v2/directions/driving-car',
-    );
+    // En web, el navegador bloquea requests directas a ORS (CORS).
+    // Usamos corsproxy.io como proxy para desarrollo/producción web.
+    final orsPath = '/v2/directions/driving-car';
+    final url = kIsWeb
+        ? Uri.parse('https://corsproxy.io/?$_orsBaseUrl$orsPath')
+        : Uri.parse('$_orsBaseUrl$orsPath');
 
     final body = json.encode({
       'coordinates': coordinates,
     });
 
-    print('[RoutingService] ORS request: ${points.length} waypoints');
+    print('[RoutingService] ORS request: ${points.length} waypoints (web=$kIsWeb)');
 
     final response = await http
         .post(url, headers: _headers, body: body)

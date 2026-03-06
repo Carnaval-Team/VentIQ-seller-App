@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/transport_request_model.dart';
 import '../models/notification_model.dart';
+import '../models/valoracion_model.dart';
 import 'notification_service.dart';
 
 class DriverService {
@@ -416,6 +417,64 @@ class DriverService {
       }
       _requestsChannel = null;
     }
+  }
+
+  /// Submits a rating for a completed trip.
+  Future<void> submitRating({
+    required int viajeId,
+    required int driverId,
+    required String userId,
+    required int rating,
+    String? comentario,
+  }) async {
+    await _supabase.schema('muevete').from('valoraciones_viaje').insert({
+      'viaje_id': viajeId,
+      'driver_id': driverId,
+      'user_id': userId,
+      'rating': rating,
+      if (comentario != null && comentario.trim().isNotEmpty)
+        'comentario': comentario.trim(),
+    });
+  }
+
+  /// Returns the average rating for a driver, or null if no ratings exist.
+  Future<double?> getDriverAverageRating(int driverId) async {
+    final rows = await _supabase
+        .schema('muevete')
+        .from('valoraciones_viaje')
+        .select('rating')
+        .eq('driver_id', driverId);
+    final list = List<Map<String, dynamic>>.from(rows);
+    if (list.isEmpty) return null;
+    final sum = list.fold<int>(0, (s, r) => s + (r['rating'] as int));
+    return sum / list.length;
+  }
+
+  /// Returns all ratings for a driver, enriched with the client's name.
+  Future<List<ValoracionModel>> getDriverRatings(int driverId) async {
+    final rows = await _supabase
+        .schema('muevete')
+        .from('valoraciones_viaje')
+        .select('*')
+        .eq('driver_id', driverId)
+        .order('created_at', ascending: false);
+
+    final result = <ValoracionModel>[];
+    for (final row in List<Map<String, dynamic>>.from(rows)) {
+      final enriched = Map<String, dynamic>.from(row);
+      // Fetch client name from muevete.users
+      try {
+        final userRow = await _supabase
+            .schema('muevete')
+            .from('users')
+            .select('name')
+            .eq('uuid', row['user_id'])
+            .maybeSingle();
+        enriched['user_name'] = userRow?['name'] as String?;
+      } catch (_) {}
+      result.add(ValoracionModel.fromJson(enriched));
+    }
+    return result;
   }
 
   /// Haversine formula to calculate distance in km between two lat/lon points.

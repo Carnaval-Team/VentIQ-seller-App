@@ -126,6 +126,21 @@ class TransportRequestService {
         data['vehicle_color'] = veh?['color'];
       }
 
+      // Fetch average rating from valoraciones_viaje
+      try {
+        final ratingRows = await _supabase
+            .schema('muevete')
+            .from('valoraciones_viaje')
+            .select('rating')
+            .eq('driver_id', driverId);
+        final ratingList = List<Map<String, dynamic>>.from(ratingRows);
+        if (ratingList.isNotEmpty) {
+          final sum =
+              ratingList.fold<int>(0, (s, r) => s + (r['rating'] as int));
+          data['driver_rating'] = sum / ratingList.length;
+        }
+      } catch (_) {}
+
       // Count completed trips: ofertas aceptadas where the solicitud is completada
       final tripRows = await _supabase
           .schema('muevete')

@@ -373,7 +373,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                           padding: const EdgeInsets.only(bottom: 12),
                           child: DriverOfferCard(
                             offer: offer,
-                            driverRating: 4.8,
+                            driverRating: offer.driverRating,
                             onAccept: () => _onAcceptOffer(offer),
                             onDecline: () {
                               context

@@ -600,6 +600,15 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
 
   // ── Navigation mode helpers ───────────────────────────────────────────
 
+  double _zoomForDistance(double distanceMeters) {
+    if (distanceMeters > 5000) return 13.0;
+    if (distanceMeters > 2000) return 14.0;
+    if (distanceMeters > 1000) return 15.0;
+    if (distanceMeters > 500) return 16.0;
+    if (distanceMeters > 200) return 17.0;
+    return 17.5;
+  }
+
   void _animateCamera(LatLng target) {
     try {
       final cam = _mapController.camera;
@@ -608,6 +617,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       final startRotation = cam.rotation;
 
       final targetRotation = _autoRotate ? -_heading : 0.0;
+      final targetZoom = _zoomForDistance(_distanceToTargetM);
 
       // Use ticker-based animation for smooth transitions
       const steps = 15;
@@ -632,6 +642,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
             (target.latitude - startCenter.latitude) * ease;
         final lon = startCenter.longitude +
             (target.longitude - startCenter.longitude) * ease;
+        final zoom = startZoom + (targetZoom - startZoom) * ease;
 
         double rot = startRotation;
         if (_autoRotate) {
@@ -645,7 +656,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
         try {
           _mapController.moveAndRotate(
             LatLng(lat, lon),
-            startZoom,
+            zoom,
             rot,
           );
         } catch (_) {}

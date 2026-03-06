@@ -13,13 +13,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_theme.dart';
 import '../../models/notification_model.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/transport_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../services/driver_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/routing_service.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/map_widget.dart';
+import '../../widgets/rating_dialog.dart';
 
 class RideConfirmedScreen extends StatefulWidget {
   const RideConfirmedScreen({super.key});
@@ -319,6 +322,11 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     if (requestId == null || _isCompleting) return;
     setState(() => _isCompleting = true);
     try {
+      // Capture IDs before resetTrip clears them
+      final viajeId = tp.activeViajeId;
+      final driverId = tp.acceptedOffer?.driverId;
+      final userId = context.read<AuthProvider>().user?.id;
+
       // Process wallet payment (client if wallet, driver commission always)
       await tp.completeRideWithPayment();
 
@@ -327,6 +335,27 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
           .from('solicitudes_transporte')
           .update({'estado': 'completada'})
           .eq('id', requestId);
+
+      // Show rating dialog before navigating away
+      if (mounted && viajeId != null && driverId != null && userId != null) {
+        final result = await showDialog<Map<String, dynamic>?>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const RatingDialog(),
+        );
+        if (result != null && mounted) {
+          try {
+            await DriverService().submitRating(
+              viajeId: viajeId,
+              driverId: driverId,
+              userId: userId,
+              rating: result['rating'] as int,
+              comentario: result['comentario'] as String?,
+            );
+          } catch (_) {}
+        }
+      }
+
       if (mounted) {
         tp.resetTrip();
         Navigator.of(context).popUntil((r) => r.isFirst);
@@ -894,7 +923,9 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                                   ),
                                   const SizedBox(width: 3),
                                   Text(
-                                    '—',
+                                    acceptedOffer?.driverRating != null
+                                        ? acceptedOffer!.driverRating!.toStringAsFixed(1)
+                                        : '—',
                                     style:
                                         GoogleFonts.plusJakartaSans(
                                       fontSize: 13,
@@ -1188,6 +1219,15 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     });
   }
 
+  double _zoomForDistance(double distanceMeters) {
+    if (distanceMeters > 5000) return 13.0;
+    if (distanceMeters > 2000) return 14.0;
+    if (distanceMeters > 1000) return 15.0;
+    if (distanceMeters > 500) return 16.0;
+    if (distanceMeters > 200) return 17.0;
+    return 17.5;
+  }
+
   void _animateCamera(LatLng target) {
     try {
       final cam = _mapController.camera;
@@ -1195,6 +1235,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       final startZoom = cam.zoom;
       final startRotation = cam.rotation;
       final targetRotation = _autoRotate ? -_heading : 0.0;
+      final targetZoom = _zoomForDistance(_distanceToDestinationM);
 
       const steps = 15;
       const duration = Duration(milliseconds: 450);
@@ -1214,6 +1255,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
             (target.latitude - startCenter.latitude) * ease;
         final lon = startCenter.longitude +
             (target.longitude - startCenter.longitude) * ease;
+        final zoom = startZoom + (targetZoom - startZoom) * ease;
         double rot = startRotation;
         if (_autoRotate) {
           var diff = targetRotation - startRotation;
@@ -1222,7 +1264,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
           rot = startRotation + diff * ease;
         }
         try {
-          _mapController.moveAndRotate(LatLng(lat, lon), startZoom, rot);
+          _mapController.moveAndRotate(LatLng(lat, lon), zoom, rot);
         } catch (_) {}
       });
     } catch (_) {
