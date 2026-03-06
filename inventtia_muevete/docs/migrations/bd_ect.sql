@@ -38,12 +38,23 @@ CREATE TABLE muevete.drivers (
   motivo text,
   uuid uuid,
   usado_actualmente boolean DEFAULT false,
-  tipo_documento character varying,
+  tipo_documento text,
   doc_frente_url text,
   doc_dorso_url text,
   CONSTRAINT drivers_pkey PRIMARY KEY (id),
   CONSTRAINT drivers_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id),
   CONSTRAINT drivers_vehiculo_fkey FOREIGN KEY (vehiculo) REFERENCES muevete.vehiculos(id)
+);
+CREATE TABLE muevete.notificaciones (
+  id bigint NOT NULL DEFAULT nextval('muevete.notificaciones_id_seq'::regclass),
+  user_uuid uuid NOT NULL,
+  tipo text NOT NULL,
+  titulo text NOT NULL,
+  mensaje text NOT NULL,
+  data jsonb DEFAULT '{}'::jsonb,
+  leida boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT notificaciones_pkey PRIMARY KEY (id)
 );
 CREATE TABLE muevete.ofertas_chofer (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -75,6 +86,16 @@ CREATE TABLE muevete.place (
   CONSTRAINT place_driver_fkey FOREIGN KEY (driver) REFERENCES muevete.drivers(id),
   CONSTRAINT place_vehiculo_id_fkey FOREIGN KEY (vehiculo_id) REFERENCES muevete.vehiculos(id)
 );
+CREATE TABLE muevete.push_tokens (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  user_uuid uuid NOT NULL,
+  device_token text NOT NULL,
+  platform text NOT NULL DEFAULT 'android'::text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT push_tokens_pkey PRIMARY KEY (id),
+  CONSTRAINT push_tokens_user_uuid_fkey FOREIGN KEY (user_uuid) REFERENCES auth.users(id)
+);
 CREATE TABLE muevete.solicitudes_transporte (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   user_id uuid,
@@ -91,7 +112,7 @@ CREATE TABLE muevete.solicitudes_transporte (
   expires_at timestamp with time zone,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   id_tipo_vehiculo bigint,
-  metodo_pago character varying DEFAULT 'efectivo'::character varying,
+  metodo_pago text DEFAULT 'efectivo'::text,
   CONSTRAINT solicitudes_transporte_pkey PRIMARY KEY (id),
   CONSTRAINT solicitudes_transporte_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
@@ -122,6 +143,14 @@ CREATE TABLE muevete.suscription_user (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   balance numeric DEFAULT 0,
   CONSTRAINT suscription_user_pkey PRIMARY KEY (id)
+);
+CREATE TABLE muevete.track_place_history (
+  id bigint NOT NULL DEFAULT nextval('muevete.track_place_history_id_seq'::regclass),
+  driver_id integer NOT NULL,
+  latitude double precision NOT NULL,
+  longitude double precision NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT track_place_history_pkey PRIMARY KEY (id)
 );
 CREATE TABLE muevete.transacciones_wallet (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -154,11 +183,24 @@ CREATE TABLE muevete.users (
   direccion text,
   pais text,
   photo_url text,
-  tipo_documento character varying,
+  tipo_documento text,
   doc_frente_url text,
   doc_dorso_url text,
   CONSTRAINT users_pkey PRIMARY KEY (user_id),
   CONSTRAINT clientes_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id)
+);
+CREATE TABLE muevete.valoraciones_viaje (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  viaje_id bigint NOT NULL UNIQUE,
+  driver_id bigint NOT NULL,
+  user_id uuid NOT NULL,
+  rating smallint NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  comentario text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT valoraciones_viaje_pkey PRIMARY KEY (id),
+  CONSTRAINT valoraciones_viaje_viaje_fkey FOREIGN KEY (viaje_id) REFERENCES muevete.viajes(id),
+  CONSTRAINT valoraciones_viaje_driver_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id),
+  CONSTRAINT valoraciones_viaje_user_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE muevete.vehicle_type (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -167,6 +209,7 @@ CREATE TABLE muevete.vehicle_type (
   precio_km_default numeric,
   status boolean,
   tiempo_min_por_km numeric,
+  precio_inside_sc numeric,
   CONSTRAINT vehicle_type_pkey PRIMARY KEY (id)
 );
 CREATE TABLE muevete.vehiculos (
@@ -182,7 +225,8 @@ CREATE TABLE muevete.vehiculos (
   descripcion character varying,
   color character varying,
   id_tipo_vehiculo bigint,
-  CONSTRAINT vehiculos_pkey PRIMARY KEY (id)
+  CONSTRAINT vehiculos_pkey PRIMARY KEY (id),
+  CONSTRAINT vehiculos_id_tipo_vehiculo_fkey FOREIGN KEY (id_tipo_vehiculo) REFERENCES muevete.vehicle_type(id)
 );
 CREATE TABLE muevete.viajes (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
