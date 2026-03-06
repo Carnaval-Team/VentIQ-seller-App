@@ -7,11 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
 import '../utils/constants.dart';
 import 'local_notification_service.dart';
+import 'offline_queue_service.dart';
 
 class BackgroundService {
   static final FlutterBackgroundService _service = FlutterBackgroundService();
@@ -142,6 +144,10 @@ Future<void> _onStart(ServiceInstance service) async {
   // Initialize local notifications inside the isolate.
   final localNotif = LocalNotificationService();
   await localNotif.init();
+
+  // Initialize offline queue for position caching.
+  final prefs = await SharedPreferences.getInstance();
+  final offlineQueue = OfflineQueueService(prefs);
 
   // Reuse Supabase if already initialized (same isolate as UI), otherwise init.
   SupabaseClient supabase;
@@ -376,6 +382,7 @@ Future<void> _onStart(ServiceInstance service) async {
         service: service,
         supabase: supabase,
         driverId: driverId,
+        queue: offlineQueue,
         onPosition: (lat, lon) {
           currentLat = lat;
           currentLon = lon;
@@ -496,50 +503,131 @@ void _startGpsTracking({
   required ServiceInstance service,
   required SupabaseClient supabase,
   required int? driverId,
+  required OfflineQueueService queue,
   required void Function(double lat, double lon) onPosition,
   required void Function(StreamSubscription<Position>) gpsSubscriptionSetter,
 }) {
-  final sub = Geolocator.getPositionStream(
-    locationSettings: AndroidSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 5,
-      intervalDuration: const Duration(seconds: 10),
-      foregroundNotificationConfig: const ForegroundNotificationConfig(
-        notificationTitle: 'Muevete - Ubicación activa',
-        notificationText: 'Rastreando tu ubicación en segundo plano',
-        enableWakeLock: true,
+  const notifConfig = ForegroundNotificationConfig(
+    notificationTitle: 'Muevete - Ubicación activa',
+    notificationText: 'Rastreando tu ubicación en segundo plano',
+    enableWakeLock: true,
+  );
+
+  void listenToStream(Stream<Position> stream) {
+    final sub = stream.listen((position) async {
+      final lat = position.latitude;
+      final lon = position.longitude;
+      onPosition(lat, lon);
+
+      // Send to UI
+      service.invoke('locationUpdate', {'lat': lat, 'lon': lon});
+
+      // Update foreground notification with timestamp
+      if (service is AndroidServiceInstance) {
+        final now = DateTime.now();
+        final time =
+            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+        service.setForegroundNotificationInfo(
+          title: 'Muevete - Conductor',
+          content: 'Rastreando ubicación · Última: $time',
+        );
+      }
+
+      // Update driver location in Supabase + track history
+      if (driverId != null) {
+        final online = await OfflineQueueService.hasInternetConnection();
+
+        if (online) {
+          try {
+            // Flush offline queue first
+            await _flushQueue(queue: queue, supabase: supabase);
+
+            // Write current position to place + track_place_history
+            await supabase
+                .schema('muevete')
+                .from('place')
+                .update({'latitude': lat, 'longitude': lon})
+                .eq('driver', driverId);
+
+            await supabase.schema('muevete').from('track_place_history').insert({
+              'driver_id': driverId,
+              'latitude': lat,
+              'longitude': lon,
+            });
+          } catch (e) {
+            debugPrint('[GPS] Write failed, enqueuing: $e');
+            queue.enqueue(
+              driverId: driverId,
+              latitude: lat,
+              longitude: lon,
+            );
+          }
+        } else {
+          queue.enqueue(
+            driverId: driverId,
+            latitude: lat,
+            longitude: lon,
+          );
+        }
+      }
+    });
+    gpsSubscriptionSetter(sub);
+  }
+
+  // Try high accuracy first, fallback to medium on error
+  try {
+    listenToStream(Geolocator.getPositionStream(
+      locationSettings: AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+        intervalDuration: const Duration(seconds: 10),
+        foregroundNotificationConfig: notifConfig,
       ),
-    ),
-  ).listen((position) async {
-    final lat = position.latitude;
-    final lon = position.longitude;
-    onPosition(lat, lon);
+    ));
+  } catch (e) {
+    debugPrint('[GPS] High accuracy failed, falling back to medium: $e');
+    listenToStream(Geolocator.getPositionStream(
+      locationSettings: AndroidSettings(
+        accuracy: LocationAccuracy.medium,
+        distanceFilter: 10,
+        intervalDuration: const Duration(seconds: 10),
+        foregroundNotificationConfig: notifConfig,
+      ),
+    ));
+  }
+}
 
-    // Send to UI
-    service.invoke('locationUpdate', {'lat': lat, 'lon': lon});
+/// Flush offline queue to Supabase in chunks of 50.
+/// Uses peek → send → clear pattern for safety.
+Future<void> _flushQueue({
+  required OfflineQueueService queue,
+  required SupabaseClient supabase,
+}) async {
+  if (!queue.hasPending) return;
 
-    // Update foreground notification with timestamp
-    if (service is AndroidServiceInstance) {
-      final now = DateTime.now();
-      final time = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-      service.setForegroundNotificationInfo(
-        title: 'Muevete - Conductor',
-        content: 'Rastreando ubicación · Última: $time',
-      );
-    }
+  final entries = queue.peekAll();
+  debugPrint('[GPS] Flushing ${entries.length} queued positions');
 
-    // Update driver location in Supabase
-    if (driverId != null) {
-      try {
-        await supabase
-            .schema('muevete')
-            .from('place')
-            .update({'latitude': lat, 'longitude': lon})
-            .eq('driver', driverId);
-      } catch (_) {}
-    }
-  });
-  gpsSubscriptionSetter(sub);
+  const chunkSize = 50;
+  for (int i = 0; i < entries.length; i += chunkSize) {
+    final chunk = entries.sublist(
+      i,
+      i + chunkSize > entries.length ? entries.length : i + chunkSize,
+    );
+    final rows = chunk
+        .map((e) => {
+              'driver_id': e['driver_id'],
+              'latitude': e['latitude'],
+              'longitude': e['longitude'],
+            })
+        .toList();
+
+    await supabase.schema('muevete').from('track_place_history').insert(rows);
+  }
+
+  // All chunks sent successfully — clear the queue
+  queue.clear();
+  debugPrint('[GPS] Queue flushed successfully');
 }
 
 /// Haversine distance in km.
