@@ -91,6 +91,11 @@ class AppDrawer extends StatelessWidget {
                       title: 'Planes',
                       route: '/configuracion',
                     ),
+                    _DrawerItem(
+                      icon: Icons.support_agent,
+                      title: 'Agentes',
+                      route: '/agentes',
+                    ),
                   ],
                 ),
 
@@ -327,7 +332,9 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/productos-carnaval-inventtia' ||
                 item.route == '/pago-proveedores' ||
                 item.route == '/control-flota' ||
-                item.route.startsWith('/muevete/')) {
+                item.route.startsWith('/muevete/') ||
+                item.route == '/agentes' ||
+                item.route == '/ingresos-distribucion') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas
