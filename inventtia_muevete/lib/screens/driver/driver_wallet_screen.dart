@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../config/app_theme.dart';
 import '../../models/wallet_transaction_model.dart';
 import '../../providers/wallet_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../services/profile_photo_service.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/wallet_balance_card.dart';
 import '../../widgets/transaction_list_item.dart';
@@ -49,173 +51,471 @@ class _DriverWalletScreenState extends State<DriverWalletScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: isDark ? AppTheme.darkSurface : Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: Text(
-            'Recargar Billetera',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: isDark ? Colors.white : Colors.black87,
-            ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Ingresa el monto a recargar. Se aplica una comisión del 11%.',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 14,
-                  color: isDark ? Colors.white60 : Colors.grey[600],
-                ),
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            final parsed = double.tryParse(amountController.text);
+            final totalPagar =
+                parsed != null && parsed > 0 ? parsed * 1.11 : null;
+
+            return AlertDialog(
+              backgroundColor:
+                  isDark ? AppTheme.darkSurface : Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
               ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: amountController,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                autofocus: true,
+              title: Text(
+                'Recargar Billetera',
                 style: GoogleFonts.plusJakartaSans(
-                  fontSize: 24,
+                  fontSize: 20,
                   fontWeight: FontWeight.w700,
                   color: isDark ? Colors.white : Colors.black87,
                 ),
-                textAlign: TextAlign.center,
-                decoration: InputDecoration(
-                  prefixText: '\$ ',
-                  prefixStyle: GoogleFonts.plusJakartaSans(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.primaryColor,
-                  ),
-                  hintText: '0.00',
-                  hintStyle: GoogleFonts.plusJakartaSans(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w400,
-                    color: isDark ? Colors.white24 : Colors.grey[400],
-                  ),
-                  filled: true,
-                  fillColor: isDark ? AppTheme.darkCard : Colors.grey[100],
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: isDark ? AppTheme.darkBorder : Colors.grey[300]!,
-                    ),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: isDark ? AppTheme.darkBorder : Colors.grey[300]!,
-                    ),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: AppTheme.primaryColor,
-                      width: 2,
-                    ),
-                  ),
-                ),
               ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [5, 10, 20, 50].map((amount) {
-                  return GestureDetector(
-                    onTap: () {
-                      amountController.text = amount.toString();
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: isDark ? AppTheme.darkCard : Colors.grey[200],
-                        borderRadius: BorderRadius.circular(8),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Ingresa el monto a acreditar. Se aplica 11% de comision.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      color: isDark ? Colors.white60 : Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: amountController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                    autofocus: true,
+                    onChanged: (_) => setDialogState(() {}),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                      prefixText: '\$ ',
+                      prefixStyle: GoogleFonts.plusJakartaSans(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.primaryColor,
                       ),
-                      child: Text(
-                        '\$$amount',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white70 : Colors.grey[700],
+                      hintText: '0.00',
+                      hintStyle: GoogleFonts.plusJakartaSans(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w400,
+                        color:
+                            isDark ? Colors.white24 : Colors.grey[400],
+                      ),
+                      filled: true,
+                      fillColor: isDark
+                          ? AppTheme.darkCard
+                          : Colors.grey[100],
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: isDark
+                              ? AppTheme.darkBorder
+                              : Colors.grey[300]!,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: isDark
+                              ? AppTheme.darkBorder
+                              : Colors.grey[300]!,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(
+                          color: AppTheme.primaryColor,
+                          width: 2,
                         ),
                       ),
                     ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 8),
-              Builder(builder: (ctx) {
-                final parsed = double.tryParse(amountController.text);
-                if (parsed != null && parsed > 0) {
-                  final net = parsed * 0.89;
-                  return Text(
-                    'Recibirás: \$${net.toStringAsFixed(2)}',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 12,
-                      color: AppTheme.success,
+                  ),
+                  if (totalPagar != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? AppTheme.darkCard
+                            : AppTheme.primaryColor
+                                .withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            'Debes pagar:',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              color: isDark
+                                  ? Colors.white60
+                                  : Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '\$${totalPagar.toStringAsFixed(2)}',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.primaryColor,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '(\$${parsed!.toStringAsFixed(2)} recarga + 11% comision)',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              color: isDark
+                                  ? Colors.white38
+                                  : Colors.grey[500],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  );
-                }
-                return const SizedBox.shrink();
-              }),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text(
-                'Cancelar',
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text(
+                    'Cancelar',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontWeight: FontWeight.w600,
+                      color:
+                          isDark ? Colors.white54 : Colors.grey[600],
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    final amount =
+                        double.tryParse(amountController.text);
+                    if (amount != null && amount > 0) {
+                      Navigator.pop(dialogContext);
+                      final driverId = _driverId;
+                      if (driverId != null) {
+                        final txId = await context
+                            .read<WalletProvider>()
+                            .addDriverFunds(driverId, amount);
+                        if (mounted && txId != null) {
+                          _showVerificacionDialog(txId, amount);
+                        } else if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error al recargar'),
+                              backgroundColor: AppTheme.error,
+                            ),
+                          );
+                        }
+                      }
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    'Confirmar',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showVerificacionDialog(int transaccionId, double montoRecarga) {
+    final isDark = context.read<ThemeProvider>().isDark;
+    final detalleController = TextEditingController();
+    String? _pickedImageName;
+    XFile? _pickedFile;
+    final totalPagar = montoRecarga * 1.11;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              backgroundColor:
+                  isDark ? AppTheme.darkSurface : Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: Text(
+                'Verificar Recarga',
                 style: GoogleFonts.plusJakartaSans(
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white54 : Colors.grey[600],
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : Colors.black87,
                 ),
               ),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final amount = double.tryParse(amountController.text);
-                if (amount != null && amount > 0) {
-                  Navigator.pop(dialogContext);
-                  final driverId = _driverId;
-                  if (driverId != null) {
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? AppTheme.darkCard
+                            : AppTheme.primaryColor
+                                .withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            'Importe a pagar:',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              color: isDark
+                                  ? Colors.white60
+                                  : Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '\$${totalPagar.toStringAsFixed(2)}',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.primaryColor,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '(\$${montoRecarga.toStringAsFixed(2)} recarga + 11% comision)',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              color: isDark
+                                  ? Colors.white38
+                                  : Colors.grey[500],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Sube la foto de tu comprobante de pago y agrega una referencia.',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        color:
+                            isDark ? Colors.white60 : Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    GestureDetector(
+                      onTap: () async {
+                        final picker = ImagePicker();
+                        final file = await picker.pickImage(
+                          source: ImageSource.gallery,
+                          imageQuality: 85,
+                          maxWidth: 1024,
+                        );
+                        if (file != null) {
+                          setDialogState(() {
+                            _pickedFile = file;
+                            _pickedImageName = file.name;
+                          });
+                        }
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 16, horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? AppTheme.darkCard
+                              : Colors.grey[100],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _pickedImageName != null
+                                ? AppTheme.success
+                                : (isDark
+                                    ? AppTheme.darkBorder
+                                    : Colors.grey[300]!),
+                            width: _pickedImageName != null ? 2 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              _pickedImageName != null
+                                  ? Icons.check_circle
+                                  : Icons.camera_alt_outlined,
+                              color: _pickedImageName != null
+                                  ? AppTheme.success
+                                  : (isDark
+                                      ? Colors.white38
+                                      : Colors.grey[500]),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                _pickedImageName ?? 'Subir comprobante',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: _pickedImageName != null
+                                      ? AppTheme.success
+                                      : (isDark
+                                          ? Colors.white54
+                                          : Colors.grey[600]),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: detalleController,
+                      maxLines: 2,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Referencia (ej: Transferencia #12345)',
+                        hintStyle: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          color: isDark
+                              ? Colors.white24
+                              : Colors.grey[400],
+                        ),
+                        filled: true,
+                        fillColor: isDark
+                            ? AppTheme.darkCard
+                            : Colors.grey[100],
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: isDark
+                                ? AppTheme.darkBorder
+                                : Colors.grey[300]!,
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: isDark
+                                ? AppTheme.darkBorder
+                                : Colors.grey[300]!,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: AppTheme.primaryColor,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text(
+                    'Cancelar',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontWeight: FontWeight.w600,
+                      color:
+                          isDark ? Colors.white54 : Colors.grey[600],
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    final detalle = detalleController.text.trim();
+                    if (detalle.isEmpty && _pickedFile == null) return;
+                    Navigator.pop(dialogContext);
+
+                    String? imagenUrl;
+                    if (_pickedFile != null) {
+                      try {
+                        final photoService = ProfilePhotoService();
+                        final bytes =
+                            await photoService.compress(_pickedFile!);
+                        imagenUrl = await photoService.upload(
+                          'verificacion_$transaccionId',
+                          bytes,
+                        );
+                      } catch (_) {}
+                    }
+
                     final success = await context
                         .read<WalletProvider>()
-                        .addDriverFunds(driverId, amount);
+                        .uploadVerificacion(
+                          transaccionId: transaccionId,
+                          imagenUrl: imagenUrl,
+                          detalleTexto:
+                              detalle.isNotEmpty ? detalle : null,
+                        );
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
                             success
-                                ? 'Recarga exitosa. Se acreditaron \$${(amount * 0.89).toStringAsFixed(2)}'
-                                : 'Error al recargar',
+                                ? 'Verificacion enviada. Tu recarga sera revisada.'
+                                : 'Error al enviar verificacion.',
                           ),
-                          backgroundColor:
-                              success ? AppTheme.success : AppTheme.error,
+                          backgroundColor: success
+                              ? AppTheme.success
+                              : AppTheme.error,
                         ),
                       );
                     }
-                  }
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryColor,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    'Enviar',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              ),
-              child: Text(
-                'Confirmar',
-                style: GoogleFonts.plusJakartaSans(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         );
       },
     );
@@ -319,67 +619,6 @@ class _DriverWalletScreenState extends State<DriverWalletScreen> {
                     onAddFunds: _showAddFundsDialog,
                     onWithdraw: () {},
                   ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SizedBox(
-                          height: 52,
-                          child: ElevatedButton.icon(
-                            onPressed: _showAddFundsDialog,
-                            icon: const Icon(Icons.add, size: 20),
-                            label: Text(
-                              'Recargar',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primaryColor,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              elevation: 0,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: SizedBox(
-                          height: 52,
-                          child: OutlinedButton.icon(
-                            onPressed: () {},
-                            icon: Icon(
-                              Icons.arrow_upward,
-                              size: 20,
-                              color: isDark ? Colors.white : Colors.black87,
-                            ),
-                            label: Text(
-                              'Retirar',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: isDark ? Colors.white : Colors.black87,
-                              ),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              side: BorderSide(
-                                color: isDark
-                                    ? AppTheme.darkBorder
-                                    : Colors.grey[400]!,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
                   const SizedBox(height: 28),
                   Text(
                     'Historial de Transacciones',
@@ -399,7 +638,8 @@ class _DriverWalletScreenState extends State<DriverWalletScreen> {
                           color: AppTheme.error.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: AppTheme.error.withValues(alpha: 0.3),
+                            color:
+                                AppTheme.error.withValues(alpha: 0.3),
                           ),
                         ),
                         child: Row(
@@ -426,21 +666,25 @@ class _DriverWalletScreenState extends State<DriverWalletScreen> {
                   if (walletProvider.transactions.isEmpty &&
                       walletProvider.error == null)
                     Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 40),
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 40),
                       child: Column(
                         children: [
                           Icon(
                             Icons.receipt_long_outlined,
                             size: 56,
-                            color: isDark ? Colors.white24 : Colors.grey[400],
+                            color: isDark
+                                ? Colors.white24
+                                : Colors.grey[400],
                           ),
                           const SizedBox(height: 12),
                           Text(
                             'No hay transacciones aun',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 15,
-                              color:
-                                  isDark ? Colors.white54 : Colors.grey[600],
+                              color: isDark
+                                  ? Colors.white54
+                                  : Colors.grey[600],
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -448,8 +692,9 @@ class _DriverWalletScreenState extends State<DriverWalletScreen> {
                             'Recarga tu billetera para empezar.',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 13,
-                              color:
-                                  isDark ? Colors.white38 : Colors.grey[500],
+                              color: isDark
+                                  ? Colors.white38
+                                  : Colors.grey[500],
                             ),
                           ),
                         ],
@@ -460,21 +705,34 @@ class _DriverWalletScreenState extends State<DriverWalletScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Padding(
-                          padding: const EdgeInsets.only(top: 8, bottom: 10),
+                          padding: const EdgeInsets.only(
+                              top: 8, bottom: 10),
                           child: Text(
                             entry.key,
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
-                              color:
-                                  isDark ? Colors.white54 : Colors.grey[600],
+                              color: isDark
+                                  ? Colors.white54
+                                  : Colors.grey[600],
                             ),
                           ),
                         ),
                         ...entry.value.map((tx) {
                           return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: TransactionListItem(transaction: tx),
+                            padding:
+                                const EdgeInsets.only(bottom: 8),
+                            child: TransactionListItem(
+                              transaction: tx,
+                              onVerificar: tx.estado ==
+                                          EstadoTransaccion
+                                              .pendiente &&
+                                      tx.id != null
+                                  ? () =>
+                                      _showVerificacionDialog(
+                                          tx.id!, tx.monto ?? 0)
+                                  : null,
+                            ),
                           );
                         }),
                       ],

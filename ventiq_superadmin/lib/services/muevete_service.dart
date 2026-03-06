@@ -189,6 +189,77 @@ class MueveteService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
+  /// Fetches the verification record for a transaction.
+  static Future<Map<String, dynamic>?> getVerificacion(int transaccionId) async {
+    final row = await _supabase
+        .schema('muevete')
+        .from('verificacion_operacion_recarga')
+        .select('*')
+        .eq('transaccion_id', transaccionId)
+        .maybeSingle();
+    return row;
+  }
+
+  /// Approves a pending recharge: sets estado = 'completada' and credits the balance.
+  static Future<void> approveRecarga(int transaccionId) async {
+    // Get the transaction
+    final tx = await _supabase
+        .schema('muevete')
+        .from('transacciones_wallet')
+        .select('*')
+        .eq('id', transaccionId)
+        .single();
+
+    final monto = (tx['monto'] as num).toDouble();
+    final userId = tx['user_id'] as String?;
+    final driverId = tx['driver_id'] as int?;
+
+    // Update estado
+    await _supabase
+        .schema('muevete')
+        .from('transacciones_wallet')
+        .update({'estado': 'completada'})
+        .eq('id', transaccionId);
+
+    // Credit the balance
+    if (userId != null) {
+      final wallet = await _supabase
+          .schema('muevete')
+          .from('suscription_user')
+          .select('balance')
+          .eq('user_id', userId)
+          .single();
+      final newBalance = ((wallet['balance'] as num?)?.toDouble() ?? 0) + monto;
+      await _supabase
+          .schema('muevete')
+          .from('suscription_user')
+          .update({'balance': newBalance})
+          .eq('user_id', userId);
+    } else if (driverId != null) {
+      final wallet = await _supabase
+          .schema('muevete')
+          .from('wallet_drivers')
+          .select('balance')
+          .eq('driver_id', driverId)
+          .single();
+      final newBalance = ((wallet['balance'] as num?)?.toDouble() ?? 0) + monto;
+      await _supabase
+          .schema('muevete')
+          .from('wallet_drivers')
+          .update({'balance': newBalance})
+          .eq('driver_id', driverId);
+    }
+  }
+
+  /// Rejects a pending recharge: sets estado = 'cancelada'.
+  static Future<void> rejectRecarga(int transaccionId) async {
+    await _supabase
+        .schema('muevete')
+        .from('transacciones_wallet')
+        .update({'estado': 'cancelada'})
+        .eq('id', transaccionId);
+  }
+
   // ─── KYC & DOCUMENT VERIFICATION ─────────────────────────────────────
 
   /// Fetches drivers pending KYC review (revisado = false).
