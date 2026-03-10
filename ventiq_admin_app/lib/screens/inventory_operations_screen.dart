@@ -1510,9 +1510,17 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   /// Build the list of adjustment details
   Widget _buildAdjustmentDetailsList(List<dynamic> details) {
+    // Ordenar detalles alfabéticamente por nombre de producto
+    final sortedDetails = List<dynamic>.from(details);
+    sortedDetails.sort((a, b) {
+      final nameA = (a['producto_nombre'] ?? 'Producto').toString().toLowerCase();
+      final nameB = (b['producto_nombre'] ?? 'Producto').toString().toLowerCase();
+      return nameA.compareTo(nameB);
+    });
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: details.map((detail) {
+      children: sortedDetails.map((detail) {
         final cantidadAnterior = detail['cantidad_anterior'] ?? 0;
         final cantidadNueva = detail['cantidad_nueva'] ?? 0;
         final diferencia = detail['diferencia'] ?? 0;
@@ -1869,6 +1877,14 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   }
 
   Widget _buildProductsList(List<dynamic> items) {
+    // Ordenar productos alfabéticamente por nombre
+    final sortedItems = List<dynamic>.from(items);
+    sortedItems.sort((a, b) {
+      final nameA = _getProductName(a as Map<String, dynamic>).toLowerCase();
+      final nameB = _getProductName(b as Map<String, dynamic>).toLowerCase();
+      return nameA.compareTo(nameB);
+    });
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1894,7 +1910,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           ),
           child: Column(
             children:
-                items.asMap().entries.map((entry) {
+                sortedItems.asMap().entries.map((entry) {
                   int index = entry.key;
                   Map<String, dynamic> item = entry.value;
 
