@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_compass_v2/flutter_compass_v2.dart';
+import '../../utils/smooth_compass_mixin.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -32,7 +32,10 @@ class ActiveRideScreen extends StatefulWidget {
 }
 
 class _ActiveRideScreenState extends State<ActiveRideScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, SmoothCompassMixin {
+  @override
+  MapController get compassMapController => _mapController;
+
   final MapController _mapController = MapController();
   final RoutingService _routingService = RoutingService();
   final DriverService _driverService = DriverService();
@@ -63,8 +66,6 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   bool _isRecalculating = false;
   Timer? _routeRefreshTimer;
   double _distanceToTargetM = double.infinity;
-  double _heading = 0.0;
-  StreamSubscription<CompassEvent>? _compassSub;
   bool _isCompletingAction = false;
 
   static const double _completionThresholdM = 30.0;
@@ -72,7 +73,6 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   RealtimeChannel? _solicitudChannel;
 
   // Navigation mode state
-  bool _autoRotate = false;
   bool _tilt3D = false;
   double _currentTilt = 0.0; // animated 0→1
 
@@ -616,7 +616,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       final startZoom = cam.zoom;
       final startRotation = cam.rotation;
 
-      final targetRotation = _autoRotate ? -_heading : 0.0;
+      final targetRotation = autoRotate ? -smoothHeading : 0.0;
       final targetZoom = _zoomForDistance(_distanceToTargetM);
 
       // Use ticker-based animation for smooth transitions
@@ -645,7 +645,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
         final zoom = startZoom + (targetZoom - startZoom) * ease;
 
         double rot = startRotation;
-        if (_autoRotate) {
+        if (autoRotate) {
           // Shortest path rotation
           var diff = targetRotation - startRotation;
           while (diff > 180) diff -= 360;
@@ -668,30 +668,6 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
         _mapController.move(target, _mapController.camera.zoom);
       } catch (_) {}
     }
-  }
-
-  void _toggleAutoRotate() {
-    setState(() {
-      _autoRotate = !_autoRotate;
-      if (_autoRotate) {
-        _compassSub = FlutterCompass.events?.listen((event) {
-          final h = event.heading;
-          if (h == null || !mounted) return;
-          setState(() => _heading = h);
-          if (_autoRotate) {
-            try {
-              _mapController.rotate(-h);
-            } catch (_) {}
-          }
-        });
-      } else {
-        _compassSub?.cancel();
-        _compassSub = null;
-        try {
-          _mapController.rotate(0);
-        } catch (_) {}
-      }
-    });
   }
 
   void _toggle3DTilt() {
@@ -723,7 +699,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
 
   @override
   void dispose() {
-    _compassSub?.cancel();
+    disposeCompass();
     _pulseController?.dispose();
     _mapController.dispose();
     _routeRefreshTimer?.cancel();
@@ -752,26 +728,26 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     markers.add(
       Marker(
         point: driverLocation,
-        width: 46,
-        height: 46,
-        rotate: _autoRotate,
+        width: 30,
+        height: 30,
+        rotate: autoRotate,
         child: Container(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: AppTheme.primaryColor,
-            border: Border.all(color: AppTheme.markerBorder(isDark), width: 3),
+            border: Border.all(color: AppTheme.markerBorder(isDark), width: 2),
             boxShadow: [
               BoxShadow(
                 color: AppTheme.primaryColor.withValues(alpha: 0.4),
-                blurRadius: 10,
+                blurRadius: 8,
                 spreadRadius: 1,
               ),
             ],
           ),
           child: Icon(
-            _autoRotate ? Icons.navigation : Icons.directions_car,
+            autoRotate ? Icons.navigation : Icons.directions_car,
             color: Colors.white,
-            size: 22,
+            size: 16,
           ),
         ),
       ),
@@ -877,12 +853,12 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
             child: Column(
               children: [
                 _buildNavModeButton(
-                  icon: _autoRotate
+                  icon: autoRotate
                       ? Icons.explore
                       : Icons.explore_off,
                   label: 'Rotación',
-                  isActive: _autoRotate,
-                  onPressed: _toggleAutoRotate,
+                  isActive: autoRotate,
+                  onPressed: toggleAutoRotate,
                   isDark: isDark,
                 ),
                 const SizedBox(height: 10),

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_compass_v2/flutter_compass_v2.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
@@ -16,8 +15,13 @@ import '../../providers/location_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/driver_service.dart';
 import '../../services/routing_service.dart';
+import '../../services/completion_sync_service.dart';
 import '../../utils/helpers.dart';
+import '../../utils/smooth_compass_mixin.dart';
 import '../../widgets/map_widget.dart';
+import '../../models/stop_model.dart';
+import '../../services/stop_service.dart';
+import '../../widgets/qr_scanner_dialog.dart';
 
 /// Driver's active trip screen.
 /// Shows:
@@ -47,10 +51,14 @@ class ActiveTripScreen extends StatefulWidget {
   State<ActiveTripScreen> createState() => _ActiveTripScreenState();
 }
 
-class _ActiveTripScreenState extends State<ActiveTripScreen> {
+class _ActiveTripScreenState extends State<ActiveTripScreen>
+    with SmoothCompassMixin {
   final DriverService _driverService = DriverService();
   final RoutingService _routingService = RoutingService();
   final MapController _mapController = MapController();
+
+  @override
+  MapController get compassMapController => _mapController;
   final SupabaseClient _supabase = Supabase.instance.client;
 
   // Route from driver → destination
@@ -72,9 +80,18 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   // Whether the viaje is still active (completado == false)
   bool _viajeActivo = true;
 
-  // Navigation mode state
-  bool _autoRotate = false;
-  StreamSubscription<CompassEvent>? _compassSub;
+  // Navigation instructions
+  List<RouteStep> _steps = [];
+  String _nextInstruction = '';
+  String _nextManeuverIcon = 'straight';
+  double _nextStepDistanceM = 0;
+
+  // Stop (parada) state
+  final StopService _stopService = StopService();
+  StopModel? _activeStop;
+  Timer? _stopTimer;
+  int _stopElapsedSeconds = 0;
+
 
   @override
   void initState() {
@@ -82,13 +99,15 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startTracking();
       _subscribeViajeRealtime();
+      _checkIfAlreadyCompleted();
     });
   }
 
   @override
   void dispose() {
-    _compassSub?.cancel();
+    disposeCompass();
     _locationTimer?.cancel();
+    _stopTimer?.cancel();
     if (_viajeChannel != null) {
       try {
         _supabase.removeChannel(_viajeChannel!);
@@ -145,6 +164,44 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
             ) >=
             _recalcThresholdKm) {
       await _calculateRoute(driverPos);
+    } else {
+      // Still update instruction even without recalculating route
+      _updateNextInstruction(driverPos);
+    }
+  }
+
+  void _updateNextInstruction(LatLng driverPos) {
+    if (_steps.isEmpty) return;
+    // Find the nearest upcoming step (skip 'depart')
+    RouteStep? best;
+    double bestDist = double.infinity;
+    for (final step in _steps) {
+      if (step.maneuverType == 'depart') continue;
+      final d = _haversine(
+            driverPos.latitude,
+            driverPos.longitude,
+            step.location.latitude,
+            step.location.longitude,
+          ) *
+          1000; // km → m
+      // Only show steps ahead (within 500m)
+      if (d < bestDist && d < 500) {
+        bestDist = d;
+        best = step;
+      }
+    }
+    if (best != null && mounted) {
+      setState(() {
+        _nextInstruction = best!.instruction;
+        _nextStepDistanceM = bestDist;
+        _nextManeuverIcon =
+            RoutingService.maneuverIcon(best.maneuverType, best.modifier);
+      });
+    } else if (mounted && _nextInstruction.isNotEmpty) {
+      setState(() {
+        _nextInstruction = '';
+        _nextStepDistanceM = 0;
+      });
     }
   }
 
@@ -161,7 +218,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         _routePolyline = result.polyline;
         _remainingDistanceKm = result.totalDistance / 1000;
         _remainingMinutes = result.totalDuration / 60;
+        _steps = result.steps;
       });
+      _updateNextInstruction(from);
 
       // Center map on midpoint between driver and destination
       final midLat = (from.latitude + dest.latitude) / 2;
@@ -188,6 +247,22 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     }
   }
 
+  // ── Check if viaje was already completed (e.g. by client) ───────────────
+
+  Future<void> _checkIfAlreadyCompleted() async {
+    try {
+      final row = await _supabase
+          .schema('muevete')
+          .from('viajes')
+          .select('completado')
+          .eq('id', widget.viajeId)
+          .maybeSingle();
+      if (row != null && (row['completado'] as bool? ?? false) && mounted) {
+        setState(() => _viajeActivo = false);
+      }
+    } catch (_) {}
+  }
+
   // ── Realtime subscription on viajes ──────────────────────────────────────
 
   void _subscribeViajeRealtime() {
@@ -206,8 +281,104 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
 
   // ── Complete ride ─────────────────────────────────────────────────────────
 
+  // ── Stop (parada) management ────────────────────────────────────────────
+
+  Future<void> _toggleStop() async {
+    if (_activeStop != null) {
+      // End the current stop
+      try {
+        await _stopService.endStop(_activeStop!.id!);
+        _stopTimer?.cancel();
+        setState(() {
+          _activeStop = null;
+          _stopElapsedSeconds = 0;
+        });
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error al salir de parada: $e'), backgroundColor: AppTheme.error),
+          );
+        }
+      }
+    } else {
+      // Start a new stop
+      final loc = context.read<LocationProvider>().locationOrDefault;
+      final authProvider = context.read<AuthProvider>();
+      final rawId = authProvider.driverProfile?['id'];
+      final driverId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+      if (driverId == null) return;
+
+      try {
+        final stop = await _stopService.createStop(
+          widget.viajeId, driverId, loc.latitude, loc.longitude,
+        );
+        setState(() {
+          _activeStop = stop;
+          _stopElapsedSeconds = 0;
+        });
+        _stopTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (mounted) setState(() => _stopElapsedSeconds++);
+        });
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error al agregar parada: $e'), backgroundColor: AppTheme.error),
+          );
+        }
+      }
+    }
+  }
+
+  String _formatStopTime(int seconds) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
   Future<void> _completeTrip() async {
     if (_isCompleting) return;
+
+    // End active stop if any
+    if (_activeStop != null) {
+      try {
+        await _stopService.endStop(_activeStop!.id!);
+        _stopTimer?.cancel();
+        setState(() {
+          _activeStop = null;
+          _stopElapsedSeconds = 0;
+        });
+      } catch (_) {}
+    }
+
+    // Get total wait time
+    final totalWaitSeconds = await _stopService.getTotalWaitSeconds(widget.viajeId);
+
+    // Fetch precio_espera_minuto from vehicle type
+    double precioEsperaMinuto = 0;
+    try {
+      final viajeRow = await _supabase
+          .schema('muevete')
+          .from('viajes')
+          .select('vehiculo')
+          .eq('id', widget.viajeId)
+          .maybeSingle();
+      if (viajeRow != null && viajeRow['vehiculo'] != null) {
+        final vtRow = await _supabase
+            .schema('muevete')
+            .from('vehicle_type')
+            .select('precio_espera_minuto')
+            .eq('tipo', viajeRow['vehiculo'])
+            .maybeSingle();
+        if (vtRow != null) {
+          precioEsperaMinuto = (vtRow['precio_espera_minuto'] as num?)?.toDouble() ?? 0;
+        }
+      }
+    } catch (_) {}
+
+    final waitMinutes = (totalWaitSeconds / 60).ceil();
+    final cobroEspera = waitMinutes * precioEsperaMinuto;
+
+    if (!mounted) return;
     final isDark = context.read<ThemeProvider>().isDark;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -216,8 +387,36 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         title: Text('Completar viaje',
             style: GoogleFonts.plusJakartaSans(
                 color: AppTheme.textPrimary(isDark), fontWeight: FontWeight.w700)),
-        content: Text('¿Confirmas que llegaste al destino?',
-            style: GoogleFonts.plusJakartaSans(color: AppTheme.textSecondary(isDark))),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('¿Confirmas que llegaste al destino?',
+                style: GoogleFonts.plusJakartaSans(color: AppTheme.textSecondary(isDark))),
+            if (totalWaitSeconds > 0) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppTheme.warning.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Tiempo de espera: $waitMinutes min',
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13, color: AppTheme.textPrimary(isDark), fontWeight: FontWeight.w600)),
+                    if (precioEsperaMinuto > 0)
+                      Text('Cobro espera: \$${cobroEspera.toStringAsFixed(2)}',
+                          style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13, color: AppTheme.warning, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -241,18 +440,18 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       // Mark viaje completado
       await _driverService.updateTripStatus(widget.viajeId, completado: true);
 
-      // Also mark the solicitud completada if we have the id from provider
       final viajeId = widget.viajeId;
-      // Find solicitud linked to this viaje via transport provider
       if (mounted) {
-        // Mark solicitud completada via Supabase directly
-        // (the viaje row has user field but not solicitud_id directly)
-        // The solicitud will be updated by the client's "completar" flow.
-        // Driver completing: we just mark viaje.completado = true + estado = false (done).
+        // Store wait charge in viaje and mark complete
         await _supabase
             .schema('muevete')
             .from('viajes')
-            .update({'completado': true, 'estado': false})
+            .update({
+              'completado': true,
+              'estado': false,
+              'tiempo_espera_segundos': totalWaitSeconds,
+              'cobro_espera': cobroEspera,
+            })
             .eq('id', viajeId);
       }
 
@@ -270,6 +469,69 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
           content: Text('Error: $e'),
           backgroundColor: AppTheme.error,
         ));
+      }
+    } finally {
+      if (mounted) setState(() => _isCompleting = false);
+    }
+  }
+
+  // ── QR scan for offline completion ──────────────────────────────────────
+
+  Future<void> _scanQrCompletion() async {
+    final data = await showDialog<Map<String, dynamic>?>(
+      context: context,
+      builder: (_) => const QrScannerDialog(),
+    );
+    if (data == null || !mounted) return;
+
+    // Validate the viaje matches
+    final qrViajeId = data['viaje_id'] as int;
+    if (qrViajeId != widget.viajeId) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Este QR no corresponde a este viaje',
+            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+        backgroundColor: AppTheme.error,
+      ));
+      return;
+    }
+
+    setState(() => _isCompleting = true);
+    try {
+      // Try online first
+      await _driverService.updateTripStatus(widget.viajeId, completado: true);
+      await _supabase
+          .schema('muevete')
+          .from('viajes')
+          .update({'completado': true, 'estado': false})
+          .eq('id', widget.viajeId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('¡Viaje completado!',
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+          backgroundColor: AppTheme.success,
+        ));
+        Navigator.of(context).popUntil((r) => r.isFirst);
+      }
+    } catch (_) {
+      // Offline: enqueue for later sync
+      await CompletionSyncService.enqueueCompletion(
+        solicitudId: data['sol_id'] as int,
+        viajeId: qrViajeId,
+        driverId: data['driver_id'] as int,
+        userId: data['user_id'] as String,
+        precio: (data['precio'] as num).toDouble(),
+        metodoPago: data['metodo'] as String,
+        role: 'driver',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Viaje completado localmente. Se sincronizará al tener conexión.',
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+          backgroundColor: AppTheme.warning,
+          duration: const Duration(seconds: 4),
+        ));
+        Navigator.of(context).popUntil((r) => r.isFirst);
       }
     } finally {
       if (mounted) setState(() => _isCompleting = false);
@@ -305,27 +567,33 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     return r * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
-  void _toggleAutoRotate() {
-    setState(() {
-      _autoRotate = !_autoRotate;
-      if (_autoRotate) {
-        _compassSub = FlutterCompass.events?.listen((event) {
-          final h = event.heading;
-          if (h == null || !mounted) return;
-          if (_autoRotate) {
-            try {
-              _mapController.rotate(-h);
-            } catch (_) {}
-          }
-        });
-      } else {
-        _compassSub?.cancel();
-        _compassSub = null;
-        try {
-          _mapController.rotate(0);
-        } catch (_) {}
-      }
-    });
+
+  IconData _maneuverIconData(String key) {
+    switch (key) {
+      case 'left':
+        return Icons.turn_left;
+      case 'right':
+        return Icons.turn_right;
+      case 'slight_left':
+        return Icons.turn_slight_left;
+      case 'slight_right':
+        return Icons.turn_slight_right;
+      case 'sharp_left':
+        return Icons.turn_sharp_left;
+      case 'sharp_right':
+        return Icons.turn_sharp_right;
+      case 'uturn':
+        return Icons.u_turn_left;
+      case 'roundabout':
+        return Icons.roundabout_left;
+      case 'arrive':
+        return Icons.flag;
+      case 'merge':
+        return Icons.merge;
+      case 'straight':
+      default:
+        return Icons.straight;
+    }
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -339,30 +607,23 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
 
     // Markers: driver + destination
     final markers = [
-      // Driver
+      // Driver — clean navigation arrow
       Marker(
         point: driverPos,
-        width: 50,
-        height: 50,
-        rotate: _autoRotate,
-        child: Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppTheme.primaryColor,
-            border: Border.all(color: Colors.white, width: 3),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.primaryColor.withValues(alpha: 0.4),
-                blurRadius: 12,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          child: Icon(
-            _autoRotate ? Icons.navigation : Icons.directions_car,
-            color: Colors.white,
-            size: 24,
-          ),
+        width: 24,
+        height: 24,
+        rotate: autoRotate,
+        child: Icon(
+          Icons.navigation,
+          color: AppTheme.primaryColor,
+          size: 22,
+          shadows: [
+            Shadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
       ),
       // Destination
@@ -424,17 +685,77 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
             top: MediaQuery.of(context).padding.top + 70,
             child: FloatingActionButton.small(
               heroTag: 'autorotate_trip',
-              onPressed: _toggleAutoRotate,
-              backgroundColor: _autoRotate
+              onPressed: toggleAutoRotate,
+              backgroundColor: autoRotate
                   ? AppTheme.primaryColor
                   : AppTheme.surface(isDark),
               child: Icon(
-                _autoRotate ? Icons.explore : Icons.explore_off,
-                color: _autoRotate ? Colors.white : AppTheme.primaryColor,
+                autoRotate ? Icons.explore : Icons.explore_off,
+                color: autoRotate ? Colors.white : AppTheme.primaryColor,
                 size: 20,
               ),
             ),
           ),
+
+          // ── Next maneuver banner ──
+          if (_nextInstruction.isNotEmpty)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 114,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface(isDark).withValues(alpha: 0.95),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 10,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _maneuverIconData(_nextManeuverIcon),
+                      color: AppTheme.primaryColor,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _nextStepDistanceM < 1000
+                                ? 'En ${_nextStepDistanceM.round()} m'
+                                : 'En ${(_nextStepDistanceM / 1000).toStringAsFixed(1)} km',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.primaryColor,
+                            ),
+                          ),
+                          Text(
+                            _nextInstruction,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.textPrimary(isDark),
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
           // ── Top bar: back + ETA ──
           SafeArea(
@@ -710,41 +1031,104 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
 
                     const SizedBox(height: 14),
 
-                    // Complete trip button
+                    // Stop (parada) button + timer
                     if (_viajeActivo)
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton.icon(
-                          onPressed: _isCompleting ? null : _completeTrip,
-                          icon: _isCompleting
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 44,
+                              child: ElevatedButton.icon(
+                                onPressed: _isCompleting ? null : _toggleStop,
+                                icon: Icon(
+                                  _activeStop != null ? Icons.play_arrow : Icons.pause,
+                                  size: 20,
+                                ),
+                                label: Text(
+                                  _activeStop != null
+                                      ? 'Salir de parada  ${_formatStopTime(_stopElapsedSeconds)}'
+                                      : 'Agregar parada',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
                                   ),
-                                )
-                              : const Icon(Icons.check_circle_outline,
-                                  size: 22),
-                          label: Text(
-                            _isCompleting
-                                ? 'Completando...'
-                                : 'Completar viaje',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _activeStop != null
+                                      ? AppTheme.warning
+                                      : AppTheme.textSecondary(isDark).withValues(alpha: 0.15),
+                                  foregroundColor: _activeStop != null
+                                      ? Colors.white
+                                      : AppTheme.textPrimary(isDark),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12)),
+                                  elevation: 0,
+                                ),
+                              ),
                             ),
                           ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.success,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14)),
-                            elevation: 0,
+                        ],
+                      ),
+
+                    if (_viajeActivo) const SizedBox(height: 10),
+
+                    // Complete trip button
+                    if (_viajeActivo)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 52,
+                              child: ElevatedButton.icon(
+                                onPressed: _isCompleting ? null : _completeTrip,
+                                icon: _isCompleting
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(Icons.check_circle_outline,
+                                        size: 22),
+                                label: Text(
+                                  _isCompleting
+                                      ? 'Completando...'
+                                      : 'Completar viaje',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.success,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14)),
+                                  elevation: 0,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            height: 52,
+                            width: 52,
+                            child: ElevatedButton(
+                              onPressed: _isCompleting ? null : _scanQrCompletion,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.primaryColor,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                                padding: EdgeInsets.zero,
+                                elevation: 0,
+                              ),
+                              child: const Icon(Icons.qr_code_scanner, size: 24),
+                            ),
+                          ),
+                        ],
                       )
                     else
                       Container(
