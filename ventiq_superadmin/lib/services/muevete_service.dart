@@ -137,6 +137,64 @@ class MueveteService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
+  /// Fetches real-time driver positions from track_place_history.
+  /// Returns the latest position per driver with driver info joined.
+  /// Each entry includes a 'history' list with the last [historyLimit] points.
+  static Future<List<Map<String, dynamic>>> getDriverPositionsFromHistory({
+    bool onlineOnly = false,
+    int historyLimit = 20,
+  }) async {
+    // 1. Get all drivers (with vehicle info + online status from place)
+    final driversQuery = _supabase
+        .schema('muevete')
+        .from('place')
+        .select(
+          '*, drivers!place_driver_fkey(id, name, email, telefono, kyc, image, vehiculos!drivers_vehiculo_fkey(marca, modelo, chapa, color))',
+        );
+
+    final placeRows = onlineOnly
+        ? await driversQuery.eq('estado', true)
+        : await driversQuery;
+
+    final results = <Map<String, dynamic>>[];
+
+    for (final place in List<Map<String, dynamic>>.from(placeRows)) {
+      final drv = place['drivers'] as Map<String, dynamic>?;
+      final driverId = drv?['id'] as int?;
+      if (driverId == null) continue;
+
+      // 2. Get latest history points for this driver
+      final historyRows = await _supabase
+          .schema('muevete')
+          .from('track_place_history')
+          .select('latitude, longitude, created_at')
+          .eq('driver_id', driverId)
+          .order('created_at', ascending: false)
+          .limit(historyLimit);
+
+      final history = List<Map<String, dynamic>>.from(historyRows);
+
+      if (history.isNotEmpty) {
+        // Use latest history point as current position
+        final latest = history.first;
+        results.add({
+          ...place,
+          'latitude': latest['latitude'],
+          'longitude': latest['longitude'],
+          'history': history,
+        });
+      } else {
+        // Fallback to place table if no history yet
+        results.add({
+          ...place,
+          'history': <Map<String, dynamic>>[],
+        });
+      }
+    }
+
+    return results;
+  }
+
   // ─── WALLETS ──────────────────────────────────────────────────────────
 
   /// Fetches client wallets with user info.

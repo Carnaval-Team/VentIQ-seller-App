@@ -32,11 +32,15 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
   double _routeDurationMin = 0;
   Timer? _routeRefreshTimer;
 
+  // History trail (real route)
+  List<LatLng> _historyTrailPolyline = [];
+  bool _isLoadingTrail = false;
+
   @override
   void initState() {
     super.initState();
     _loadData();
-    _timer = Timer.periodic(const Duration(seconds: 15), (_) => _loadData());
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _loadData());
   }
 
   @override
@@ -49,7 +53,7 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
 
   Future<void> _loadData() async {
     try {
-      final p = await MueveteService.getDriverPositions(onlineOnly: _onlineOnly);
+      final p = await MueveteService.getDriverPositionsFromHistory(onlineOnly: _onlineOnly);
       if (!mounted) return;
       setState(() {
         _positions = p;
@@ -63,6 +67,8 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
         );
         if (updated['id'] == _selected!['id']) {
           setState(() => _selected = updated);
+          // Refresh trail with updated history
+          _loadHistoryTrail(updated);
         }
       }
     } catch (_) {
@@ -109,9 +115,43 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
   void _onDriverSelected(Map<String, dynamic> p) {
     setState(() => _selected = p);
     _loadActiveTripForDriver(p);
+    _loadHistoryTrail(p);
     final lat = (p['latitude'] as num?)?.toDouble();
     final lon = (p['longitude'] as num?)?.toDouble();
     if (lat != null && lon != null) _mapCtrl.move(LatLng(lat, lon), 15);
+  }
+
+  Future<void> _loadHistoryTrail(Map<String, dynamic> placeRow) async {
+    final history = placeRow['history'] as List<Map<String, dynamic>>? ?? [];
+    if (history.length < 2) {
+      setState(() => _historyTrailPolyline = []);
+      return;
+    }
+
+    // Points from oldest to newest
+    final points = history.reversed.map((h) {
+      final lat = (h['latitude'] as num).toDouble();
+      final lon = (h['longitude'] as num).toDouble();
+      return LatLng(lat, lon);
+    }).toList();
+
+    setState(() => _isLoadingTrail = true);
+    try {
+      final result = await _routingService.getRouteMultiplePointsWithDistance(points);
+      if (!mounted) return;
+      setState(() {
+        _historyTrailPolyline = result.points;
+        _isLoadingTrail = false;
+      });
+    } catch (_) {
+      // Fallback: use raw points as straight lines
+      if (mounted) {
+        setState(() {
+          _historyTrailPolyline = points;
+          _isLoadingTrail = false;
+        });
+      }
+    }
   }
 
   Future<void> _loadActiveTripForDriver(Map<String, dynamic> placeRow) async {
@@ -207,7 +247,7 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
   void _startRouteRefreshTimer() {
     _stopRouteRefreshTimer();
     _routeRefreshTimer = Timer.periodic(
-      const Duration(seconds: 15),
+      const Duration(seconds: 10),
       (_) => _refreshDriverPositionAndRoute(),
     );
   }
@@ -242,6 +282,8 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
       _routeDurationMin = 0;
       _isLoadingTrip = false;
       _isLoadingRoute = false;
+      _historyTrailPolyline = [];
+      _isLoadingTrail = false;
     });
   }
 
@@ -379,8 +421,24 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
       }
     }
 
-    // Polylines
+    // History trail polyline for selected driver (real route via ORS)
     final polylines = <Polyline>[];
+    if (_selected != null && _historyTrailPolyline.length >= 2) {
+      // Shadow
+      polylines.add(Polyline(
+        points: _historyTrailPolyline,
+        strokeWidth: 5,
+        color: Colors.black.withOpacity(0.08),
+      ));
+      // Trail line
+      polylines.add(Polyline(
+        points: _historyTrailPolyline,
+        strokeWidth: 3,
+        color: AppColors.primary.withOpacity(0.5),
+      ));
+    }
+
+    // Route polylines
     if (_routePolyline.isNotEmpty) {
       // Shadow polyline
       polylines.add(Polyline(
