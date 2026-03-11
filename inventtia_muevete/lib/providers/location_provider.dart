@@ -11,6 +11,7 @@ class LocationProvider extends ChangeNotifier {
   final LocationService _locationService = LocationService();
 
   LatLng? _currentLocation;
+  double _currentSpeed = 0.0; // m/s from GPS
   bool _isTracking = false;
   bool _hasPermission = false;
   bool _isLoading = false;
@@ -24,6 +25,8 @@ class LocationProvider extends ChangeNotifier {
   StreamSubscription? _bgLocationSubscription;
 
   LatLng? get currentLocation => _currentLocation;
+  /// Current speed in m/s from GPS (0 when stationary or unknown).
+  double get currentSpeed => _currentSpeed;
   bool get isTracking => _isTracking;
   bool get hasPermission => _hasPermission;
   bool get isLoading => _isLoading;
@@ -115,9 +118,11 @@ class LocationProvider extends ChangeNotifier {
     _positionSubscription?.cancel();
     _isTracking = true;
 
-    _positionSubscription = _locationService.getPositionStream().listen(
+    _positionSubscription = _locationService.getRawPositionStream().listen(
       (position) {
-        _currentLocation = position;
+        _currentLocation = LatLng(position.latitude, position.longitude);
+        // speed < 0 means unknown; clamp to 0
+        _currentSpeed = position.speed > 0 ? position.speed : 0.0;
         _error = null;
         notifyListeners();
       },

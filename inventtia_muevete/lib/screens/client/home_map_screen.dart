@@ -39,6 +39,8 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   final MapController _mapController = MapController();
   @override
   MapController get compassMapController => _mapController;
+  @override
+  bool get compassDrivesRotation => false; // _animateCameraToLocation handles rotation
   int _currentNavIndex = 0;
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;

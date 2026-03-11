@@ -8,8 +8,13 @@ import 'package:flutter_map/flutter_map.dart';
 /// Mixin that provides smooth compass-based map rotation.
 ///
 /// Uses a low-pass filter with circular averaging (sin/cos + atan2) to handle
-/// the 359°→1° wraparound, throttles updates to ~12 FPS, and animates the
-/// map rotation toward the target heading over ~200 ms.
+/// the 359°→1° wraparound, throttles updates to ~10 FPS, and animates the
+/// map rotation.
+///
+/// By default the mixin directly rotates the map via [compassMapController].
+/// Screens that have their own camera animation (e.g. `moveAndRotate` in
+/// `_animateCamera`) should override [compassDrivesRotation] to return `false`
+/// and read [smoothHeading] themselves to avoid conflicting rotation sources.
 ///
 /// Usage:
 /// 1. Add `with SmoothCompassMixin` to your State class.
@@ -25,26 +30,37 @@ mixin SmoothCompassMixin<T extends StatefulWidget> on State<T> {
   /// Override in each screen to return the screen's [MapController].
   MapController get compassMapController;
 
+  /// Override to `false` in screens that handle map rotation themselves
+  /// (via moveAndRotate in their own _animateCamera). When `false`, the mixin
+  /// only updates [smoothHeading] without touching the map controller.
+  bool get compassDrivesRotation => true;
+
   // ── Private state ─────────────────────────────────────────────────────────
   bool _autoRotate = false;
   double _smoothHeading = 0.0;
+  double _lastEmittedHeading = 0.0;
 
   // Low-pass filter accumulators (circular average via sin/cos)
   double _sinAcc = 0.0;
   double _cosAcc = 1.0;
-  static const double _alpha = 0.15;
 
-  // Throttle: minimum interval between map updates
-  static const Duration _throttleInterval = Duration(milliseconds: 80);
+  // Stronger smoothing: 0.08 = very smooth, 0.15 was too reactive
+  static const double _alpha = 0.08;
+
+  // Deadzone: ignore heading changes smaller than this (degrees)
+  static const double _deadzoneDegs = 3.0;
+
+  // Throttle: minimum interval between heading updates
+  static const Duration _throttleInterval = Duration(milliseconds: 100);
   DateTime _lastUpdate = DateTime(0);
 
-  // Animated rotation
+  // Animated rotation (only used when compassDrivesRotation == true)
   Timer? _animTimer;
   double _animFrom = 0.0;
   double _animTo = 0.0;
   int _animStep = 0;
-  static const int _animSteps = 8; // ~200ms at 25ms per step
-  static const Duration _animStepDuration = Duration(milliseconds: 25);
+  static const int _animSteps = 10; // ~300ms at 30ms per step
+  static const Duration _animStepDuration = Duration(milliseconds: 30);
 
   StreamSubscription<CompassEvent>? _compassSub;
 
@@ -59,6 +75,7 @@ mixin SmoothCompassMixin<T extends StatefulWidget> on State<T> {
         _stopCompass();
         _animTimer?.cancel();
         _animTimer = null;
+        // Reset map rotation to north
         try {
           compassMapController.rotate(0);
         } catch (_) {}
@@ -112,16 +129,23 @@ mixin SmoothCompassMixin<T extends StatefulWidget> on State<T> {
     // Normalize to [0, 360)
     final normalized = (filteredDeg + 360) % 360;
 
+    // Deadzone: ignore tiny heading changes to prevent jitter
+    var delta = (normalized - _lastEmittedHeading).abs();
+    if (delta > 180) delta = 360 - delta;
+    if (delta < _deadzoneDegs) return;
+
     // Throttle
     final now = DateTime.now();
     if (now.difference(_lastUpdate) < _throttleInterval) return;
     _lastUpdate = now;
 
-    // Update smooth heading for marker rotation
+    _lastEmittedHeading = normalized;
     setState(() => _smoothHeading = normalized);
 
-    // Animate map rotation toward -normalized
-    _animateRotation(-normalized);
+    // Only rotate the map directly if the screen doesn't handle it
+    if (compassDrivesRotation) {
+      _animateRotation(-normalized);
+    }
   }
 
   void _animateRotation(double targetRotation) {
@@ -159,8 +183,8 @@ mixin SmoothCompassMixin<T extends StatefulWidget> on State<T> {
         return;
       }
       final t = _animStep / _animSteps;
-      // Ease-out quadratic
-      final ease = 1 - (1 - t) * (1 - t);
+      // Ease-out cubic for smoother feel
+      final ease = 1 - (1 - t) * (1 - t) * (1 - t);
       final rot = _animFrom + (_animTo - _animFrom) * ease;
       try {
         compassMapController.rotate(rot);

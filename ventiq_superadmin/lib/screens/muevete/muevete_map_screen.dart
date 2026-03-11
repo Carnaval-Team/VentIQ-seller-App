@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/app_colors.dart';
 import '../../services/muevete_service.dart';
 import '../../services/routing_service.dart';
@@ -20,8 +21,11 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
   List<Map<String, dynamic>> _positions = [];
   bool _isLoading = true;
   bool _onlineOnly = true;
-  Timer? _timer;
   Map<String, dynamic>? _selected;
+
+  // Realtime
+  RealtimeChannel? _placeChannel;
+  Timer? _fallbackTimer;
 
   // Trip tracking state
   Map<String, dynamic>? _activeTripData;
@@ -30,7 +34,6 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
   List<LatLng> _routePolyline = [];
   double _routeDistanceKm = 0;
   double _routeDurationMin = 0;
-  Timer? _routeRefreshTimer;
 
   // History trail (real route)
   List<LatLng> _historyTrailPolyline = [];
@@ -39,27 +42,31 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
   @override
   void initState() {
     super.initState();
-    _loadData();
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _loadData());
+    _loadInitialData();
+    _subscribePlaceRealtime();
+    _fallbackTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _loadInitialData(),
+    );
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
-    _routeRefreshTimer?.cancel();
+    _placeChannel?.unsubscribe();
+    _fallbackTimer?.cancel();
     _mapCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _loadData() async {
+  Future<void> _loadInitialData() async {
     try {
-      final p = await MueveteService.getDriverPositionsFromHistory(onlineOnly: _onlineOnly);
+      final p = await MueveteService.getDriverPositions(onlineOnly: _onlineOnly);
       if (!mounted) return;
       setState(() {
         _positions = p;
         _isLoading = false;
       });
-      // Sync selected driver position if panel is open
+      // Sync selected driver if panel is open
       if (_selected != null) {
         final updated = p.firstWhere(
           (pos) => pos['id'] == _selected!['id'],
@@ -67,12 +74,66 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
         );
         if (updated['id'] == _selected!['id']) {
           setState(() => _selected = updated);
-          // Refresh trail with updated history
-          _loadHistoryTrail(updated);
         }
       }
     } catch (_) {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _subscribePlaceRealtime() {
+    _placeChannel = Supabase.instance.client
+        .channel('admin_place_realtime')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'muevete',
+          table: 'place',
+          callback: _onPlaceUpdate,
+        )
+        .subscribe();
+  }
+
+  void _onPlaceUpdate(PostgresChangePayload payload) {
+    if (!mounted) return;
+    final newRecord = payload.newRecord;
+    if (newRecord.isEmpty) return;
+
+    final placeId = newRecord['id'];
+    final lat = newRecord['latitude'];
+    final lon = newRecord['longitude'];
+    final estado = newRecord['estado'] as bool? ?? false;
+
+    // Find existing position in the list
+    final idx = _positions.indexWhere((p) => p['id'] == placeId);
+
+    setState(() {
+      if (idx >= 0) {
+        // Update existing driver position in-place
+        _positions[idx] = {..._positions[idx], ...newRecord};
+
+        // If online-only filter is on and driver went offline, remove
+        if (_onlineOnly && !estado) {
+          _positions.removeAt(idx);
+        }
+      } else if (!_onlineOnly || estado) {
+        // New driver appeared — need full data with joins, trigger a reload
+        _loadInitialData();
+        return;
+      }
+    });
+
+    // Update selected driver if it's the one that changed
+    if (_selected != null && _selected!['id'] == placeId && idx >= 0) {
+      setState(() {
+        _selected = _positions.firstWhere(
+          (p) => p['id'] == placeId,
+          orElse: () => _selected!,
+        );
+      });
+      // Recalculate route if driver has active trip
+      if (_activeTripData != null && lat != null && lon != null) {
+        _calculateRoute();
+      }
     }
   }
 
@@ -122,21 +183,33 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
   }
 
   Future<void> _loadHistoryTrail(Map<String, dynamic> placeRow) async {
-    final history = placeRow['history'] as List<Map<String, dynamic>>? ?? [];
-    if (history.length < 2) {
+    final drv = placeRow['drivers'] as Map<String, dynamic>?;
+    final driverId = drv?['id'] as int?;
+    if (driverId == null) {
       setState(() => _historyTrailPolyline = []);
       return;
     }
 
-    // Points from oldest to newest
-    final points = history.reversed.map((h) {
-      final lat = (h['latitude'] as num).toDouble();
-      final lon = (h['longitude'] as num).toDouble();
-      return LatLng(lat, lon);
-    }).toList();
-
     setState(() => _isLoadingTrail = true);
     try {
+      final history = await MueveteService.getDriverHistory(driverId);
+      if (!mounted) return;
+
+      if (history.length < 2) {
+        setState(() {
+          _historyTrailPolyline = [];
+          _isLoadingTrail = false;
+        });
+        return;
+      }
+
+      // Points from oldest to newest
+      final points = history.reversed.map((h) {
+        final lat = (h['latitude'] as num).toDouble();
+        final lon = (h['longitude'] as num).toDouble();
+        return LatLng(lat, lon);
+      }).toList();
+
       final result = await _routingService.getRouteMultiplePointsWithDistance(points);
       if (!mounted) return;
       setState(() {
@@ -144,10 +217,9 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
         _isLoadingTrail = false;
       });
     } catch (_) {
-      // Fallback: use raw points as straight lines
       if (mounted) {
         setState(() {
-          _historyTrailPolyline = points;
+          _historyTrailPolyline = [];
           _isLoadingTrail = false;
         });
       }
@@ -162,7 +234,6 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
         _activeTripData = null;
         _routePolyline = [];
       });
-      _stopRouteRefreshTimer();
       return;
     }
 
@@ -176,14 +247,12 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
       });
       if (tripData != null) {
         _calculateRoute();
-        _startRouteRefreshTimer();
       } else {
         setState(() {
           _routePolyline = [];
           _routeDistanceKm = 0;
           _routeDurationMin = 0;
         });
-        _stopRouteRefreshTimer();
       }
     } catch (_) {
       if (mounted) {
@@ -193,7 +262,6 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
           _routePolyline = [];
         });
       }
-      _stopRouteRefreshTimer();
     }
   }
 
@@ -242,38 +310,9 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
     }
   }
 
-  // ─── ROUTE REFRESH TIMER ───────────────────────────────────────────
-
-  void _startRouteRefreshTimer() {
-    _stopRouteRefreshTimer();
-    _routeRefreshTimer = Timer.periodic(
-      const Duration(seconds: 10),
-      (_) => _refreshDriverPositionAndRoute(),
-    );
-  }
-
-  void _stopRouteRefreshTimer() {
-    _routeRefreshTimer?.cancel();
-    _routeRefreshTimer = null;
-  }
-
-  Future<void> _refreshDriverPositionAndRoute() async {
-    if (_selected == null || _activeTripData == null) return;
-    // Sync driver position from latest _positions data
-    final updated = _positions.firstWhere(
-      (pos) => pos['id'] == _selected!['id'],
-      orElse: () => _selected!,
-    );
-    if (updated['id'] == _selected!['id']) {
-      setState(() => _selected = updated);
-    }
-    await _calculateRoute();
-  }
-
   // ─── CLEAR SELECTION ───────────────────────────────────────────────
 
   void _clearSelection() {
-    _stopRouteRefreshTimer();
     setState(() {
       _selected = null;
       _activeTripData = null;
@@ -328,12 +367,12 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
               const SizedBox(width: 8),
               // Toggle
               Switch(
-                value: _onlineOnly, onChanged: (v) { _onlineOnly = v; _loadData(); },
+                value: _onlineOnly, onChanged: (v) { _onlineOnly = v; _loadInitialData(); },
                 activeColor: AppColors.primary, activeTrackColor: AppColors.primary.withOpacity(0.3),
               ),
               Text(_onlineOnly ? 'Online' : 'Todos', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
               const SizedBox(width: 8),
-              IconButton(onPressed: _loadData, icon: Icon(Icons.refresh_rounded, color: AppColors.textSecondary)),
+              IconButton(onPressed: _loadInitialData, icon: Icon(Icons.refresh_rounded, color: AppColors.textSecondary)),
             ]),
           ),
         ),

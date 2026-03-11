@@ -58,21 +58,9 @@ class TransactionListItem extends StatelessWidget {
     if (transaction.estado == EstadoTransaccion.pendiente) {
       return AppTheme.warning;
     }
-    if (transaction.tipo == TipoTransaccion.recarga ||
-        transaction.tipo == TipoTransaccion.cobro_viaje ||
-        transaction.tipo == TipoTransaccion.reembolso) {
-      return AppTheme.success;
-    }
-    return AppTheme.error;
-  }
-
-  String _getAmountPrefix() {
-    if (transaction.tipo == TipoTransaccion.recarga ||
-        transaction.tipo == TipoTransaccion.cobro_viaje ||
-        transaction.tipo == TipoTransaccion.reembolso) {
-      return '+';
-    }
-    return '-';
+    // Use the actual sign of the amount from DB
+    final amount = transaction.monto ?? 0.0;
+    return amount >= 0 ? AppTheme.success : AppTheme.error;
   }
 
   String _getTitle() {
@@ -217,7 +205,7 @@ class TransactionListItem extends StatelessWidget {
 
                 // Amount
                 Text(
-                  '${_getAmountPrefix()}\$${amount.toStringAsFixed(2)}',
+                  '\$${amount.toStringAsFixed(2)}',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: amountColor,

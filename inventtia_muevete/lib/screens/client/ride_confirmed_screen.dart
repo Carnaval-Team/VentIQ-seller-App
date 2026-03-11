@@ -39,6 +39,8 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   final MapController _mapController = MapController();
   @override
   MapController get compassMapController => _mapController;
+  @override
+  bool get compassDrivesRotation => false; // _animateCamera handles rotation
   AnimationController? _pulseController;
   Animation<double>? _pulseAnimation;
 
