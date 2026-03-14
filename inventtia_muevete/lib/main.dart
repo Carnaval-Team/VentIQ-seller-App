@@ -9,6 +9,7 @@ import 'config/supabase_config.dart';
 import 'config/app_theme.dart';
 import 'services/background_service.dart';
 import 'services/local_notification_service.dart';
+import 'services/completion_sync_service.dart';
 import 'services/pushy_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
@@ -65,6 +66,9 @@ Future<void> main() async {
       statusBarIconBrightness: Brightness.light,
     ),
   );
+
+  // Sync any pending offline completions from previous sessions
+  CompletionSyncService.syncPendingCompletions();
 
   runApp(const MueveteApp());
 }

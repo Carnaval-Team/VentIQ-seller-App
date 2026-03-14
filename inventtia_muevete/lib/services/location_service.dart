@@ -35,6 +35,16 @@ class LocationService {
     ).map((position) => LatLng(position.latitude, position.longitude));
   }
 
+  /// Returns a stream of raw [Position] updates (includes speed, heading, etc.)
+  Stream<Position> getRawPositionStream() {
+    return Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+      ),
+    );
+  }
+
   /// Calculates the distance between two LatLng points in kilometers
   /// using the latlong2 Distance class (Haversine formula).
   double calculateDistance(LatLng from, LatLng to) {

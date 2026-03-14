@@ -787,6 +787,22 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                                 ],
                               ),
                               onTap: () {
+                                if (product.cantidad <= 0) {
+                                  showDialog(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('Sin stock'),
+                                      content: const Text('Este producto no tiene stock disponible.'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.of(ctx).pop(),
+                                          child: const Text('Aceptar'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  return;
+                                }
                                 _toggleSearch();
                                 Navigator.push(
                                   context,

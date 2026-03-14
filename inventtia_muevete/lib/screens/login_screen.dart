@@ -96,6 +96,22 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       if (!mounted) return;
+      if (authProvider.role == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'No se pudo cargar el perfil. Verifica tu conexión.',
+              style: const TextStyle(color: Colors.white),
+            ),
+            backgroundColor: AppTheme.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+        return;
+      }
       if (authProvider.isDriver) {
         Navigator.pushReplacementNamed(context, '/driver/home');
       } else {

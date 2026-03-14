@@ -1,5 +1,7 @@
 enum TipoTransaccion { recarga, cobro_viaje, pago_viaje, reembolso, comision_viaje }
 
+enum EstadoTransaccion { pendiente, aceptada, cancelada, completada }
+
 class WalletTransactionModel {
   final int? id;
   final String? userId;
@@ -9,6 +11,7 @@ class WalletTransactionModel {
   final int? viajeId;
   final String? descripcion;
   final DateTime? createdAt;
+  final EstadoTransaccion? estado;
 
   WalletTransactionModel({
     this.id,
@@ -19,6 +22,7 @@ class WalletTransactionModel {
     this.viajeId,
     this.descripcion,
     this.createdAt,
+    this.estado,
   });
 
   factory WalletTransactionModel.fromJson(Map<String, dynamic> json) {
@@ -40,6 +44,12 @@ class WalletTransactionModel {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
+      estado: json['estado'] != null
+          ? EstadoTransaccion.values.firstWhere(
+              (e) => e.name == json['estado'],
+              orElse: () => EstadoTransaccion.completada,
+            )
+          : null,
     );
   }
 
@@ -51,6 +61,7 @@ class WalletTransactionModel {
       'monto': monto,
       'viaje_id': viajeId,
       'descripcion': descripcion,
+      if (estado != null) 'estado': estado!.name,
     };
   }
 
@@ -63,6 +74,7 @@ class WalletTransactionModel {
     int? viajeId,
     String? descripcion,
     DateTime? createdAt,
+    EstadoTransaccion? estado,
   }) {
     return WalletTransactionModel(
       id: id ?? this.id,
@@ -73,6 +85,7 @@ class WalletTransactionModel {
       viajeId: viajeId ?? this.viajeId,
       descripcion: descripcion ?? this.descripcion,
       createdAt: createdAt ?? this.createdAt,
+      estado: estado ?? this.estado,
     );
   }
 }

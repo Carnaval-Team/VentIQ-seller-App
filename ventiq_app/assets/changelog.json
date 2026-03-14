@@ -1,9 +1,26 @@
 {
-  "current_version": "2.0.9",
-  "build": 819,
+  "current_version": "2.1.0",
+  "build": 820,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.1.0",
+      "date": "2026-03-14",
+      "title": "Productos sin stock ahora están protegidos",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "No puedes abrir un producto sin stock",
+          "description": "Si buscas un producto en el buscador y no tiene stock disponible, la app te avisa con un mensaje claro y no te deja entrar a los detalles. Así evitas confusiones al armar una venta."
+        },
+        {
+          "type": "improvement",
+          "title": "Protección extra en la vista de producto",
+          "description": "Si por algún motivo llegas a la pantalla de un producto que ya no tiene stock, la app te muestra un aviso y te devuelve automáticamente a las categorías. No más errores al intentar vender algo agotado."
+        }
+      ]
+    },
     {
       "version": "2.0.9",
       "date": "2026-02-23",

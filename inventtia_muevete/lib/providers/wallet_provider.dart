@@ -59,23 +59,24 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> addFunds(String uuid, double amount) async {
+  /// Creates a pending recharge transaction. Returns the transaction ID
+  /// or null if an error occurred. Balance is NOT updated.
+  Future<int?> addFunds(String uuid, double amount) async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      final netAmount = await _walletService.addFunds(uuid, amount);
-      _balance += netAmount;
+      final transactionId = await _walletService.addFunds(uuid, amount);
       await loadTransactions(uuid);
       _error = null;
       _isLoading = false;
       notifyListeners();
-      return true;
+      return transactionId;
     } catch (e) {
       _error = e.toString();
       _isLoading = false;
       notifyListeners();
-      return false;
+      return null;
     }
   }
 
@@ -93,22 +94,54 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> addDriverFunds(int driverId, double amount) async {
+  /// Creates a pending recharge transaction for a driver. Returns the
+  /// transaction ID or null if an error occurred. Balance is NOT updated.
+  Future<int?> addDriverFunds(int driverId, double amount) async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      final netAmount = await _walletService.addDriverFunds(driverId, amount);
-      _balance += netAmount;
+      final transactionId =
+          await _walletService.addDriverFunds(driverId, amount);
       await loadDriverTransactions(driverId);
       _error = null;
       _isLoading = false;
       notifyListeners();
-      return true;
+      return transactionId;
     } catch (e) {
       _error = e.toString();
       _isLoading = false;
       notifyListeners();
+      return null;
+    }
+  }
+
+  /// Uploads verification evidence for a pending recharge.
+  Future<bool> uploadVerificacion({
+    required int transaccionId,
+    String? imagenUrl,
+    String? detalleTexto,
+  }) async {
+    try {
+      await _walletService.uploadVerificacion(
+        transaccionId: transaccionId,
+        imagenUrl: imagenUrl,
+        detalleTexto: detalleTexto,
+      );
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Checks if a verification exists for the given transaction.
+  Future<bool> hasVerificacion(int transaccionId) async {
+    try {
+      final result = await _walletService.getVerificacion(transaccionId);
+      return result != null;
+    } catch (_) {
       return false;
     }
   }

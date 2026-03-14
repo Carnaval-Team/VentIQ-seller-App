@@ -10,7 +10,10 @@
       "WebSearch",
       "WebFetch(domain:pushy.me)",
       "WebFetch(domain:pub.dev)",
-      "Bash(do cp:*)"
+      "Bash(do cp:*)",
+      "Bash(xargs grep:*)",
+      "Bash(flutter:*)",
+      "Bash(ls:*)"
     ]
   }
 }

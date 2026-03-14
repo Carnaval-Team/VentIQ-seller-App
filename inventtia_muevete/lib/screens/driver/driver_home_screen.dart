@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_compass_v2/flutter_compass_v2.dart';
+import '../../utils/smooth_compass_mixin.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
@@ -15,6 +15,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../models/notification_model.dart';
+import '../../services/completion_sync_service.dart';
 import '../../services/driver_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/vehicle_type_service.dart';
@@ -34,17 +35,16 @@ class DriverHomeScreen extends StatefulWidget {
 }
 
 class _DriverHomeScreenState extends State<DriverHomeScreen>
-    with TickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver, SmoothCompassMixin {
   final DriverService _driverService = DriverService();
   final MapController _mapController = MapController();
+
+  @override
+  MapController get compassMapController => _mapController;
 
   bool _isOnline = false;
   bool _isTogglingStatus = false;
   int _currentNavIndex = 0;
-
-  // Navigation mode state
-  bool _autoRotate = false;
-  StreamSubscription<CompassEvent>? _compassSub;
 
   // Periodic location tracker while online
   Timer? _locationTimer;
@@ -164,37 +164,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _requestsPollingTimer = null;
   }
 
-  void _toggleAutoRotate() {
-    setState(() {
-      _autoRotate = !_autoRotate;
-      if (_autoRotate) {
-        _compassSub = FlutterCompass.events?.listen((event) {
-          final h = event.heading;
-          if (h == null || !mounted) return;
-          if (_autoRotate) {
-            try {
-              _mapController.rotate(-h);
-            } catch (e) {
-              debugPrint('[DriverHome] compass rotate error: $e');
-            }
-          }
-        });
-      } else {
-        _compassSub?.cancel();
-        _compassSub = null;
-        try {
-          _mapController.rotate(0);
-        } catch (e) {
-          debugPrint('[DriverHome] rotate reset error: $e');
-        }
-      }
-    });
-  }
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted && _isOnline) {
-      _loadNearbyRequests();
+    if (state == AppLifecycleState.resumed && mounted) {
+      // Sync any pending offline completions
+      CompletionSyncService.syncPendingCompletions();
+      if (_isOnline) _loadNearbyRequests();
     }
   }
 
@@ -1081,7 +1056,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   @override
   void dispose() {
-    _compassSub?.cancel();
+    disposeCompass();
     WidgetsBinding.instance.removeObserver(this);
     _stopLocationTracking();
     _stopRequestsPolling();
@@ -1133,7 +1108,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     point: location,
                     width: 50,
                     height: 50,
-                    rotate: _autoRotate,
+                    rotate: autoRotate,
                     child: Container(
                       decoration: BoxDecoration(
                         color: AppTheme.primaryColor,
@@ -1148,7 +1123,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         ],
                       ),
                       child: Icon(
-                        _autoRotate ? Icons.navigation : Icons.directions_car,
+                        autoRotate ? Icons.navigation : Icons.directions_car,
                         color: Colors.white,
                         size: 24,
                       ),
@@ -1432,13 +1407,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               children: [
                 FloatingActionButton.small(
                   heroTag: 'autorotate',
-                  onPressed: _toggleAutoRotate,
-                  backgroundColor: _autoRotate
+                  onPressed: toggleAutoRotate,
+                  backgroundColor: autoRotate
                       ? AppTheme.primaryColor
                       : AppTheme.surface(isDark),
                   child: Icon(
-                    _autoRotate ? Icons.explore : Icons.explore_off,
-                    color: _autoRotate ? Colors.white : AppTheme.primaryColor,
+                    autoRotate ? Icons.explore : Icons.explore_off,
+                    color: autoRotate ? Colors.white : AppTheme.primaryColor,
                     size: 20,
                   ),
                 ),

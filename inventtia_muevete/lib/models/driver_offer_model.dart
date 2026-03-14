@@ -21,6 +21,7 @@ class DriverOfferModel {
   final String? vehicleChapa;
   final String? vehicleColor;
   final int? tripCount; // completed trips
+  final double? driverRating;
 
   DriverOfferModel({
     this.id,
@@ -41,6 +42,7 @@ class DriverOfferModel {
     this.vehicleChapa,
     this.vehicleColor,
     this.tripCount,
+    this.driverRating,
   });
 
   factory DriverOfferModel.fromJson(Map<String, dynamic> json) {
@@ -72,6 +74,9 @@ class DriverOfferModel {
       vehicleChapa: json['vehicle_chapa'] as String?,
       vehicleColor: json['vehicle_color'] as String?,
       tripCount: json['trip_count'] as int?,
+      driverRating: json['driver_rating'] != null
+          ? (json['driver_rating'] as num).toDouble()
+          : null,
     );
   }
 
@@ -105,6 +110,7 @@ class DriverOfferModel {
     String? vehicleChapa,
     String? vehicleColor,
     int? tripCount,
+    double? driverRating,
   }) {
     return DriverOfferModel(
       id: id ?? this.id,
@@ -125,6 +131,7 @@ class DriverOfferModel {
       vehicleChapa: vehicleChapa ?? this.vehicleChapa,
       vehicleColor: vehicleColor ?? this.vehicleColor,
       tripCount: tripCount ?? this.tripCount,
+      driverRating: driverRating ?? this.driverRating,
     );
   }
 }

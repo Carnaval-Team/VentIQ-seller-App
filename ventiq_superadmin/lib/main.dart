@@ -20,6 +20,14 @@ import 'screens/carnaval_inventtia_products_screen.dart';
 import 'screens/pago_proveedores_screen.dart';
 import 'screens/eliminacion_tiendas_screen.dart';
 import 'screens/fleet_control_screen.dart';
+import 'screens/muevete/muevete_dashboard_screen.dart';
+import 'screens/muevete/muevete_drivers_screen.dart';
+import 'screens/muevete/muevete_trips_screen.dart';
+import 'screens/muevete/muevete_requests_screen.dart';
+import 'screens/muevete/muevete_map_screen.dart';
+import 'screens/muevete/muevete_ratings_screen.dart';
+import 'screens/muevete/muevete_wallets_screen.dart';
+import 'screens/muevete/muevete_kyc_screen.dart';
 import 'screens/agentes_screen.dart';
 import 'screens/ingresos_distribucion_screen.dart';
 import 'services/auth_service.dart';
@@ -67,6 +75,15 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/pago-proveedores': (context) => const PagoProveedoresScreen(),
         '/eliminacion-tiendas': (context) => const EliminacionTiendasScreen(),
         '/control-flota': (context) => const FleetControlScreen(),
+        // Muévete
+        '/muevete/dashboard': (context) => const MueveteDashboardScreen(),
+        '/muevete/conductores': (context) => const MueveteDriversScreen(),
+        '/muevete/viajes': (context) => const MueveteTripsScreen(),
+        '/muevete/solicitudes': (context) => const MueveteRequestsScreen(),
+        '/muevete/mapa': (context) => const MueveteMapScreen(),
+        '/muevete/valoraciones': (context) => const MueveteRatingsScreen(),
+        '/muevete/billeteras': (context) => const MueveteWalletsScreen(),
+        '/muevete/kyc': (context) => const MueveteKycScreen(),
         '/agentes': (context) => const AgentesScreen(),
         '/ingresos-distribucion': (context) => const IngresosDistribucionScreen(),
       },
