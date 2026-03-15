@@ -40,7 +40,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   @override
   MapController get compassMapController => _mapController;
   @override
-  bool get compassDrivesRotation => false; // _animateCamera handles rotation
+  bool get compassDrivesRotation => true;
   AnimationController? _pulseController;
   Animation<double>? _pulseAnimation;
 
@@ -687,20 +687,37 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
 
     // Blue current route to destination — glow layer + solid
     if (_currentRoute.isNotEmpty) {
+      final routePoints = [userLocation, ..._currentRoute];
       polylines.add(
         Polyline(
-          points: _currentRoute,
+          points: routePoints,
           strokeWidth: 10.0,
           color: AppTheme.primaryColor.withValues(alpha: 0.2),
         ),
       );
       polylines.add(
         Polyline(
-          points: _currentRoute,
+          points: routePoints,
           strokeWidth: 4.5,
           color: AppTheme.primaryColor,
         ),
       );
+
+      // Walking segment: route end → destination
+      if (dropoff != null) {
+        final distToEnd = const Distance().as(
+          LengthUnit.Meter, _currentRoute.last, dropoff);
+        if (distToEnd > 30) {
+          polylines.add(
+            Polyline(
+              points: [_currentRoute.last, dropoff],
+              strokeWidth: 4.0,
+              color: Colors.grey,
+              pattern: const StrokePattern.dotted(spacingFactor: 3.0),
+            ),
+          );
+        }
+      }
     }
 
     return Scaffold(
@@ -1295,8 +1312,6 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       final cam = _mapController.camera;
       final startCenter = cam.center;
       final startZoom = cam.zoom;
-      final startRotation = cam.rotation;
-      final targetRotation = autoRotate ? -smoothHeading : 0.0;
       final targetZoom = _zoomForDistance(_distanceToDestinationM);
 
       const steps = 15;
@@ -1318,15 +1333,8 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
         final lon = startCenter.longitude +
             (target.longitude - startCenter.longitude) * ease;
         final zoom = startZoom + (targetZoom - startZoom) * ease;
-        double rot = startRotation;
-        if (autoRotate) {
-          var diff = targetRotation - startRotation;
-          while (diff > 180) diff -= 360;
-          while (diff < -180) diff += 360;
-          rot = startRotation + diff * ease;
-        }
         try {
-          _mapController.moveAndRotate(LatLng(lat, lon), zoom, rot);
+          _mapController.move(LatLng(lat, lon), zoom);
         } catch (_) {}
       });
     } catch (_) {

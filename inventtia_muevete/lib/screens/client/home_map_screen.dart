@@ -40,7 +40,7 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   @override
   MapController get compassMapController => _mapController;
   @override
-  bool get compassDrivesRotation => false; // _animateCameraToLocation handles rotation
+  bool get compassDrivesRotation => true;
   int _currentNavIndex = 0;
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -412,9 +412,6 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       final cam = _mapController.camera;
       final startCenter = cam.center;
       final startZoom = cam.zoom;
-      final startRotation = cam.rotation;
-      final targetRotation = autoRotate ? -smoothHeading : 0.0;
-
       const steps = 15;
       const duration = Duration(milliseconds: 450);
       final stepDuration = Duration(
@@ -436,18 +433,10 @@ class _HomeMapScreenState extends State<HomeMapScreen>
         final lon = startCenter.longitude +
             (target.longitude - startCenter.longitude) * ease;
 
-        double rot = startRotation;
-        if (autoRotate) {
-          var diff = targetRotation - startRotation;
-          while (diff > 180) diff -= 360;
-          while (diff < -180) diff += 360;
-          rot = startRotation + diff * ease;
-        }
-
         try {
-          _mapController.moveAndRotate(LatLng(lat, lon), startZoom, rot);
+          _mapController.move(LatLng(lat, lon), startZoom);
         } catch (e) {
-          debugPrint('[HomeMap] animateCamera moveAndRotate error: $e');
+          debugPrint('[HomeMap] animateCamera move error: $e');
         }
       });
     } catch (e, st) {
@@ -695,16 +684,31 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       }
       // Blue current route — glow layer + solid
       if (_activeTripRoute.isNotEmpty) {
+        final routePoints = [userLocation, ..._activeTripRoute];
         polylines.add(Polyline(
-          points: _activeTripRoute,
+          points: routePoints,
           strokeWidth: 10.0,
           color: AppTheme.primaryColor.withValues(alpha: 0.2),
         ));
         polylines.add(Polyline(
-          points: _activeTripRoute,
+          points: routePoints,
           strokeWidth: 4.5,
           color: AppTheme.primaryColor,
         ));
+
+        // Walking segment: route end → destination
+        if (_activeTripDestination != null) {
+          final distToEnd = const Distance().as(
+            LengthUnit.Meter, _activeTripRoute.last, _activeTripDestination!);
+          if (distToEnd > 30) {
+            polylines.add(Polyline(
+              points: [_activeTripRoute.last, _activeTripDestination!],
+              strokeWidth: 4.0,
+              color: Colors.grey,
+              pattern: const StrokePattern.dotted(spacingFactor: 3.0),
+            ));
+          }
+        }
       }
     }
 

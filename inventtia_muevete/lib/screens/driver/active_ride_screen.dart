@@ -41,7 +41,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   @override
   MapController get compassMapController => _mapController;
   @override
-  bool get compassDrivesRotation => false; // _animateCamera handles rotation
+  bool get compassDrivesRotation => true;
 
   final MapController _mapController = MapController();
   final RoutingService _routingService = RoutingService();
@@ -1076,9 +1076,6 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       final cam = _mapController.camera;
       final startCenter = cam.center;
       final startZoom = cam.zoom;
-      final startRotation = cam.rotation;
-
-      final targetRotation = autoRotate ? -smoothHeading : 0.0;
       final speed = context.read<LocationProvider>().currentSpeed;
       final targetZoom =
           _zoomForSpeedAndDistance(_distanceToTargetM, speed);
@@ -1108,20 +1105,10 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
             (target.longitude - startCenter.longitude) * ease;
         final zoom = startZoom + (targetZoom - startZoom) * ease;
 
-        double rot = startRotation;
-        if (autoRotate) {
-          // Shortest path rotation
-          var diff = targetRotation - startRotation;
-          while (diff > 180) diff -= 360;
-          while (diff < -180) diff += 360;
-          rot = startRotation + diff * ease;
-        }
-
         try {
-          _mapController.moveAndRotate(
+          _mapController.move(
             LatLng(lat, lon),
             zoom,
-            rot,
           );
         } catch (_) {}
       });
@@ -1280,9 +1267,10 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
 
     // Animated route — glow layer underneath
     if (_routePolyline.isNotEmpty) {
+      final routePoints = [driverLocation, ..._routePolyline];
       polylines.add(
         Polyline(
-          points: _routePolyline,
+          points: routePoints,
           strokeWidth: 10.0,
           color: phaseColor.withValues(alpha: 0.2),
         ),
@@ -1290,11 +1278,30 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       // Solid route on top
       polylines.add(
         Polyline(
-          points: _routePolyline,
+          points: routePoints,
           strokeWidth: 4.5,
           color: phaseColor,
         ),
       );
+
+      // Walking segment: route end → target
+      final target = _currentPhase == _RidePhase.goingToPickup
+          ? _pickupLocation
+          : _dropoffLocation;
+      if (target != null) {
+        final distToEnd = const Distance().as(
+          LengthUnit.Meter, _routePolyline.last, target);
+        if (distToEnd > 30) {
+          polylines.add(
+            Polyline(
+              points: [_routePolyline.last, target],
+              strokeWidth: 4.0,
+              color: Colors.grey,
+              pattern: const StrokePattern.dotted(spacingFactor: 3.0),
+            ),
+          );
+        }
+      }
     }
 
     return Scaffold(
