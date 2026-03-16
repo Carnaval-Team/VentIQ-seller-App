@@ -2340,11 +2340,17 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         
         // Verificar si es un error de consignación
         final errorCode = response['error'] ?? '';
+        final errorType = response['error_type'] ?? '';
         if (errorCode == 'CONSIGNMENT_EXTRACTION_NOT_COMPLETED') {
           // Mostrar diálogo informativo para error de consignación
           _showConsignmentErrorDialog(
             response['message'] ?? 'Error en consignación',
             response['id_operacion_extraccion'],
+          );
+        } else if (errorType == 'insufficient_stock') {
+          // Mostrar diálogo detallado de stock insuficiente
+          _showInsufficientStockDialog(
+            response['message'] ?? 'Stock insuficiente para completar la operación',
           );
         } else {
           // Mostrar SnackBar para otros errores
@@ -3493,6 +3499,135 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Mostrar diálogo de stock insuficiente al intentar completar una extracción
+  void _showInsufficientStockDialog(String message) {
+    // Parsear la lista de productos del mensaje
+    // Formato esperado: "Stock insuficiente para: Prod A (disponible: X, solicitado: Y), Prod B ..."
+    final List<Map<String, String>> productos = [];
+    final bodyStart = message.indexOf(':');
+    if (bodyStart != -1) {
+      final body = message.substring(bodyStart + 1).trim();
+      // Split por patrón "), " para separar cada producto
+      final regex = RegExp(r'([^(]+)\(disponible:\s*([\d.]+),\s*solicitado:\s*([\d.]+)\)');
+      for (final match in regex.allMatches(body)) {
+        productos.add({
+          'nombre': match.group(1)?.trim() ?? '',
+          'disponible': match.group(2) ?? '0',
+          'solicitado': match.group(3) ?? '0',
+        });
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.inventory_2_outlined, color: Colors.red, size: 28),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Stock Insuficiente',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        border: Border.all(color: Colors.red.shade300, width: 2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'No hay suficiente stock para completar esta extracción. Revisa las cantidades disponibles antes de intentar de nuevo.',
+                        style: TextStyle(fontSize: 13, height: 1.5),
+                      ),
+                    ),
+                    if (productos.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Productos con stock insuficiente:',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      ...productos.map(
+                        (p) => Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.warning_amber_rounded,
+                                color: Colors.orange,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      p['nombre'] ?? '',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Disponible: ${p['disponible']}  •  Solicitado: ${p['solicitado']}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        message,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Entendido'),
+              ),
+            ],
+          ),
     );
   }
 
