@@ -96,6 +96,7 @@ class MueveteApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TransportProvider()),
         ChangeNotifierProvider(create: (_) => WalletProvider()),
         ChangeNotifierProvider(create: (_) => AddressProvider()),
+        ChangeNotifierProvider.value(value: MbTilesService.instance),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {

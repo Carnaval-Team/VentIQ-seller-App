@@ -8,7 +8,9 @@
       "WebSearch",
       "WebFetch(domain:pub.dev)",
       "Bash(flutter pub:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl:*)"
     ]
   }
 }

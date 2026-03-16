@@ -1,15 +1,17 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:mbtiles/mbtiles.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
+import 'package:vector_tile_renderer/vector_tile_renderer.dart' hide TileLayer;
 
-/// Custom provider that wraps MbTiles directly with proper gzip handling
-/// and debug logging.
-class DebugMbTilesVectorTileProvider extends VectorTileProvider {
+/// Custom provider that wraps MbTiles with proper gzip handling.
+class OfflineVectorTileProvider extends VectorTileProvider {
   final MbTiles mbtiles;
 
   @override
@@ -17,21 +19,16 @@ class DebugMbTilesVectorTileProvider extends VectorTileProvider {
   @override
   final int maximumZoom;
 
-  DebugMbTilesVectorTileProvider({required this.mbtiles})
+  OfflineVectorTileProvider({required this.mbtiles})
       : minimumZoom = mbtiles.getMetadata().minZoom?.truncate() ?? 0,
         maximumZoom = mbtiles.getMetadata().maxZoom?.truncate() ?? 14;
 
   @override
   Future<Uint8List> provide(TileIdentity tile) async {
     final tmsY = ((1 << tile.z) - 1) - tile.y;
-
-    // Read raw bytes (gzip: false to get untouched data)
-    final stmt = mbtiles.getMetadata(); // just to confirm connection
-    // Access the raw database through getTile (which with gzip:true auto-decompresses)
     final bytes = mbtiles.getTile(z: tile.z, x: tile.x, y: tmsY);
 
     if (bytes == null) {
-      print('[MBTiles] MISS z=${tile.z} x=${tile.x} y=${tile.y} (tmsY=$tmsY)');
       throw ProviderException(
         message: 'Tile not found: ${tile.z}/${tile.x}/${tile.y}',
         retryable: Retryable.none,
@@ -39,11 +36,8 @@ class DebugMbTilesVectorTileProvider extends VectorTileProvider {
       );
     }
 
-    print('[MBTiles] HIT z=${tile.z} x=${tile.x} y=${tile.y} len=${bytes.length} first4=${bytes.take(4).toList()}');
-
-    // Check if still gzip-compressed (shouldn't be if gzip:true is working)
+    // Fallback: manual gzip decompress if still compressed
     if (bytes.length >= 2 && bytes[0] == 0x1F && bytes[1] == 0x8B) {
-      print('[MBTiles] WARNING: tile still gzip-compressed! Decompressing manually...');
       final decompressed = gzip.decode(bytes);
       return Uint8List.fromList(decompressed);
     }
@@ -52,28 +46,41 @@ class DebugMbTilesVectorTileProvider extends VectorTileProvider {
   }
 }
 
-class MbTilesService {
+class MbTilesService extends ChangeNotifier {
   MbTilesService._();
   static final MbTilesService instance = MbTilesService._();
 
   static const _prefKey = 'use_offline_map';
   static const _assetPath = 'assets/tiles/cuba.mbtiles';
+  static const _brightStylePath =
+      'assets/osm_offline_styles/osm-bright-gl-style/style.json';
+  static const _darkStylePath =
+      'assets/osm_offline_styles/dark-matter-gl-style/style.json';
 
-  DebugMbTilesVectorTileProvider? _provider;
+  OfflineVectorTileProvider? _provider;
   MbTiles? _mbtiles;
   late SharedPreferences _prefs;
   String? _filePath;
 
+  Theme? _brightTheme;
+  Theme? _darkTheme;
+
   bool get useOffline => _prefs.getBool(_prefKey) ?? false;
   bool get isAvailable => _filePath != null && File(_filePath!).existsSync();
-  DebugMbTilesVectorTileProvider? get provider => _provider;
+  OfflineVectorTileProvider? get provider => _provider;
 
-  /// Bump this number whenever you replace the asset file to force re-copy.
+  Theme getTheme({required bool isDark}) {
+    if (isDark && _darkTheme != null) return _darkTheme!;
+    if (!isDark && _brightTheme != null) return _brightTheme!;
+    return ProvidedThemes.lightTheme();
+  }
+
   static const _assetVersion = 2;
   static const _versionKey = 'mbtiles_asset_version';
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+    await _loadThemes();
 
     final dir = await getApplicationDocumentsDirectory();
     final dest = File('${dir.path}/cuba.mbtiles');
@@ -87,38 +94,41 @@ class MbTilesService {
           flush: true,
         );
         await _prefs.setInt(_versionKey, _assetVersion);
-        print('[MBTiles] Asset copied (v$_assetVersion), size=${dest.lengthSync()}');
-      } catch (e) {
-        print('[MBTiles] Asset copy failed: $e');
+      } catch (_) {
         return;
       }
     }
 
     _filePath = dest.path;
-    print('[MBTiles] File ready at $_filePath, size=${dest.lengthSync()}');
 
     if (useOffline) {
       _openProvider();
     }
   }
 
-  void _openProvider() {
-    if (_filePath == null) return;
-    _closeProvider();
-
-    // Use gzip: true so getTile() auto-decompresses
-    _mbtiles = MbTiles(mbtilesPath: _filePath!, gzip: true);
-    final meta = _mbtiles!.getMetadata();
-    print('[MBTiles] Opened: name=${meta.name}, format=${meta.format}, zoom=${meta.minZoom}-${meta.maxZoom}');
-
-    _provider = DebugMbTilesVectorTileProvider(mbtiles: _mbtiles!);
-    print('[MBTiles] Provider created, minZoom=${_provider!.minimumZoom}, maxZoom=${_provider!.maximumZoom}');
+  Future<void> _loadThemes() async {
+    try {
+      final brightJson = await rootBundle.loadString(_brightStylePath);
+      final brightData = json.decode(brightJson) as Map<String, dynamic>;
+      _brightTheme = ThemeReader().read(brightData);
+    } catch (e) {
+      debugPrint('[MBTiles] Could not load bright theme: $e');
+    }
+    try {
+      final darkJson = await rootBundle.loadString(_darkStylePath);
+      final darkData = json.decode(darkJson) as Map<String, dynamic>;
+      _darkTheme = ThemeReader().read(darkData);
+    } catch (e) {
+      debugPrint('[MBTiles] Could not load dark theme: $e');
+    }
   }
 
-  void _closeProvider() {
-    _mbtiles?.dispose();
-    _mbtiles = null;
-    _provider = null;
+  void _openProvider() {
+    if (_filePath == null) return;
+    // Don't dispose old mbtiles — VectorTileLayer may still reference it.
+    // Just create a fresh instance.
+    _mbtiles = MbTiles(mbtilesPath: _filePath!, gzip: true);
+    _provider = OfflineVectorTileProvider(mbtiles: _mbtiles!);
   }
 
   Future<void> toggleOffline(bool value) async {
@@ -126,11 +136,19 @@ class MbTilesService {
     if (value && isAvailable) {
       _openProvider();
     } else {
-      _closeProvider();
+      // Don't dispose the db — just clear the provider reference.
+      // The old VectorTileLayer will be removed from the widget tree
+      // and stop requesting tiles.
+      _provider = null;
     }
+    notifyListeners();
   }
 
+  @override
   void dispose() {
-    _closeProvider();
+    _mbtiles?.dispose();
+    _mbtiles = null;
+    _provider = null;
+    super.dispose();
   }
 }

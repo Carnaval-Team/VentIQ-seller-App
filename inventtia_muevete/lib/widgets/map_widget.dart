@@ -5,7 +5,6 @@ import 'package:flutter_map/flutter_map.dart' as fm show TileLayer;
 import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart' as fmtc;
 import 'package:latlong2/latlong.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
-import 'package:vector_tile_renderer/vector_tile_renderer.dart';
 
 import '../config/app_theme.dart';
 import '../services/mbtiles_service.dart';
@@ -38,6 +37,13 @@ class MapWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: MbTilesService.instance,
+      builder: (context, _) => _buildMap(),
+    );
+  }
+
+  Widget _buildMap() {
     final tileUrl =
         isDark ? AppTheme.cartoDarkTileUrl : AppTheme.osmTileUrl;
 
@@ -55,12 +61,11 @@ class MapWidget extends StatelessWidget {
       children: [
         if (useOffline)
           VectorTileLayer(
-            theme: ProvidedThemes.lightTheme(),
+            theme: mbService.getTheme(isDark: isDark),
             tileProviders: TileProviders({
               'openmaptiles': mbService.provider!,
             }),
             maximumZoom: 18,
-            // Disable file cache — tiles are already local
             fileCacheMaximumSizeInBytes: 0,
           )
         else

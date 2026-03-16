@@ -104,3 +104,5 @@ flutter:
     - assets/images/
     - assets/sounds/
     - assets/tiles/
+    - assets/osm_offline_styles/osm-bright-gl-style/
+    - assets/osm_offline_styles/dark-matter-gl-style/
