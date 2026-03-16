@@ -78,6 +78,10 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   static const double _completionThresholdM = 30.0;
   bool _clientCompletedEarly = false;
   RealtimeChannel? _solicitudChannel;
+  RealtimeChannel? _viajeChannel;
+
+  // Walking segment cache
+  List<LatLng> _walkingSegment = [];
 
   // Turn-by-turn navigation
   List<RouteStep> _steps = [];
@@ -146,6 +150,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       _startTracking();
       _loadRoute();
       _subscribeSolicitudChanges();
+      _subscribeViajeChanges();
       _checkIfAlreadyCompleted();
     });
   }
@@ -203,6 +208,49 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                 titulo: 'Cliente completó el viaje',
                 mensaje:
                     'El pasajero marcó el viaje como completado antes de llegar al destino.',
+              );
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'El pasajero completó el viaje. Puedes finalizar ahora.',
+                    style: GoogleFonts.plusJakartaSans(),
+                  ),
+                  backgroundColor: AppTheme.warning,
+                  duration: const Duration(seconds: 5),
+                ),
+              );
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  void _subscribeViajeChanges() {
+    if (_viajeId == null) return;
+    _viajeChannel = Supabase.instance.client
+        .channel('viaje_driver_$_viajeId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'muevete',
+          table: 'viajes',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: _viajeId.toString(),
+          ),
+          callback: (payload) {
+            final newCompletado =
+                payload.newRecord['completado'] as bool? ?? false;
+            if (newCompletado &&
+                _currentPhase == _RidePhase.inProgress &&
+                !_clientCompletedEarly &&
+                mounted) {
+              setState(() => _clientCompletedEarly = true);
+              NotificationService().pushLocal(
+                tipo: NotificationType.viajeCompletado,
+                titulo: 'Viaje completado',
+                mensaje:
+                    'El pasajero marcó el viaje como completado. Puedes finalizar ahora.',
               );
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -294,6 +342,31 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     return null;
   }
 
+  Future<void> _fetchWalkingSegment() async {
+    if (_routePolyline.isEmpty) return;
+    final target = _currentPhase == _RidePhase.goingToPickup
+        ? _pickupLocation
+        : _dropoffLocation;
+    if (target == null) return;
+    final distToEnd =
+        const Distance().as(LengthUnit.Meter, _routePolyline.last, target);
+    if (distToEnd <= 30) {
+      if (_walkingSegment.isNotEmpty && mounted) {
+        setState(() => _walkingSegment = []);
+      }
+      return;
+    }
+    try {
+      final result =
+          await _routingService.getWalkingRoute(_routePolyline.last, target);
+      if (mounted) setState(() => _walkingSegment = result.polyline);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _walkingSegment = [_routePolyline.last, target]);
+      }
+    }
+  }
+
   Future<void> _recalculateRoute(LatLng from) async {
     final end = _currentTarget;
     if (end == null) return;
@@ -311,6 +384,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
           _updateNextInstruction(from);
         }
       }
+      _fetchWalkingSegment();
     } catch (_) {}
     _isRecalculating = false;
   }
@@ -348,6 +422,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
           final loc = context.read<LocationProvider>().locationOrDefault;
           _updateNextInstruction(loc);
         }
+        _fetchWalkingSegment();
       }
     } catch (_) {
       if (mounted) {
@@ -1156,6 +1231,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     _routeRefreshTimer?.cancel();
     _stopTimer?.cancel();
     _solicitudChannel?.unsubscribe();
+    _viajeChannel?.unsubscribe();
     try {
       context.read<LocationProvider>().removeListener(_onLocationUpdate);
     } catch (_) {}
@@ -1284,23 +1360,16 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
         ),
       );
 
-      // Walking segment: route end → target
-      final target = _currentPhase == _RidePhase.goingToPickup
-          ? _pickupLocation
-          : _dropoffLocation;
-      if (target != null) {
-        final distToEnd = const Distance().as(
-          LengthUnit.Meter, _routePolyline.last, target);
-        if (distToEnd > 30) {
-          polylines.add(
-            Polyline(
-              points: [_routePolyline.last, target],
-              strokeWidth: 4.0,
-              color: Colors.grey,
-              pattern: const StrokePattern.dotted(spacingFactor: 3.0),
-            ),
-          );
-        }
+      // Walking segment: real walking route (or cached fallback)
+      if (_walkingSegment.length >= 2) {
+        polylines.add(
+          Polyline(
+            points: _walkingSegment,
+            strokeWidth: 4.0,
+            color: Colors.grey,
+            pattern: const StrokePattern.dotted(spacingFactor: 3.0),
+          ),
+        );
       }
     }
 

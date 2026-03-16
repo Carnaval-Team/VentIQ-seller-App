@@ -113,6 +113,13 @@ class CompletionSyncService {
           .from('solicitudes_transporte')
           .update({'estado': 'completada'})
           .eq('id', solicitudId);
+
+      // Also mark viaje as completed so driver's UI updates
+      await _supabase
+          .schema('muevete')
+          .from('viajes')
+          .update({'completado': true, 'estado': false})
+          .eq('id', viajeId);
     } else {
       // Driver role
       // Mark viaje completado + estado false

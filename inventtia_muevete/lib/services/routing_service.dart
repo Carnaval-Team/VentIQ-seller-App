@@ -235,6 +235,52 @@ class RoutingService {
     }
   }
 
+  /// Fetches a walking route between [start] and [end] using OSRM foot profile.
+  /// Falls back to a straight line on error.
+  Future<RouteResult> getWalkingRoute(LatLng start, LatLng end) async {
+    try {
+      final url = Uri.parse(
+        '$_baseUrl/route/v1/foot/'
+        '${start.longitude},${start.latitude};'
+        '${end.longitude},${end.latitude}'
+        '?geometries=polyline&overview=full&steps=false',
+      );
+
+      final response = await http.get(url);
+
+      if (response.statusCode != 200) {
+        throw Exception('OSRM API error: ${response.statusCode}');
+      }
+
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      final routes = data['routes'] as List<dynamic>;
+
+      if (routes.isEmpty) {
+        throw Exception('No routes found');
+      }
+
+      final route = routes[0] as Map<String, dynamic>;
+      final geometry = route['geometry'] as String;
+      final distance = (route['distance'] as num).toDouble();
+      final duration = (route['duration'] as num).toDouble();
+
+      return RouteResult(
+        polyline: _decodePolyline(geometry),
+        totalDistance: distance,
+        totalDuration: duration,
+      );
+    } catch (e) {
+      // Fallback: straight line
+      const distanceCalc = Distance();
+      final meters = distanceCalc.as(LengthUnit.Meter, start, end);
+      return RouteResult(
+        polyline: [start, end],
+        totalDistance: meters,
+        totalDuration: meters / 1.4, // ~5 km/h walking speed
+      );
+    }
+  }
+
   /// Decodes an encoded polyline string into a list of LatLng points.
   ///
   /// IMPORTANT: Uses `-((result >> 1) + 1)` instead of `~(result >> 1)`

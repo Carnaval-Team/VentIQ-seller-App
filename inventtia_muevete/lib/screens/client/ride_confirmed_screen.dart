@@ -59,6 +59,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   Timer? _routeRefreshTimer; // periodic fallback every 10s
 
   final RoutingService _routingService = RoutingService();
+  List<LatLng> _walkingSegment = [];
 
   LatLng? _lastClientPosition;
   // Whether the driver has started the trip (hide driver marker from map)
@@ -279,12 +280,36 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       final result = await _routingService.getRoute(from, dest);
       if (mounted) {
         setState(() => _currentRoute = result.polyline);
+        _fetchWalkingSegment();
       }
     } catch (_) {
       // Keep previous route on error
     }
     // Always reset — even if catch fires
     _isRecalculating = false;
+  }
+
+  Future<void> _fetchWalkingSegment() async {
+    if (_currentRoute.isEmpty) return;
+    final dest = context.read<TransportProvider>().dropoffLocation;
+    if (dest == null) return;
+    final distToEnd =
+        const Distance().as(LengthUnit.Meter, _currentRoute.last, dest);
+    if (distToEnd <= 30) {
+      if (_walkingSegment.isNotEmpty && mounted) {
+        setState(() => _walkingSegment = []);
+      }
+      return;
+    }
+    try {
+      final result =
+          await _routingService.getWalkingRoute(_currentRoute.last, dest);
+      if (mounted) setState(() => _walkingSegment = result.polyline);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _walkingSegment = [_currentRoute.last, dest]);
+      }
+    }
   }
 
   double _haversineMeters(LatLng a, LatLng b) {
@@ -402,6 +427,15 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
           .from('solicitudes_transporte')
           .update({'estado': 'completada'})
           .eq('id', requestId);
+
+      // Also mark viaje as completed so the driver's UI updates
+      if (viajeId != null) {
+        await Supabase.instance.client
+            .schema('muevete')
+            .from('viajes')
+            .update({'completado': true, 'estado': false})
+            .eq('id', viajeId);
+      }
 
       // Show rating dialog before navigating away
       if (mounted && viajeId != null && driverId != null && userId != null) {
@@ -703,20 +737,16 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
         ),
       );
 
-      // Walking segment: route end → destination
-      if (dropoff != null) {
-        final distToEnd = const Distance().as(
-          LengthUnit.Meter, _currentRoute.last, dropoff);
-        if (distToEnd > 30) {
-          polylines.add(
-            Polyline(
-              points: [_currentRoute.last, dropoff],
-              strokeWidth: 4.0,
-              color: Colors.grey,
-              pattern: const StrokePattern.dotted(spacingFactor: 3.0),
-            ),
-          );
-        }
+      // Walking segment: real walking route (or cached fallback)
+      if (_walkingSegment.length >= 2) {
+        polylines.add(
+          Polyline(
+            points: _walkingSegment,
+            strokeWidth: 4.0,
+            color: Colors.grey,
+            pattern: const StrokePattern.dotted(spacingFactor: 3.0),
+          ),
+        );
       }
     }
 
