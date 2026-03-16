@@ -7,6 +7,7 @@ import '../../config/app_theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/profile_photo_service.dart';
+import '../../services/mbtiles_service.dart';
 import '../../services/saved_address_service.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -445,6 +446,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 label: 'Ciudad / Municipio',
                 enabled: _isEditing,
                 isDark: isDark,
+              ),
+              const SizedBox(height: 24),
+
+              // Offline map toggle
+              Container(
+                decoration: BoxDecoration(
+                  color: isDark ? AppTheme.darkCard : Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isDark ? AppTheme.darkBorder : Colors.grey[200]!,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    SwitchListTile(
+                      secondary: Icon(
+                        Icons.map_outlined,
+                        color: AppTheme.primaryColor,
+                        size: 22,
+                      ),
+                      title: Text(
+                        'Mapa Offline',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                      subtitle: Text(
+                        MbTilesService.instance.isAvailable
+                            ? 'Usar mapa descargado (sin internet)'
+                            : 'Archivo de mapa no disponible',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: isDark ? Colors.white54 : Colors.grey[500],
+                        ),
+                      ),
+                      value: MbTilesService.instance.useOffline,
+                      activeColor: AppTheme.primaryColor,
+                      onChanged: MbTilesService.instance.isAvailable
+                          ? (val) async {
+                              await MbTilesService.instance.toggleOffline(val);
+                              setState(() {});
+                            }
+                          : null,
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 40),
 

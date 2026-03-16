@@ -4,7 +4,11 @@
       "Bash(flutter analyze:*)",
       "Bash(dart analyze:*)",
       "Bash(xargs grep:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "WebSearch",
+      "WebFetch(domain:pub.dev)",
+      "Bash(flutter pub:*)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }
