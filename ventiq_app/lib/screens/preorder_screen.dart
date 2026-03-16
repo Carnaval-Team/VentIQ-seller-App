@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
 import '../models/payment_method.dart' as pm;
 import '../services/order_service.dart';
@@ -868,6 +869,16 @@ class _PreorderScreenState extends State<PreorderScreen> {
     final isOfflineModeEnabled =
         await _userPreferencesService.isOfflineModeEnabled();
 
+    // Verificar disponibilidad en inventario (solo en modo online)
+    if (!isOfflineModeEnabled) {
+      final stockProblems = await _checkInventoryAvailability(currentOrder.items);
+      if (!mounted) return;
+      if (stockProblems.isNotEmpty) {
+        _showStockProblemsDialog(stockProblems);
+        return;
+      }
+    }
+
     if (isOfflineModeEnabled) {
       // MODO OFFLINE: No elaborar productos, pero SÍ ir al checkout para capturar datos del cliente
       print(
@@ -905,6 +916,188 @@ class _PreorderScreenState extends State<PreorderScreen> {
         setState(() {});
       });
     }
+  }
+
+  /// Verifica disponibilidad de inventario para todos los items de la orden.
+  /// Retorna lista de problemas: [{nombre, cantidad_pedida, stock_disponible, diferencia}]
+  Future<List<Map<String, dynamic>>> _checkInventoryAvailability(
+    List<OrderItem> items,
+  ) async {
+    final supabase = Supabase.instance.client;
+    final problems = <Map<String, dynamic>>[];
+
+    for (final item in items) {
+      try {
+        final idProducto = item.producto.id;
+        final idUbicacion = item.inventoryData?['id_ubicacion'];
+        final idVariante = item.inventoryData?['id_variante'];
+
+        // Construir query base
+        var query = supabase
+            .from('app_dat_inventario_productos')
+            .select('cantidad_final')
+            .eq('id_producto', idProducto);
+
+        // Filtrar por ubicación si está disponible
+        if (idUbicacion != null) {
+          query = query.eq('id_ubicacion', idUbicacion);
+        }
+
+        // Filtrar por variante si aplica
+        if (idVariante != null) {
+          query = query.eq('id_variante', idVariante);
+        }
+
+        final response = await query.order('created_at', ascending: false).limit(1);
+
+        double stockActual = 0.0;
+        if (response.isNotEmpty) {
+          stockActual = (response.first['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+        }
+
+        if (stockActual < item.cantidad) {
+          problems.add({
+            'nombre': item.nombre,
+            'cantidad_pedida': item.cantidad,
+            'stock_disponible': stockActual,
+            'diferencia': item.cantidad - stockActual,
+            'ubicacion': item.ubicacionAlmacen,
+          });
+        }
+      } catch (e) {
+        print('⚠️ Error verificando stock para ${item.nombre}: $e');
+      }
+    }
+
+    return problems;
+  }
+
+  /// Muestra diálogo con los problemas de stock encontrados
+  void _showStockProblemsDialog(List<Map<String, dynamic>> problems) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.inventory_2_outlined, color: Colors.orange[700], size: 26),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Problema de Inventario',
+                style: TextStyle(fontSize: 17),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Los siguientes productos no tienen suficiente existencia:',
+                style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 12),
+              ...problems.map((p) {
+                final cantPedida = (p['cantidad_pedida'] as double);
+                final stock = (p['stock_disponible'] as double);
+                final diff = (p['diferencia'] as double);
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red[200]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        p['nombre'] as String,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildStockChip(
+                              'Pedido',
+                              cantPedida,
+                              Colors.blue[700]!,
+                              Colors.blue[50]!,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: _buildStockChip(
+                              'En stock',
+                              stock,
+                              Colors.green[700]!,
+                              Colors.green[50]!,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: _buildStockChip(
+                              'Faltante',
+                              diff,
+                              Colors.red[700]!,
+                              Colors.red[100]!,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Revisar Orden'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange[700],
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStockChip(String label, double value, Color textColor, Color bgColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        children: [
+          Text(
+            label,
+            style: TextStyle(fontSize: 11, color: textColor, fontWeight: FontWeight.w500),
+          ),
+          Text(
+            value % 1 == 0 ? value.toInt().toString() : value.toStringAsFixed(2),
+            style: TextStyle(fontSize: 13, color: textColor, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Procesa productos elaborados en la orden

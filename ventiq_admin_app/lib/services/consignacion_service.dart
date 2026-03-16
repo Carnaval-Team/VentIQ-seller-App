@@ -890,7 +890,7 @@ class ConsignacionService {
       debugPrint('🔄 Reservando stock para ${productos.length} productos...');
       
       final extraccionResult = await _supabase.rpc(
-        'fn_insertar_extraccion_completa',
+        'fn_crear_extraccion_con_movimiento',
         params: {
           'p_autorizado_por': email,
           'p_estado_inicial': 1, // 1 = Pendiente (Reserva)

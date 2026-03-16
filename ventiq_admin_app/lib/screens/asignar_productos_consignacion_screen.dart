@@ -424,7 +424,7 @@ class _AsignarProductosConsignacionScreenState
         title: Text(
           widget.isDevolucion
               ? 'Crear Devolución'
-              : 'Asignar Productos en Consignación',
+              : 'Asignar Productos en Consignación2',
         ),
         backgroundColor:
             widget.isDevolucion ? Colors.deepOrange : AppColors.primary,
