@@ -40,7 +40,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   @override
   MapController get compassMapController => _mapController;
   @override
-  bool get compassDrivesRotation => false; // _animateCamera handles rotation
+  bool get compassDrivesRotation => true;
   AnimationController? _pulseController;
   Animation<double>? _pulseAnimation;
 
@@ -59,6 +59,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   Timer? _routeRefreshTimer; // periodic fallback every 10s
 
   final RoutingService _routingService = RoutingService();
+  List<LatLng> _walkingSegment = [];
 
   LatLng? _lastClientPosition;
   // Whether the driver has started the trip (hide driver marker from map)
@@ -279,12 +280,36 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       final result = await _routingService.getRoute(from, dest);
       if (mounted) {
         setState(() => _currentRoute = result.polyline);
+        _fetchWalkingSegment();
       }
     } catch (_) {
       // Keep previous route on error
     }
     // Always reset — even if catch fires
     _isRecalculating = false;
+  }
+
+  Future<void> _fetchWalkingSegment() async {
+    if (_currentRoute.isEmpty) return;
+    final dest = context.read<TransportProvider>().dropoffLocation;
+    if (dest == null) return;
+    final distToEnd =
+        const Distance().as(LengthUnit.Meter, _currentRoute.last, dest);
+    if (distToEnd <= 30) {
+      if (_walkingSegment.isNotEmpty && mounted) {
+        setState(() => _walkingSegment = []);
+      }
+      return;
+    }
+    try {
+      final result =
+          await _routingService.getWalkingRoute(_currentRoute.last, dest);
+      if (mounted) setState(() => _walkingSegment = result.polyline);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _walkingSegment = [_currentRoute.last, dest]);
+      }
+    }
   }
 
   double _haversineMeters(LatLng a, LatLng b) {
@@ -402,6 +427,15 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
           .from('solicitudes_transporte')
           .update({'estado': 'completada'})
           .eq('id', requestId);
+
+      // Also mark viaje as completed so the driver's UI updates
+      if (viajeId != null) {
+        await Supabase.instance.client
+            .schema('muevete')
+            .from('viajes')
+            .update({'completado': true, 'estado': false})
+            .eq('id', viajeId);
+      }
 
       // Show rating dialog before navigating away
       if (mounted && viajeId != null && driverId != null && userId != null) {
@@ -687,20 +721,33 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
 
     // Blue current route to destination — glow layer + solid
     if (_currentRoute.isNotEmpty) {
+      final routePoints = [userLocation, ..._currentRoute];
       polylines.add(
         Polyline(
-          points: _currentRoute,
+          points: routePoints,
           strokeWidth: 10.0,
           color: AppTheme.primaryColor.withValues(alpha: 0.2),
         ),
       );
       polylines.add(
         Polyline(
-          points: _currentRoute,
+          points: routePoints,
           strokeWidth: 4.5,
           color: AppTheme.primaryColor,
         ),
       );
+
+      // Walking segment: real walking route (or cached fallback)
+      if (_walkingSegment.length >= 2) {
+        polylines.add(
+          Polyline(
+            points: _walkingSegment,
+            strokeWidth: 4.0,
+            color: Colors.grey,
+            pattern: const StrokePattern.dotted(spacingFactor: 3.0),
+          ),
+        );
+      }
     }
 
     return Scaffold(
@@ -1295,8 +1342,6 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       final cam = _mapController.camera;
       final startCenter = cam.center;
       final startZoom = cam.zoom;
-      final startRotation = cam.rotation;
-      final targetRotation = autoRotate ? -smoothHeading : 0.0;
       final targetZoom = _zoomForDistance(_distanceToDestinationM);
 
       const steps = 15;
@@ -1318,15 +1363,8 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
         final lon = startCenter.longitude +
             (target.longitude - startCenter.longitude) * ease;
         final zoom = startZoom + (targetZoom - startZoom) * ease;
-        double rot = startRotation;
-        if (autoRotate) {
-          var diff = targetRotation - startRotation;
-          while (diff > 180) diff -= 360;
-          while (diff < -180) diff += 360;
-          rot = startRotation + diff * ease;
-        }
         try {
-          _mapController.moveAndRotate(LatLng(lat, lon), zoom, rot);
+          _mapController.move(LatLng(lat, lon), zoom);
         } catch (_) {}
       });
     } catch (_) {
