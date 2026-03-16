@@ -58,6 +58,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
   bool _isOfflineMode = false;
+  bool _isShowSkuEnabled = false;
 
   @override
   void initState() {
@@ -65,6 +66,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     _filteredOrders = _orderService.orders;
     _searchController.addListener(_onSearchChanged);
     _loadUsdRate();
+    _loadShowSkuSetting();
     // Cargar órdenes desde Supabase y órdenes pendientes offline
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadOrdersFromSupabase();
@@ -72,6 +74,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
       _loadPrintPendingPermission();
       _loadSellerModificationsPermission();
     });
+  }
+
+  Future<void> _loadShowSkuSetting() async {
+    final isEnabled = await _userPreferencesService.isShowSkuEnabled();
+    if (mounted) {
+      setState(() {
+        _isShowSkuEnabled = isEnabled;
+      });
+    }
   }
 
   Future<void> _loadUsdRate() async {
@@ -1671,6 +1682,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                 color: Color(0xFF1F2937),
                                               ),
                                             ),
+                                            if ((_isShowSkuEnabled || _userPreferencesService.isShowSkuEnabledSync) && item.producto.sku != null && item.producto.sku!.isNotEmpty)
+                                              Padding(
+                                                padding: const EdgeInsets.only(top: 2, bottom: 2),
+                                                child: Text(
+                                                  'SKU: ${item.producto.sku}',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    color: Color(0xFF4A90E2),
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
+                                              ),
                                             const SizedBox(height: 4),
                                             Row(
                                               mainAxisAlignment:
@@ -1772,6 +1795,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                       ),
                                     ),
 
+                                /* // Debug: datos crudos del servidor
+                                const SizedBox(height: 24),
+                                _buildRawServerData(order), */
+
                                 // Botones de acción
                                 const SizedBox(height: 24),
                                 _buildActionButtons(order),
@@ -1784,6 +1811,108 @@ class _OrdersScreenState extends State<OrdersScreen> {
               );
             },
           ),
+    );
+  }
+
+  Widget _buildRawServerData(Order order) {
+    final encoder = const JsonEncoder.withIndent('  ');
+
+    final rawData = <String, dynamic>{
+      'id': order.id,
+      'fechaCreacion': order.fechaCreacion.toIso8601String(),
+      'status': order.status.name,
+      'total': order.total,
+      'operationId': order.operationId,
+      'isOfflineOrder': order.isOfflineOrder,
+      'buyerName': order.buyerName,
+      'buyerPhone': order.buyerPhone,
+      'extraContacts': order.extraContacts,
+      'paymentMethod': order.paymentMethod,
+      'sellerName': order.sellerName,
+      'tpvName': order.tpvName,
+      'notas': order.notas,
+      'descuento': order.descuento,
+      'pagos': order.pagos,
+      'items': order.items.map((item) => {
+        'id': item.id,
+        'nombre': item.nombre,
+        'cantidad': item.cantidad,
+        'precioUnitario': item.precioUnitario,
+        'precioBase': item.precioBase,
+        'subtotal': item.subtotal,
+        'ubicacionAlmacen': item.ubicacionAlmacen,
+        'cantidadInicial': item.cantidadInicial,
+        'cantidadFinal': item.cantidadFinal,
+        'entradasProducto': item.entradasProducto,
+        'inventoryData': item.inventoryData,
+        'promotionData': item.promotionData,
+        'paymentMethod': item.paymentMethod?.toJson(),
+        'ingredientes': item.ingredientes,
+        'producto': item.producto.toJson(),
+        'variante': item.variante?.toJson(),
+      }).toList(),
+    };
+
+    String jsonText;
+    try {
+      jsonText = encoder.convert(rawData);
+    } catch (e) {
+      jsonText = 'Error serializando datos: $e';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.data_object, size: 16, color: Colors.grey[600]),
+            const SizedBox(width: 6),
+            Text(
+              'Datos del Servidor (Debug)',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[700],
+              ),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: Icon(Icons.copy, size: 16, color: Colors.grey[600]),
+              tooltip: 'Copiar JSON',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: jsonText));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('JSON copiado al portapapeles'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[700]!),
+          ),
+          child: SelectableText(
+            jsonText,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 11,
+              color: Color(0xFFD4D4D4),
+              height: 1.5,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -4367,6 +4496,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             userPreferencesService: _userPreferencesService,
             onOrderUpdated: _loadOrdersFromSupabase,
             isOfflineMode: _isOfflineMode,
+            showSkuEnabled: _isShowSkuEnabled,
             pendingOrders: _orderService.orders
                 .where((o) => o.status == OrderStatus.enviada)
                 .toList(),
@@ -4532,6 +4662,7 @@ class _EditPendingOrderSheet extends StatefulWidget {
   final VoidCallback onOrderUpdated;
   final bool isOfflineMode;
   final List<Order> pendingOrders;
+  final bool showSkuEnabled;
 
   const _EditPendingOrderSheet({
     required this.order,
@@ -4540,6 +4671,7 @@ class _EditPendingOrderSheet extends StatefulWidget {
     required this.onOrderUpdated,
     required this.isOfflineMode,
     required this.pendingOrders,
+    this.showSkuEnabled = false,
   });
 
   @override
@@ -5083,6 +5215,8 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
         },
       );
 
+      print('RPC response: $response');
+
       if (!mounted) return;
 
       // Agrupar por id_producto sumando stock (equivalente a _groupDuplicateProducts)
@@ -5107,11 +5241,15 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
         }
       }
 
+      print('Grouped data: $grouped');
+
       final List<Product> products = grouped.values.map((row) {
+        print('Creating product from row: $row');
         return Product(
           id: (row['id_producto'] as num).toInt(),
           denominacion: row['nombre_producto'] ?? 'Sin nombre',
           descripcion: row['descripcion'],
+          sku: row['sku_producto'] ?? '', // Corrected debug print
           foto: row['imagen'],
           precio: (row['precio_venta'] as num?)?.toDouble() ?? 0.0,
           cantidad: (row['stock_disponible'] as num?)?.toDouble() ?? 0.0,
@@ -5124,7 +5262,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
           esPorLotes: row['es_por_lotes'] ?? false,
           esElaborado: row['es_elaborado'] ?? false,
           esServicio: row['es_servicio'] ?? false,
-          categoria: row['categoria'] ?? '',
+          categoria: row['categoria'],
         );
       }).toList();
 
@@ -5976,6 +6114,15 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       itemCount: _searchResults.length,
       itemBuilder: (_, i) {
         final p = _searchResults[i];
+        final showSkuSetting = widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync;
+        final hasSku = p.sku != null && p.sku!.isNotEmpty;
+        print('🔍 DEBUG Producto $i: ${p.denominacion}');
+        print('   - SKU: ${p.sku}');
+        print('   - widget.showSkuEnabled: ${widget.showSkuEnabled}');
+        print('   - isShowSkuEnabledSync: ${widget.userPreferencesService.isShowSkuEnabledSync}');
+        print('   - showSkuSetting (OR result): $showSkuSetting');
+        print('   - hasSku: $hasSku');
+        print('   - Mostrar SKU: ${showSkuSetting && hasSku}');
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 4,
@@ -6000,23 +6147,48 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
               fontWeight: FontWeight.w500,
             ),
           ),
-          subtitle: Row(
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                '\$${p.precio.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  color: Color(0xFF0EA5E9),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
+              if (showSkuSetting && hasSku)
+                Text(
+                  'SKU: ${p.sku}',
+                  style: const TextStyle(
+                    color: Color(0xFF0EA5E9),
+                    fontWeight: FontWeight.w500,
+                    fontSize: 11,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Stock: ${p.cantidad}',
-                style: TextStyle(
-                  color: Colors.grey[500],
-                  fontSize: 12,
+              if (p.descripcion != null && p.descripcion!.isNotEmpty)
+                Text(
+                  p.descripcion!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.grey[500],
+                    fontSize: 12,
+                  ),
                 ),
+              Row(
+                children: [
+                  Text(
+                    '\$${p.precio.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Color(0xFF0EA5E9),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Stock: ${p.cantidad}',
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

@@ -61,4 +61,28 @@ class UserService {
       return {'users': [], 'total': 0};
     }
   }
+
+  Future<Map<String, dynamic>> changeUserPassword({
+    required String email,
+    required String newPassword,
+  }) async {
+    try {
+      final response = await _supabase.rpc(
+        'admin_change_user_password',
+        params: {
+          'p_email': email,
+          'p_new_password': newPassword,
+        },
+      );
+
+      if (response != null && response is Map) {
+        return Map<String, dynamic>.from(response);
+      }
+
+      return {'success': true, 'message': 'Contraseña actualizada correctamente'};
+    } catch (e) {
+      print('Error changing user password: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
 }
