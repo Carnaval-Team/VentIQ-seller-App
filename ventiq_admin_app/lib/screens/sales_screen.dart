@@ -1020,6 +1020,23 @@ class _SalesScreenState extends State<SalesScreen>
         style: pw.TextStyle(fontSize: 10, color: PdfColor.fromHex('#6B7280')),
       );
     }
+
+    final sorted = [...reports]
+      ..sort(
+        (a, b) => a.nombreProducto.toLowerCase().compareTo(
+          b.nombreProducto.toLowerCase(),
+        ),
+      );
+
+    final totalGanancia = sorted.fold<double>(
+      0.0,
+      (sum, p) => sum + p.gananciaTotal,
+    );
+    final totalGananciaColor =
+        totalGanancia < 0
+            ? PdfColor.fromHex('#DC2626')
+            : PdfColor.fromHex('#15803D');
+
     return pw.Table(
       border: pw.TableBorder(
         horizontalInside: pw.BorderSide(color: PdfColors.grey300, width: 0.3),
@@ -1027,38 +1044,64 @@ class _SalesScreenState extends State<SalesScreen>
       ),
       columnWidths: {
         0: const pw.FlexColumnWidth(4),
-        1: const pw.FlexColumnWidth(1.5),
+        1: const pw.FlexColumnWidth(1.2),
         2: const pw.FlexColumnWidth(1.5),
         3: const pw.FlexColumnWidth(1.5),
+        4: const pw.FlexColumnWidth(1.8),
       },
       children: [
         pw.TableRow(
           children: [
             _pdfHeaderCell('Producto'),
+            _pdfHeaderCell('Cant.'),
             _pdfHeaderCell('Precio'),
             _pdfHeaderCell('Costo'),
-            _pdfHeaderCell('Ganancia'),
+            _pdfHeaderCell('Ganancia total'),
           ],
         ),
-        ...reports.map((p) {
+        ...sorted.map((p) {
           final gananciaColor =
-              p.gananciaUnitaria < 0
+              p.gananciaTotal < 0
                   ? PdfColor.fromHex('#DC2626')
-                  : p.gananciaUnitaria > 0
+                  : p.gananciaTotal > 0
                   ? PdfColor.fromHex('#15803D')
                   : PdfColor.fromHex('#334155');
           return pw.TableRow(
             children: [
               _pdfBodyCell(p.nombreProducto),
+              _pdfBodyCell(p.totalVendido.toStringAsFixed(0)),
               _pdfBodyCell('\$${p.precioVentaCup.toStringAsFixed(2)}'),
               _pdfBodyCell('\$${p.precioCostoCup.toStringAsFixed(2)}'),
               _pdfBodyCell(
-                '\$${p.gananciaUnitaria.toStringAsFixed(2)}',
+                '\$${p.gananciaTotal.toStringAsFixed(2)}',
+                isBold: true,
                 color: gananciaColor,
               ),
             ],
           );
         }),
+        // Totals row
+        pw.TableRow(
+          decoration: pw.BoxDecoration(
+            color: PdfColor.fromHex('#EEF2FF'),
+          ),
+          children: [
+            _pdfBodyCell('TOTAL', isBold: true),
+            _pdfBodyCell(
+              sorted
+                  .fold<double>(0, (s, p) => s + p.totalVendido)
+                  .toStringAsFixed(0),
+              isBold: true,
+            ),
+            _pdfBodyCell(''),
+            _pdfBodyCell(''),
+            _pdfBodyCell(
+              '\$${totalGanancia.toStringAsFixed(2)}',
+              isBold: true,
+              color: totalGananciaColor,
+            ),
+          ],
+        ),
       ],
     );
   }
