@@ -2571,7 +2571,45 @@ class InventoryService {
           print('✅ Validación de recepción exitosa');
         }
 
-        // 2. CASO EXTRACCIÓN: Validar que el envío esté configurado
+        // 2. CASO EXTRACCIÓN DE DEVOLUCIÓN: el inventario ya fue aplicado por
+        //    fn_crear_extraccion_con_movimiento al aprobar la devolución.
+        //    Solo hay que cambiar el estado a Completada (2) sin recontabilizar.
+        final envioDevolucionExtraccion = await _supabase
+            .from('app_dat_consignacion_envio')
+            .select('id, tipo_envio')
+            .eq('id_operacion_extraccion', idOperacion)
+            .maybeSingle();
+
+        if (envioDevolucionExtraccion != null) {
+          print('📦 Extracción de devolución/consignación detectada — marcando como Completada sin recontabilizar');
+          await _supabase.rpc(
+            'fn_registrar_cambio_estado_operacion',
+            params: {
+              'p_id_operacion': idOperacion,
+              'p_nuevo_estado': 2, // Completada
+              'p_uuid_usuario': uuid,
+            },
+          );
+          print('✅ Operación $idOperacion marcada como Completada');
+
+          // Mover envío a EN TRÁNSITO
+          try {
+            final userData = await _prefsService.getUserData();
+            final idUsuario = userData['id'];
+            final idEnvio = envioDevolucionExtraccion['id'] as int;
+            print('🚚 Moviendo envío $idEnvio a EN TRÁNSITO...');
+            await ConsignacionEnvioService.marcarEnTransito(idEnvio: idEnvio, idUsuario: idUsuario);
+          } catch (e) {
+            print('⚠️ Error moviendo envío a EN TRÁNSITO: $e');
+          }
+
+          return {
+            'status': 'success',
+            'message': 'Extracción completada. Inventario ya había sido aplicado al aprobar la devolución.',
+          };
+        }
+
+        // 3. CASO EXTRACCIÓN NORMAL: Validar que el envío esté configurado
         final validacionExtraccion = await ConsignacionService.validarEstadoEnvioParaExtraccion(idOperacion);
         if (validacionExtraccion['valido'] != true) {
           print('❌ Validación de extracción fallida: ${validacionExtraccion['mensaje']}');
@@ -2594,8 +2632,15 @@ class InventoryService {
         },
       );
 
-      print('✅ Operación $idOperacion completada exitosamente');
       print('📦 Respuesta RPC: $response');
+
+      // Si la RPC retornó un error, devolverlo inmediatamente sin continuar
+      if (response is Map && response['status'] == 'error') {
+        print('❌ Error en fn_contabilizar_operacion: ${response['message']}');
+        return Map<String, dynamic>.from(response);
+      }
+
+      print('✅ Operación $idOperacion completada exitosamente');
 
       // =====================================================
       // SINCRONIZAR ESTADO DE ENVÍO TRAS COMPLETAR OPERACIÓN
