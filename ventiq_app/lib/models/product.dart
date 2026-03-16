@@ -2,6 +2,7 @@ class Product {
   final int id;
   final String denominacion;
   final String? descripcion;
+  final String? sku;
   final String? foto;
   final double precio;
   final num cantidad;
@@ -23,6 +24,7 @@ class Product {
     required this.id,
     required this.denominacion,
     this.descripcion,
+    this.sku,
     this.foto,
     required this.precio,
     required this.cantidad,
@@ -45,6 +47,7 @@ class Product {
       id: json['id'],
       denominacion: json['denominacion'],
       descripcion: json['descripcion'],
+      sku: json['sku'],
       foto: json['foto'],
       precio: json['precio']?.toDouble() ?? 0.0,
       cantidad: json['cantidad'] ?? 0,
@@ -72,6 +75,7 @@ class Product {
       'id': id,
       'denominacion': denominacion,
       'descripcion': descripcion,
+      'sku': sku,
       'foto': foto,
       'precio': precio,
       'cantidad': cantidad,

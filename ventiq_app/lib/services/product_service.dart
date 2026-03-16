@@ -151,6 +151,7 @@ class ProductService {
       id: data['id_producto'] as int? ?? 0,
       denominacion: data['denominacion'] as String? ?? 'Sin nombre',
       descripcion: data['descripcion'] as String?,
+      sku: data['sku'] as String?,
       foto:
           data['imagen'] ??
           _generateProductImage(data['denominacion'] as String? ?? 'producto'),

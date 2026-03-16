@@ -53,6 +53,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   bool _showRetryWidget = false; // Para mostrar el widget de reconexión
   bool _isSearchOpen = false; // Estado del buscador global
   bool _isSearchingProducts = false;
+  bool _isShowSkuEnabled = false;
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
   List<Product> _searchResults = [];
@@ -71,6 +72,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     _loadDataUsageSettings();
     _loadFluidModeSettings();
     _loadOfflineModeSettings();
+    _loadShowSkuSetting();
     _searchController.addListener(() {
       _onSearchChanged(_searchController.text);
     });
@@ -110,6 +112,16 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       });
     }
   }
+
+  Future<void> _loadShowSkuSetting() async {
+    final isEnabled = await _preferencesService.isShowSkuEnabled();
+    if (mounted) {
+      setState(() {
+        _isShowSkuEnabled = isEnabled;
+      });
+    }
+  }
+
 
   /// Configurar listener para eventos del SmartOfflineManager
   void _setupSmartOfflineListener() {
@@ -729,14 +741,31 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                                   color: Color(0xFF2C3E50),
                                 ),
                               ),
-                              subtitle: Text(
-                                product.descripcion ?? 'Sin descripción',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if ((_isShowSkuEnabled || _preferencesService.isShowSkuEnabledSync) && product.sku != null && product.sku!.isNotEmpty)
+                                    Text(
+                                      'SKU: ${product.sku}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF4A90E2),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  Text(
+                                    product.descripcion ?? 'Sin descripción',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ],
                               ),
                               trailing: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
