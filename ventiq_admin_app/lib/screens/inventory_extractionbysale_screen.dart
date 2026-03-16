@@ -59,6 +59,9 @@ class _InventoryExtractionBySaleScreenState
   Map<String, dynamic>? _selectedTPV;
   bool _isLoadingTPVs = false;
 
+  // ID de la operación pendiente (para cancelar si el usuario regresa)
+  int? _pendingOperationId;
+
   @override
   void initState() {
     super.initState();
@@ -646,6 +649,9 @@ class _InventoryExtractionBySaleScreenState
           throw Exception('No se recibió ID de operación válido del servidor');
         }
 
+        // Guardar ID por si el usuario regresa antes de completar
+        setState(() => _pendingOperationId = operationId);
+
         print('✅ Venta registrada con ID: $operationId');
 
         // Registrar pagos usando fn_registrar_pago_venta como en order_service.dart
@@ -719,6 +725,8 @@ class _InventoryExtractionBySaleScreenState
             'Respuesta fn_registrar_cambio_estado_operacion: $completeResponse',
           );
           print('✅ Operación completada automáticamente');
+          // Operación completada: ya no se puede cancelar
+          if (mounted) setState(() => _pendingOperationId = null);
         } catch (completeError) {
           print('❌ Error al completar operación: $completeError');
           // No fallar la operación principal por esto
@@ -915,12 +923,109 @@ class _InventoryExtractionBySaleScreenState
     }
   }
 
+  Future<void> _cancelarOperacionPendiente() async {
+    final opId = _pendingOperationId;
+    if (opId == null) return;
+
+    try {
+      final userPrefs = UserPreferencesService();
+      final userUuid = await userPrefs.getUserId();
+
+      await Supabase.instance.client.rpc(
+        'fn_registrar_cambio_estado_operacion',
+        params: {
+          'p_id_operacion': opId,
+          'p_nuevo_estado': 4, // Estado cancelado
+          'p_uuid_usuario': userUuid,
+        },
+      );
+
+      print('↩️ Operación #$opId cancelada por regreso del usuario');
+    } catch (e) {
+      print('❌ Error cancelando operación pendiente: $e');
+    } finally {
+      if (mounted) setState(() => _pendingOperationId = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (_pendingOperationId != null) {
+          final confirmar = await showDialog<bool>(
+            context: context,
+            builder:
+                (ctx) => AlertDialog(
+                  title: const Text('Cancelar operación'),
+                  content: const Text(
+                    '¿Desea cancelar la operación en curso y regresar?',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('No'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.red,
+                      ),
+                      child: const Text('Sí, cancelar'),
+                    ),
+                  ],
+                ),
+          );
+          if (confirmar == true) {
+            await _cancelarOperacionPendiente();
+            if (mounted) Navigator.pop(context);
+          }
+        } else {
+          Navigator.pop(context);
+        }
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: const Text('Venta por Acuerdo'),
         backgroundColor: AppColors.success,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () async {
+            if (_pendingOperationId != null) {
+              final confirmar = await showDialog<bool>(
+                context: context,
+                builder:
+                    (ctx) => AlertDialog(
+                      title: const Text('Cancelar operación'),
+                      content: const Text(
+                        '¿Desea cancelar la operación en curso y regresar?',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('No'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.red,
+                          ),
+                          child: const Text('Sí, cancelar'),
+                        ),
+                      ],
+                    ),
+              );
+              if (confirmar == true) {
+                await _cancelarOperacionPendiente();
+                if (mounted) Navigator.pop(context);
+              }
+            } else {
+              Navigator.pop(context);
+            }
+          },
+        ),
       ),
       body: Column(
         children: [
@@ -1503,6 +1608,7 @@ class _InventoryExtractionBySaleScreenState
               ),
             ),
         ],
+      ),
       ),
     );
   }
@@ -2478,13 +2584,52 @@ class _ProductQuantityWithPriceDialogState
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
                         decoration: InputDecoration(
-                          hintText: 'Ingrese la cantidad',
-                          prefixIcon: const Icon(Icons.inventory),
+                          hintText: '0',
+                          hintStyle: TextStyle(
+                            fontSize: 28,
+                            color: Colors.grey[400],
+                          ),
+                          prefixIcon: const Padding(
+                            padding: EdgeInsets.only(left: 12, right: 8),
+                            child: Icon(Icons.inventory, size: 28),
+                          ),
+                          prefixIconConstraints: const BoxConstraints(
+                            minWidth: 56,
+                            minHeight: 56,
+                          ),
                           suffixText:
                               _selectedVariant?['presentacion_nombre'] ?? '',
+                          suffixStyle: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 20,
+                          ),
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(width: 2),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Colors.grey[400]!,
+                              width: 2,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: AppColors.success,
+                              width: 2.5,
+                            ),
                           ),
                         ),
                         validator: (value) {

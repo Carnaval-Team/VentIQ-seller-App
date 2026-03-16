@@ -3216,7 +3216,12 @@ class _SalesScreenState extends State<SalesScreen>
                 ],
                 rows: [
                   // Product rows
-                  ..._productSalesReports.map((report) {
+                  ...([..._productSalesReports]
+                    ..sort(
+                      (a, b) => a.nombreProducto.toLowerCase().compareTo(
+                        b.nombreProducto.toLowerCase(),
+                      ),
+                    )).map((report) {
                     // Calculate total cost CUP and profit
                     final totalCostoCup =
                         report.precioCostoCup * report.totalVendido;
