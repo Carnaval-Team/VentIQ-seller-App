@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
@@ -30,6 +31,16 @@ class _AsignarProductosConsignacionScreenState
       {}; // id_inventario -> {seleccionado, cantidad}
   bool _procediendo = false; // ✅ Estado de carga
 
+  // Extracción en tiempo real
+  int? _idExtraccion; // ID de la operación de extracción activa
+  Map<int, int> _idExtraccionProducto = {}; // idInventario -> id de app_dat_extraccion_productos
+  bool _aplicandoMovimiento = false; // evita doble llamada
+
+  // Controladores por producto para debounce y detección de foco
+  final Map<int, TextEditingController> _cantControllers = {};
+  final Map<int, FocusNode> _cantFocusNodes = {};
+  final Map<int, Timer> _cantTimers = {};
+
   // Estados de expansión
   Map<String, bool> _expandedAlmacenes = {}; // almacen_id -> expandido
   Map<String, bool> _expandedZonas = {}; // almacen_id_zona_id -> expandido
@@ -42,6 +53,58 @@ class _AsignarProductosConsignacionScreenState
   void initState() {
     super.initState();
     _loadAlmacenes();
+  }
+
+  @override
+  void dispose() {
+    for (final c in _cantControllers.values) {
+      c.dispose();
+    }
+    for (final f in _cantFocusNodes.values) {
+      f.dispose();
+    }
+    for (final t in _cantTimers.values) {
+      t.cancel();
+    }
+    super.dispose();
+  }
+
+  /// Devuelve (y crea si no existe) el TextEditingController para un producto.
+  TextEditingController _controllerFor(int idInv) {
+    return _cantControllers.putIfAbsent(
+      idInv,
+      () => TextEditingController(
+        text: () {
+          final c =
+              _productosSeleccionados[idInv]?['cantidad'] as double? ?? 0.0;
+          return c > 0 ? c.toStringAsFixed(0) : '';
+        }(),
+      ),
+    );
+  }
+
+  /// Devuelve (y crea si no existe) el FocusNode para un producto.
+  /// Al perder el foco dispara inmediatamente la confirmación.
+  FocusNode _focusNodeFor(int idInv, Map<String, dynamic> producto) {
+    if (_cantFocusNodes.containsKey(idInv)) return _cantFocusNodes[idInv]!;
+    final fn = FocusNode();
+    fn.addListener(() {
+      if (!fn.hasFocus) {
+        _cantTimers[idInv]?.cancel();
+        _confirmarCantidadProducto(idInv, producto);
+      }
+    });
+    _cantFocusNodes[idInv] = fn;
+    return fn;
+  }
+
+  /// Inicia/reinicia el timer de debounce de 4 segundos para un producto.
+  void _scheduleConfirmar(int idInv, Map<String, dynamic> producto) {
+    _cantTimers[idInv]?.cancel();
+    _cantTimers[idInv] = Timer(
+      const Duration(seconds: 4),
+      () => _confirmarCantidadProducto(idInv, producto),
+    );
   }
 
   Future<void> _loadAlmacenes() async {
@@ -111,8 +174,16 @@ class _AsignarProductosConsignacionScreenState
   }
 
   void _toggleProductoSeleccion(int idInventario) {
+    final yaSeleccionado =
+        _productosSeleccionados[idInventario]?['seleccionado'] == true;
+    if (yaSeleccionado) {
+      // Si tiene cantidad en la extracción, revertir primero
+      if (_idExtraccionProducto.containsKey(idInventario)) {
+        _quitarProductoDeExtraccion(idInventario);
+      }
+    }
     setState(() {
-      if (_productosSeleccionados[idInventario]?['seleccionado'] == true) {
+      if (yaSeleccionado) {
         _productosSeleccionados[idInventario] = {
           'seleccionado': false,
           'cantidad': 0.0,
@@ -157,6 +228,460 @@ class _AsignarProductosConsignacionScreenState
     });
   }
 
+  // ────────────────────────────────────────────────────────────────────────
+  // Extracción en tiempo real
+  // ────────────────────────────────────────────────────────────────────────
+
+  /// Llamado cuando el usuario termina de introducir la cantidad de un producto.
+  /// Si no existe extracción la crea; si ya existe agrega el producto.
+  Future<void> _confirmarCantidadProducto(
+    int idInventario,
+    Map<String, dynamic> productoInventario,
+  ) async {
+    final cantidad =
+        _productosSeleccionados[idInventario]?['cantidad'] as double? ?? 0.0;
+    if (cantidad <= 0) return;
+    if (_aplicandoMovimiento) return;
+
+    _aplicandoMovimiento = true;
+
+    try {
+      final uuid = _supabase.auth.currentUser?.id;
+      final email = _supabase.auth.currentUser?.email ?? 'Sistema';
+      if (uuid == null) throw Exception('Usuario no autenticado');
+
+      final idProducto = productoInventario['id_producto'] as int;
+      final idUbicacion = productoInventario['id_ubicacion'] as int?;
+      final idPresentacion = productoInventario['id_presentacion'] as int?;
+      final idVariante = productoInventario['id_variante'] as int?;
+      final idOpcionVariante = productoInventario['id_opcion_variante'] as int?;
+      final skuProducto = productoInventario['sku_producto'] as String?;
+      final idTiendaConsignadora =
+          widget.contrato['id_tienda_consignadora'] as int;
+
+      if (_idExtraccion == null) {
+        // ── Primera vez: crear la extracción completa ──────────────────────
+        final result = await _supabase.rpc(
+          'fn_crear_extraccion_con_movimiento',
+          params: {
+            'p_autorizado_por': email,
+            'p_estado_inicial': 1,
+            'p_id_motivo_operacion': 21,
+            'p_id_tienda': idTiendaConsignadora,
+            'p_observaciones':
+                'Envío a consignación - Contrato #${widget.idContrato} (Reserva inicial)',
+            'p_productos': [
+              {
+                'id_producto': idProducto,
+                'cantidad': cantidad,
+                'id_presentacion': idPresentacion,
+                'id_ubicacion': idUbicacion,
+                'id_variante': idVariante,
+                'id_opcion_variante': idOpcionVariante,
+                'precio_unitario': 0,
+                'sku_producto': skuProducto,
+              }
+            ],
+            'p_uuid': uuid,
+          },
+        );
+
+        if (result['status'] != 'success') {
+          throw Exception(result['message'] ?? 'Error creando extracción');
+        }
+
+        final idOp = result['id_operacion'] as int;
+
+        // Obtener el id de app_dat_extraccion_productos recién creado
+        final epRow = await _supabase
+            .from('app_dat_extraccion_productos')
+            .select('id')
+            .eq('id_operacion', idOp)
+            .eq('id_producto', idProducto)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .single();
+
+        setState(() {
+          _idExtraccion = idOp;
+          _idExtraccionProducto[idInventario] = epRow['id'] as int;
+        });
+
+        debugPrint(
+          '✅ Extracción #$idOp creada con producto inventario #$idInventario',
+        );
+      } else {
+        // ── Extracción ya existe ────────────────────────────────────────────
+        final idEPExistente = _idExtraccionProducto[idInventario];
+
+        if (idEPExistente != null) {
+          // ── Producto YA está en extracción: actualizar cantidad ───────────
+          // 1. Obtener el movimiento de inventario anterior vinculado a este EP
+          final invAnterior = await _supabase
+              .from('app_dat_inventario_productos')
+              .select(
+                'id, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad_inicial, cantidad_final, sku_producto',
+              )
+              .eq('id_extraccion', idEPExistente)
+              .order('created_at', ascending: false)
+              .limit(1);
+
+          if ((invAnterior as List).isEmpty) {
+            throw Exception(
+              'No se encontró movimiento de inventario para EP #$idEPExistente',
+            );
+          }
+
+          final invPrev = invAnterior[0];
+          // cantidad_inicial del movimiento anterior = saldo antes de la extracción original
+          final saldoOriginal =
+              (invPrev['cantidad_inicial'] as num?)?.toDouble() ?? 0.0;
+          final nuevaCantidadFinal = saldoOriginal - cantidad;
+
+          // 2. Revertir movimiento anterior (insertar compensación)
+          await _supabase.from('app_dat_inventario_productos').insert({
+            'id_producto': invPrev['id_producto'],
+            'id_variante': invPrev['id_variante'],
+            'id_opcion_variante': invPrev['id_opcion_variante'],
+            'id_ubicacion': invPrev['id_ubicacion'],
+            'id_presentacion': invPrev['id_presentacion'],
+            'cantidad_inicial': invPrev['cantidad_final'],
+            'cantidad_final': saldoOriginal,
+            'sku_producto': invPrev['sku_producto'],
+            'origen_cambio': 2,
+            'id_extraccion': idEPExistente,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+
+          // 3. Actualizar cantidad en extraccion_productos
+          await _supabase
+              .from('app_dat_extraccion_productos')
+              .update({'cantidad': cantidad})
+              .eq('id', idEPExistente);
+
+          // 4. Insertar nuevo movimiento con la cantidad actualizada
+          await _supabase.from('app_dat_inventario_productos').insert({
+            'id_producto': idProducto,
+            'id_variante': idVariante,
+            'id_opcion_variante': idOpcionVariante,
+            'id_ubicacion': idUbicacion,
+            'id_presentacion': idPresentacion,
+            'cantidad_inicial': saldoOriginal,
+            'cantidad_final': nuevaCantidadFinal,
+            'sku_producto': skuProducto,
+            'origen_cambio': 2,
+            'id_extraccion': idEPExistente,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+
+          debugPrint(
+            '🔄 Cantidad actualizada para EP #$idEPExistente: $cantidad (saldo: $nuevaCantidadFinal)',
+          );
+        } else {
+          // ── Producto NUEVO en extracción existente: agregar ───────────────
+          // Obtener saldo actual de inventario
+          final invRows = await _supabase
+              .from('app_dat_inventario_productos')
+              .select('cantidad_final')
+              .eq('id_producto', idProducto)
+              .filter('id_ubicacion', 'eq', idUbicacion)
+              .filter(
+                'id_presentacion',
+                idPresentacion == null ? 'is' : 'eq',
+                idPresentacion,
+              )
+              .filter(
+                'id_variante',
+                idVariante == null ? 'is' : 'eq',
+                idVariante,
+              )
+              .filter(
+                'id_opcion_variante',
+                idOpcionVariante == null ? 'is' : 'eq',
+                idOpcionVariante,
+              )
+              .order('created_at', ascending: false)
+              .limit(1);
+
+          final cantidadInicial =
+              (invRows as List).isNotEmpty
+                  ? (invRows[0]['cantidad_final'] as num?)?.toDouble() ?? 0.0
+                  : 0.0;
+          final cantidadFinal = cantidadInicial - cantidad;
+
+          // Insertar en extraccion_productos
+          final epInsert = await _supabase
+              .from('app_dat_extraccion_productos')
+              .insert({
+                'id_operacion': _idExtraccion,
+                'id_producto': idProducto,
+                'id_variante': idVariante,
+                'id_opcion_variante': idOpcionVariante,
+                'id_ubicacion': idUbicacion,
+                'id_presentacion': idPresentacion,
+                'cantidad': cantidad,
+                'precio_unitario': 0,
+                'sku_producto': skuProducto,
+                'created_at': DateTime.now().toIso8601String(),
+              })
+              .select('id')
+              .single();
+
+          final idEP = epInsert['id'] as int;
+
+          // Insertar movimiento de inventario
+          await _supabase.from('app_dat_inventario_productos').insert({
+            'id_producto': idProducto,
+            'id_variante': idVariante,
+            'id_opcion_variante': idOpcionVariante,
+            'id_ubicacion': idUbicacion,
+            'id_presentacion': idPresentacion,
+            'cantidad_inicial': cantidadInicial,
+            'cantidad_final': cantidadFinal,
+            'sku_producto': skuProducto,
+            'origen_cambio': 2,
+            'id_extraccion': idEP,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+
+          setState(() {
+            _idExtraccionProducto[idInventario] = idEP;
+          });
+
+          debugPrint(
+            '✅ Producto inventario #$idInventario agregado a extracción #$_idExtraccion',
+          );
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Cantidad $cantidad reservada para ${productoInventario['denominacion_producto'] ?? 'producto'}',
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Error aplicando movimiento: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error aplicando movimiento: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      _aplicandoMovimiento = false;
+    }
+  }
+
+  /// Quita un producto de la extracción activa y revierte el movimiento de inventario.
+  Future<void> _quitarProductoDeExtraccion(int idInventario) async {
+    final idEP = _idExtraccionProducto[idInventario];
+    if (idEP == null || _idExtraccion == null) return;
+
+    try {
+      // Obtener el movimiento de inventario vinculado a este registro de extracción
+      final invRows = await _supabase
+          .from('app_dat_inventario_productos')
+          .select('id, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad_inicial, cantidad_final, sku_producto')
+          .eq('id_extraccion', idEP)
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      if ((invRows as List).isNotEmpty) {
+        final inv = invRows[0];
+        // Revertir: el nuevo saldo es cantidad_inicial (antes de la extracción)
+        await _supabase.from('app_dat_inventario_productos').insert({
+          'id_producto': inv['id_producto'],
+          'id_variante': inv['id_variante'],
+          'id_opcion_variante': inv['id_opcion_variante'],
+          'id_ubicacion': inv['id_ubicacion'],
+          'id_presentacion': inv['id_presentacion'],
+          'cantidad_inicial': inv['cantidad_final'], // saldo después de extracción
+          'cantidad_final': inv['cantidad_inicial'], // revertir al saldo original
+          'sku_producto': inv['sku_producto'],
+          'origen_cambio': 2,
+          'id_extraccion': idEP,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+
+      // Eliminar de extraccion_productos
+      await _supabase
+          .from('app_dat_extraccion_productos')
+          .delete()
+          .eq('id', idEP);
+
+      setState(() {
+        _idExtraccionProducto.remove(idInventario);
+        // Si no quedan productos en extracción, limpiar el ID
+        if (_idExtraccionProducto.isEmpty) {
+          _idExtraccion = null;
+        }
+      });
+
+      debugPrint(
+        '↩️ Producto inventario #$idInventario quitado de extracción',
+      );
+    } catch (e) {
+      debugPrint('❌ Error quitando producto de extracción: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error revirtiendo movimiento: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Cancela la extracción activa completa y revierte todos los movimientos de inventario.
+  Future<void> _cancelarExtraccionPendiente() async {
+    if (_idExtraccion == null) return;
+
+    final idOp = _idExtraccion!;
+    try {
+      // 1. Revertir todos los movimientos de inventario de esta extracción
+      for (final idInv in _idExtraccionProducto.keys.toList()) {
+        await _quitarProductoDeExtraccion(idInv);
+      }
+
+      // 2. Cancelar la operación de extracción (estado 4 = cancelado)
+      final uuid = _supabase.auth.currentUser?.id;
+      await _supabase.rpc(
+        'fn_registrar_cambio_estado_operacion',
+        params: {
+          'p_id_operacion': idOp,
+          'p_nuevo_estado': 4,
+          'p_uuid_usuario': uuid,
+        },
+      );
+
+      debugPrint('↩️ Extracción #$idOp cancelada por regreso del usuario');
+    } catch (e) {
+      debugPrint('❌ Error cancelando extracción pendiente: $e');
+    }
+  }
+
+  /// Muestra diálogo de confirmación de cancelación y navega atrás si se confirma.
+  Future<void> _onBackPressed() async {
+    if (_idExtraccion != null) {
+      final confirmar = await showDialog<bool>(
+        context: context,
+        builder:
+            (ctx) => AlertDialog(
+              title: const Text('Cancelar extracción'),
+              content: const Text(
+                '¿Desea cancelar la extracción en curso? Se revertirán todos los movimientos de inventario.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('No'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.red,
+                  ),
+                  child: const Text('Sí, cancelar'),
+                ),
+              ],
+            ),
+      );
+      if (confirmar == true) {
+        await _cancelarExtraccionPendiente();
+        if (mounted) Navigator.pop(context);
+      }
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  /// Verifica que la extracción activa contenga exactamente los productos seleccionados.
+  /// Retorna true si todo coincide o no hay extracción aún.
+  Future<bool> _reconciliarExtraccion() async {
+    if (_idExtraccion == null) return true;
+
+    final seleccionados =
+        _productosSeleccionados.entries
+            .where((e) => e.value['seleccionado'] == true)
+            .map((e) => e.key)
+            .toSet();
+
+    final enExtraccion = _idExtraccionProducto.keys.toSet();
+
+    if (seleccionados.length != enExtraccion.length ||
+        !seleccionados.containsAll(enExtraccion)) {
+      debugPrint(
+        '⚠️ Reconciliación: seleccionados=$seleccionados, en extracción=$enExtraccion',
+      );
+
+      // Agregar los que faltan en extracción
+      for (final idInv in seleccionados.difference(enExtraccion)) {
+        // Buscar datos del producto en las zonas cargadas
+        Map<String, dynamic>? prodData;
+        for (final prods in _zonasInventario.values) {
+          for (final p in prods) {
+            if (p['id'] == idInv) {
+              prodData = p;
+              break;
+            }
+          }
+          if (prodData != null) break;
+        }
+        if (prodData != null) {
+          await _confirmarCantidadProducto(idInv, prodData);
+        }
+      }
+
+      // Quitar los que sobran en extracción
+      for (final idInv in enExtraccion.difference(seleccionados)) {
+        await _quitarProductoDeExtraccion(idInv);
+      }
+    }
+
+    // Verificar cantidades
+    bool todasCoinciden = true;
+    for (final idInv in seleccionados) {
+      final cantSel =
+          _productosSeleccionados[idInv]?['cantidad'] as double? ?? 0.0;
+      final idEP = _idExtraccionProducto[idInv];
+      if (idEP == null) {
+        todasCoinciden = false;
+        break;
+      }
+      final epRow = await _supabase
+          .from('app_dat_extraccion_productos')
+          .select('cantidad')
+          .eq('id', idEP)
+          .maybeSingle();
+      if (epRow == null) {
+        todasCoinciden = false;
+        break;
+      }
+      final cantEP = (epRow['cantidad'] as num?)?.toDouble() ?? 0.0;
+      if ((cantSel - cantEP).abs() > 0.001) {
+        todasCoinciden = false;
+        debugPrint(
+          '⚠️ Cantidad discrepante para inventario #$idInv: sel=$cantSel, extracción=$cantEP',
+        );
+        break;
+      }
+    }
+
+    return todasCoinciden;
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+
   Future<void> _procederConConfiguracion() async {
     final productosIds =
         _productosSeleccionados.entries
@@ -192,6 +717,24 @@ class _AsignarProductosConsignacionScreenState
     setState(() => _procediendo = true);
 
     try {
+      // Verificar que la extracción esté sincronizada con los productos seleccionados
+      final reconciliado = await _reconciliarExtraccion();
+      if (!reconciliado) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                '⚠️ Hay discrepancias entre los productos seleccionados y la extracción. Revise las cantidades.',
+              ),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+        setState(() => _procediendo = false);
+        return;
+      }
+
       final tasaCambio = await _obtenerTasaCambio();
 
       final response = await _supabase
@@ -275,24 +818,31 @@ class _AsignarProductosConsignacionScreenState
       // Proceso normal de envío (congelar stock y configurar precios)
       final idTiendaConsignadora =
           widget.contrato['id_tienda_consignadora'] as int;
-      final idOperacionReserva = await ConsignacionService.crearReservaStock(
-        idContrato: widget.idContrato,
-        productos:
-            productosData
-                .map(
-                  (p) => {
-                    'id_producto': p['id_producto'],
-                    'cantidad': p['cantidad_seleccionada'],
-                    'id_presentacion': p['id_presentacion'],
-                    'id_ubicacion': p['id_ubicacion'],
-                    'id_variante': p['id_variante'],
-                    'id_opcion_variante': p['id_opcion_variante'],
-                    'precio_costo_unitario': p['precio_costo_usd'],
-                  },
-                )
-                .toList(),
-        idTiendaOrigen: idTiendaConsignadora,
-      );
+      // Usar la extracción creada en tiempo real, o crearla si no existe aún
+      int? idOperacionReserva;
+      if (_idExtraccion != null) {
+        idOperacionReserva = _idExtraccion;
+        debugPrint('✅ Usando extracción existente #$idOperacionReserva');
+      } else {
+        idOperacionReserva = await ConsignacionService.crearReservaStock(
+          idContrato: widget.idContrato,
+          productos:
+              productosData
+                  .map(
+                    (p) => {
+                      'id_producto': p['id_producto'],
+                      'cantidad': p['cantidad_seleccionada'],
+                      'id_presentacion': p['id_presentacion'],
+                      'id_ubicacion': p['id_ubicacion'],
+                      'id_variante': p['id_variante'],
+                      'id_opcion_variante': p['id_opcion_variante'],
+                      'precio_costo_unitario': p['precio_costo_usd'],
+                    },
+                  )
+                  .toList(),
+          idTiendaOrigen: idTiendaConsignadora,
+        );
+      }
 
       setState(() => _procediendo = false);
       if (!mounted) return;
@@ -419,7 +969,13 @@ class _AsignarProductosConsignacionScreenState
     bool haySeleccion = _productosSeleccionados.values.any(
       (v) => v['seleccionado'] == true,
     );
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await _onBackPressed();
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(
           widget.isDevolucion
@@ -429,6 +985,10 @@ class _AsignarProductosConsignacionScreenState
         backgroundColor:
             widget.isDevolucion ? Colors.deepOrange : AppColors.primary,
         foregroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: _onBackPressed,
+        ),
       ),
       body:
           _isLoading
@@ -519,6 +1079,7 @@ class _AsignarProductosConsignacionScreenState
                     ),
                 ],
               ),
+      ),
     );
   }
 
@@ -605,9 +1166,9 @@ class _AsignarProductosConsignacionScreenState
   Widget _buildProductoTile(Map<String, dynamic> producto) {
     final idInv = producto['id'] as int;
     final isSelected = _productosSeleccionados[idInv]?['seleccionado'] == true;
-    final cant = _productosSeleccionados[idInv]?['cantidad'] as double? ?? 0.0;
     final cantidadDisponible =
         (producto['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+    final tieneMovimiento = _idExtraccionProducto.containsKey(idInv);
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -641,29 +1202,63 @@ class _AsignarProductosConsignacionScreenState
                   'SKU: ${producto['sku_producto'] ?? 'N/A'}',
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                 ),
+                if (isSelected && tieneMovimiento)
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle,
+                        size: 12,
+                        color: Colors.green[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Reservado',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.green[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),
           if (isSelected)
             SizedBox(
               width: 70,
-              child: TextFormField(
-                initialValue: cant > 0 ? cant.toString() : '',
-                decoration: const InputDecoration(
+              child: TextField(
+                controller: _controllerFor(idInv),
+                focusNode: _focusNodeFor(idInv, producto),
+                decoration: InputDecoration(
                   isDense: true,
                   labelText: 'Cant.',
-                  contentPadding: EdgeInsets.all(8),
-                  border: OutlineInputBorder(),
+                  contentPadding: const EdgeInsets.all(8),
+                  border: const OutlineInputBorder(),
+                  suffixIcon:
+                      tieneMovimiento
+                          ? Icon(
+                            Icons.lock_outline,
+                            size: 14,
+                            color: Colors.green[600],
+                          )
+                          : null,
                 ),
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                onChanged:
-                    (val) => _actualizarCantidad(
-                      idInv,
-                      double.tryParse(val) ?? 0.0,
-                      cantidadDisponible,
-                    ),
+                onChanged: (val) {
+                  _actualizarCantidad(
+                    idInv,
+                    double.tryParse(val) ?? 0.0,
+                    cantidadDisponible,
+                  );
+                  _scheduleConfirmar(idInv, producto);
+                },
+                onSubmitted: (_) {
+                  _cantTimers[idInv]?.cancel();
+                  _confirmarCantidadProducto(idInv, producto);
+                },
               ),
             ),
           const SizedBox(width: 8),
