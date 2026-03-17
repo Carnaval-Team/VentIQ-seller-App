@@ -1377,72 +1377,73 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         currentIndex: 0, // No tab selected since this is a detail screen
         onTap: _onBottomNavTap,
       ),
-      body: Stack(
+      body: Column(
         children: [
-          _isLoadingDetails
-              ? const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(color: Color(0xFF4A90E2)),
-                    SizedBox(height: 16),
-                    Text(
-                      'Cargando detalles del producto...',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                  ],
-                ),
-              )
-              : _errorMessage != null
-              ? _showRetryWidget
-                  ? ConnectionRetryWidget(
-                    message: _errorMessage!,
-                    onRetry: _loadProductDetails,
-                  )
-                  : Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          size: 64,
-                          color: Colors.red[300],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Error al cargar detalles',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey[800],
+          Expanded(
+            child: _isLoadingDetails
+                ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                      SizedBox(height: 16),
+                      Text(
+                        'Cargando detalles del producto...',
+                        style: TextStyle(fontSize: 16, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                )
+                : _errorMessage != null
+                ? _showRetryWidget
+                    ? ConnectionRetryWidget(
+                      message: _errorMessage!,
+                      onRetry: _loadProductDetails,
+                    )
+                    : Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 64,
+                            color: Colors.red[300],
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _errorMessage!,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
+                          const SizedBox(height: 16),
+                          Text(
+                            'Error al cargar detalles',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[800],
+                            ),
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton(
-                          onPressed: _loadProductDetails,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF4A90E2),
-                            foregroundColor: Colors.white,
+                          const SizedBox(height: 8),
+                          Text(
+                            _errorMessage!,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          child: const Text('Reintentar'),
-                        ),
-                      ],
-                    ),
-                  )
-              : SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                          const SizedBox(height: 24),
+                          ElevatedButton(
+                            onPressed: _loadProductDetails,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF4A90E2),
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Reintentar'),
+                          ),
+                        ],
+                      ),
+                    )
+                : SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                     // Sección superior: Imagen y información del producto
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1494,7 +1495,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                                         );
                                       },
                                     )
-                                    : currentProduct.foto != null
+                                    : _hasValidProductImage(currentProduct.foto)
                                     ? Image.network(
                                       _compressImageUrl(currentProduct.foto!),
                                       fit: BoxFit.cover,
@@ -1545,10 +1546,23 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                                     )
                                     : Container(
                                       color: Colors.grey[100],
-                                      child: const Icon(
-                                        Icons.inventory_2,
-                                        color: Colors.grey,
-                                        size: 40,
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(
+                                            Icons.inventory_2,
+                                            color: Colors.grey,
+                                            size: 32,
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Sin imagen',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                           ),
@@ -1629,139 +1643,111 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                       }).toList(),
                       const SizedBox(height: 16),
                     ],
-                    // Productos seleccionados
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey[200]!, width: 1),
+                    // Productos seleccionados (directamente sin wrapper)
+                    if (currentProduct.variantes.isEmpty &&
+                        selectedQuantity > 0)
+                      _buildSelectedProductItem(
+                        currentProduct.denominacion,
+                        selectedQuantity,
+                        _getEffectiveBasePrice(currentProduct),
+                        _getLocationName(currentProduct, null),
+                        isVariant: false,
+                        originalPrice: _getOriginalBasePrice(
+                          currentProduct,
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Productos seleccionados',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          // Lista de productos seleccionados
-                          if (currentProduct.variantes.isEmpty &&
-                              selectedQuantity > 0)
-                            _buildSelectedProductItem(
-                              currentProduct.denominacion,
-                              selectedQuantity,
-                              _getEffectiveBasePrice(currentProduct),
-                              _getLocationName(currentProduct, null),
-                              isVariant: false,
+                    if (currentProduct.variantes.isNotEmpty)
+                      ...variantQuantities.entries
+                          .where((entry) => entry.value > 0)
+                          .map(
+                            (entry) => _buildSelectedProductItem(
+                              '${currentProduct.denominacion} - ${entry.key.nombre}',
+                              entry.value,
+                              _getEffectiveBasePrice(
+                                currentProduct,
+                                entry.key,
+                              ),
+                              _getLocationName(currentProduct, entry.key),
+                              isVariant: true,
                               originalPrice: _getOriginalBasePrice(
                                 currentProduct,
-                              ),
-                            ),
-                          if (currentProduct.variantes.isNotEmpty)
-                            ...variantQuantities.entries
-                                .where((entry) => entry.value > 0)
-                                .map(
-                                  (entry) => _buildSelectedProductItem(
-                                    '${currentProduct.denominacion} - ${entry.key.nombre}',
-                                    entry.value,
-                                    _getEffectiveBasePrice(
-                                      currentProduct,
-                                      entry.key,
-                                    ),
-                                    _getLocationName(currentProduct, entry.key),
-                                    isVariant: true,
-                                    originalPrice: _getOriginalBasePrice(
-                                      currentProduct,
-                                      entry.key,
-                                    ),
-                                  ),
-                                ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // Fila con total y botón de agregar
-                    Row(
-                      children: [
-                        // Total de productos seleccionados
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[100],
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: Colors.grey[300]!,
-                                width: 1,
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'TOTAL: ${PriceUtils.formatQuantity(_getTotalEquivalentUnits())} unidad${_getTotalEquivalentUnits() == 1 ? '' : 'es'}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.grey[700],
-                                  ),
-                                ),
-                                Text(
-                                  '\$${totalPrice.toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: widget.categoryColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        // Botón de agregar
-                        SizedBox(
-                          width: 120,
-                          height: 50,
-                          child: ElevatedButton(
-                            onPressed: totalPrice > 0 ? _addToCart : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: widget.categoryColor,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              elevation: 0,
-                            ),
-                            child: const Text(
-                              'Agregar',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
+                                entry.key,
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
+                    const SizedBox(height: 16),
                   ],
                 ),
               ),
-          // USD Rate Chip positioned at bottom left
-          // Positioned(
-          //   bottom: 0,
-          //   left: 0,
-          //   child: _buildUsdRateChip(),
-          // ),
+          ),
+          // Fila fija con total y botón de agregar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Colors.grey[200]!, width: 1)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 8,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                // Total de productos seleccionados
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'TOTAL: ${PriceUtils.formatQuantity(_getTotalEquivalentUnits())} unidad${_getTotalEquivalentUnits() == 1 ? '' : 'es'}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                      Text(
+                        '\$${totalPrice.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: widget.categoryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Botón de agregar
+                SizedBox(
+                  width: 120,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: totalPrice > 0 ? _addToCart : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: widget.categoryColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      'Agregar',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -2707,6 +2693,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   /// Get total stock for a location group
   double _getLocationStock(List<ProductVariant> variants) {
     return variants.fold(0.0, (sum, variant) => sum + variant.cantidad);
+  }
+
+  bool _hasValidProductImage(String? url) {
+    if (url == null || url.trim().isEmpty) return false;
+    if (url.contains('unsplash.com')) return false;
+    return true;
   }
 
   String _compressImageUrl(String url) {

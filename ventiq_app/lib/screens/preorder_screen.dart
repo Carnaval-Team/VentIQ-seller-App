@@ -14,6 +14,7 @@ import '../widgets/scrolling_text.dart';
 import '../widgets/notification_widget.dart';
 import '../utils/app_snackbar.dart';
 import 'checkout_screen.dart';
+import 'orders_screen.dart';
 
 class PreorderScreen extends StatefulWidget {
   const PreorderScreen({Key? key}) : super(key: key);
@@ -868,6 +869,17 @@ class _PreorderScreenState extends State<PreorderScreen> {
     final isOfflineModeEnabled =
         await _userPreferencesService.isOfflineModeEnabled();
 
+    // Verificar configuración de tienda: si no se solicita datos del cliente
+    bool noSolicitarCliente = false;
+    if (!isOfflineModeEnabled) {
+      try {
+        final config = await StoreConfigService.getStoreConfigFromCache();
+        noSolicitarCliente = config?['no_solicitar_cliente'] ?? false;
+      } catch (e) {
+        print('⚠️ Error leyendo config de tienda: $e');
+      }
+    }
+
     if (isOfflineModeEnabled) {
       // MODO OFFLINE: No elaborar productos, pero SÍ ir al checkout para capturar datos del cliente
       print(
@@ -887,8 +899,13 @@ class _PreorderScreenState extends State<PreorderScreen> {
         // Refresh the screen when returning from checkout
         setState(() {});
       });
+    } else if (noSolicitarCliente) {
+      // MODO DIRECTO: No se requieren datos del cliente, crear orden inmediatamente
+      print('⚡ No se solicita cliente - Creando orden directamente');
+      await _processElaboratedProducts(currentOrder);
+      await _submitOrderDirect(currentOrder);
     } else {
-      // MODO ONLINE: Elaborar productos y continuar al checkout
+      // MODO NORMAL: Elaborar productos y continuar al checkout
       print(
         '🌐 Modo online - Procesando elaboración y continuando al checkout',
       );
@@ -904,6 +921,92 @@ class _PreorderScreenState extends State<PreorderScreen> {
         // Refresh the screen when returning from checkout
         setState(() {});
       });
+    }
+  }
+
+  /// Crea la orden directamente sin pasar por CheckoutScreen (cuando no_solicitar_cliente=true)
+  Future<void> _submitOrderDirect(Order order) async {
+    setState(() {
+      _elaboratingProducts = true;
+    });
+
+    try {
+      // Calcular breakdown de pagos por producto
+      final Map<String, double> paymentBreakdown = {};
+      for (final item in order.items) {
+        if (item.paymentMethod != null) {
+          final methodName = item.paymentMethod!.denominacion;
+          paymentBreakdown[methodName] =
+              (paymentBreakdown[methodName] ?? 0.0) + item.subtotal;
+        }
+      }
+
+      final orderData = {
+        'buyerName': 'Cliente',
+        'buyerPhone': '',
+        'extraContacts': '',
+        'paymentMethod': 'Múltiples métodos',
+        'promoCode': null,
+        'promoDiscount': 0.0,
+        'finalTotal': order.total,
+        'originalTotal': order.total,
+        'idCliente': null,
+        'paymentBreakdown': paymentBreakdown,
+      };
+
+      final updatedOrder = order.copyWith(
+        total: order.total,
+        buyerName: 'Cliente',
+        buyerPhone: '',
+        paymentMethod: 'Múltiples métodos',
+      );
+
+      final result = await _orderService.finalizeOrderWithDetails(
+        updatedOrder,
+        orderData,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        final operationId = result['operationId'];
+        final createdOrderId = operationId != null ? 'ORD-$operationId' : null;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('¡Orden registrada exitosamente!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (context) => OrdersScreen(autoOpenOrderId: createdOrderId),
+          ),
+          (route) => false,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al registrar la venta: ${result['error']}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al crear la orden: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _elaboratingProducts = false;
+        });
+      }
     }
   }
 

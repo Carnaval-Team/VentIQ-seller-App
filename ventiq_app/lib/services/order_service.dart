@@ -295,6 +295,59 @@ class OrderService {
     }
   }
 
+  Future<Map<String, dynamic>> updateCustomerInfo({
+    required Order order,
+    required String? buyerName,
+    required String? buyerPhone,
+  }) async {
+    try {
+      final operationId = order.operationId;
+      if (operationId == null) {
+        return {'success': false, 'error': 'La orden no tiene operación válida'};
+      }
+
+      // Buscar id_cliente de la operación
+      final operation = await Supabase.instance.client
+          .from('app_dat_operacion_venta')
+          .select('id_cliente')
+          .eq('id_operacion', operationId)
+          .maybeSingle();
+
+      final idCliente = operation?['id_cliente'] as int?;
+
+      if (idCliente != null) {
+        // Actualizar datos del cliente en la tabla de clientes
+        final updateData = <String, dynamic>{};
+        if (buyerName != null && buyerName.isNotEmpty) {
+          updateData['nombre'] = buyerName;
+        }
+        if (buyerPhone != null && buyerPhone.isNotEmpty) {
+          updateData['telefono'] = buyerPhone;
+        }
+        if (updateData.isNotEmpty) {
+          await Supabase.instance.client
+              .from('app_dat_cliente')
+              .update(updateData)
+              .eq('id_cliente', idCliente);
+        }
+      }
+
+      // Actualizar cache local
+      final idx = _orders.indexWhere((o) => o.id == order.id);
+      if (idx != -1) {
+        _orders[idx] = _orders[idx].copyWith(
+          buyerName: buyerName,
+          buyerPhone: buyerPhone,
+        );
+      }
+
+      return {'success': true};
+    } catch (e) {
+      print('❌ Error al actualizar datos del cliente: $e');
+      return {'success': false, 'error': 'Error al actualizar: ${e.toString()}'};
+    }
+  }
+
   Future<Map<String, dynamic>> moveSalePaymentAmount({
     required int operationId,
     required int fromPaymentMethodId,

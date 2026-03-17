@@ -3290,10 +3290,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final priceController = TextEditingController(
       text: _product.basePrice.toStringAsFixed(2),
     );
+    final screenContext = context;
 
     showDialog(
-      context: context,
-      builder: (BuildContext context) {
+      context: screenContext,
+      builder: (BuildContext dialogContext) {
         return FutureBuilder<double>(
           future: CurrencyService.getEffectiveUsdToCupRate(),
           builder: (context, rateSnapshot) {
@@ -3315,16 +3316,18 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   if (!mounted) return;
 
                   if (success) {
-                    Navigator.pop(context);
+                    Navigator.pop(dialogContext);
                     await _loadAdditionalData();
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(screenContext).showSnackBar(
                       const SnackBar(
                         content: Text('Precio base actualizado exitosamente'),
                         backgroundColor: AppColors.success,
                       ),
                     );
                   } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(screenContext).showSnackBar(
                       const SnackBar(
                         content: Text('Error al actualizar el precio'),
                         backgroundColor: AppColors.error,
@@ -3333,7 +3336,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   }
                 } catch (e) {
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  ScaffoldMessenger.of(screenContext).showSnackBar(
                     SnackBar(
                       content: Text('Error al actualizar precio: $e'),
                       backgroundColor: AppColors.error,
@@ -3417,10 +3420,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           .toDouble()
           .toStringAsFixed(2),
     );
+    final screenContext = context;
 
     showDialog(
-      context: context,
-      builder: (BuildContext context) {
+      context: screenContext,
+      builder: (BuildContext dialogContext) {
         return FutureBuilder<double>(
           future: CurrencyService.getEffectiveUsdToCupRate(),
           builder: (context, rateSnapshot) {
@@ -3446,16 +3450,18 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   if (!mounted) return;
 
                   if (success) {
-                    Navigator.pop(context);
+                    Navigator.pop(dialogContext);
                     await _loadAdditionalData();
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(screenContext).showSnackBar(
                       const SnackBar(
                         content: Text('Precio actualizado exitosamente'),
                         backgroundColor: AppColors.success,
                       ),
                     );
                   } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(screenContext).showSnackBar(
                       const SnackBar(
                         content: Text('Error al actualizar el precio'),
                         backgroundColor: AppColors.error,
@@ -3464,7 +3470,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   }
                 } catch (e) {
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  ScaffoldMessenger.of(screenContext).showSnackBar(
                     SnackBar(
                       content: Text('Error: $e'),
                       backgroundColor: AppColors.error,
