@@ -942,26 +942,40 @@ class _CategoriesScreenState extends State<CategoriesScreen>
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          _buildBody(),
-          if (_isSearchOpen) _buildSearchResultsOverlay(),
-          // USD Rate Chip positioned at bottom left
-          Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
-          // Sync Status Chip positioned at bottom left, above USD chip
-          const Positioned(
-            bottom: 80, // Encima del USD chip
-            left: 16,
-            child: SyncStatusChip(),
-          ),
-        ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool showOverlays =
+              constraints.maxWidth >= 300 && constraints.maxHeight >= 400;
+          return Stack(
+            children: [
+              _buildBody(),
+              if (_isSearchOpen) _buildSearchResultsOverlay(),
+              if (showOverlays) ...[  
+                // USD Rate Chip positioned at bottom left
+                Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
+                // Sync Status Chip positioned at bottom left, above USD chip
+                const Positioned(
+                  bottom: 80, // Encima del USD chip
+                  left: 16,
+                  child: SyncStatusChip(),
+                ),
+              ],
+            ],
+          );
+        },
       ),
       endDrawer: const AppDrawer(),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: 0, // Categorías tab
         onTap: _onBottomNavTap,
       ),
-      floatingActionButton: const SalesMonitorFAB(),
+      floatingActionButton: Builder(
+        builder: (context) {
+          final size = MediaQuery.of(context).size;
+          if (size.width < 300 || size.height < 400) return const SizedBox.shrink();
+          return const SalesMonitorFAB();
+        },
+      ),
     );
   }
 
