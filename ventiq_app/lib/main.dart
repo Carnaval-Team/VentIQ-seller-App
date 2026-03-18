@@ -15,6 +15,7 @@ import 'screens/shift_workers_screen.dart';
 import 'screens/subscription_detail_screen.dart';
 import 'screens/wifi_printers_screen.dart';
 import 'services/auth_service.dart';
+import 'services/user_preferences_service.dart';
 import 'utils/platform_utils.dart';
 import 'widgets/sync_blocking_overlay.dart';
 
@@ -23,6 +24,9 @@ void main() async {
 
   // Inicializar Supabase
   await AuthService.initialize();
+
+  // Pre-cargar preferencias de usuario en caché para acceso sincrónico
+  await UserPreferencesService().isShowSkuEnabled();
 
   runApp(const MyApp());
 }

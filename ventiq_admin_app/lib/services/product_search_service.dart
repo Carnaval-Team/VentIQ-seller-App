@@ -41,7 +41,7 @@ class ProductSearchService {
     int? locationId,
     int? supplierId,
   ) async {
-    print('\n📦 USANDO RPC: fn_listar_inventario_productos_paged2_grouped2');
+    print('\n📦 USANDO RPC: fn_listar_inventario_productos_paged2_grouped2_optimiized');
     print('   ├─ Razón: requireInventory=true (operación requiere inventario existente)');
     print('   ├─ searchQuery: $searchQuery');
     print('   ├─ page: $page, pageSize: $pageSize');
@@ -50,7 +50,7 @@ class ProductSearchService {
     print('   └─ Casos de uso: Extracciones, Transferencias, Operaciones con inventario');
     
     // Usar función RPC con soporte para filtrado por proveedor
-    final response = await _supabase.rpc('fn_listar_inventario_productos_paged2_grouped2', params: {
+    final response = await _supabase.rpc('fn_listar_inventario_productos_paged2_grouped2_optimiized', params: {
       'p_pagina': page,
       'p_limite': pageSize,
       'p_id_tienda': await _getUserStoreId(),

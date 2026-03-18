@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_compass_v2/flutter_compass_v2.dart';
+import '../../utils/smooth_compass_mixin.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -16,6 +16,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/transport_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../services/completion_sync_service.dart';
 import '../../services/transport_request_service.dart';
 import '../../services/routing_service.dart';
 import '../../models/transport_request_model.dart';
@@ -34,8 +35,12 @@ class HomeMapScreen extends StatefulWidget {
 }
 
 class _HomeMapScreenState extends State<HomeMapScreen>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver, SmoothCompassMixin {
   final MapController _mapController = MapController();
+  @override
+  MapController get compassMapController => _mapController;
+  @override
+  bool get compassDrivesRotation => true;
   int _currentNavIndex = 0;
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -63,11 +68,8 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   Timer? _activeTripPollingTimer; // polling for active trip / offers
 
   // Navigation mode state
-  bool _autoRotate = false;
   bool _tilt3D = false;
   double _currentTilt = 0.0;
-  double _heading = 0.0;
-  StreamSubscription<CompassEvent>? _compassSub;
 
   @override
   void initState() {
@@ -259,7 +261,7 @@ class _HomeMapScreenState extends State<HomeMapScreen>
     });
 
     // Auto-center with smooth animation
-    if (_autoRotate || _hasActiveTrip) {
+    if (autoRotate || _hasActiveTrip) {
       _animateCameraToLocation(loc);
     }
 
@@ -374,12 +376,14 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       if (uuid != null) _checkActiveTrip(uuid);
       // Re-subscribe realtime channels that may have died while suspended
       context.read<TransportProvider>().resubscribeRealtime();
+      // Sync any pending offline completions
+      CompletionSyncService.syncPendingCompletions();
     }
   }
 
   @override
   void dispose() {
-    _compassSub?.cancel();
+    disposeCompass();
     WidgetsBinding.instance.removeObserver(this);
     _activeTripPollingTimer?.cancel();
     _driversRefreshTimer?.cancel();
@@ -408,9 +412,6 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       final cam = _mapController.camera;
       final startCenter = cam.center;
       final startZoom = cam.zoom;
-      final startRotation = cam.rotation;
-      final targetRotation = _autoRotate ? -_heading : 0.0;
-
       const steps = 15;
       const duration = Duration(milliseconds: 450);
       final stepDuration = Duration(
@@ -432,18 +433,10 @@ class _HomeMapScreenState extends State<HomeMapScreen>
         final lon = startCenter.longitude +
             (target.longitude - startCenter.longitude) * ease;
 
-        double rot = startRotation;
-        if (_autoRotate) {
-          var diff = targetRotation - startRotation;
-          while (diff > 180) diff -= 360;
-          while (diff < -180) diff += 360;
-          rot = startRotation + diff * ease;
-        }
-
         try {
-          _mapController.moveAndRotate(LatLng(lat, lon), startZoom, rot);
+          _mapController.move(LatLng(lat, lon), startZoom);
         } catch (e) {
-          debugPrint('[HomeMap] animateCamera moveAndRotate error: $e');
+          debugPrint('[HomeMap] animateCamera move error: $e');
         }
       });
     } catch (e, st) {
@@ -454,34 +447,6 @@ class _HomeMapScreenState extends State<HomeMapScreen>
         debugPrint('[HomeMap] animateCamera fallback move error: $e2');
       }
     }
-  }
-
-  void _toggleAutoRotate() {
-    setState(() {
-      _autoRotate = !_autoRotate;
-      if (_autoRotate) {
-        _compassSub = FlutterCompass.events?.listen((event) {
-          final h = event.heading;
-          if (h == null || !mounted) return;
-          setState(() => _heading = h);
-          if (_autoRotate) {
-            try {
-              _mapController.rotate(-h);
-            } catch (e) {
-              debugPrint('[HomeMap] compass rotate error: $e');
-            }
-          }
-        });
-      } else {
-        _compassSub?.cancel();
-        _compassSub = null;
-        try {
-          _mapController.rotate(0);
-        } catch (e) {
-          debugPrint('[HomeMap] rotate reset error: $e');
-        }
-      }
-    });
   }
 
   void _toggle3DTilt() {
@@ -545,8 +510,8 @@ class _HomeMapScreenState extends State<HomeMapScreen>
         point: userLocation,
         width: 40,
         height: 40,
-        rotate: _autoRotate,
-        child: _autoRotate
+        rotate: autoRotate,
+        child: autoRotate
             ? Container(
                 decoration: BoxDecoration(
                   color: AppTheme.primaryColor,
@@ -719,16 +684,31 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       }
       // Blue current route — glow layer + solid
       if (_activeTripRoute.isNotEmpty) {
+        final routePoints = [userLocation, ..._activeTripRoute];
         polylines.add(Polyline(
-          points: _activeTripRoute,
+          points: routePoints,
           strokeWidth: 10.0,
           color: AppTheme.primaryColor.withValues(alpha: 0.2),
         ));
         polylines.add(Polyline(
-          points: _activeTripRoute,
+          points: routePoints,
           strokeWidth: 4.5,
           color: AppTheme.primaryColor,
         ));
+
+        // Walking segment: route end → destination
+        if (_activeTripDestination != null) {
+          final distToEnd = const Distance().as(
+            LengthUnit.Meter, _activeTripRoute.last, _activeTripDestination!);
+          if (distToEnd > 30) {
+            polylines.add(Polyline(
+              points: [_activeTripRoute.last, _activeTripDestination!],
+              strokeWidth: 4.0,
+              color: Colors.grey,
+              pattern: const StrokePattern.dotted(spacingFactor: 3.0),
+            ));
+          }
+        }
       }
     }
 
@@ -974,11 +954,11 @@ class _HomeMapScreenState extends State<HomeMapScreen>
               children: [
                 if (_hasActiveTrip) ...[
                   _buildNavModeButton(
-                    icon: _autoRotate
+                    icon: autoRotate
                         ? Icons.explore
                         : Icons.explore_off,
-                    isActive: _autoRotate,
-                    onPressed: _toggleAutoRotate,
+                    isActive: autoRotate,
+                    onPressed: toggleAutoRotate,
                     isDark: isDark,
                   ),
                   const SizedBox(height: 10),

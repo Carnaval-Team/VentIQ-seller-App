@@ -142,10 +142,11 @@ BEGIN
     v_productos_extraccion := v_productos_extraccion || v_producto_json;
   END LOOP;
 
-  -- 5. Crear operación de extracción PENDIENTE usando fn_insertar_extraccion_completa2
+  -- 5. Crear operación de extracción usando fn_crear_extraccion_con_movimiento
+  -- Aplica el movimiento de inventario inmediatamente al crear la extracción
   -- Parámetros: p_autorizado_por (text), p_estado_inicial (smallint), p_id_motivo_operacion (bigint), 
   --             p_id_tienda (bigint), p_observaciones (text), p_productos (jsonb), p_uuid (uuid)
-  SELECT fn_insertar_extraccion_completa2(
+  SELECT fn_crear_extraccion_con_movimiento(
     'Sistema'::TEXT,  -- p_autorizado_por
     1::SMALLINT,  -- p_estado_inicial (1 = Pendiente)
     21::BIGINT,  -- p_id_motivo_operacion (Consignación)
@@ -161,7 +162,7 @@ BEGIN
 
   v_id_operacion_extraccion := (v_extraccion_result->>'id_operacion')::BIGINT;
   
-  RAISE NOTICE '✅ Operación de extracción PENDIENTE creada: %', v_id_operacion_extraccion;
+  RAISE NOTICE '✅ Operación de extracción COMPLETADA (con movimiento de inventario) creada: %', v_id_operacion_extraccion;
 
   -- 6. Vincular operación de extracción al envío
   UPDATE app_dat_consignacion_envio
@@ -254,7 +255,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION aprobar_devolucion_consignacion IS 
-  'Aprueba una devolución: crea operación de extracción PENDIENTE del producto DUPLICADO en consignatario y operación de recepción PENDIENTE del producto ORIGINAL en consignador. Ambas operaciones deben completarse desde sus respectivas pantallas de operaciones.';
+  'Aprueba una devolución: crea operación de extracción COMPLETADA (con movimiento de inventario inmediato) del producto DUPLICADO en consignatario usando fn_crear_extraccion_con_movimiento, y operación de recepción PENDIENTE del producto ORIGINAL en consignador. El consignador debe completar la recepción desde su pantalla de operaciones.';
 
 -- ============================================================================
 -- MENSAJE DE CONFIRMACIÓN
@@ -262,15 +263,15 @@ COMMENT ON FUNCTION aprobar_devolucion_consignacion IS
 
 DO $$
 BEGIN
-  RAISE NOTICE '✅ Función aprobar_devolucion_consignacion corregida V2';
+  RAISE NOTICE '✅ Función aprobar_devolucion_consignacion corregida V3 (usa fn_crear_extraccion_con_movimiento)';
   RAISE NOTICE '';
   RAISE NOTICE '📋 FLUJO CORRECTO:';
-  RAISE NOTICE '1. Crea operación de extracción PENDIENTE del producto DUPLICADO en consignatario';
+  RAISE NOTICE '1. Crea operación de extracción COMPLETADA (inventario reducido inmediatamente) del producto DUPLICADO en consignatario';
   RAISE NOTICE '2. Registra productos de extracción (sin actualizar inventario aún)';
   RAISE NOTICE '3. Crea operación de recepción PENDIENTE en consignador';
   RAISE NOTICE '4. Registra productos de recepción (sin actualizar inventario aún)';
   RAISE NOTICE '5. Vincula ambas operaciones al envío';
-  RAISE NOTICE '6. El consignatario debe COMPLETAR la extracción para reducir inventario';
+  RAISE NOTICE '6. El inventario del consignatario ya fue reducido al crear la extracción (fn_crear_extraccion_con_movimiento)';
   RAISE NOTICE '7. El consignador debe COMPLETAR la recepción para aumentar inventario';
   RAISE NOTICE '';
   RAISE NOTICE '✅ LISTO PARA USAR';

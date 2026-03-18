@@ -137,6 +137,21 @@ class MueveteService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
+  /// Fetches history trail for a single driver (on-demand).
+  static Future<List<Map<String, dynamic>>> getDriverHistory(
+    int driverId, {
+    int limit = 20,
+  }) async {
+    final rows = await _supabase
+        .schema('muevete')
+        .from('track_place_history')
+        .select('latitude, longitude, created_at')
+        .eq('driver_id', driverId)
+        .order('created_at', ascending: false)
+        .limit(limit);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
   // ─── WALLETS ──────────────────────────────────────────────────────────
 
   /// Fetches client wallets with user info.

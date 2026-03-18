@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(flutter analyze:*)",
-      "Bash(dart analyze:*)"
+      "Bash(dart analyze:*)",
+      "Bash(xargs grep:*)",
+      "Bash(grep:*)"
     ]
   }
 }

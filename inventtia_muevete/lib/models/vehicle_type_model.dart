@@ -7,6 +7,7 @@ class VehicleTypeModel {
   final double tiempoMinPorKm;
   final bool status;
   final double? precioInsideSc;
+  final double precioEsperaMinuto;
 
   const VehicleTypeModel({
     required this.id,
@@ -15,6 +16,7 @@ class VehicleTypeModel {
     required this.tiempoMinPorKm,
     required this.status,
     this.precioInsideSc,
+    this.precioEsperaMinuto = 0,
   });
 
   factory VehicleTypeModel.fromJson(Map<String, dynamic> json) {
@@ -29,6 +31,9 @@ class VehicleTypeModel {
       precioInsideSc: json['precio_inside_sc'] != null
           ? (json['precio_inside_sc'] as num).toDouble()
           : null,
+      precioEsperaMinuto: json['precio_espera_minuto'] != null
+          ? (json['precio_espera_minuto'] as num).toDouble()
+          : 0,
     );
   }
 

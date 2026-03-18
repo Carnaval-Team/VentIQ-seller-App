@@ -78,17 +78,42 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   double? _customProductPrice;
   int? _lastCustomizedVariantId;
   final Map<int, double> _customVariantPrices = {};
-  late final AnimationController _editIconController;
-  late final Animation<double> _editIconOpacity;
+  AnimationController? _editIconController;
+  Animation<double>? _editIconOpacity;
   @override
   void initState() {
     super.initState();
+
+    // Si el producto no tiene stock, mostrar aviso y volver
+    if (widget.product.cantidad <= 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Sin stock'),
+            content: const Text('Este producto no tiene stock disponible.'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Volver'),
+              ),
+            ],
+          ),
+        );
+      });
+      return;
+    }
+
     _editIconController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
     _editIconOpacity = Tween<double>(begin: 0.4, end: 1).animate(
-      CurvedAnimation(parent: _editIconController, curve: Curves.easeInOut),
+      CurvedAnimation(parent: _editIconController!, curve: Curves.easeInOut),
     );
     // Inicializar cantidades de variantes
     for (var variant in widget.product.variantes) {
@@ -108,7 +133,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
   @override
   void dispose() {
-    _editIconController.dispose();
+    _editIconController?.dispose();
     super.dispose();
   }
 
@@ -150,10 +175,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       _canCustomizeSalePrice = canCustomize;
     });
     if (canCustomize) {
-      _editIconController.repeat(reverse: true);
+      _editIconController?.repeat(reverse: true);
     } else {
-      _editIconController.stop();
-      _editIconController.value = 1;
+      _editIconController?.stop();
+      _editIconController?.value = 1;
     }
   }
 
@@ -500,7 +525,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     double size = 18,
   }) {
     return FadeTransition(
-      opacity: _editIconOpacity,
+      opacity: _editIconOpacity ?? const AlwaysStoppedAnimation(1.0),
       child: InkWell(
         onTap: () => _showPriceCustomizationDialog(product, variant: variant),
         borderRadius: BorderRadius.circular(20),
@@ -1314,6 +1339,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (widget.product.cantidad <= 0) {
+      return const Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(

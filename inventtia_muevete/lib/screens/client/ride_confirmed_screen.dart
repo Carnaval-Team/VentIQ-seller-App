@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_compass_v2/flutter_compass_v2.dart';
+import '../../utils/smooth_compass_mixin.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -21,7 +21,10 @@ import '../../services/driver_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/routing_service.dart';
 import '../../utils/helpers.dart';
+import '../../services/completion_sync_service.dart';
+import '../../services/offline_queue_service.dart';
 import '../../widgets/map_widget.dart';
+import '../../widgets/qr_completion_dialog.dart';
 import '../../widgets/rating_dialog.dart';
 
 class RideConfirmedScreen extends StatefulWidget {
@@ -32,8 +35,12 @@ class RideConfirmedScreen extends StatefulWidget {
 }
 
 class _RideConfirmedScreenState extends State<RideConfirmedScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, SmoothCompassMixin {
   final MapController _mapController = MapController();
+  @override
+  MapController get compassMapController => _mapController;
+  @override
+  bool get compassDrivesRotation => true;
   AnimationController? _pulseController;
   Animation<double>? _pulseAnimation;
 
@@ -41,6 +48,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   LatLng? _driverPosition;
   Timer? _locationPollTimer;
   bool _isCompleting = false;
+  double _precioEsperaMinuto = 0;
 
   // Real-time client tracking
   List<LatLng> _clientTrail = []; // breadcrumb trail (grey)
@@ -51,16 +59,11 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   Timer? _routeRefreshTimer; // periodic fallback every 10s
 
   final RoutingService _routingService = RoutingService();
+  List<LatLng> _walkingSegment = [];
 
   LatLng? _lastClientPosition;
-  double _heading = 0.0;
-  StreamSubscription<CompassEvent>? _compassSub;
-
   // Whether the driver has started the trip (hide driver marker from map)
   bool _tripStarted = false;
-
-  // Navigation mode state
-  bool _autoRotate = false;
   bool _tilt3D = false;
   double _currentTilt = 0.0;
   StreamSubscription<NotificationModel>? _notifSubscription;
@@ -96,6 +99,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       _checkIfTripAlreadyStarted();
       _startDriverTracking();
       _startClientTracking();
+      _fetchPrecioEspera();
       // Periodic fallback: recalculate route every 10s regardless of movement
       _routeRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
         if (!mounted) return;
@@ -104,6 +108,25 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
         _forceRecalculateRoute(loc);
       });
     });
+  }
+
+  Future<void> _fetchPrecioEspera() async {
+    try {
+      final tp = context.read<TransportProvider>();
+      final tipoVehiculo = tp.activeRequest?.tipoVehiculo;
+      if (tipoVehiculo == null) return;
+      final row = await Supabase.instance.client
+          .schema('muevete')
+          .from('vehicle_type')
+          .select('precio_espera_minuto')
+          .eq('tipo', tipoVehiculo)
+          .maybeSingle();
+      if (row != null && mounted) {
+        setState(() {
+          _precioEsperaMinuto = (row['precio_espera_minuto'] as num?)?.toDouble() ?? 0;
+        });
+      }
+    } catch (_) {}
   }
 
   /// Check if the viaje was already started (estado=true) so we restore _tripStarted on reopen.
@@ -257,12 +280,36 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       final result = await _routingService.getRoute(from, dest);
       if (mounted) {
         setState(() => _currentRoute = result.polyline);
+        _fetchWalkingSegment();
       }
     } catch (_) {
       // Keep previous route on error
     }
     // Always reset — even if catch fires
     _isRecalculating = false;
+  }
+
+  Future<void> _fetchWalkingSegment() async {
+    if (_currentRoute.isEmpty) return;
+    final dest = context.read<TransportProvider>().dropoffLocation;
+    if (dest == null) return;
+    final distToEnd =
+        const Distance().as(LengthUnit.Meter, _currentRoute.last, dest);
+    if (distToEnd <= 30) {
+      if (_walkingSegment.isNotEmpty && mounted) {
+        setState(() => _walkingSegment = []);
+      }
+      return;
+    }
+    try {
+      final result =
+          await _routingService.getWalkingRoute(_currentRoute.last, dest);
+      if (mounted) setState(() => _walkingSegment = result.polyline);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _walkingSegment = [_currentRoute.last, dest]);
+      }
+    }
   }
 
   double _haversineMeters(LatLng a, LatLng b) {
@@ -320,13 +367,58 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     final tp = context.read<TransportProvider>();
     final requestId = tp.activeRequest?.id;
     if (requestId == null || _isCompleting) return;
+
+    // Capture IDs before any reset
+    final viajeId = tp.activeViajeId;
+    final driverId = tp.acceptedOffer?.driverId;
+    final userId = context.read<AuthProvider>().user?.id;
+    final precio = tp.acceptedOffer?.precio ?? tp.offerPrice;
+    final metodoPago = tp.activeRequest?.metodoPago ?? 'efectivo';
+
+    // ── Offline path: show QR + enqueue ──
+    final online = await OfflineQueueService.hasInternetConnection();
+    if (!online) {
+      if (viajeId == null || driverId == null || userId == null) return;
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => QrCompletionDialog(
+          solicitudId: requestId,
+          viajeId: viajeId,
+          driverId: driverId,
+          userId: userId,
+          precio: precio,
+          metodoPago: metodoPago,
+        ),
+      );
+      if (confirmed == true && mounted) {
+        await CompletionSyncService.enqueueCompletion(
+          solicitudId: requestId,
+          viajeId: viajeId,
+          driverId: driverId,
+          userId: userId,
+          precio: precio,
+          metodoPago: metodoPago,
+          role: 'client',
+        );
+        tp.resetTrip();
+        Navigator.of(context).popUntil((r) => r.isFirst);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Viaje pendiente de sincronización',
+                style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+            backgroundColor: AppTheme.warning,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      return;
+    }
+
+    // ── Online path (existing flow) ──
     setState(() => _isCompleting = true);
     try {
-      // Capture IDs before resetTrip clears them
-      final viajeId = tp.activeViajeId;
-      final driverId = tp.acceptedOffer?.driverId;
-      final userId = context.read<AuthProvider>().user?.id;
-
       // Process wallet payment (client if wallet, driver commission always)
       await tp.completeRideWithPayment();
 
@@ -335,6 +427,15 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
           .from('solicitudes_transporte')
           .update({'estado': 'completada'})
           .eq('id', requestId);
+
+      // Also mark viaje as completed so the driver's UI updates
+      if (viajeId != null) {
+        await Supabase.instance.client
+            .schema('muevete')
+            .from('viajes')
+            .update({'completado': true, 'estado': false})
+            .eq('id', viajeId);
+      }
 
       // Show rating dialog before navigating away
       if (mounted && viajeId != null && driverId != null && userId != null) {
@@ -373,7 +474,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
 
   @override
   void dispose() {
-    _compassSub?.cancel();
+    disposeCompass();
     _notifSubscription?.cancel();
     _pulseController?.dispose();
     _locationPollTimer?.cancel();
@@ -499,8 +600,8 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
         point: userLocation,
         width: 40,
         height: 40,
-        rotate: _autoRotate,
-        child: _autoRotate
+        rotate: autoRotate,
+        child: autoRotate
             ? Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
@@ -620,20 +721,33 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
 
     // Blue current route to destination — glow layer + solid
     if (_currentRoute.isNotEmpty) {
+      final routePoints = [userLocation, ..._currentRoute];
       polylines.add(
         Polyline(
-          points: _currentRoute,
+          points: routePoints,
           strokeWidth: 10.0,
           color: AppTheme.primaryColor.withValues(alpha: 0.2),
         ),
       );
       polylines.add(
         Polyline(
-          points: _currentRoute,
+          points: routePoints,
           strokeWidth: 4.5,
           color: AppTheme.primaryColor,
         ),
       );
+
+      // Walking segment: real walking route (or cached fallback)
+      if (_walkingSegment.length >= 2) {
+        polylines.add(
+          Polyline(
+            points: _walkingSegment,
+            strokeWidth: 4.0,
+            color: Colors.grey,
+            pattern: const StrokePattern.dotted(spacingFactor: 3.0),
+          ),
+        );
+      }
     }
 
     return Scaffold(
@@ -753,9 +867,9 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
             child: Column(
               children: [
                 _buildNavModeButton(
-                  icon: _autoRotate ? Icons.explore : Icons.explore_off,
-                  isActive: _autoRotate,
-                  onPressed: _toggleAutoRotate,
+                  icon: autoRotate ? Icons.explore : Icons.explore_off,
+                  isActive: autoRotate,
+                  onPressed: toggleAutoRotate,
                   isDark: isDark,
                 ),
                 const SizedBox(height: 10),
@@ -996,6 +1110,24 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                         ),
                       ],
                     ),
+                    if (_precioEsperaMinuto > 0) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.timer_outlined,
+                              size: 14,
+                              color: isDark ? Colors.white54 : Colors.grey[500]),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Espera: \$${_precioEsperaMinuto.toStringAsFixed(2)}/min',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              color: isDark ? Colors.white54 : Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     // Chat preview bubble — show only if driver sent a message
                     if ((acceptedOffer?.mensaje ?? '').isNotEmpty) ...[
@@ -1172,29 +1304,6 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     );
   }
 
-  void _toggleAutoRotate() {
-    setState(() {
-      _autoRotate = !_autoRotate;
-      if (_autoRotate) {
-        _compassSub = FlutterCompass.events?.listen((event) {
-          final h = event.heading;
-          if (h == null || !mounted) return;
-          setState(() => _heading = h);
-          if (_autoRotate) {
-            try {
-              _mapController.rotate(-h);
-            } catch (_) {}
-          }
-        });
-      } else {
-        _compassSub?.cancel();
-        _compassSub = null;
-        try {
-          _mapController.rotate(0);
-        } catch (_) {}
-      }
-    });
-  }
 
   void _toggle3DTilt() {
     setState(() => _tilt3D = !_tilt3D);
@@ -1233,8 +1342,6 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       final cam = _mapController.camera;
       final startCenter = cam.center;
       final startZoom = cam.zoom;
-      final startRotation = cam.rotation;
-      final targetRotation = _autoRotate ? -_heading : 0.0;
       final targetZoom = _zoomForDistance(_distanceToDestinationM);
 
       const steps = 15;
@@ -1256,15 +1363,8 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
         final lon = startCenter.longitude +
             (target.longitude - startCenter.longitude) * ease;
         final zoom = startZoom + (targetZoom - startZoom) * ease;
-        double rot = startRotation;
-        if (_autoRotate) {
-          var diff = targetRotation - startRotation;
-          while (diff > 180) diff -= 360;
-          while (diff < -180) diff += 360;
-          rot = startRotation + diff * ease;
-        }
         try {
-          _mapController.moveAndRotate(LatLng(lat, lon), zoom, rot);
+          _mapController.move(LatLng(lat, lon), zoom);
         } catch (_) {}
       });
     } catch (_) {

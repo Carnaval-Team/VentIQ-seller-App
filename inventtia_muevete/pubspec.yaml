@@ -25,6 +25,13 @@ dependencies:
   # Compass / heading sensor
   flutter_compass_v2: ^1.0.3
 
+  # QR code generation & scanning
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^6.0.0
+
+  # Crypto (HMAC for QR signatures)
+  crypto: ^3.0.6
+
   # HTTP
   http: ^1.3.0
 

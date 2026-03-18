@@ -644,6 +644,11 @@ class UserPreferencesService {
   // Static text settings keys
   static const String _staticTextEnabledKey = 'static_text_enabled';
 
+  // SKU visibility settings keys
+  static const String _showSkuEnabledKey = 'show_sku_enabled';
+  bool _cachedShowSkuEnabled = false;
+  bool _skuCacheLoaded = false;
+
   // Currency denominations keys
   static const String _monedasDenominacionKey = 'monedas_denominacion';
   static const String _cambioCupUsdKey = 'cambio_cup_usd';
@@ -715,6 +720,29 @@ class UserPreferencesService {
     return prefs.getBool(_staticTextEnabledKey) ??
         false; // Por defecto deshabilitado (marquee activo)
   }
+
+  // SKU visibility settings methods
+  Future<void> setShowSkuEnabled(bool enabled) async {
+    _cachedShowSkuEnabled = enabled;
+    _skuCacheLoaded = true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_showSkuEnabledKey, enabled);
+    print(
+      'UserPreferencesService: Mostrar SKU actualizado: $enabled',
+    );
+  }
+
+  Future<bool> isShowSkuEnabled() async {
+    if (!_skuCacheLoaded) {
+      final prefs = await SharedPreferences.getInstance();
+      _cachedShowSkuEnabled = prefs.getBool(_showSkuEnabledKey) ?? false;
+      _skuCacheLoaded = true;
+    }
+    return _cachedShowSkuEnabled;
+  }
+
+  /// Synchronous read — returns cached value (false until first async load).
+  bool get isShowSkuEnabledSync => _cachedShowSkuEnabled;
 
   // Data usage settings methods
   Future<void> setLimitDataUsage(bool enabled) async {
