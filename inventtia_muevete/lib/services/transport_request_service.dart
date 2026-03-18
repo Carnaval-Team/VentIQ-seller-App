@@ -105,7 +105,7 @@ class TransportRequestService {
           .schema('muevete')
           .from('drivers')
           .select(
-            'name, image, categoria, telefono, kyc, '
+            'name, email, image, categoria, telefono, kyc, '
             'vehiculos!drivers_vehiculo_fkey(marca, modelo, chapa, color)',
           )
           .eq('id', driverId)
@@ -113,6 +113,7 @@ class TransportRequestService {
 
       if (driverRow != null) {
         data['driver_name'] = driverRow['name'];
+        data['driver_email'] = driverRow['email'];
         data['driver_image'] = driverRow['image'];
         data['vehicle_info'] = driverRow['categoria'];
         final phone = driverRow['telefono'] as String?;
@@ -155,6 +156,18 @@ class TransportRequestService {
       }
       data['trip_count'] = completedCount;
     } catch (_) {}
+  }
+
+  /// Fetches detailed info for a single driver (name, image, vehicle, rating,
+  /// trip count). Used when tapping a driver marker on the map.
+  Future<Map<String, dynamic>?> getDriverDetails(int driverId) async {
+    final data = <String, dynamic>{'driver_id': driverId};
+    try {
+      await _enrichOfferData(data, driverId);
+      return data;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Fetches all existing offers for a request, enriched with full driver info.

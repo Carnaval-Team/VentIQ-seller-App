@@ -22,14 +22,15 @@ class DriverOfferCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.darkCard,
+        color: AppTheme.card(isDark),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: AppTheme.darkBorder,
+          color: AppTheme.border(isDark),
           width: 1,
         ),
       ),
@@ -42,12 +43,13 @@ class DriverOfferCard extends StatelessWidget {
               // Driver avatar
               CircleAvatar(
                 radius: 24,
-                backgroundColor: AppTheme.darkBorder,
+                backgroundColor: AppTheme.border(isDark),
                 backgroundImage: offer.driverImage != null
                     ? NetworkImage(offer.driverImage!)
                     : null,
                 child: offer.driverImage == null
-                    ? const Icon(Icons.person, color: Colors.white54, size: 28)
+                    ? Icon(Icons.person,
+                        color: AppTheme.textTertiary(isDark), size: 28)
                     : null,
               ),
               const SizedBox(width: 12),
@@ -61,7 +63,7 @@ class DriverOfferCard extends StatelessWidget {
                       offer.driverName ?? 'Conductor',
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: AppTheme.textPrimary(isDark),
                       ),
                     ),
                     if (offer.vehicleInfo != null) ...[
@@ -69,7 +71,7 @@ class DriverOfferCard extends StatelessWidget {
                       Text(
                         offer.vehicleInfo!,
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: Colors.white.withValues(alpha: 0.5),
+                          color: AppTheme.textTertiary(isDark),
                         ),
                       ),
                     ],
@@ -88,7 +90,7 @@ class DriverOfferCard extends StatelessWidget {
                       driverRating!.toStringAsFixed(1),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: AppTheme.textPrimary(isDark),
                       ),
                     ),
                   ],
@@ -109,7 +111,7 @@ class DriverOfferCard extends StatelessWidget {
                     Text(
                       'Precio',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: AppTheme.textTertiary(isDark),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -117,7 +119,7 @@ class DriverOfferCard extends StatelessWidget {
                       '\$${offer.precio?.toStringAsFixed(2) ?? '0.00'}',
                       style: theme.textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                        color: AppTheme.textPrimary(isDark),
                       ),
                     ),
                   ],
@@ -161,14 +163,14 @@ class DriverOfferCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: AppTheme.darkSurface,
+                    color: AppTheme.surface(isDark),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.darkBorder),
+                    border: Border.all(color: AppTheme.border(isDark)),
                   ),
                   child: Text(
                     offer.vehicleInfo!,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.7),
+                      color: AppTheme.textSecondary(isDark),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -183,7 +185,7 @@ class DriverOfferCard extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppTheme.darkSurface,
+                color: AppTheme.surface(isDark),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
@@ -191,14 +193,14 @@ class DriverOfferCard extends StatelessWidget {
                   Icon(
                     Icons.chat_bubble_outline,
                     size: 16,
-                    color: Colors.white.withValues(alpha: 0.5),
+                    color: AppTheme.textTertiary(isDark),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       offer.mensaje!,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: AppTheme.textSecondary(isDark),
                       ),
                     ),
                   ),

@@ -3,7 +3,13 @@ import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
 import '../../utils/smooth_compass_mixin.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_map/flutter_map.dart' hide TileLayer;
+import 'package:flutter_map/flutter_map.dart' as fm show TileLayer;
+import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart' as fmtc;
+import 'package:vector_map_tiles/vector_map_tiles.dart';
+
+import '../../services/mbtiles_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -80,14 +86,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     ));
 
     WidgetsBinding.instance.addObserver(this);
+    MbTilesService.instance.addListener(_onOfflineMapChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeDriver();
     });
   }
 
+  void _onOfflineMapChanged() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _initializeDriver() async {
     final locationProvider = context.read<LocationProvider>();
     final authProvider = context.read<AuthProvider>(); // read before await
+    // Register push first (may show notification permission dialog), then
+    // request location permission — avoids two dialogs at the same time.
+    await authProvider.registerPushAndStartBackground();
     await locationProvider.initLocation();
     locationProvider.startTracking();
     // Start background service now that location permission is granted (retries up to 10 times)
@@ -1056,6 +1070,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   @override
   void dispose() {
+    MbTilesService.instance.removeListener(_onOfflineMapChanged);
     disposeCompass();
     WidgetsBinding.instance.removeObserver(this);
     _stopLocationTracking();
@@ -1097,10 +1112,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               initialZoom: AppConstants.defaultZoom,
             ),
             children: [
-              TileLayer(
-                urlTemplate: tileUrl,
-                userAgentPackageName: 'com.inventtia.muevete',
-              ),
+              if (!kIsWeb && MbTilesService.instance.useOffline && MbTilesService.instance.provider != null)
+                VectorTileLayer(
+                  theme: MbTilesService.instance.getTheme(isDark: isDark),
+                  tileProviders: TileProviders({
+                    'openmaptiles': MbTilesService.instance.provider!,
+                  }),
+                  maximumZoom: 18,
+                  fileCacheMaximumSizeInBytes: 0,
+                )
+              else
+                fm.TileLayer(
+                  urlTemplate: tileUrl,
+                  userAgentPackageName: 'com.inventtia.muevete',
+                  tileProvider: kIsWeb
+                      ? null
+                      : fmtc.FMTCTileProvider(
+                          stores: const {'mapTiles': fmtc.BrowseStoreStrategy.readUpdate},
+                        ),
+                ),
               MarkerLayer(
                 markers: [
                   // Driver marker: navigation arrow when auto-rotate, car icon otherwise

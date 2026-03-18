@@ -85,10 +85,15 @@ class _HomeMapScreenState extends State<HomeMapScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final locationProvider = context.read<LocationProvider>();
-      locationProvider.initLocation().then((_) async {
+      final authProvider = context.read<AuthProvider>();
+      // Register push first (may show notification permission dialog), then
+      // request location permission — avoids two dialogs at the same time.
+      authProvider.registerPushAndStartBackground().then((_) async {
+        if (!mounted) return;
+        await locationProvider.initLocation();
         // Start background service now that location permission is granted
         if (!mounted) return;
-        final started = await context.read<AuthProvider>().ensureBackgroundServiceStarted();
+        final started = await authProvider.ensureBackgroundServiceStarted();
         if (!started && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -484,6 +489,301 @@ class _HomeMapScreenState extends State<HomeMapScreen>
     _openSearchScreen();
   }
 
+  void _showDriverInfoSheet(
+      int driverId, String name, String? image, double? distanceKm) {
+    final isDark = context.read<ThemeProvider>().isDark;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.card(isDark),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return FutureBuilder<Map<String, dynamic>?>(
+          future: _requestService.getDriverDetails(driverId),
+          builder: (context, snapshot) {
+            final data = snapshot.data;
+            final isLoading =
+                snapshot.connectionState == ConnectionState.waiting;
+
+            final driverName = data?['driver_name'] as String? ?? name;
+            final driverImage = data?['driver_image'] as String? ?? image;
+            final rating = data?['driver_rating'] as double?;
+            final tripCount = data?['trip_count'] as int? ?? 0;
+            final categoria = data?['vehicle_info'] as String?;
+            final marca = data?['vehicle_marca'] as String?;
+            final modelo = data?['vehicle_modelo'] as String?;
+            final chapa = data?['vehicle_chapa'] as String?;
+            final color = data?['vehicle_color'] as String?;
+            final kyc = data?['driver_kyc'] as bool? ?? false;
+            final email = data?['driver_email'] as String?;
+            final phone = data?['driver_phone'] as String?;
+
+            final vehicleText = [
+              if (marca != null) marca,
+              if (modelo != null) modelo,
+            ].join(' ');
+
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Handle bar
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppTheme.textTertiary(isDark),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Avatar + name row
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 36,
+                        backgroundColor: AppTheme.border(isDark),
+                        backgroundImage: driverImage != null &&
+                                driverImage.isNotEmpty
+                            ? NetworkImage(driverImage)
+                            : null,
+                        child: driverImage == null || driverImage.isEmpty
+                            ? Icon(Icons.person,
+                                color: AppTheme.textTertiary(isDark), size: 36)
+                            : null,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    driverName,
+                                    style: TextStyle(
+                                      color: AppTheme.textPrimary(isDark),
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (kyc) ...[
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.verified,
+                                      color: AppTheme.primaryColor, size: 18),
+                                ],
+                              ],
+                            ),
+                            if (categoria != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                categoria,
+                                style: TextStyle(
+                                  color: AppTheme.textSecondary(isDark),
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Stats row: rating, trips, distance
+                  Row(
+                    children: [
+                      // Rating
+                      Expanded(
+                        child: _DriverStatTile(
+                          icon: Icons.star,
+                          iconColor: AppTheme.warning,
+                          isDark: isDark,
+                          value: isLoading
+                              ? '...'
+                              : rating != null
+                                  ? rating.toStringAsFixed(1)
+                                  : 'N/A',
+                          label: 'Rating',
+                        ),
+                      ),
+                      Container(
+                        width: 1,
+                        height: 40,
+                        color: AppTheme.border(isDark),
+                      ),
+                      // Trip count
+                      Expanded(
+                        child: _DriverStatTile(
+                          icon: Icons.route,
+                          iconColor: AppTheme.primaryColor,
+                          isDark: isDark,
+                          value:
+                              isLoading ? '...' : tripCount.toString(),
+                          label: 'Viajes',
+                        ),
+                      ),
+                      Container(
+                        width: 1,
+                        height: 40,
+                        color: AppTheme.border(isDark),
+                      ),
+                      // Distance
+                      Expanded(
+                        child: _DriverStatTile(
+                          icon: Icons.near_me,
+                          iconColor: Colors.greenAccent,
+                          isDark: isDark,
+                          value: distanceKm != null
+                              ? '${distanceKm.toStringAsFixed(1)} km'
+                              : '--',
+                          label: 'Distancia',
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Vehicle info
+                  if (vehicleText.isNotEmpty || chapa != null) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface(isDark),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppTheme.border(isDark)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.directions_car,
+                              color: AppTheme.primaryColor, size: 22),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (vehicleText.isNotEmpty)
+                                  Text(
+                                    vehicleText,
+                                    style: TextStyle(
+                                      color: AppTheme.textPrimary(isDark),
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                if (chapa != null || color != null) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    [
+                                      if (color != null) color,
+                                      if (chapa != null) '· $chapa',
+                                    ].join(' '),
+                                    style: TextStyle(
+                                      color: AppTheme.textTertiary(isDark),
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // Contact info
+                  if (phone != null || email != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface(isDark),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppTheme.border(isDark)),
+                      ),
+                      child: Column(
+                        children: [
+                          if (phone != null && phone.isNotEmpty)
+                            Row(
+                              children: [
+                                Icon(Icons.phone,
+                                    color: AppTheme.primaryColor, size: 18),
+                                const SizedBox(width: 10),
+                                Text(
+                                  phone,
+                                  style: TextStyle(
+                                    color: AppTheme.textPrimary(isDark),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          if (phone != null &&
+                              phone.isNotEmpty &&
+                              email != null &&
+                              email.isNotEmpty)
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 8),
+                              child: Divider(
+                                height: 1,
+                                color: AppTheme.border(isDark),
+                              ),
+                            ),
+                          if (email != null && email.isNotEmpty)
+                            Row(
+                              children: [
+                                Icon(Icons.email_outlined,
+                                    color: AppTheme.primaryColor, size: 18),
+                                const SizedBox(width: 10),
+                                Flexible(
+                                  child: Text(
+                                    email,
+                                    style: TextStyle(
+                                      color: AppTheme.textPrimary(isDark),
+                                      fontSize: 14,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  if (isLoading) ...[
+                    const SizedBox(height: 16),
+                    const SizedBox(
+                      height: 24,
+                      width: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _openSearchScreen() {
     if (_hasActiveTrip) return; // block when active trip
     Navigator.push(
@@ -544,13 +844,17 @@ class _HomeMapScreenState extends State<HomeMapScreen>
         final driver = d['drivers'] as Map<String, dynamic>?;
         final name = driver?['name'] as String? ?? 'Conductor';
         final image = driver?['image'] as String?;
+        final driverId = driver?['id'] as int?;
+        final distanceKm = d['distance_km'] as double?;
         markers.add(
           Marker(
             point: LatLng(lat, lon),
             width: 48,
             height: 48,
-            child: Tooltip(
-              message: name,
+            child: GestureDetector(
+              onTap: driverId != null
+                  ? () => _showDriverInfoSheet(driverId, name, image, distanceKm)
+                  : null,
               child: Container(
                 decoration: BoxDecoration(
                   color: AppTheme.primaryColor,
@@ -1587,6 +1891,48 @@ class _HomeMapScreenState extends State<HomeMapScreen>
 }
 
 /// Pulsing blue dot marker for the user's location.
+class _DriverStatTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String value;
+  final String label;
+  final bool isDark;
+
+  const _DriverStatTile({
+    required this.icon,
+    required this.iconColor,
+    required this.value,
+    required this.label,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Icon(icon, color: iconColor, size: 20),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            color: AppTheme.textPrimary(isDark),
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            color: AppTheme.textTertiary(isDark),
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _PulsingDot extends AnimatedWidget {
   const _PulsingDot({required Animation<double> animation})
       : super(listenable: animation);

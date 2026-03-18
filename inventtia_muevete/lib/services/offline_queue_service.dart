@@ -19,6 +19,18 @@ class OfflineQueueService {
     required double longitude,
   }) {
     final list = _readList();
+
+    // Deduplication: skip if last entry has same coordinates (within ~1m)
+    if (list.isNotEmpty) {
+      final last = list.last;
+      final lastLat = (last['latitude'] as num?)?.toDouble() ?? 0;
+      final lastLon = (last['longitude'] as num?)?.toDouble() ?? 0;
+      if ((latitude - lastLat).abs() < 0.00001 &&
+          (longitude - lastLon).abs() < 0.00001) {
+        return;
+      }
+    }
+
     list.add({
       'driver_id': driverId,
       'latitude': latitude,
@@ -37,6 +49,20 @@ class OfflineQueueService {
 
   /// Returns true if there are pending entries.
   bool get hasPending => _readList().isNotEmpty;
+
+  /// Number of queued entries.
+  int get pendingCount => _readList().length;
+
+  /// Remove the first [count] entries from the queue (partial flush).
+  void removeFirst(int count) {
+    final list = _readList();
+    if (count >= list.length) {
+      _prefs.remove(_key);
+    } else {
+      list.removeRange(0, count);
+      _prefs.setString(_key, jsonEncode(list));
+    }
+  }
 
   /// Clear the queue (call only after successful flush).
   void clear() {
@@ -59,7 +85,9 @@ class OfflineQueueService {
     if (raw == null || raw.isEmpty) return [];
     try {
       final decoded = jsonDecode(raw) as List;
-      return decoded.cast<Map<String, dynamic>>();
+      return decoded
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
     } catch (e) {
       debugPrint('[OfflineQueue] Error decoding queue: $e');
       return [];
