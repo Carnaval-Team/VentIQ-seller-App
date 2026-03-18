@@ -1572,79 +1572,71 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       ],
 
                       // ── Datos del cliente ─────────────────────────────────
-                      (() {
-                        final hasCustomer =
-                            order.buyerName != null ||
-                            order.buyerPhone != null;
-                        return Column(
+                      const SizedBox(height: 12),
+                      _buildDetailSection(
+                        title: 'Datos del Cliente',
+                        icon: Icons.person_outline,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const SizedBox(height: 12),
-                            _buildDetailSection(
-                              title: 'Datos del Cliente',
-                              icon: Icons.person_outline,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (hasCustomer) ...[
-                                    if (order.buyerName != null)
-                                      _buildDetailRowNew(
-                                        'Nombre',
-                                        order.buyerName!,
-                                      ),
-                                    if (order.buyerPhone != null &&
-                                        order.buyerPhone!.isNotEmpty)
-                                      _buildDetailRowNew(
-                                        'Teléfono',
-                                        order.buyerPhone!,
-                                      ),
-                                    if (order.extraContacts != null &&
-                                        order.extraContacts!.isNotEmpty)
-                                      _buildDetailRowNew(
-                                        'Contactos extra',
-                                        order.extraContacts!,
-                                      ),
-                                    const SizedBox(height: 8),
-                                  ] else
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 8),
-                                      child: Text(
-                                        'Sin datos de cliente registrados',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: Colors.grey[500],
-                                          fontStyle: FontStyle.italic,
-                                        ),
-                                      ),
-                                    ),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: OutlinedButton.icon(
-                                      onPressed: () => _showEditCustomerSheet(
-                                        order,
-                                        onCustomerUpdated: refreshOrderData,
-                                      ),
-                                      icon: const Icon(
-                                        Icons.edit_outlined,
-                                        size: 16,
-                                      ),
-                                      label: const Text('Editar datos del cliente'),
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: const Color(0xFF4A90E2),
-                                        side: const BorderSide(
-                                          color: Color(0xFF4A90E2),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 10,
-                                        ),
-                                      ),
-                                    ),
+                            if (order.buyerName != null ||
+                                order.buyerPhone != null) ...[
+                              if (order.buyerName != null)
+                                _buildDetailRowNew(
+                                  'Nombre',
+                                  order.buyerName!,
+                                ),
+                              if (order.buyerPhone != null &&
+                                  order.buyerPhone!.isNotEmpty)
+                                _buildDetailRowNew(
+                                  'Teléfono',
+                                  order.buyerPhone!,
+                                ),
+                              if (order.extraContacts != null &&
+                                  order.extraContacts!.isNotEmpty)
+                                _buildDetailRowNew(
+                                  'Contactos extra',
+                                  order.extraContacts!,
+                                ),
+                              const SizedBox(height: 8),
+                            ] else
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Text(
+                                  'Sin datos de cliente registrados',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey[500],
+                                    fontStyle: FontStyle.italic,
                                   ),
-                                ],
+                                ),
+                              ),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: () => _showEditCustomerSheet(
+                                  order,
+                                  onCustomerUpdated: refreshOrderData,
+                                ),
+                                icon: const Icon(
+                                  Icons.edit_outlined,
+                                  size: 16,
+                                ),
+                                label: const Text('Editar datos del cliente'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF4A90E2),
+                                  side: const BorderSide(
+                                    color: Color(0xFF4A90E2),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
+                                ),
                               ),
                             ),
                           ],
-                        );
-                      })(),
+                        ),
+                      ),
 
                       // ── Desglose de pagos ─────────────────────────────────
                       if (order.operationId != null ||
@@ -1810,375 +1802,33 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   .toList(),
                         ),
                       ),
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(20),
+
+                      // ── Resumen de totales ────────────────────────────────
+                      const SizedBox(height: 12),
+                      _buildDetailSection(
+                        title: 'Resumen',
+                        icon: Icons.summarize_outlined,
+                        child: Column(
+                          children: [
+                            _buildDetailRow(
+                              'Total:',
+                              '\$${displayTotal.toStringAsFixed(2)}',
+                            ),
+                            if (hasDiscount) ...[
+                              const SizedBox(height: 4),
+                              _buildDetailRow(
+                                'Antes:',
+                                '\$${originalTotal.toStringAsFixed(2)}',
+                              ),
+                              const SizedBox(height: 2),
+                              _buildDetailRow(
+                                'Descuento:',
+                                '$label · -\$${saved.toStringAsFixed(2)}',
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                      child: Column(
-                        children: [
-                          // Handle
-                          Container(
-                            margin: const EdgeInsets.symmetric(vertical: 8),
-                            width: 40,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: Colors.grey[300],
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                          // Header
-                          Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    'Detalles de ${order.id}',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF1F2937),
-                                    ),
-                                  ),
-                                ),
-                                IconButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  icon: const Icon(Icons.close),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Divider(height: 1),
-                          // Content
-                          Expanded(
-                            child: ListView(
-                              controller: scrollController,
-                              padding: const EdgeInsets.all(16),
-                              children: [
-                                // Información general
-                                _buildDetailRow(
-                                  'Estado:',
-                                  order.status.displayName,
-                                ),
-                                _buildDetailRow(
-                                  'Fecha:',
-                                  _formatDate(order.fechaCreacion),
-                                ),
-                                _buildDetailRow(
-                                  'Total productos:',
-                                  '${order.distinctItemCount}',
-                                ),
-                                Builder(
-                                  builder: (_) {
-                                    final discountData = _getDiscountData(
-                                      order,
-                                    );
-                                    final hasDiscount =
-                                        discountData['hasDiscount'] as bool;
-                                    final displayTotal =
-                                        discountData['finalTotal'] as double? ??
-                                        order.total;
-                                    final originalTotal =
-                                        discountData['originalTotal']
-                                            as double? ??
-                                        displayTotal;
-                                    final saved =
-                                        discountData['saved'] as double? ?? 0;
-                                    final label =
-                                        discountData['label'] as String? ?? '';
-
-                                    return Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        _buildDetailRow(
-                                          'Total:',
-                                          '\$${displayTotal.toStringAsFixed(2)}',
-                                        ),
-                                        if (hasDiscount) ...[
-                                          const SizedBox(height: 4),
-                                          _buildDetailRow(
-                                            'Antes:',
-                                            '\$${originalTotal.toStringAsFixed(2)}',
-                                          ),
-                                          const SizedBox(height: 2),
-                                          _buildDetailRow(
-                                            'Descuento:',
-                                            '$label · -\$${saved.toStringAsFixed(2)}',
-                                          ),
-                                        ],
-                                      ],
-                                    );
-                                  },
-                                ),
-
-                                // Desglose de pagos
-                                if (order.operationId != null ||
-                                    _getLocalPaymentBreakdown(
-                                      order,
-                                    ).isNotEmpty) ...[
-                                  const SizedBox(height: 16),
-                                  _buildPaymentBreakdown(
-                                    order,
-                                    refreshKey: paymentBreakdownRefreshKey,
-                                    onPaymentUpdated: refreshPaymentBreakdown,
-                                  ),
-                                ],
-
-                                // Estado Carnaval (si aplica)
-                                if (_getCarnavalOrderId(order.notas) !=
-                                    null) ...[
-                                  const SizedBox(height: 16),
-                                  FutureBuilder<String?>(
-                                    future: _orderService
-                                        .getCarnavalOrderStatus(
-                                          _getCarnavalOrderId(order.notas)!,
-                                        ),
-                                    builder: (context, snapshot) {
-                                      if (snapshot.connectionState ==
-                                          ConnectionState.waiting) {
-                                        return _buildDetailRow(
-                                          'Estado Carnaval:',
-                                          'Cargando...',
-                                        );
-                                      }
-                                      if (snapshot.hasData) {
-                                        return Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 8,
-                                            horizontal: 12,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.purple.withOpacity(
-                                              0.05,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            border: Border.all(
-                                              color: Colors.purple.withOpacity(
-                                                0.2,
-                                              ),
-                                            ),
-                                          ),
-                                          child: Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text(
-                                                'Estado en Carnaval:',
-                                                style: TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.purple,
-                                                ),
-                                              ),
-                                              Text(
-                                                snapshot.data!,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.purple,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      }
-                                      return const SizedBox.shrink();
-                                    },
-                                  ),
-                                ],
-
-                                // Datos del cliente
-                                if (order.buyerName != null ||
-                                    order.buyerPhone != null) ...[
-                                  const SizedBox(height: 16),
-                                  const Text(
-                                    'Datos del Cliente:',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF1F2937),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  if (order.buyerName != null)
-                                    _buildDetailRow(
-                                      'Nombre:',
-                                      order.buyerName!,
-                                    ),
-                                  if (order.buyerPhone != null)
-                                    _buildDetailRow(
-                                      'Teléfono:',
-                                      order.buyerPhone!,
-                                    ),
-                                  if (order.extraContacts != null &&
-                                      order.extraContacts!.isNotEmpty)
-                                    _buildDetailRow(
-                                      'Contactos extra:',
-                                      order.extraContacts!,
-                                    ),
-                                  // if (order.paymentMethod != null)
-                                  //   _buildDetailRow(
-                                  //     'Método de pago:',
-                                  //     order.paymentMethod!,
-                                  //   ),
-                                ],
-
-                                const SizedBox(height: 16),
-                                const Text(
-                                  'Productos:',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF1F2937),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                // Lista de productos (filtrar productos con precio 0)
-                                ...order.items
-                                    .where((item) => item.subtotal > 0)
-                                    .map(
-                                      (item) => Container(
-                                        margin: const EdgeInsets.only(
-                                          bottom: 8,
-                                        ),
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: Colors.grey[50],
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          border: Border.all(
-                                            color: Colors.grey[200]!,
-                                          ),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              item.nombre,
-                                              style: const TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w500,
-                                                color: Color(0xFF1F2937),
-                                              ),
-                                            ),
-                                            if ((_isShowSkuEnabled || _userPreferencesService.isShowSkuEnabledSync) && item.producto.sku != null && item.producto.sku!.isNotEmpty)
-                                              Padding(
-                                                padding: const EdgeInsets.only(top: 2, bottom: 2),
-                                                child: Text(
-                                                  'SKU: ${item.producto.sku}',
-                                                  style: const TextStyle(
-                                                    fontSize: 11,
-                                                    color: Color(0xFF4A90E2),
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ),
-                                            const SizedBox(height: 4),
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                Text(
-                                                  'Cantidad: ${PriceUtils.formatQuantity(item.cantidad)} • ${item.ubicacionAlmacen}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.grey[600],
-                                                  ),
-                                                ),
-                                                Text(
-                                                  '\$${item.subtotal.toStringAsFixed(2)}',
-                                                  style: const TextStyle(
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Color(0xFF4A90E2),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            // Mostrar ingredientes si existen
-                                            if (item.ingredientes != null &&
-                                                item
-                                                    .ingredientes!
-                                                    .isNotEmpty) ...[
-                                              const SizedBox(height: 8),
-                                              Container(
-                                                padding: const EdgeInsets.all(
-                                                  8,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.orange[50],
-                                                  borderRadius:
-                                                      BorderRadius.circular(6),
-                                                  border: Border.all(
-                                                    color: Colors.orange[200]!,
-                                                    width: 1,
-                                                  ),
-                                                ),
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Row(
-                                                      children: [
-                                                        Icon(
-                                                          Icons.restaurant,
-                                                          size: 14,
-                                                          color:
-                                                              Colors
-                                                                  .orange[700],
-                                                        ),
-                                                        const SizedBox(
-                                                          width: 4,
-                                                        ),
-                                                        Text(
-                                                          'Ingredientes utilizados:',
-                                                          style: TextStyle(
-                                                            fontSize: 12,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            color:
-                                                                Colors
-                                                                    .orange[700],
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    const SizedBox(height: 4),
-                                                    ...item.ingredientes!.map((
-                                                      ingrediente,
-                                                    ) {
-                                                      return Padding(
-                                                        padding:
-                                                            const EdgeInsets.only(
-                                                              left: 18,
-                                                              bottom: 2,
-                                                            ),
-                                                        child: Text(
-                                                          '• ${ingrediente['nombre_ingrediente']} - ${ingrediente['cantidad_vendida']} ${ingrediente['unidad_medida'] ?? 'unidades'}',
-                                                          style: TextStyle(
-                                                            fontSize: 11,
-                                                            color:
-                                                                Colors
-                                                                    .grey[700],
-                                                          ),
-                                                        ),
-                                                      );
-                                                    }).toList(),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
-                                          ],
-                                        ),
-                                      ),
-                                    ),
 
                       // ── Acciones ──────────────────────────────────────────
                       const SizedBox(height: 12),
@@ -2274,22 +1924,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
         ],
       ),
-                                /* // Debug: datos crudos del servidor
-                                const SizedBox(height: 24),
-                                _buildRawServerData(order), */
-
-                                // Botones de acción
-                                const SizedBox(height: 24),
-                                _buildActionButtons(order),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-              );
-            },
-          ),
     );
   }
 

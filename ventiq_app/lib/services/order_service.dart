@@ -592,6 +592,15 @@ class OrderService {
     }
   }
 
+  // Actualizar ID de orden en el cache con el operationId de Supabase
+  void updateOrderIdInCache(String oldId, String newId) {
+    final idx = _orders.indexWhere((o) => o.id == oldId);
+    if (idx != -1) {
+      _orders[idx] = _orders[idx].copyWith(id: newId);
+      print('✅ Order ID actualizado en cache: $oldId -> $newId');
+    }
+  }
+
   // Actualizar estado de una orden
   Future<Map<String, dynamic>> updateOrderStatus(
     String orderId,
