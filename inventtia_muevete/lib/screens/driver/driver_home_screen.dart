@@ -99,6 +99,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Future<void> _initializeDriver() async {
     final locationProvider = context.read<LocationProvider>();
     final authProvider = context.read<AuthProvider>(); // read before await
+    // Register push first (may show notification permission dialog), then
+    // request location permission — avoids two dialogs at the same time.
+    await authProvider.registerPushAndStartBackground();
     await locationProvider.initLocation();
     locationProvider.startTracking();
     // Start background service now that location permission is granted (retries up to 10 times)

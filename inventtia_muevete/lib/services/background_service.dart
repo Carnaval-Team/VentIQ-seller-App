@@ -377,6 +377,18 @@ Future<void> _onStart(ServiceInstance service) async {
         },
       );
 
+      // Flush any queued positions from previous sessions
+      if (driverId != null && offlineQueue.hasPending) {
+        try {
+          final online = await OfflineQueueService.hasInternetConnection();
+          if (online) {
+            await _flushQueue(queue: offlineQueue, supabase: supabase);
+          }
+        } catch (e) {
+          debugPrint('[BackgroundService] Initial queue flush error: $e');
+        }
+      }
+
       // Start GPS tracking to update driver location
       _startGpsTracking(
         service: service,
@@ -490,6 +502,18 @@ Future<void> _onStart(ServiceInstance service) async {
       } catch (e) {
         debugPrint('[BackgroundService] Polling error: $e');
       }
+
+      // Periodic flush of offline queue (driver only)
+      if (role == 'driver' && driverId != null && offlineQueue.hasPending) {
+        try {
+          final online = await OfflineQueueService.hasInternetConnection();
+          if (online) {
+            await _flushQueue(queue: offlineQueue, supabase: supabase);
+          }
+        } catch (e) {
+          debugPrint('[BackgroundService] Periodic queue flush error: $e');
+        }
+      }
     });
   });
 
@@ -598,36 +622,45 @@ void _startGpsTracking({
 }
 
 /// Flush offline queue to Supabase in chunks of 50.
-/// Uses peek → send → clear pattern for safety.
+/// Uses partial removal per chunk for safety — if a chunk fails,
+/// already-sent entries are not re-sent.
 Future<void> _flushQueue({
   required OfflineQueueService queue,
   required SupabaseClient supabase,
 }) async {
   if (!queue.hasPending) return;
 
-  final entries = queue.peekAll();
-  debugPrint('[GPS] Flushing ${entries.length} queued positions');
+  final total = queue.pendingCount;
+  debugPrint('[GPS] Flushing $total queued positions');
 
   const chunkSize = 50;
-  for (int i = 0; i < entries.length; i += chunkSize) {
-    final chunk = entries.sublist(
-      i,
-      i + chunkSize > entries.length ? entries.length : i + chunkSize,
-    );
+  int sent = 0;
+
+  while (queue.hasPending) {
+    final entries = queue.peekAll();
+    final chunk = entries.take(chunkSize).toList();
+
     final rows = chunk
         .map((e) => {
               'driver_id': e['driver_id'],
               'latitude': e['latitude'],
               'longitude': e['longitude'],
+              if (e['timestamp'] != null) 'created_at': e['timestamp'],
             })
         .toList();
 
-    await supabase.schema('muevete').from('track_place_history').insert(rows);
+    try {
+      await supabase.schema('muevete').from('track_place_history').insert(rows);
+      // Only remove the chunk that was sent successfully
+      queue.removeFirst(chunk.length);
+      sent += chunk.length;
+    } catch (e) {
+      debugPrint('[GPS] Flush chunk failed after $sent/$total sent: $e');
+      return; // Stop flushing — remaining entries stay in queue
+    }
   }
 
-  // All chunks sent successfully — clear the queue
-  queue.clear();
-  debugPrint('[GPS] Queue flushed successfully');
+  debugPrint('[GPS] Queue flushed successfully ($sent entries)');
 }
 
 /// Haversine distance in km.

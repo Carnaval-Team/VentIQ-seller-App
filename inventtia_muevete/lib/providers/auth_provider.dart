@@ -51,35 +51,46 @@ class AuthProvider extends ChangeNotifier {
         _role = 'client';
         _userProfile = await _authService.getUserProfile();
       }
-      // Subscribe to in-app notifications
+      // Subscribe to in-app notifications (no permission dialog)
       if (_user != null) {
         NotificationService().subscribe(_user!.id);
-        // Register Pushy push token — await so notification permission dialog
-        // finishes before location permission is requested by the home screen.
-        await PushyService.register(_user!.id);
-        // Start background service only if location permission is already granted.
-        // On Android 14+ (SDK 34), foreground services with type "location"
-        // require the runtime location permission BEFORE starting.
-        final permission = await Geolocator.checkPermission();
-        debugPrint('[AuthProvider] Location permission: $permission');
-        if (permission == LocationPermission.always ||
-            permission == LocationPermission.whileInUse) {
-          debugPrint('[AuthProvider] Starting background service...');
-          final started = await BackgroundService.start(
-            userUuid: _user!.id,
-            role: _role ?? 'client',
-            driverId: _driverProfile?['id'] as int?,
-            maxRetries: 10,
-          );
-          debugPrint('[AuthProvider] Background service started: $started');
-        } else {
-          debugPrint('[AuthProvider] Skipping BG service - no location permission');
-        }
       }
+      // NOTE: PushyService.register() and BackgroundService.start() are NOT
+      // called here to avoid a race condition with the location permission
+      // dialog. They are called sequentially from the home screens via
+      // registerPushAndStartBackground() after location permission is granted.
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading profile: $e');
       rethrow;
+    }
+  }
+
+  /// Register push notifications and start the background service.
+  /// Call this from the home screen BEFORE requesting location permission
+  /// so that the notification permission dialog finishes first (Android only
+  /// shows one permission dialog at a time).
+  Future<void> registerPushAndStartBackground() async {
+    if (_user == null || kIsWeb) return;
+
+    // 1. Register Pushy — may show notification permission dialog
+    await PushyService.register(_user!.id);
+
+    // 2. Start background service only if location permission is already granted.
+    final permission = await Geolocator.checkPermission();
+    debugPrint('[AuthProvider] Location permission: $permission');
+    if (permission == LocationPermission.always ||
+        permission == LocationPermission.whileInUse) {
+      debugPrint('[AuthProvider] Starting background service...');
+      final started = await BackgroundService.start(
+        userUuid: _user!.id,
+        role: _role ?? 'client',
+        driverId: _driverProfile?['id'] as int?,
+        maxRetries: 10,
+      );
+      debugPrint('[AuthProvider] Background service started: $started');
+    } else {
+      debugPrint('[AuthProvider] Skipping BG service - no location permission yet');
     }
   }
 
