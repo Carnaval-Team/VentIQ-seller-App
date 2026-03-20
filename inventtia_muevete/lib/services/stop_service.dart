@@ -66,11 +66,18 @@ class StopService {
     final res = await _supabase
         .schema('muevete')
         .from('paradas_viaje')
-        .select('tiempo_detenido')
+        .select('tiempo_detenido, created_at, salida_at')
         .eq('id_viaje', idViaje);
     int total = 0;
     for (final row in res) {
-      total += (row['tiempo_detenido'] as num?)?.toInt() ?? 0;
+      final tiempo = row['tiempo_detenido'] as num?;
+      if (tiempo != null) {
+        total += tiempo.toInt();
+      } else if (row['salida_at'] == null && row['created_at'] != null) {
+        // Active stop: calculate current duration
+        final start = DateTime.parse(row['created_at'] as String);
+        total += DateTime.now().toUtc().difference(start).inSeconds;
+      }
     }
     return total;
   }

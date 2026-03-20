@@ -68,6 +68,10 @@ class _NotificationOverlayState extends State<NotificationOverlay>
         return Icons.hourglass_top;
       case NotificationType.viajeCompletado:
         return Icons.flag;
+      case NotificationType.paradaIniciada:
+        return Icons.pause_circle_filled;
+      case NotificationType.paradaFinalizada:
+        return Icons.play_circle_fill;
     }
   }
 
@@ -84,6 +88,10 @@ class _NotificationOverlayState extends State<NotificationOverlay>
       case NotificationType.driverEsperando:
         return const Color(0xFFF9A825);
       case NotificationType.viajeCompletado:
+        return const Color(0xFF2E7D32);
+      case NotificationType.paradaIniciada:
+        return const Color(0xFFF9A825);
+      case NotificationType.paradaFinalizada:
         return const Color(0xFF2E7D32);
     }
   }

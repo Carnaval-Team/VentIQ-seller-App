@@ -72,14 +72,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Animation<Offset>? _slideAnimation;
 
   @override
-  void initState() async {
+  void initState() {
     super.initState();
-    final permission = await Geolocator.checkPermission();
-
-    if (permission != LocationPermission.always &&
-        permission != LocationPermission.whileInUse) {
-                  await Geolocator.requestPermission(); // prompts for "always"
-        }
+    _initializeDriver();
+    
     _slideController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -104,6 +100,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Future<void> _initializeDriver() async {
+    final permission = await Geolocator.checkPermission();
+    if (permission != LocationPermission.always &&
+        permission != LocationPermission.whileInUse) {
+      await Geolocator.requestPermission();
+    }
+
     final locationProvider = context.read<LocationProvider>();
     final authProvider = context.read<AuthProvider>(); // read before await
     // Register push first (may show notification permission dialog), then
@@ -329,11 +331,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         'user_id': userId,
       };
 
-      // Check if there's already a viaje for this
+      // Poll for newest trip ID (3 attempts)
       final driverProfile = context.read<AuthProvider>().driverProfile;
       final driverId = driverProfile?['id'] as int?;
       if (driverId != null) {
-        final activeTrip = await _driverService.getActiveTrip(driverId);
+        Map<String, dynamic>? activeTrip;
+        for (int i = 0; i < 3; i++) {
+          activeTrip = await _driverService.getActiveTrip(driverId, userId: userId);
+          if (activeTrip != null) break;
+          await Future.delayed(const Duration(milliseconds: 1500));
+        }
+
         if (activeTrip != null) {
           tripData['viaje_id'] = activeTrip['id'];
           tripData['estado'] = activeTrip['estado'];

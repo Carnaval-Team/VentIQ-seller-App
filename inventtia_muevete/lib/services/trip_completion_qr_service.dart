@@ -18,6 +18,7 @@ class TripCompletionQrService {
     required int driverId,
     required String userId,
     required double precio,
+    required double precioBase,
     required String metodoPago,
   }) {
     final ts = DateTime.now().toUtc().toIso8601String();
@@ -27,6 +28,7 @@ class TripCompletionQrService {
       'driver_id': driverId,
       'user_id': userId,
       'precio': precio,
+      'precio_base': precioBase,
       'metodo': metodoPago,
       'ts': ts,
     };

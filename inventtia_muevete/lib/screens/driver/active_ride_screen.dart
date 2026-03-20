@@ -94,6 +94,8 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   StopModel? _activeStop;
   Timer? _stopTimer;
   int _stopElapsedSeconds = 0;
+  double _precioEsperaMinuto = 0;
+  double _totalWaitCharge = 0;
 
   // Navigation mode state
   bool _tilt3D = false;
@@ -139,6 +141,8 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     if (latDestino != null && lonDestino != null) {
       _dropoffLocation = LatLng(latDestino, lonDestino);
     }
+
+    _fetchPrecioEspera();
 
     // Restore phase from DB: estado=true means trip was already started
     final viajeEstado = data['estado'] as bool? ?? false;
@@ -533,12 +537,12 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                   final vtRow = await Supabase.instance.client
                       .schema('muevete')
                       .from('vehicle_type')
-                      .select('precio_espera_minuto')
+                      .select('precio_espera_min')
                       .eq('tipo', tipoVehiculo)
                       .maybeSingle();
                   if (vtRow != null) {
                     precioEsperaMinuto =
-                        (vtRow['precio_espera_minuto'] as num?)?.toDouble() ??
+                        (vtRow['precio_espera_min'] as num?)?.toDouble() ??
                             0;
                     waitMinutes = (totalWaitSeconds / 60).ceil();
                     cobroEspera = waitMinutes * precioEsperaMinuto;
@@ -797,7 +801,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                Helpers.formatCurrency(_tripPrice),
+                Helpers.formatCurrency(_tripPrice + _totalWaitCharge),
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 28,
                   fontWeight: FontWeight.w700,
@@ -835,6 +839,54 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
         );
       },
     );
+  }
+
+  Future<void> _fetchPrecioEspera() async {
+    if (_solicitudId == null) return;
+    try {
+      final solRow = await Supabase.instance.client
+          .schema('muevete')
+          .from('solicitudes_transporte')
+          .select('tipo_vehiculo, id_tipo_vehiculo')
+          .eq('id', _solicitudId!)
+          .maybeSingle();
+
+      if (solRow != null) {
+        final idTipo = solRow['id_tipo_vehiculo'];
+        final tipoStr = solRow['tipo_vehiculo'];
+
+        var query = Supabase.instance.client
+            .schema('muevete')
+            .from('vehicle_type')
+            .select('precio_espera_min');
+            
+        if (idTipo != null) {
+          query = query.eq('id', idTipo);
+        } else if (tipoStr != null) {
+          query = query.eq('tipo', tipoStr);
+        } else {
+          return;
+        }
+
+        final vehicleRow = await query.maybeSingle();
+        if (vehicleRow != null && mounted) {
+          setState(() {
+            _precioEsperaMinuto =
+                (vehicleRow['precio_espera_min'] as num?)?.toDouble() ?? 0;
+          });
+        }
+      }
+    } catch (_) {}
+
+    // Also fetch current wait charges already in DB for this trip (if restoring)
+    if (_viajeId != null) {
+      final seconds = await _stopService.getTotalWaitSeconds(_viajeId!);
+      if (seconds > 0 && mounted) {
+        setState(() {
+          _totalWaitCharge = (seconds / 60).ceil() * _precioEsperaMinuto;
+        });
+      }
+    }
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────
@@ -949,9 +1001,28 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       try {
         await _stopService.endStop(_activeStop!.id!);
         _stopTimer?.cancel();
+        if (_clientUuid != null) {
+          NotificationService().createNotification(
+            userUuid: _clientUuid!,
+            tipo: NotificationType.paradaFinalizada,
+            titulo: 'Parada finalizada',
+            mensaje: 'Tu conductor ha reanudado el viaje.',
+            data: {'viaje_id': _viajeId, 'solicitud_id': _solicitudId},
+          );
+        }
+
+        // Calculate and add this stop's charge to the total
+        final stopSeconds = DateTime.now()
+            .toUtc()
+            .difference(_activeStop!.createdAt)
+            .inSeconds;
+        final stopMinutes = (stopSeconds / 60).ceil();
+        final stopCharge = stopMinutes * _precioEsperaMinuto;
+
         setState(() {
           _activeStop = null;
           _stopElapsedSeconds = 0;
+          _totalWaitCharge += stopCharge;
         });
       } catch (e) {
         if (mounted) {
@@ -992,8 +1063,20 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
 
       try {
         final stop = await _stopService.createStop(
-          _viajeId!, driverId, loc.latitude, loc.longitude,
+          _viajeId!,
+          driverId,
+          loc.latitude,
+          loc.longitude,
         );
+        if (_clientUuid != null) {
+          NotificationService().createNotification(
+            userUuid: _clientUuid!,
+            tipo: NotificationType.paradaIniciada,
+            titulo: 'Conductor en parada',
+            mensaje: 'Tu conductor ha iniciado una parada. Se aplicarán cargos por tiempo de espera.',
+            data: {'viaje_id': _viajeId, 'solicitud_id': _solicitudId},
+          );
+        }
         setState(() {
           _activeStop = stop;
           _stopElapsedSeconds = 0;
@@ -1089,6 +1172,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
         driverId: data['driver_id'] as int,
         userId: data['user_id'] as String,
         precio: (data['precio'] as num).toDouble(),
+        precioBase: (data['precio_base'] as num?)?.toDouble() ?? (data['precio'] as num).toDouble(),
         metodoPago: data['metodo'] as String,
         role: 'driver',
       );
@@ -1731,7 +1815,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
-                            Helpers.formatCurrency(_tripPrice),
+                            Helpers.formatCurrency(_tripPrice + _totalWaitCharge),
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,

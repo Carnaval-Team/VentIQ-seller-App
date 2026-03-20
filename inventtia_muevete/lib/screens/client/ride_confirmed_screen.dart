@@ -26,6 +26,7 @@ import '../../services/offline_queue_service.dart';
 import '../../widgets/map_widget.dart';
 import '../../widgets/qr_completion_dialog.dart';
 import '../../widgets/rating_dialog.dart';
+import '../../services/stop_service.dart';
 
 class RideConfirmedScreen extends StatefulWidget {
   const RideConfirmedScreen({super.key});
@@ -49,6 +50,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   Timer? _locationPollTimer;
   bool _isCompleting = false;
   double _precioEsperaMinuto = 0;
+  final StopService _stopService = StopService();
 
   // Real-time client tracking
   List<LatLng> _clientTrail = []; // breadcrumb trail (grey)
@@ -113,17 +115,27 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   Future<void> _fetchPrecioEspera() async {
     try {
       final tp = context.read<TransportProvider>();
+      final idTipoVehiculo = tp.activeRequest?.idTipoVehiculo;
       final tipoVehiculo = tp.activeRequest?.tipoVehiculo;
-      if (tipoVehiculo == null) return;
-      final row = await Supabase.instance.client
+
+      PostgrestFilterBuilder<List<Map<String, dynamic>>> query = Supabase.instance.client
           .schema('muevete')
           .from('vehicle_type')
-          .select('precio_espera_minuto')
-          .eq('tipo', tipoVehiculo)
-          .maybeSingle();
+          .select('precio_espera_min');
+
+      if (idTipoVehiculo != null) {
+        query = query.eq('id', idTipoVehiculo);
+      } else if (tipoVehiculo != null) {
+        query = query.eq('tipo', tipoVehiculo);
+      } else {
+        return;
+      }
+
+      final row = await query.maybeSingle();
       if (row != null && mounted) {
         setState(() {
-          _precioEsperaMinuto = (row['precio_espera_minuto'] as num?)?.toDouble() ?? 0;
+          _precioEsperaMinuto =
+              (row['precio_espera_min'] as num?)?.toDouble() ?? 0;
         });
       }
     } catch (_) {}
@@ -146,21 +158,39 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       if (offers == null || (offers as List).isEmpty) return;
       final driverId = tp.acceptedOffer?.driverId;
       if (driverId == null) return;
+      final userId = context.read<AuthProvider>().user?.id;
+      if (userId == null) return;
+
       final viaje = await Supabase.instance.client
           .schema('muevete')
           .from('viajes')
-          .select('estado')
+          .select('id, estado')
           .eq('driver_id', driverId)
+          .eq('user', userId)
           .eq('completado', false)
           .order('created_at', ascending: false)
           .limit(1)
           .maybeSingle();
-      if (viaje != null && viaje['estado'] == true && mounted) {
-        setState(() {
-          _tripStarted = true;
-          _driverToClientRoute = [];
-          _driverEtaSeconds = 0;
-        });
+
+      if (viaje != null) {
+        debugPrint('[RideConfirmed] Viaje activo encontrado: ${viaje['id']}');
+      } else {
+        debugPrint('[RideConfirmed] No se encontró viaje activo para driver $driverId y usuario $userId');
+      }
+
+      if (viaje != null && mounted) {
+        // Restore viaje ID to provider if missing
+        if (tp.activeViajeId == null) {
+          tp.activeViajeId = viaje['id'] as int?;
+        }
+
+        if (viaje['estado'] == true) {
+          setState(() {
+            _tripStarted = true;
+            _driverToClientRoute = [];
+            _driverEtaSeconds = 0;
+          });
+        }
       }
     } catch (e) {
       debugPrint('[RideConfirmed] _checkIfTripAlreadyStarted error: $e');
@@ -372,8 +402,140 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     final viajeId = tp.activeViajeId;
     final driverId = tp.acceptedOffer?.driverId;
     final userId = context.read<AuthProvider>().user?.id;
-    final precio = tp.acceptedOffer?.precio ?? tp.offerPrice;
     final metodoPago = tp.activeRequest?.metodoPago ?? 'efectivo';
+
+    // 1. Check and end any active stop if client is completing the ride
+    if (viajeId == null) {
+      debugPrint('[RideConfirmed] ALERTA: viajeId es NULO en _completeRide');
+    }
+
+    if (viajeId != null) {
+      try {
+        final activeStop = await _stopService.getActiveStop(viajeId);
+        if (activeStop != null) {
+          debugPrint('[RideConfirmed] Cerrando parada activa antes de completar: ${activeStop.id}');
+          await _stopService.endStop(activeStop.id!);
+          // Briefly wait for DB to settle
+          await Future.delayed(const Duration(milliseconds: 600));
+        }
+      } catch (e) {
+        debugPrint('[RideConfirmed] Error cerrando parada activa: $e');
+      }
+    }
+
+    // 2. Fetch total wait time (now including the one we just ended)
+    int totalWaitSeconds = 0;
+    double cobroEspera = 0;
+    if (viajeId != null) {
+      try {
+        totalWaitSeconds = await _stopService.getTotalWaitSeconds(viajeId);
+        debugPrint('[RideConfirmed] Tiempo de espera obtenido: $totalWaitSeconds seg');
+      } catch (e) {
+        debugPrint('[RideConfirmed] Error obteniendo tiempo de espera: $e');
+      }
+    }
+
+    debugPrint('[RideConfirmed] _precioEsperaMinuto: $_precioEsperaMinuto');
+
+    // 3. Show confirmation dialog if there are extra charges
+    if (totalWaitSeconds > 0 && _precioEsperaMinuto > 0) {
+      final waitMinutes = (totalWaitSeconds / 60).ceil();
+      cobroEspera = waitMinutes * _precioEsperaMinuto;
+      final isDark = context.read<ThemeProvider>().isDark;
+
+      if (!mounted) return;
+      final confirmWait = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppTheme.surface(isDark),
+          title: Text('Cargos adicionales',
+              style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textPrimary(isDark))),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Se han detectado paradas durante el viaje que generan un cargo por tiempo de espera.',
+                style: GoogleFonts.plusJakartaSans(
+                    color: AppTheme.textSecondary(isDark)),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.warning.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Tiempo total:',
+                            style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                color: AppTheme.textSecondary(isDark))),
+                        Text('$waitMinutes min',
+                            style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textPrimary(isDark))),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Costo extra:',
+                            style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                color: AppTheme.textSecondary(isDark))),
+                        Text('\$${cobroEspera.toStringAsFixed(2)}',
+                            style: GoogleFonts.plusJakartaSans(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: AppTheme.warning)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Este monto se sumará al total del viaje.',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                    color: AppTheme.textTertiary(isDark)),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Cancelar',
+                  style: GoogleFonts.plusJakartaSans(
+                      color: AppTheme.textTertiary(isDark))),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor),
+              child: Text('Aceptar y Completar',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmWait != true) return;
+    }
+
+    final basePrecio = tp.acceptedOffer?.precio ?? tp.offerPrice;
+    final totalPrecio = basePrecio + cobroEspera;
 
     // ── Offline path: show QR + enqueue ──
     final online = await OfflineQueueService.hasInternetConnection();
@@ -388,7 +550,8 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
           viajeId: viajeId,
           driverId: driverId,
           userId: userId,
-          precio: precio,
+          precio: totalPrecio,
+          precioBase: basePrecio,
           metodoPago: metodoPago,
         ),
       );
@@ -398,7 +561,8 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
           viajeId: viajeId,
           driverId: driverId,
           userId: userId,
-          precio: precio,
+          precio: totalPrecio,
+          precioBase: basePrecio,
           metodoPago: metodoPago,
           role: 'client',
         );
@@ -420,7 +584,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     setState(() => _isCompleting = true);
     try {
       // Process wallet payment (client if wallet, driver commission always)
-      await tp.completeRideWithPayment();
+      await tp.completeRideWithPayment(extraWaitingCharge: cobroEspera);
 
       await Supabase.instance.client
           .schema('muevete')
@@ -433,7 +597,12 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
         await Supabase.instance.client
             .schema('muevete')
             .from('viajes')
-            .update({'completado': true, 'estado': false})
+            .update({
+              'completado': true,
+              'estado': false,
+              'tiempo_espera_segundos': totalWaitSeconds,
+              'cobro_espera': cobroEspera,
+            })
             .eq('id', viajeId);
       }
 

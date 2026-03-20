@@ -151,13 +151,19 @@ class DriverService {
   }
 
   /// Fetches the active trip for a driver from muevete.viajes.
-  Future<Map<String, dynamic>?> getActiveTrip(int driverId) async {
-    final response = await _supabase
+  Future<Map<String, dynamic>?> getActiveTrip(int driverId, {String? userId}) async {
+    var query = _supabase
         .schema('muevete')
         .from('viajes')
         .select()
         .eq('driver_id', driverId)
-        .eq('completado', false)
+        .eq('completado', false);
+        
+    if (userId != null) {
+      query = query.eq('user', userId);
+    }
+
+    final response = await query
         .order('created_at', ascending: false)
         .limit(1)
         .maybeSingle();

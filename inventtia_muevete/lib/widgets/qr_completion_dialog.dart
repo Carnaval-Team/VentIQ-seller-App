@@ -15,6 +15,7 @@ class QrCompletionDialog extends StatelessWidget {
   final int driverId;
   final String userId;
   final double precio;
+  final double precioBase;
   final String metodoPago;
 
   const QrCompletionDialog({
@@ -24,6 +25,7 @@ class QrCompletionDialog extends StatelessWidget {
     required this.driverId,
     required this.userId,
     required this.precio,
+    required this.precioBase,
     required this.metodoPago,
   });
 
@@ -36,6 +38,7 @@ class QrCompletionDialog extends StatelessWidget {
       driverId: driverId,
       userId: userId,
       precio: precio,
+      precioBase: precioBase,
       metodoPago: metodoPago,
     );
 

@@ -21,6 +21,7 @@ class CompletionSyncService {
     required int driverId,
     required String userId,
     required double precio,
+    required double precioBase,
     required String metodoPago,
     required String role, // 'client' | 'driver'
     DateTime? timestamp,
@@ -33,6 +34,7 @@ class CompletionSyncService {
       'driver_id': driverId,
       'user_id': userId,
       'precio': precio,
+      'precio_base': precioBase,
       'metodo_pago': metodoPago,
       'role': role,
       'ts': (timestamp ?? DateTime.now()).toUtc().toIso8601String(),
@@ -100,6 +102,7 @@ class CompletionSyncService {
           'p_driver_id': entry['driver_id'],
           'p_viaje_id': viajeId,
           'p_precio_final': entry['precio'],
+          'p_precio_base': entry['precio_base'] ?? entry['precio'], // fallback to total if base missing
         });
         final data = result as Map<String, dynamic>;
         if (data['success'] != true) {
