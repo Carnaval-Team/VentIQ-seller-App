@@ -1508,6 +1508,30 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     );
   }
 
+  /// Calcula el total de los ajustes basado en los detalles
+  double _calculateAdjustmentTotal(List<dynamic> details) {
+    double total = 0.0;
+    for (var detail in details) {
+      if (detail is Map<String, dynamic>) {
+        // Obtener precio unitario si está disponible
+        final precioUnitario = detail['precio_unitario'];
+        final diferencia = detail['diferencia'] ?? 0;
+        
+        if (precioUnitario != null) {
+          final precioNum = (precioUnitario is double)
+              ? precioUnitario
+              : double.tryParse(precioUnitario.toString()) ?? 0.0;
+          final diferenciaNum = (diferencia is double)
+              ? diferencia
+              : double.tryParse(diferencia.toString()) ?? 0.0;
+          
+          total += (diferenciaNum.abs() * precioNum);
+        }
+      }
+    }
+    return total;
+  }
+
   /// Build the list of adjustment details
   Widget _buildAdjustmentDetailsList(List<dynamic> details) {
     // Ordenar detalles alfabéticamente por nombre de producto
@@ -1518,155 +1542,193 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       return nameA.compareTo(nameB);
     });
 
+    // Calcular el total de los ajustes
+    final totalAjuste = _calculateAdjustmentTotal(sortedDetails);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: sortedDetails.map((detail) {
-        final cantidadAnterior = detail['cantidad_anterior'] ?? 0;
-        final cantidadNueva = detail['cantidad_nueva'] ?? 0;
-        final diferencia = detail['diferencia'] ?? 0;
-        final productoNombre = detail['producto_nombre'] ?? 'Producto';
-        final ubicacion = detail['ubicacion'] ?? 'N/A';
-        final almacen = detail['almacen'] ?? 'N/A';
-
-        // Determinar color según si es aumento o disminución
-        final isIncrease = (diferencia as num) >= 0;
-        final differenceColor = isIncrease ? Colors.green : Colors.red;
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[300]!),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Nombre del producto
-              Text(
-                productoNombre,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1F2937),
+      children: [
+        // Mostrar total de ajustes si hay valor
+        if (totalAjuste > 0) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.05),
+              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Total de Ajuste:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1F2937),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              
-              // Almacén
-              Row(
-                children: [
-                  const Icon(Icons.warehouse, size: 16, color: Colors.orange),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      almacen,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                Text(
+                  '\$${totalAjuste.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
                   ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              
-              // Ubicación
-              Row(
-                children: [
-                  const Icon(Icons.location_on, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      ubicacion,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              // Cantidades
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Cantidad Anterior:',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        Text(
-                          cantidadAnterior.toString(),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Cantidad Nueva:',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        Text(
-                          cantidadNueva.toString(),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Diferencia:',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        Text(
-                          '${isIncrease ? '+' : ''}$diferencia',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: differenceColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
-        );
-      }).toList(),
+        ],
+        ...sortedDetails.map((detail) {
+          final cantidadAnterior = detail['cantidad_anterior'] ?? 0;
+          final cantidadNueva = detail['cantidad_nueva'] ?? 0;
+          final diferencia = detail['diferencia'] ?? 0;
+          final productoNombre = detail['producto_nombre'] ?? 'Producto';
+          final ubicacion = detail['ubicacion'] ?? 'N/A';
+          final almacen = detail['almacen'] ?? 'N/A';
+
+          // Determinar color según si es aumento o disminución
+          final isIncrease = (diferencia as num) >= 0;
+          final differenceColor = isIncrease ? Colors.green : Colors.red;
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Nombre del producto
+                Text(
+                  productoNombre,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1F2937),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                
+                // Almacén
+                Row(
+                  children: [
+                    const Icon(Icons.warehouse, size: 16, color: Colors.orange),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        almacen,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                
+                // Ubicación
+                Row(
+                  children: [
+                    const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        ubicacion,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                // Cantidades
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Cantidad Anterior:',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          Text(
+                            cantidadAnterior.toString(),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Cantidad Nueva:',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          Text(
+                            cantidadNueva.toString(),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Diferencia:',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          Text(
+                            '${isIncrease ? '+' : ''}$diferencia',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: differenceColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
     );
   }
 
@@ -2095,6 +2157,44 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       if (operation['detalles'] != null &&
           operation['detalles'] is Map<String, dynamic>) {
         final detalles = operation['detalles'] as Map<String, dynamic>;
+        
+        // Para operaciones de ajuste, calcular el total basado en los items
+        if (detalles['items'] != null && detalles['items'] is List) {
+          final items = detalles['items'] as List<dynamic>;
+          double totalPrice = 0.0;
+          
+          for (var item in items) {
+            if (item is Map<String, dynamic>) {
+              // Intentar obtener el importe (precio total del item)
+              final importe = item['importe'];
+              if (importe != null) {
+                final importeNum = (importe is double)
+                    ? importe
+                    : double.tryParse(importe.toString()) ?? 0.0;
+                totalPrice += importeNum;
+              } else {
+                // Si no hay importe, intentar calcular cantidad * precio_unitario
+                final cantidad = item['cantidad'] ?? item['cantidad_fisica'] ?? 0;
+                final precioUnitario = item['precio_unitario'] ?? 0;
+                
+                final cantidadNum = (cantidad is double)
+                    ? cantidad
+                    : double.tryParse(cantidad.toString()) ?? 0.0;
+                final precioNum = (precioUnitario is double)
+                    ? precioUnitario
+                    : double.tryParse(precioUnitario.toString()) ?? 0.0;
+                
+                totalPrice += (cantidadNum * precioNum);
+              }
+            }
+          }
+          
+          if (totalPrice > 0) {
+            return totalPrice;
+          }
+        }
+        
+        // Fallback a detalles_especificos si existen
         if (detalles['detalles_especificos'] != null &&
             detalles['detalles_especificos'] is Map<String, dynamic>) {
           final especificos =
