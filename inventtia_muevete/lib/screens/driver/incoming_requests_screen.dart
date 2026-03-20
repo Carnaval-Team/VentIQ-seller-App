@@ -696,6 +696,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
             'lon_destino': ar.solicitud.lonDestino,
             'precio': ar.precio ?? ar.solicitud.precioOferta ?? 0.0,
             'viaje_id': viajeRow?['id'] as int?,
+            'estado': viajeRow?['estado'] as bool? ?? false,
             'solicitud_id': solicitudId,
             'user_id': ar.solicitud.userId,
           },

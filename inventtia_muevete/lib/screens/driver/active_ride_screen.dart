@@ -969,7 +969,26 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       final rawId = authProvider.driverProfile?['id'];
       final driverId =
           rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
-      if (driverId == null || _viajeId == null) return;
+      if (driverId == null) return;
+
+      // If _viajeId is null, try to fetch it from active trip
+      if (_viajeId == null) {
+        final activeTrip = await _driverService.getActiveTrip(driverId);
+        if (activeTrip != null && mounted) {
+          setState(() => _viajeId = activeTrip['id'] as int?);
+        }
+      }
+      if (_viajeId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('No se encontró un viaje activo'),
+              backgroundColor: AppTheme.error,
+            ),
+          );
+        }
+        return;
+      }
 
       try {
         final stop = await _stopService.createStop(
@@ -1806,13 +1825,17 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                                   : Icons.pause,
                               size: 20,
                             ),
-                            label: Text(
-                              _activeStop != null
-                                  ? 'Salir de parada  ${_formatStopTime(_stopElapsedSeconds)}'
-                                  : 'Agregar parada',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                _activeStop != null
+                                    ? 'Salir de parada  ${_formatStopTime(_stopElapsedSeconds)}'
+                                    : 'Agregar parada',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                maxLines: 1,
                               ),
                             ),
                             style: ElevatedButton.styleFrom(

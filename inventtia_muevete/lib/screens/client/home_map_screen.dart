@@ -74,6 +74,18 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   @override
   void initState() {
     super.initState();
+    _asyncInit();
+  }
+
+  Future<void> _asyncInit() async {
+    final permission = await Geolocator.checkPermission();
+    if (permission != LocationPermission.always &&
+        permission != LocationPermission.whileInUse) {
+      await Geolocator.requestPermission();
+    }
+
+    if (!mounted) return;
+
     WidgetsBinding.instance.addObserver(this);
     _pulseController = AnimationController(
       vsync: this,

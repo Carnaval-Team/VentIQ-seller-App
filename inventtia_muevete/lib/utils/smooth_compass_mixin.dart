@@ -54,6 +54,18 @@ mixin SmoothCompassMixin<T extends StatefulWidget> on State<T> {
   static const Duration _throttleInterval = Duration(milliseconds: 100);
   DateTime _lastUpdate = DateTime(0);
 
+  // Erratic reading detection: if heading jumps more than this in one event,
+  // count it. After N consecutive jumps, reset the filter to re-sync.
+  static const double _erraticJumpThreshold = 60.0; // degrees
+  static const int _erraticCountLimit = 5;
+  int _erraticCount = 0;
+  double _lastRawHeading = 0.0;
+
+  // Minimum accuracy required (degrees). Readings with worse accuracy
+  // (higher number) are discarded. 0 or negative means sensor reports no
+  // accuracy — we still allow those since many devices don't report it.
+  static const double _minAccuracy = 50.0;
+
   // Animated rotation (only used when compassDrivesRotation == true)
   Timer? _animTimer;
   double _animFrom = 0.0;
@@ -102,13 +114,17 @@ mixin SmoothCompassMixin<T extends StatefulWidget> on State<T> {
   // ── Private ───────────────────────────────────────────────────────────────
 
   void _startCompass() {
-    // Reset filter
+    _resetFilter();
+    _compassSub?.cancel();
+    _compassSub = FlutterCompass.events?.listen(_onCompassEvent);
+  }
+
+  void _resetFilter() {
     _sinAcc = 0.0;
     _cosAcc = 1.0;
     _lastUpdate = DateTime(0);
-
-    _compassSub?.cancel();
-    _compassSub = FlutterCompass.events?.listen(_onCompassEvent);
+    _erraticCount = 0;
+    _lastRawHeading = 0.0;
   }
 
   void _stopCompass() {
@@ -119,6 +135,30 @@ mixin SmoothCompassMixin<T extends StatefulWidget> on State<T> {
   void _onCompassEvent(CompassEvent event) {
     final h = event.heading;
     if (h == null || !mounted || !_autoRotate) return;
+
+    // Discard readings with poor accuracy (high number = bad).
+    // accuracy <= 0 means the sensor doesn't report it — allow those.
+    final acc = event.accuracy;
+    if (acc != null && acc > 0 && acc > _minAccuracy) return;
+
+    // Detect erratic jumps (phone tilted/flipped causing magnetometer noise)
+    var rawDelta = (h - _lastRawHeading).abs();
+    if (rawDelta > 180) rawDelta = 360 - rawDelta;
+    _lastRawHeading = h;
+
+    if (rawDelta > _erraticJumpThreshold) {
+      _erraticCount++;
+      if (_erraticCount >= _erraticCountLimit) {
+        // Sensor is giving wild readings — reset filter so it re-syncs
+        // once the phone is back in a stable position.
+        _resetFilter();
+        _lastRawHeading = h;
+      }
+      // Skip this erratic reading
+      return;
+    }
+    // Good reading — reset erratic counter
+    _erraticCount = 0;
 
     // Low-pass filter using circular average
     final rad = h * pi / 180.0;
