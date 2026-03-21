@@ -3288,82 +3288,46 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   /// Abre un diálogo para editar el precio base del producto
   void _editBasePriceDialog() {
     final priceController = TextEditingController(
-      text: _product.basePrice.toString(),
+      text: _product.basePrice.toStringAsFixed(2),
     );
+    final screenContext = context;
 
     showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Editar Precio Base CUP'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Producto: ${_product.denominacion}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: priceController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                  signed: false,
-                ),
-                decoration: InputDecoration(
-                  labelText: 'Nuevo Precio Base CUP',
-                  prefixText: '\$ ',
-                  border: const OutlineInputBorder(),
-                  hintText: '0.00',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final newPrice = double.tryParse(priceController.text);
-                if (newPrice == null || newPrice < 0) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Por favor ingresa un precio válido'),
-                      backgroundColor: AppColors.error,
-                    ),
-                  );
-                  return;
-                }
+      context: screenContext,
+      builder: (BuildContext dialogContext) {
+        return FutureBuilder<double>(
+          future: CurrencyService.getEffectiveUsdToCupRate(),
+          builder: (context, rateSnapshot) {
+            final exchangeRate = rateSnapshot.data ?? 1.0;
+            final rateLoaded = rateSnapshot.connectionState == ConnectionState.done;
 
+            return _BasePriceEditDialog(
+              denominacion: _product.denominacion,
+              priceController: priceController,
+              exchangeRate: exchangeRate,
+              rateLoaded: rateLoaded,
+              onSave: (double finalPrice) async {
                 try {
-                  // Actualizar el precio base usando ProductService
                   final success = await ProductService.updateBasePriceVenta(
                     productId: int.parse(_product.id),
-                    newPrice: newPrice,
+                    newPrice: finalPrice,
                   );
 
                   if (!mounted) return;
 
                   if (success) {
-                    Navigator.pop(context);
-
-                    // Recargar los datos del producto
+                    Navigator.pop(dialogContext);
                     await _loadAdditionalData();
-
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(screenContext).showSnackBar(
                       const SnackBar(
                         content: Text('Precio base actualizado exitosamente'),
                         backgroundColor: AppColors.success,
                       ),
                     );
                   } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(screenContext).showSnackBar(
                       const SnackBar(
                         content: Text('Error al actualizar el precio'),
                         backgroundColor: AppColors.error,
@@ -3372,7 +3336,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   }
                 } catch (e) {
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  ScaffoldMessenger.of(screenContext).showSnackBar(
                     SnackBar(
                       content: Text('Error al actualizar precio: $e'),
                       backgroundColor: AppColors.error,
@@ -3380,12 +3344,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   );
                 }
               },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-              ),
-              child: const Text('Guardar'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
@@ -3456,81 +3416,52 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   /// Abre un diálogo para editar el precio promedio de una presentación
   void _editPresentationPrice(Map<String, dynamic> presentation) {
     final priceController = TextEditingController(
-      text: (presentation['precio_promedio'] ?? 0.0).toString(),
+      text: ((presentation['precio_promedio'] ?? 0.0) as num)
+          .toDouble()
+          .toStringAsFixed(2),
     );
+    final screenContext = context;
 
     showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(
-            'Editar Precio de ${presentation['presentacion'] ?? 'Presentación'} USD',
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Cantidad: ${presentation['cantidad']?.toString() ?? '1'} unds',
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: priceController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                  signed: false,
-                ),
-                decoration: InputDecoration(
-                  labelText: 'Nuevo Precio de Costo USD',
-                  prefixText: '\$ ',
-                  border: const OutlineInputBorder(),
-                  hintText: '0.00',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final newPrice = double.tryParse(priceController.text);
-                if (newPrice == null || newPrice < 0) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Por favor ingresa un precio válido'),
-                      backgroundColor: AppColors.error,
-                    ),
-                  );
-                  return;
-                }
+      context: screenContext,
+      builder: (BuildContext dialogContext) {
+        return FutureBuilder<double>(
+          future: CurrencyService.getEffectiveUsdToCupRate(),
+          builder: (context, rateSnapshot) {
+            final exchangeRate = rateSnapshot.data ?? 1.0;
+            final rateLoaded =
+                rateSnapshot.connectionState == ConnectionState.done;
 
+            return _PresentationPriceEditDialog(
+              presentationName:
+                  presentation['presentacion'] ?? 'Presentación',
+              cantidad: presentation['cantidad']?.toString() ?? '1',
+              priceController: priceController,
+              exchangeRate: exchangeRate,
+              rateLoaded: rateLoaded,
+              onSave: (double finalUsdPrice) async {
                 try {
                   final success =
                       await ProductService.updatePresentationAveragePrice(
                         presentationId: presentation['id'].toString(),
-                        newPrice: newPrice,
+                        newPrice: finalUsdPrice,
                       );
 
                   if (!mounted) return;
 
                   if (success) {
-                    Navigator.pop(context);
-
-                    // Recargar los datos del producto
+                    Navigator.pop(dialogContext);
                     await _loadAdditionalData();
-
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(screenContext).showSnackBar(
                       const SnackBar(
                         content: Text('Precio actualizado exitosamente'),
                         backgroundColor: AppColors.success,
                       ),
                     );
                   } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(screenContext).showSnackBar(
                       const SnackBar(
                         content: Text('Error al actualizar el precio'),
                         backgroundColor: AppColors.error,
@@ -3539,7 +3470,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   }
                 } catch (e) {
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  ScaffoldMessenger.of(screenContext).showSnackBar(
                     SnackBar(
                       content: Text('Error: $e'),
                       backgroundColor: AppColors.error,
@@ -3547,12 +3478,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   );
                 }
               },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-              ),
-              child: const Text('Guardar'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
@@ -3696,5 +3623,428 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       default:
         return AppColors.textLight;
     }
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Diálogo para editar Precio Base (almacenado en CUP)
+// El usuario puede ingresar en USD o CUP.
+// Si ingresa USD  → se convierte a CUP antes de guardar.
+// Si ingresa CUP  → se guarda directo.
+// ──────────────────────────────────────────────────────────────────────────────
+class _BasePriceEditDialog extends StatefulWidget {
+  final String denominacion;
+  final TextEditingController priceController;
+  final double exchangeRate;
+  final bool rateLoaded;
+  final Future<void> Function(double finalCupPrice) onSave;
+
+  const _BasePriceEditDialog({
+    required this.denominacion,
+    required this.priceController,
+    required this.exchangeRate,
+    required this.rateLoaded,
+    required this.onSave,
+  });
+
+  @override
+  State<_BasePriceEditDialog> createState() => _BasePriceEditDialogState();
+}
+
+class _BasePriceEditDialogState extends State<_BasePriceEditDialog> {
+  String _inputCurrency = 'cup'; // 'cup' | 'usd'
+  bool _isSaving = false;
+
+  String get _equivalentText {
+    if (!widget.rateLoaded || widget.exchangeRate <= 0) return '';
+    final v = double.tryParse(widget.priceController.text) ?? 0.0;
+    if (_inputCurrency == 'usd') {
+      final cup = v * widget.exchangeRate;
+      return '≈ ₱${NumberFormat("#,###.00").format(cup)} CUP';
+    } else {
+      final usd = v / widget.exchangeRate;
+      return '≈ \$${NumberFormat("#,###.00").format(usd)} USD';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Editar Precio Base'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Producto: ${widget.denominacion}',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 16),
+          // Selector de moneda
+          Row(
+            children: [
+              Expanded(
+                child: _CurrencyToggleButton(
+                  label: 'CUP',
+                  icon: Icons.payments_outlined,
+                  color: const Color(0xFF10B981),
+                  selected: _inputCurrency == 'cup',
+                  onTap: () => setState(() {
+                    _inputCurrency = 'cup';
+                    widget.priceController.clear();
+                  }),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _CurrencyToggleButton(
+                  label: 'USD',
+                  icon: Icons.attach_money,
+                  color: const Color(0xFF4A90E2),
+                  selected: _inputCurrency == 'usd',
+                  onTap: () => setState(() {
+                    _inputCurrency = 'usd';
+                    widget.priceController.clear();
+                  }),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: widget.priceController,
+            keyboardType: const TextInputType.numberWithOptions(
+              decimal: true,
+              signed: false,
+            ),
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              labelText:
+                  _inputCurrency == 'cup'
+                      ? 'Nuevo precio en CUP'
+                      : 'Nuevo precio en USD',
+              prefixText: _inputCurrency == 'cup' ? '₱ ' : '\$ ',
+              border: const OutlineInputBorder(),
+              hintText: '0.00',
+            ),
+          ),
+          if (_equivalentText.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                _equivalentText,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.blue[700],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+          if (!widget.rateLoaded)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 8),
+                  Text('Obteniendo tasa de cambio...', style: TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSaving ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed:
+              _isSaving
+                  ? null
+                  : () async {
+                    final raw = double.tryParse(widget.priceController.text);
+                    if (raw == null || raw < 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Ingresa un precio válido'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+                    // Convertir a CUP si el usuario ingresó USD
+                    final finalCup =
+                        _inputCurrency == 'usd'
+                            ? raw * widget.exchangeRate
+                            : raw;
+                    setState(() => _isSaving = true);
+                    await widget.onSave(finalCup);
+                    if (mounted) setState(() => _isSaving = false);
+                  },
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A90E2), foregroundColor: Colors.white),
+          child:
+              _isSaving
+                  ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
+                  )
+                  : const Text('Guardar'),
+        ),
+      ],
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Diálogo para editar Precio de Presentación (almacenado en USD)
+// El usuario puede ingresar en USD o CUP.
+// Si ingresa USD  → se guarda directo.
+// Si ingresa CUP  → se convierte a USD antes de guardar (cup / tasa).
+// ──────────────────────────────────────────────────────────────────────────────
+class _PresentationPriceEditDialog extends StatefulWidget {
+  final String presentationName;
+  final String cantidad;
+  final TextEditingController priceController;
+  final double exchangeRate;
+  final bool rateLoaded;
+  final Future<void> Function(double finalUsdPrice) onSave;
+
+  const _PresentationPriceEditDialog({
+    required this.presentationName,
+    required this.cantidad,
+    required this.priceController,
+    required this.exchangeRate,
+    required this.rateLoaded,
+    required this.onSave,
+  });
+
+  @override
+  State<_PresentationPriceEditDialog> createState() =>
+      _PresentationPriceEditDialogState();
+}
+
+class _PresentationPriceEditDialogState
+    extends State<_PresentationPriceEditDialog> {
+  String _inputCurrency = 'usd'; // 'cup' | 'usd'
+  bool _isSaving = false;
+
+  String get _equivalentText {
+    if (!widget.rateLoaded || widget.exchangeRate <= 0) return '';
+    final v = double.tryParse(widget.priceController.text) ?? 0.0;
+    if (_inputCurrency == 'usd') {
+      final cup = v * widget.exchangeRate;
+      return '≈ ₱${NumberFormat("#,###.00").format(cup)} CUP';
+    } else {
+      final usd = v / widget.exchangeRate;
+      return '≈ \$${NumberFormat("#,###.00").format(usd)} USD';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Editar Precio – ${widget.presentationName}'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Cantidad: ${widget.cantidad} unds',
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 16),
+          // Selector de moneda
+          Row(
+            children: [
+              Expanded(
+                child: _CurrencyToggleButton(
+                  label: 'USD',
+                  icon: Icons.attach_money,
+                  color: const Color(0xFF4A90E2),
+                  selected: _inputCurrency == 'usd',
+                  onTap: () => setState(() {
+                    _inputCurrency = 'usd';
+                    widget.priceController.clear();
+                  }),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _CurrencyToggleButton(
+                  label: 'CUP',
+                  icon: Icons.payments_outlined,
+                  color: const Color(0xFF10B981),
+                  selected: _inputCurrency == 'cup',
+                  onTap: () => setState(() {
+                    _inputCurrency = 'cup';
+                    widget.priceController.clear();
+                  }),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: widget.priceController,
+            keyboardType: const TextInputType.numberWithOptions(
+              decimal: true,
+              signed: false,
+            ),
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              labelText:
+                  _inputCurrency == 'usd'
+                      ? 'Nuevo precio en USD'
+                      : 'Nuevo precio en CUP',
+              prefixText: _inputCurrency == 'usd' ? '\$ ' : '₱ ',
+              border: const OutlineInputBorder(),
+              hintText: '0.00',
+            ),
+          ),
+          if (_equivalentText.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                _equivalentText,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.blue[700],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+          if (!widget.rateLoaded)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 8),
+                  Text('Obteniendo tasa de cambio...', style: TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSaving ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed:
+              _isSaving
+                  ? null
+                  : () async {
+                    final raw = double.tryParse(widget.priceController.text);
+                    if (raw == null || raw < 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Ingresa un precio válido'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+                    // Convertir a USD si el usuario ingresó CUP
+                    final finalUsd =
+                        _inputCurrency == 'cup'
+                            ? (widget.exchangeRate > 0
+                                ? raw / widget.exchangeRate
+                                : raw)
+                            : raw;
+                    setState(() => _isSaving = true);
+                    await widget.onSave(finalUsd);
+                    if (mounted) setState(() => _isSaving = false);
+                  },
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A90E2), foregroundColor: Colors.white),
+          child:
+              _isSaving
+                  ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
+                  )
+                  : const Text('Guardar'),
+        ),
+      ],
+    );
+  }
+}
+
+// Botón de toggle de moneda reutilizable
+class _CurrencyToggleButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _CurrencyToggleButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: selected ? color : Colors.grey[100],
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? color : Colors.grey[300]!,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: selected ? Colors.white : Colors.grey[600],
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: selected ? Colors.white : Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

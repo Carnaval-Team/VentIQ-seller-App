@@ -1,9 +1,31 @@
 {
-  "current_version": "2.1.0",
-  "build": 820,
+  "current_version": "2.1.1",
+  "build": 821,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.1.1",
+      "date": "2026-03-16",
+      "title": "Mejoras de usabilidad y mayor estabilidad",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Interfaz más clara y fácil de usar",
+          "description": "Hemos reestructurado la navegación visual y ajustado los detalles de la aplicación. Ahora te resultará mucho más rápido acceder a las funciones diarias, haciendo tu experiencia de usuario más intuitiva y ágil."
+        },
+        {
+          "type": "improvement",
+          "title": "Mensajes y alertas más comprensibles",
+          "description": "Actualizamos los avisos informativos y textos de la interfaz. De esta forma, cada acción, desde un error hasta una confirmación, está explicada de manera más amigable y directa, sin términos confusos."
+        },
+        {
+          "type": "fix",
+          "title": "Corrección de fallos menores de sistema",
+          "description": "Resolvimos varios errores (bugs) internos reportados recientemente que causaban comportamientos inesperados de forma aislada. Con estos ajustes, aseguramos una aplicación más sólida, estable y segura para tu negocio."
+        }
+      ]
+    },
     {
       "version": "2.1.0",
       "date": "2026-03-14",

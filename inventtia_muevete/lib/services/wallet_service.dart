@@ -312,6 +312,7 @@ class WalletService {
     required int driverId,
     required int viajeId,
     required double precioFinal,
+    required double precioBase,
   }) async {
     final result = await _supabase.rpc('complete_ride_payment', params: {
       'p_metodo_pago': metodoPago,
@@ -319,6 +320,7 @@ class WalletService {
       'p_driver_id': driverId,
       'p_viaje_id': viajeId,
       'p_precio_final': precioFinal,
+      'p_precio_base': precioBase,
     });
 
     final data = result as Map<String, dynamic>;

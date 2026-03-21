@@ -15,6 +15,7 @@ import '../widgets/scrolling_text.dart';
 import '../widgets/notification_widget.dart';
 import '../utils/app_snackbar.dart';
 import 'checkout_screen.dart';
+import 'orders_screen.dart';
 
 class PreorderScreen extends StatefulWidget {
   const PreorderScreen({Key? key}) : super(key: key);
@@ -35,6 +36,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
   bool _elaboratingProducts = false;
   pm.PaymentMethod? _globalPaymentMethod;
   double _fractionStep = 0.5;
+  bool _isShowSkuEnabled = false;
+  bool _isCheckingInventory = false;
 
   @override
   void initState() {
@@ -546,7 +549,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               Expanded(
                 flex: 2,
                 child: ElevatedButton(
-                  onPressed: _elaboratingProducts ? null : _finalizeOrder,
+                  onPressed: (_elaboratingProducts || _isCheckingInventory) ? null : _finalizeOrder,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF4A90E2),
                     foregroundColor: Colors.white,
@@ -555,10 +558,29 @@ class _PreorderScreenState extends State<PreorderScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: const Text(
-                    'Enviar Orden',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
+                  child: _isCheckingInventory
+                      ? Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Verificando inventario...',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        )
+                      : const Text(
+                          'Enviar Orden',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
                 ),
               ),
             ],
@@ -869,37 +891,70 @@ class _PreorderScreenState extends State<PreorderScreen> {
     final isOfflineModeEnabled =
         await _userPreferencesService.isOfflineModeEnabled();
 
-    // Verificar disponibilidad en inventario (solo en modo online)
-    if (!isOfflineModeEnabled) {
+    // Deshabilitar botón y mostrar indicador de carga mientras se verifica inventario
+    setState(() {
+      _isCheckingInventory = true;
+    });
+
+    try {
+      // Verificar disponibilidad en inventario (en modo online y offline)
       final stockProblems = await _checkInventoryAvailability(currentOrder.items);
       if (!mounted) return;
+      
       if (stockProblems.isNotEmpty) {
         _showStockProblemsDialog(stockProblems);
         return;
       }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCheckingInventory = false;
+        });
+      }
+    }
+
+    // Verificar configuración de tienda: si no se solicita datos del cliente
+    bool noSolicitarCliente = false;
+    try {
+      final userPrefs = UserPreferencesService();
+      final storeId = await userPrefs.getIdTienda();
+      if (storeId != null) {
+        noSolicitarCliente = await StoreConfigService.getNoSolicitarCliente(storeId);
+      }
+    } catch (e) {
+      print('⚠️ Error leyendo config de tienda: $e');
     }
 
     if (isOfflineModeEnabled) {
-      // MODO OFFLINE: No elaborar productos, pero SÍ ir al checkout para capturar datos del cliente
-      print(
-        '🔌 Modo offline - Saltando elaboración pero continuando al checkout para datos del cliente',
-      );
-
-      // Marcar la orden como offline para que el checkout la maneje apropiadamente
-      currentOrder.isOfflineOrder = true;
-
-      // Navigate to checkout screen (CRÍTICO: No saltarse el checkout en modo offline)
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => CheckoutScreen(order: currentOrder),
-        ),
-      ).then((_) {
-        // Refresh the screen when returning from checkout
-        setState(() {});
-      });
+      // MODO OFFLINE: Respetar configuración no_solicitar_cliente
+      if (noSolicitarCliente) {
+        // No solicitar cliente en modo offline tampoco
+        print('🔌 Modo offline + no_solicitar_cliente - Creando orden directamente');
+        currentOrder.isOfflineOrder = true;
+        await _processElaboratedProducts(currentOrder);
+        await _submitOrderDirect(currentOrder);
+      } else {
+        // Ir al checkout para capturar datos del cliente
+        print(
+          '🔌 Modo offline - Saltando elaboración pero continuando al checkout para datos del cliente',
+        );
+        currentOrder.isOfflineOrder = true;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CheckoutScreen(order: currentOrder),
+          ),
+        ).then((_) {
+          setState(() {});
+        });
+      }
+    } else if (noSolicitarCliente) {
+      // MODO DIRECTO: No se requieren datos del cliente, crear orden inmediatamente
+      print('⚡ No se solicita cliente - Creando orden directamente');
+      await _processElaboratedProducts(currentOrder);
+      await _submitOrderDirect(currentOrder);
     } else {
-      // MODO ONLINE: Elaborar productos y continuar al checkout
+      // MODO NORMAL: Elaborar productos y continuar al checkout
       print(
         '🌐 Modo online - Procesando elaboración y continuando al checkout',
       );
@@ -912,56 +967,73 @@ class _PreorderScreenState extends State<PreorderScreen> {
           builder: (context) => CheckoutScreen(order: currentOrder),
         ),
       ).then((_) {
-        // Refresh the screen when returning from checkout
         setState(() {});
       });
     }
   }
 
   /// Verifica disponibilidad de inventario para todos los items de la orden.
-  /// Retorna lista de problemas: [{nombre, cantidad_pedida, stock_disponible, diferencia}]
+  /// Incluye validación por presentación (id_presentacion)
+  /// Retorna lista de problemas: [{nombre, cantidad_pedida, stock_disponible, diferencia, presentacion}]
   Future<List<Map<String, dynamic>>> _checkInventoryAvailability(
     List<OrderItem> items,
   ) async {
     final supabase = Supabase.instance.client;
     final problems = <Map<String, dynamic>>[];
+    final isOfflineMode = await _userPreferencesService.isOfflineModeEnabled();
 
     for (final item in items) {
       try {
         final idProducto = item.producto.id;
         final idUbicacion = item.inventoryData?['id_ubicacion'];
         final idVariante = item.inventoryData?['id_variante'];
-
-        // Construir query base
-        var query = supabase
-            .from('app_dat_inventario_productos')
-            .select('cantidad_final')
-            .eq('id_producto', idProducto);
-
-        // Filtrar por ubicación si está disponible
-        if (idUbicacion != null) {
-          query = query.eq('id_ubicacion', idUbicacion);
-        }
-
-        // Filtrar por variante si aplica
-        if (idVariante != null) {
-          query = query.eq('id_variante', idVariante);
-        }
-
-        final response = await query.order('created_at', ascending: false).limit(1);
+        final idPresentacion = item.inventoryData?['id_presentacion'];
 
         double stockActual = 0.0;
-        if (response.isNotEmpty) {
-          stockActual = (response.first['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+
+        if (isOfflineMode) {
+          // En modo offline, usar datos del cache local
+          print('🔌 Verificando stock en modo offline para ${item.nombre}');
+          // El stock en modo offline se valida contra cantidadInicial
+          stockActual = item.cantidadInicial ?? 0.0;
+        } else {
+          // En modo online, consultar Supabase
+          var query = supabase
+              .from('app_dat_inventario_productos')
+              .select('cantidad_final')
+              .eq('id_producto', idProducto);
+
+          // Filtrar por ubicación si está disponible
+          if (idUbicacion != null) {
+            query = query.eq('id_ubicacion', idUbicacion);
+          }
+
+          // Filtrar por variante si aplica
+          if (idVariante != null) {
+            query = query.eq('id_variante', idVariante);
+          }
+
+          // Filtrar por presentación si aplica
+          if (idPresentacion != null) {
+            query = query.eq('id_presentacion', idPresentacion);
+          }
+
+          final response = await query.order('created_at', ascending: false).limit(1);
+
+          if (response.isNotEmpty) {
+            stockActual = (response.first['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+          }
         }
 
         if (stockActual < item.cantidad) {
+          final presentacionInfo = idPresentacion != null ? ' (Presentación ID: $idPresentacion)' : '';
           problems.add({
             'nombre': item.nombre,
             'cantidad_pedida': item.cantidad,
             'stock_disponible': stockActual,
             'diferencia': item.cantidad - stockActual,
             'ubicacion': item.ubicacionAlmacen,
+            'presentacion': presentacionInfo,
           });
         }
       } catch (e) {
@@ -1098,6 +1170,98 @@ class _PreorderScreenState extends State<PreorderScreen> {
         ],
       ),
     );
+  }
+
+  /// Crea la orden directamente sin pasar por CheckoutScreen (cuando no_solicitar_cliente=true)
+  Future<void> _submitOrderDirect(Order order) async {
+    setState(() {
+      _elaboratingProducts = true;
+    });
+
+    try {
+      // Calcular breakdown de pagos por producto
+      final Map<String, double> paymentBreakdown = {};
+      for (final item in order.items) {
+        if (item.paymentMethod != null) {
+          final methodName = item.paymentMethod!.denominacion;
+          paymentBreakdown[methodName] =
+              (paymentBreakdown[methodName] ?? 0.0) + item.subtotal;
+        }
+      }
+
+      final orderData = {
+        'buyerName': 'Cliente',
+        'buyerPhone': '',
+        'extraContacts': '',
+        'paymentMethod': 'Múltiples métodos',
+        'promoCode': null,
+        'promoDiscount': 0.0,
+        'finalTotal': order.total,
+        'originalTotal': order.total,
+        'idCliente': null,
+        'paymentBreakdown': paymentBreakdown,
+      };
+
+      final updatedOrder = order.copyWith(
+        total: order.total,
+        buyerName: 'Cliente',
+        buyerPhone: '',
+        paymentMethod: 'Múltiples métodos',
+      );
+
+      final result = await _orderService.finalizeOrderWithDetails(
+        updatedOrder,
+        orderData,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        final operationId = result['operationId'];
+        final createdOrderId = operationId != null ? 'ORD-$operationId' : null;
+        
+        // Update the order ID in the cache with the operationId from Supabase
+        if (createdOrderId != null) {
+          _orderService.updateOrderIdInCache(updatedOrder.id, createdOrderId);
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('¡Orden registrada exitosamente!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (context) => OrdersScreen(autoOpenOrderId: createdOrderId),
+          ),
+          (route) => false,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al registrar la venta: ${result['error']}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al crear la orden: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _elaboratingProducts = false;
+        });
+      }
+    }
   }
 
   /// Procesa productos elaborados en la orden

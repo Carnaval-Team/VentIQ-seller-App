@@ -1,7 +1,13 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_map/flutter_map.dart' hide TileLayer;
+import 'package:flutter_map/flutter_map.dart' as fm show TileLayer;
+import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart' as fmtc;
+import 'package:vector_map_tiles/vector_map_tiles.dart';
+
+import '../../services/mbtiles_service.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
@@ -103,12 +109,27 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
               onTap: _onTap,
             ),
             children: [
-              TileLayer(
-                urlTemplate: isDark
-                    ? AppTheme.cartoDarkTileUrl
-                    : AppTheme.osmTileUrl,
-                userAgentPackageName: 'com.inventtia.muevete',
-              ),
+              if (!kIsWeb && MbTilesService.instance.useOffline && MbTilesService.instance.provider != null)
+                VectorTileLayer(
+                  theme: MbTilesService.instance.getTheme(isDark: isDark),
+                  tileProviders: TileProviders({
+                    'openmaptiles': MbTilesService.instance.provider!,
+                  }),
+                  maximumZoom: 18,
+                  fileCacheMaximumSizeInBytes: 0,
+                )
+              else
+                fm.TileLayer(
+                  urlTemplate: isDark
+                      ? AppTheme.cartoDarkTileUrl
+                      : AppTheme.osmTileUrl,
+                  userAgentPackageName: 'com.inventtia.muevete',
+                  tileProvider: kIsWeb
+                      ? null
+                      : fmtc.FMTCTileProvider(
+                          stores: const {'mapTiles': fmtc.BrowseStoreStrategy.readUpdate},
+                        ),
+                ),
               if (_picked != null)
                 MarkerLayer(
                   markers: [

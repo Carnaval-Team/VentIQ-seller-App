@@ -10,6 +10,7 @@ import 'config/app_theme.dart';
 import 'services/background_service.dart';
 import 'services/local_notification_service.dart';
 import 'services/completion_sync_service.dart';
+import 'services/mbtiles_service.dart';
 import 'services/pushy_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
@@ -47,6 +48,11 @@ Future<void> main() async {
     url: SupabaseConfig.supabaseUrl,
     anonKey: SupabaseConfig.supabaseAnonKey,
   );
+
+  // Initialize offline MBTiles map
+  if (!kIsWeb) {
+    await MbTilesService.instance.init();
+  }
 
   // Initialize background service & local notifications
   await BackgroundService.init();
@@ -90,6 +96,7 @@ class MueveteApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TransportProvider()),
         ChangeNotifierProvider(create: (_) => WalletProvider()),
         ChangeNotifierProvider(create: (_) => AddressProvider()),
+        ChangeNotifierProvider.value(value: MbTilesService.instance),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {

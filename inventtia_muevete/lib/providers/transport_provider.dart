@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import '../utils/constants.dart';
 import '../models/transport_request_model.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../models/driver_offer_model.dart';
 import '../models/vehicle_type_model.dart';
 import '../services/transport_request_service.dart';
@@ -42,6 +44,10 @@ class TransportProvider extends ChangeNotifier {
   DriverOfferModel? _acceptedOffer;
   int? _activeViajeId; // viaje created after offer accepted
   int? get activeViajeId => _activeViajeId;
+  set activeViajeId(int? value) {
+    _activeViajeId = value;
+    notifyListeners();
+  }
 
   // State
   TransportState _state = TransportState.idle;
@@ -385,6 +391,23 @@ class TransportProvider extends ChangeNotifier {
       final accepted = offers.where((o) => o.estado == EstadoOferta.aceptada);
       if (accepted.isNotEmpty) {
         _acceptedOffer = accepted.first;
+        
+        // Restore _activeViajeId by finding the current active trip for this driver and user
+        if (_activeRequest?.userId != null && _acceptedOffer?.driverId != null) {
+          try {
+            final viaje = await Supabase.instance.client
+                .schema('muevete')
+                .from('viajes')
+                .select('id')
+                .eq('driver_id', _acceptedOffer!.driverId!)
+                .eq('user', _activeRequest!.userId!)
+                .eq('completado', false)
+                .maybeSingle();
+            if (viaje != null) {
+              _activeViajeId = viaje['id'] as int?;
+            }
+          } catch (_) {}
+        }
       } else if (offers.isNotEmpty) {
         _acceptedOffer = offers.first;
       }
@@ -422,26 +445,27 @@ class TransportProvider extends ChangeNotifier {
   /// Completes a ride: processes wallet payment for client (if wallet)
   /// and always charges 15% commission to driver.
   /// Uses an RPC with SECURITY DEFINER to bypass RLS on wallet_drivers.
-  Future<void> completeRideWithPayment() async {
+  Future<void> completeRideWithPayment({double extraWaitingCharge = 0}) async {
     final request = _activeRequest;
     final offer = _acceptedOffer;
     if (request == null || offer == null) return;
 
-    final precioFinal = offer.precio ?? _offerPrice;
+    final precioFinal = (offer.precio ?? _offerPrice) + extraWaitingCharge;
     final driverId = offer.driverId;
     final userId = request.userId;
     final viajeId = _activeViajeId;
-    final metodoPago = request.metodoPago ?? 'efectivo';
+    final precioBase = offer.precio ?? _offerPrice;
 
-    if (driverId == null || userId == null || viajeId == null) return;
-
-    await _walletService.completeRidePaymentRpc(
-      metodoPago: metodoPago,
-      clientUuid: userId,
-      driverId: driverId,
-      viajeId: viajeId,
-      precioFinal: precioFinal,
-    );
+    if (driverId != null && userId != null && viajeId != null) {
+      await _walletService.completeRidePaymentRpc(
+        metodoPago: request.metodoPago ?? 'efectivo',
+        clientUuid: userId,
+        driverId: driverId,
+        viajeId: viajeId,
+        precioFinal: precioFinal,
+        precioBase: precioBase,
+      );
+    }
   }
 
   void resetTrip() {

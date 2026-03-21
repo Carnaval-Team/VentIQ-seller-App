@@ -17,6 +17,34 @@ class PrinterManager {
   // Tipo de impresora seleccionada en móvil
   String _mobileprinterType = 'bluetooth'; // 'bluetooth' o 'wifi'
 
+  // ── Selección guardada durante el turno ─────────────────────────────────
+  // Una vez que el trabajador elige tipo + dispositivo, se reutiliza
+  // automáticamente hasta que llame a clearSavedPrinter().
+  String? _savedPrinterType;           // 'bluetooth' | 'wifi'
+  dynamic _savedBluetoothDevice;       // BluetoothInfo
+  Map<String, dynamic>? _savedWifiPrinter; // {'ip': ..., 'port': ...}
+
+  /// Devuelve true si ya hay una selección guardada para la sesión
+  bool get hasSavedPrinter => _savedPrinterType != null;
+
+  /// Nombre descriptivo de la impresora guardada (para mostrar en UI)
+  String get savedPrinterDescription {
+    if (_savedPrinterType == 'bluetooth' && _savedBluetoothDevice != null) {
+      final name = _savedBluetoothDevice.name as String? ?? 'Dispositivo BT';
+      return 'Bluetooth · $name';
+    } else if (_savedPrinterType == 'wifi' && _savedWifiPrinter != null) {
+      return 'WiFi · ${_savedWifiPrinter!['ip']}:${_savedWifiPrinter!['port'] ?? 9100}';
+    }
+    return '';
+  }
+
+  /// Limpia la selección guardada (usar al cerrar turno)
+  void clearSavedPrinter() {
+    _savedPrinterType = null;
+    _savedBluetoothDevice = null;
+    _savedWifiPrinter = null;
+  }
+
   /// Muestra el diálogo de confirmación de impresión apropiado para la plataforma
   Future<bool> showPrintConfirmationDialog(
     BuildContext context,
@@ -210,6 +238,17 @@ class PrinterManager {
     List<Order> orders,
   ) async {
     try {
+      // Si ya hay una selección guardada, usar directamente
+      if (_savedPrinterType != null) {
+        if (_savedPrinterType == 'bluetooth') {
+          return await _printCustomerReceiptsViaBluetoothMobileWithDevice(
+            context, orders, _savedBluetoothDevice);
+        } else {
+          return await _printCustomerReceiptsViaWiFiMobileWithPrinter(
+            context, orders, _savedWifiPrinter!);
+        }
+      }
+
       final printerType = await _showPrinterTypeDialog(context);
       if (printerType == null) {
         return PrintResult(
@@ -254,6 +293,25 @@ class PrinterManager {
           platform: 'Mobile',
         );
       }
+
+      // Guardar selección para el resto del turno
+      _savedPrinterType = 'bluetooth';
+      _savedBluetoothDevice = selectedDevice;
+
+      return await _printCustomerReceiptsViaBluetoothMobileWithDevice(context, orders, selectedDevice);
+    } catch (e) {
+      try { Navigator.pop(context); } catch (_) {}
+      try { await _bluetoothService.disconnect(); } catch (_) {}
+      return PrintResult(success: false, message: 'Error en impresión Bluetooth: $e', platform: 'Mobile');
+    }
+  }
+
+  Future<PrintResult> _printCustomerReceiptsViaBluetoothMobileWithDevice(
+    BuildContext context,
+    List<Order> orders,
+    dynamic selectedDevice,
+  ) async {
+    try {
 
       showDialog(
         context: context,
@@ -319,12 +377,8 @@ class PrinterManager {
                 : 'Verifica la conexión con la impresora',
       );
     } catch (e) {
-      try {
-        Navigator.pop(context);
-      } catch (_) {}
-      try {
-        await _bluetoothService.disconnect();
-      } catch (_) {}
+      try { Navigator.pop(context); } catch (_) {}
+      try { await _bluetoothService.disconnect(); } catch (_) {}
 
       return PrintResult(
         success: false,
@@ -350,6 +404,25 @@ class PrinterManager {
         );
       }
 
+      // Guardar selección para el resto del turno
+      _savedPrinterType = 'wifi';
+      _savedWifiPrinter = Map<String, dynamic>.from(selectedPrinter);
+
+      return await _printCustomerReceiptsViaWiFiMobileWithPrinter(
+        context, orders, selectedPrinter);
+    } catch (e) {
+      try { Navigator.pop(context); } catch (_) {}
+      try { await _wifiService.disconnect(); } catch (_) {}
+      return PrintResult(success: false, message: 'Error en impresión WiFi: $e', platform: 'Mobile');
+    }
+  }
+
+  Future<PrintResult> _printCustomerReceiptsViaWiFiMobileWithPrinter(
+    BuildContext context,
+    List<Order> orders,
+    Map<String, dynamic> selectedPrinter,
+  ) async {
+    try {
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -415,12 +488,8 @@ class PrinterManager {
                 : 'Verifica la conexión con la impresora',
       );
     } catch (e) {
-      try {
-        Navigator.pop(context);
-      } catch (_) {}
-      try {
-        await _wifiService.disconnect();
-      } catch (_) {}
+      try { Navigator.pop(context); } catch (_) {}
+      try { await _wifiService.disconnect(); } catch (_) {}
 
       return PrintResult(
         success: false,
@@ -501,7 +570,24 @@ class PrinterManager {
     Order order,
   ) async {
     try {
-      // Mostrar diálogo de selección de tipo de impresora
+      // Si ya hay una selección guardada, solo pedir confirmación
+      if (_savedPrinterType != null) {
+        final confirmed = await _showQuickPrintConfirmDialog(context, order);
+        if (confirmed == null) return PrintResult(success: false, message: 'Impresión cancelada', platform: 'Mobile');
+        if (!confirmed) {
+          // El usuario quiere cambiar de impresora
+          clearSavedPrinter();
+          return await _printInvoiceMobile(context, order);
+        }
+        // Imprimir con la selección guardada
+        if (_savedPrinterType == 'bluetooth') {
+          return await _printViaBluetoothMobileWithDevice(context, order, _savedBluetoothDevice);
+        } else {
+          return await _printViaWiFiMobileWithPrinter(context, order, _savedWifiPrinter!);
+        }
+      }
+
+      // Primera vez: pedir tipo de impresora
       final printerType = await _showPrinterTypeDialog(context);
       if (printerType == null) {
         return PrintResult(
@@ -519,7 +605,6 @@ class PrinterManager {
         return await _printViaWiFiMobile(context, order);
       }
     } catch (e) {
-      // Cerrar diálogo de progreso si está abierto
       try {
         Navigator.pop(context);
       } catch (_) {}
@@ -553,30 +638,170 @@ class PrinterManager {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('¿Qué tipo de impresora deseas usar?'),
-                SizedBox(height: 16),
+                Text(
+                  '¿Qué tipo de impresora deseas usar?',
+                  style: TextStyle(fontSize: 15, color: Colors.grey[700]),
+                ),
+                SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(context, 'bluetooth'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF4A90E2),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.bluetooth, size: 36),
+                            SizedBox(height: 8),
+                            Text(
+                              'Bluetooth',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(context, 'wifi'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF10B981),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.wifi, size: 36),
+                            SizedBox(height: 8),
+                            Text(
+                              'WiFi',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancelar'),
+                  ),
+                ),
+              ],
+            ),
+            // Sin actions — los botones están en el content
+            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+            actionsPadding: EdgeInsets.zero,
+          ),
+    );
+  }
+
+  /// Diálogo rápido cuando ya hay impresora guardada:
+  /// true = confirmar con impresora guardada
+  /// false = cambiar impresora
+  /// null = cancelar
+  Future<bool?> _showQuickPrintConfirmDialog(
+    BuildContext context,
+    Order order,
+  ) async {
+    return showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.print, color: const Color(0xFF4A90E2)),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Imprimir factura',
+                    style: Theme.of(ctx).textTheme.titleLarge,
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Orden: ${order.id}'),
+                SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _savedPrinterType == 'bluetooth'
+                            ? Icons.bluetooth
+                            : Icons.wifi,
+                        size: 18,
+                        color: const Color(0xFF4A90E2),
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          savedPrinterDescription,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF1D4ED8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Navigator.pop(ctx),
                 child: Text('Cancelar'),
               ),
-              ElevatedButton.icon(
-                onPressed: () => Navigator.pop(context, 'bluetooth'),
-                icon: Icon(Icons.bluetooth),
-                label: Text('Bluetooth'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A90E2),
-                  foregroundColor: Colors.white,
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(
+                  'Cambiar impresora',
+                  style: TextStyle(color: Colors.grey[600]),
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: () => Navigator.pop(context, 'wifi'),
-                icon: Icon(Icons.router),
-                label: Text('WiFi'),
+                onPressed: () => Navigator.pop(ctx, true),
+                icon: Icon(Icons.print, size: 18),
+                label: Text('Imprimir'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
+                  backgroundColor: const Color(0xFF4A90E2),
                   foregroundColor: Colors.white,
                 ),
               ),
@@ -591,19 +816,6 @@ class PrinterManager {
     Order order,
   ) async {
     try {
-      // Mostrar diálogo de confirmación de Bluetooth
-      bool shouldPrint = await _bluetoothService.showPrintConfirmationDialog(
-        context,
-        order,
-      );
-      if (!shouldPrint) {
-        return PrintResult(
-          success: false,
-          message: 'Impresión cancelada por el usuario',
-          platform: 'Mobile',
-        );
-      }
-
       // Mostrar diálogo de selección de dispositivo Bluetooth
       var selectedDevice = await _bluetoothService.showDeviceSelectionDialog(
         context,
@@ -615,6 +827,26 @@ class PrinterManager {
           platform: 'Mobile',
         );
       }
+
+      // Guardar selección para el resto del turno
+      _savedPrinterType = 'bluetooth';
+      _savedBluetoothDevice = selectedDevice;
+
+      return await _printViaBluetoothMobileWithDevice(context, order, selectedDevice);
+    } catch (e) {
+      try { Navigator.pop(context); } catch (_) {}
+      try { await _bluetoothService.disconnect(); } catch (_) {}
+      return PrintResult(success: false, message: 'Error en impresión Bluetooth: $e', platform: 'Mobile');
+    }
+  }
+
+  /// Impresión via Bluetooth con dispositivo ya conocido
+  Future<PrintResult> _printViaBluetoothMobileWithDevice(
+    BuildContext context,
+    Order order,
+    dynamic selectedDevice,
+  ) async {
+    try {
 
       // Mostrar diálogo de progreso
       showDialog(
@@ -666,10 +898,7 @@ class PrinterManager {
       // Imprimir la factura
       bool printed = await _bluetoothService.printInvoice(order);
 
-      // Cerrar diálogo de progreso
       Navigator.pop(context);
-
-      // Desconectar de la impresora
       await _bluetoothService.disconnect();
 
       return PrintResult(
@@ -685,15 +914,8 @@ class PrinterManager {
                 : 'Verifica la conexión con la impresora',
       );
     } catch (e) {
-      // Cerrar diálogo de progreso si está abierto
-      try {
-        Navigator.pop(context);
-      } catch (_) {}
-
-      // Desconectar en caso de error
-      try {
-        await _bluetoothService.disconnect();
-      } catch (_) {}
+      try { Navigator.pop(context); } catch (_) {}
+      try { await _bluetoothService.disconnect(); } catch (_) {}
 
       return PrintResult(
         success: false,
@@ -709,21 +931,7 @@ class PrinterManager {
     Order order,
   ) async {
     try {
-      // Mostrar diálogo de confirmación de WiFi
-      bool shouldPrint = await _wifiService.showPrintConfirmationDialog(
-        context,
-        order,
-      );
-      if (!shouldPrint) {
-        return PrintResult(
-          success: false,
-          message: 'Impresión cancelada por el usuario',
-          platform: 'Mobile',
-        );
-      }
-
       // Mostrar diálogo de selección/entrada de impresora WiFi
-      // El diálogo maneja la búsqueda automática internamente
       final selectedPrinter = await _wifiService.showPrinterSelectionDialog(
         context,
       );
@@ -735,9 +943,30 @@ class PrinterManager {
         );
       }
 
+      // Guardar selección para el resto del turno
+      _savedPrinterType = 'wifi';
+      _savedWifiPrinter = Map<String, dynamic>.from(selectedPrinter);
+
       debugPrint(
         '✅ Impresora WiFi seleccionada: ${selectedPrinter['ip']}:${selectedPrinter['port']}',
       );
+
+      return await _printViaWiFiMobileWithPrinter(context, order, selectedPrinter);
+    } catch (e) {
+      try { Navigator.pop(context); } catch (_) {}
+      try { await _wifiService.disconnect(); } catch (_) {}
+      return PrintResult(success: false, message: 'Error en impresión WiFi: $e', platform: 'Mobile');
+    }
+  }
+
+  /// Impresión via WiFi con impresora ya conocida
+  Future<PrintResult> _printViaWiFiMobileWithPrinter(
+    BuildContext context,
+    Order order,
+    Map<String, dynamic> selectedPrinter,
+  ) async {
+    try {
+      debugPrint('🖨️ Imprimiendo via WiFi: ${selectedPrinter['ip']}');
 
       // Mostrar diálogo de progreso
       showDialog(
@@ -771,7 +1000,6 @@ class PrinterManager {
         );
       }
 
-      // Actualizar mensaje de progreso
       Navigator.pop(context);
       showDialog(
         context: context,
@@ -789,13 +1017,9 @@ class PrinterManager {
             ),
       );
 
-      // Imprimir la factura
       bool printed = await _wifiService.printInvoice(order);
 
-      // Cerrar diálogo de progreso
       Navigator.pop(context);
-
-      // Desconectar de la impresora
       await _wifiService.disconnect();
 
       return PrintResult(
@@ -811,15 +1035,8 @@ class PrinterManager {
                 : 'Verifica la conexión con la impresora',
       );
     } catch (e) {
-      // Cerrar diálogo de progreso si está abierto
-      try {
-        Navigator.pop(context);
-      } catch (_) {}
-
-      // Desconectar en caso de error
-      try {
-        await _wifiService.disconnect();
-      } catch (_) {}
+      try { Navigator.pop(context); } catch (_) {}
+      try { await _wifiService.disconnect(); } catch (_) {}
 
       return PrintResult(
         success: false,

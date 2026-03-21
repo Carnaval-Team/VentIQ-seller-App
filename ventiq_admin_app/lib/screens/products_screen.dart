@@ -639,11 +639,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
     filteredProducts.sort((a, b) {
       switch (_sortBy) {
         case 'name':
-          return a.name.compareTo(b.name);
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
         case 'price':
           return a.basePrice.compareTo(b.basePrice);
         case 'category':
-          return a.categoryName.compareTo(b.categoryName);
+          return a.categoryName.toLowerCase().compareTo(b.categoryName.toLowerCase());
         default:
           return 0;
       }

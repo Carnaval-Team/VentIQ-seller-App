@@ -5,6 +5,8 @@ enum NotificationType {
   viajeIniciado,
   driverEsperando,
   viajeCompletado,
+  paradaIniciada,
+  paradaFinalizada,
 }
 
 NotificationType notificationTypeFromString(String tipo) {
@@ -21,6 +23,10 @@ NotificationType notificationTypeFromString(String tipo) {
       return NotificationType.driverEsperando;
     case 'viaje_completado':
       return NotificationType.viajeCompletado;
+    case 'parada_iniciada':
+      return NotificationType.paradaIniciada;
+    case 'parada_finalizada':
+      return NotificationType.paradaFinalizada;
     default:
       return NotificationType.nuevaSolicitud;
   }
@@ -40,6 +46,10 @@ String notificationTypeToString(NotificationType tipo) {
       return 'driver_esperando';
     case NotificationType.viajeCompletado:
       return 'viaje_completado';
+    case NotificationType.paradaIniciada:
+      return 'parada_iniciada';
+    case NotificationType.paradaFinalizada:
+      return 'parada_finalizada';
   }
 }
 

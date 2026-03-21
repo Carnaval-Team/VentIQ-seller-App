@@ -1,10 +1,13 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter/material.dart' hide Theme;
+import 'package:flutter_map/flutter_map.dart' hide TileLayer;
+import 'package:flutter_map/flutter_map.dart' as fm show TileLayer;
 import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart' as fmtc;
 import 'package:latlong2/latlong.dart';
+import 'package:vector_map_tiles/vector_map_tiles.dart';
 
 import '../config/app_theme.dart';
+import '../services/mbtiles_service.dart';
 
 class MapWidget extends StatelessWidget {
   final MapController? mapController;
@@ -34,8 +37,18 @@ class MapWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: MbTilesService.instance,
+      builder: (context, _) => _buildMap(),
+    );
+  }
+
+  Widget _buildMap() {
     final tileUrl =
         isDark ? AppTheme.cartoDarkTileUrl : AppTheme.osmTileUrl;
+
+    final mbService = MbTilesService.instance;
+    final useOffline = !kIsWeb && mbService.useOffline && mbService.provider != null;
 
     Widget map = FlutterMap(
       mapController: mapController,
@@ -46,15 +59,25 @@ class MapWidget extends StatelessWidget {
         onTap: onTap,
       ),
       children: [
-        TileLayer(
-          urlTemplate: tileUrl,
-          userAgentPackageName: 'com.inventtia.muevete',
-          tileProvider: kIsWeb
-              ? null
-              : fmtc.FMTCTileProvider(
-                  stores: const {'mapTiles': fmtc.BrowseStoreStrategy.readUpdate},
-                ),
-        ),
+        if (useOffline)
+          VectorTileLayer(
+            theme: mbService.getTheme(isDark: isDark),
+            tileProviders: TileProviders({
+              'openmaptiles': mbService.provider!,
+            }),
+            maximumZoom: 18,
+            fileCacheMaximumSizeInBytes: 0,
+          )
+        else
+          fm.TileLayer(
+            urlTemplate: tileUrl,
+            userAgentPackageName: 'com.inventtia.muevete',
+            tileProvider: kIsWeb
+                ? null
+                : fmtc.FMTCTileProvider(
+                    stores: const {'mapTiles': fmtc.BrowseStoreStrategy.readUpdate},
+                  ),
+          ),
         if (polylines.isNotEmpty)
           PolylineLayer(
             polylines: polylines,

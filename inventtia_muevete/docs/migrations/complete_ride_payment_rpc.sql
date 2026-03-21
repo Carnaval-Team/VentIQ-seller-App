@@ -7,7 +7,8 @@ CREATE OR REPLACE FUNCTION muevete.complete_ride_payment(
   p_client_uuid UUID,
   p_driver_id BIGINT,
   p_viaje_id BIGINT,
-  p_precio_final NUMERIC
+  p_precio_final NUMERIC,
+  p_precio_base NUMERIC DEFAULT 0
 )
 RETURNS JSON
 LANGUAGE plpgsql
@@ -35,8 +36,15 @@ BEGIN
   INTO v_wallet_exists;
 
   IF p_metodo_pago = 'wallet' THEN
-    -- WALLET PAYMENT: client funds already held at acceptOffer
-    -- 1) Record client transaction
+    -- WALLET PAYMENT: client funds (base price) were held at acceptOffer.
+    -- We need to deduct the delta (extra waiting charges) if p_precio_final > p_precio_base.
+    IF p_precio_final > p_precio_base THEN
+      UPDATE suscription_user 
+      SET balance = balance - (p_precio_final - p_precio_base) 
+      WHERE user_id = p_client_uuid;
+    END IF;
+
+    -- Record client transaction
     SELECT balance INTO v_client_balance
     FROM suscription_user WHERE user_id = p_client_uuid;
 

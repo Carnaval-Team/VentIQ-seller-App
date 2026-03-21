@@ -3,7 +3,14 @@ import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
 import '../../utils/smooth_compass_mixin.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_map/flutter_map.dart' hide TileLayer;
+import 'package:flutter_map/flutter_map.dart' as fm show TileLayer;
+import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart' as fmtc;
+import 'package:vector_map_tiles/vector_map_tiles.dart';
+import 'package:geolocator/geolocator.dart';
+
+import '../../services/mbtiles_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -67,27 +74,43 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   @override
   void initState() {
     super.initState();
+    _initializeDriver();
+    
     _slideController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _slideController!,
-      curve: Curves.easeOutCubic,
-    ));
+    _slideAnimation = Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _slideController!,
+            curve: Curves.easeOutCubic,
+          ),
+        );
 
     WidgetsBinding.instance.addObserver(this);
+    MbTilesService.instance.addListener(_onOfflineMapChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeDriver();
     });
   }
 
+  void _onOfflineMapChanged() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _initializeDriver() async {
+    final permission = await Geolocator.checkPermission();
+    if (permission != LocationPermission.always &&
+        permission != LocationPermission.whileInUse) {
+      await Geolocator.requestPermission();
+    }
+
     final locationProvider = context.read<LocationProvider>();
     final authProvider = context.read<AuthProvider>(); // read before await
+    // Register push first (may show notification permission dialog), then
+    // request location permission — avoids two dialogs at the same time.
+    await authProvider.registerPushAndStartBackground();
     await locationProvider.initLocation();
     locationProvider.startTracking();
     // Start background service now that location permission is granted (retries up to 10 times)
@@ -95,7 +118,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!bgStarted && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No se pudo iniciar el servicio en segundo plano después de 10 intentos. Verifica los permisos de ubicación y reinicia la app.'),
+          content: Text(
+            'No se pudo iniciar el servicio en segundo plano después de 10 intentos. Verifica los permisos de ubicación y reinicia la app.',
+          ),
           duration: Duration(seconds: 8),
           backgroundColor: Colors.red,
         ),
@@ -141,7 +166,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           online: true,
         );
       } catch (e) {
-        dev.log('[Tracking] Error actualizando posición: $e', name: 'DriverHome');
+        dev.log(
+          '[Tracking] Error actualizando posición: $e',
+          name: 'DriverHome',
+        );
       }
     });
   }
@@ -153,10 +181,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   void _startRequestsPolling() {
     _requestsPollingTimer?.cancel();
-    _requestsPollingTimer = Timer.periodic(
-      const Duration(seconds: 30),
-      (_) { if (mounted && _isOnline) _loadNearbyRequests(); },
-    );
+    _requestsPollingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted && _isOnline) _loadNearbyRequests();
+    });
   }
 
   void _stopRequestsPolling() {
@@ -197,8 +224,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         }
       }
 
-      final filtered =
-          rows.where((r) => !alreadyOffered.contains(r['id'])).toList();
+      final filtered = rows
+          .where((r) => !alreadyOffered.contains(r['id']))
+          .toList();
 
       for (final row in filtered) {
         dev.log(
@@ -223,8 +251,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
-  bool _setEquals(Set a, Set b) =>
-      a.length == b.length && a.containsAll(b);
+  bool _setEquals(Set a, Set b) => a.length == b.length && a.containsAll(b);
 
   void _subscribeToRequests() {
     final locationProvider = context.read<LocationProvider>();
@@ -304,13 +331,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         'user_id': userId,
       };
 
-      // Check if there's already a viaje for this
+      // Poll for newest trip ID (3 attempts)
       final driverProfile = context.read<AuthProvider>().driverProfile;
       final driverId = driverProfile?['id'] as int?;
       if (driverId != null) {
-        final activeTrip = await _driverService.getActiveTrip(driverId);
+        Map<String, dynamic>? activeTrip;
+        for (int i = 0; i < 3; i++) {
+          activeTrip = await _driverService.getActiveTrip(driverId, userId: userId);
+          if (activeTrip != null) break;
+          await Future.delayed(const Duration(milliseconds: 1500));
+        }
+
         if (activeTrip != null) {
           tripData['viaje_id'] = activeTrip['id'];
+          tripData['estado'] = activeTrip['estado'];
         }
       }
 
@@ -326,11 +360,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (_confirmedTripData == null) return;
     final data = Map<String, dynamic>.from(_confirmedTripData!);
     setState(() => _confirmedTripData = null);
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ActiveRideScreen(tripData: data),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => ActiveRideScreen(tripData: data)));
   }
 
   Future<void> _toggleOnlineStatus() async {
@@ -392,9 +424,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cambiar estado: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al cambiar estado: $e')));
       }
     } finally {
       if (mounted) setState(() => _isTogglingStatus = false);
@@ -410,8 +442,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final vehicleTypes = await VehicleTypeService().getActiveTypes();
     if (!mounted) return;
 
-    VehicleTypeModel? selectedType =
-        vehicleTypes.isNotEmpty ? vehicleTypes.first : null;
+    VehicleTypeModel? selectedType = vehicleTypes.isNotEmpty
+        ? vehicleTypes.first
+        : null;
     final marcaCtrl = TextEditingController();
     final modeloCtrl = TextEditingController();
     final chapaCtrl = TextEditingController();
@@ -426,11 +459,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) => Padding(
           padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          ),
           child: Container(
             decoration: BoxDecoration(
               color: AppTheme.surface(isDark),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
             ),
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
             child: SingleChildScrollView(
@@ -440,7 +476,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 children: [
                   Center(
                     child: Container(
-                      width: 40, height: 4,
+                      width: 40,
+                      height: 4,
                       decoration: BoxDecoration(
                         color: AppTheme.shimmer(isDark),
                         borderRadius: BorderRadius.circular(2),
@@ -448,23 +485,32 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Text('Registrar vehículo',
-                      style: GoogleFonts.plusJakartaSans(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.textPrimary(isDark))),
+                  Text(
+                    'Registrar vehículo',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textPrimary(isDark),
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text('Debes tener un vehículo para activarte',
-                      style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13,
-                          color: AppTheme.textTertiary(isDark))),
+                  Text(
+                    'Debes tener un vehículo para activarte',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      color: AppTheme.textTertiary(isDark),
+                    ),
+                  ),
                   const SizedBox(height: 20),
                   // Vehicle type selector
-                  Text('Tipo de vehículo',
-                      style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textSecondary(isDark))),
+                  Text(
+                    'Tipo de vehículo',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textSecondary(isDark),
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -473,8 +519,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       return ChoiceChip(
                         label: Text(vt.displayName),
                         selected: selected,
-                        onSelected: (_) =>
-                            setSheet(() => selectedType = vt),
+                        onSelected: (_) => setSheet(() => selectedType = vt),
                         selectedColor: AppTheme.primaryColor,
                         backgroundColor: AppTheme.bg(isDark),
                         labelStyle: GoogleFonts.plusJakartaSans(
@@ -489,14 +534,29 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   const SizedBox(height: 16),
                   _sheetField(marcaCtrl, 'Marca', 'Ej: Toyota', isDark: isDark),
                   const SizedBox(height: 12),
-                  _sheetField(modeloCtrl, 'Modelo', 'Ej: Corolla', isDark: isDark),
+                  _sheetField(
+                    modeloCtrl,
+                    'Modelo',
+                    'Ej: Corolla',
+                    isDark: isDark,
+                  ),
                   const SizedBox(height: 12),
-                  _sheetField(chapaCtrl, 'Chapa / Matrícula', 'Ej: ABC-1234', isDark: isDark),
+                  _sheetField(
+                    chapaCtrl,
+                    'Chapa / Matrícula',
+                    'Ej: ABC-1234',
+                    isDark: isDark,
+                  ),
                   const SizedBox(height: 12),
                   _sheetField(colorCtrl, 'Color', 'Ej: Blanco', isDark: isDark),
                   const SizedBox(height: 12),
-                  _sheetField(capacidadCtrl, 'Capacidad (pasajeros)', '4',
-                      keyboard: TextInputType.number, isDark: isDark),
+                  _sheetField(
+                    capacidadCtrl,
+                    'Capacidad (pasajeros)',
+                    '4',
+                    keyboard: TextInputType.number,
+                    isDark: isDark,
+                  ),
                   const SizedBox(height: 24),
                   SizedBox(
                     width: double.infinity,
@@ -512,8 +572,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                   colorCtrl.text.trim().isEmpty) {
                                 ScaffoldMessenger.of(ctx).showSnackBar(
                                   const SnackBar(
-                                      content:
-                                          Text('Completa todos los campos')),
+                                    content: Text('Completa todos los campos'),
+                                  ),
                                 );
                                 return;
                               }
@@ -526,8 +586,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                   modelo: modeloCtrl.text.trim(),
                                   chapa: chapaCtrl.text.trim(),
                                   color: colorCtrl.text.trim(),
-                                  capacidad: capacidadCtrl.text.trim()
-                                          .isEmpty
+                                  capacidad: capacidadCtrl.text.trim().isEmpty
                                       ? null
                                       : capacidadCtrl.text.trim(),
                                 );
@@ -538,8 +597,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                 if (ctx.mounted) {
                                   ScaffoldMessenger.of(ctx).showSnackBar(
                                     SnackBar(
-                                        content: Text('Error: $e'),
-                                        backgroundColor: AppTheme.error),
+                                      content: Text('Error: $e'),
+                                      backgroundColor: AppTheme.error,
+                                    ),
                                   );
                                 }
                               }
@@ -548,20 +608,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         backgroundColor: AppTheme.primaryColor,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
                       child: saving
                           ? const SizedBox(
                               width: 22,
                               height: 22,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white),
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
                             )
-                          : Text('Guardar vehículo',
+                          : Text(
+                              'Guardar vehículo',
                               style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700)),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                     ),
                   ),
                 ],
@@ -583,39 +648,48 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: GoogleFonts.plusJakartaSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textSecondary(isDark))),
+        Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.textSecondary(isDark),
+          ),
+        ),
         const SizedBox(height: 6),
         TextField(
           controller: ctrl,
           keyboardType: keyboard,
           style: GoogleFonts.plusJakartaSans(
-              color: AppTheme.textPrimary(isDark), fontSize: 14),
+            color: AppTheme.textPrimary(isDark),
+            fontSize: 14,
+          ),
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: GoogleFonts.plusJakartaSans(
-                color: AppTheme.textTertiary(isDark), fontSize: 14),
+              color: AppTheme.textTertiary(isDark),
+              fontSize: 14,
+            ),
             filled: true,
             fillColor: AppTheme.bg(isDark),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide:
-                  BorderSide(color: AppTheme.border(isDark)),
+              borderSide: BorderSide(color: AppTheme.border(isDark)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide:
-                  BorderSide(color: AppTheme.border(isDark)),
+              borderSide: BorderSide(color: AppTheme.border(isDark)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide:
-                  const BorderSide(color: AppTheme.primaryColor, width: 2),
+              borderSide: const BorderSide(
+                color: AppTheme.primaryColor,
+                width: 2,
+              ),
             ),
           ),
         ),
@@ -652,7 +726,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           child: Container(
             decoration: BoxDecoration(
               color: AppTheme.surface(isDark),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
             ),
             padding: const EdgeInsets.all(24),
             child: Column(
@@ -709,8 +785,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 const SizedBox(height: 8),
                 TextField(
                   controller: priceController,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   style: GoogleFonts.plusJakartaSans(
                     color: AppTheme.textPrimary(isDark),
                     fontSize: 18,
@@ -727,15 +804,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     fillColor: AppTheme.bg(isDark),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: AppTheme.border(isDark),
-                      ),
+                      borderSide: BorderSide(color: AppTheme.border(isDark)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: AppTheme.border(isDark),
-                      ),
+                      borderSide: BorderSide(color: AppTheme.border(isDark)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -772,15 +845,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     fillColor: AppTheme.bg(isDark),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: AppTheme.border(isDark),
-                      ),
+                      borderSide: BorderSide(color: AppTheme.border(isDark)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: AppTheme.border(isDark),
-                      ),
+                      borderSide: BorderSide(color: AppTheme.border(isDark)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -817,15 +886,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     fillColor: AppTheme.bg(isDark),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: AppTheme.border(isDark),
-                      ),
+                      borderSide: BorderSide(color: AppTheme.border(isDark)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: AppTheme.border(isDark),
-                      ),
+                      borderSide: BorderSide(color: AppTheme.border(isDark)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -842,14 +907,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   height: 52,
                   child: ElevatedButton(
                     onPressed: () {
-                      final price =
-                          double.tryParse(priceController.text) ?? 0;
+                      final price = double.tryParse(priceController.text) ?? 0;
                       final minPrice = request.precioOferta ?? 0;
                       if (price < minPrice) {
                         ScaffoldMessenger.of(ctx).showSnackBar(
                           SnackBar(
                             content: Text(
-                                'La oferta mínima es \$${minPrice.toStringAsFixed(2)}'),
+                              'La oferta mínima es \$${minPrice.toStringAsFixed(2)}',
+                            ),
                           ),
                         );
                         return;
@@ -978,8 +1043,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (offers != null && (offers as List).isNotEmpty) {
         final solicitudId = offers.first['solicitud_id'] as int?;
         if (solicitudId != null) {
-          final solicitud =
-              await _driverService.fetchSolicitudById(solicitudId);
+          final solicitud = await _driverService.fetchSolicitudById(
+            solicitudId,
+          );
           if (solicitud != null) {
             tripData['solicitud_id'] = solicitudId;
             tripData['direccion_origen'] =
@@ -1012,9 +1078,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     if (mounted) {
       Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ActiveRideScreen(tripData: tripData),
-        ),
+        MaterialPageRoute(builder: (_) => ActiveRideScreen(tripData: tripData)),
       );
     }
   }
@@ -1027,25 +1091,29 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         // Already on home
         break;
       case 1:
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const IncomingRequestsScreen(),
-          ),
-        ).then((_) { if (mounted && _isOnline) _loadNearbyRequests(); });
+        Navigator.of(context)
+            .push(
+              MaterialPageRoute(builder: (_) => const IncomingRequestsScreen()),
+            )
+            .then((_) {
+              if (mounted && _isOnline) _loadNearbyRequests();
+            });
         return;
       case 2:
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const DriverWalletScreen(),
-          ),
-        ).then((_) { if (mounted && _isOnline) _loadNearbyRequests(); });
+        Navigator.of(context)
+            .push(MaterialPageRoute(builder: (_) => const DriverWalletScreen()))
+            .then((_) {
+              if (mounted && _isOnline) _loadNearbyRequests();
+            });
         return;
       case 3:
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const DriverProfileScreen(),
-          ),
-        ).then((_) { if (mounted && _isOnline) _loadNearbyRequests(); });
+        Navigator.of(context)
+            .push(
+              MaterialPageRoute(builder: (_) => const DriverProfileScreen()),
+            )
+            .then((_) {
+              if (mounted && _isOnline) _loadNearbyRequests();
+            });
         return;
     }
 
@@ -1056,6 +1124,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   @override
   void dispose() {
+    MbTilesService.instance.removeListener(_onOfflineMapChanged);
     disposeCompass();
     WidgetsBinding.instance.removeObserver(this);
     _stopLocationTracking();
@@ -1078,12 +1147,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final driverProfile = authProvider.driverProfile;
     final driverName = driverProfile?['name'] as String? ?? 'Conductor';
     final vehiculo = driverProfile?['vehiculos'] as Map<String, dynamic>?;
-    final vehicleType =
-        vehiculo?['vehicle_type'] as Map<String, dynamic>?;
+    final vehicleType = vehiculo?['vehicle_type'] as Map<String, dynamic>?;
     final location = locationProvider.locationOrDefault;
 
-    final tileUrl =
-        isDark ? AppTheme.cartoDarkTileUrl : AppTheme.osmTileUrl;
+    final tileUrl = isDark ? AppTheme.cartoDarkTileUrl : AppTheme.osmTileUrl;
 
     return Scaffold(
       backgroundColor: AppTheme.bg(isDark),
@@ -1097,10 +1164,29 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               initialZoom: AppConstants.defaultZoom,
             ),
             children: [
-              TileLayer(
-                urlTemplate: tileUrl,
-                userAgentPackageName: 'com.inventtia.muevete',
-              ),
+              if (!kIsWeb &&
+                  MbTilesService.instance.useOffline &&
+                  MbTilesService.instance.provider != null)
+                VectorTileLayer(
+                  theme: MbTilesService.instance.getTheme(isDark: isDark),
+                  tileProviders: TileProviders({
+                    'openmaptiles': MbTilesService.instance.provider!,
+                  }),
+                  maximumZoom: 18,
+                  fileCacheMaximumSizeInBytes: 0,
+                )
+              else
+                fm.TileLayer(
+                  urlTemplate: tileUrl,
+                  userAgentPackageName: 'com.inventtia.muevete',
+                  tileProvider: kIsWeb
+                      ? null
+                      : fmtc.FMTCTileProvider(
+                          stores: const {
+                            'mapTiles': fmtc.BrowseStoreStrategy.readUpdate,
+                          },
+                        ),
+                ),
               MarkerLayer(
                 markers: [
                   // Driver marker: navigation arrow when auto-rotate, car icon otherwise
@@ -1113,7 +1199,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       decoration: BoxDecoration(
                         color: AppTheme.primaryColor,
                         shape: BoxShape.circle,
-                        border: Border.all(color: AppTheme.markerBorder(isDark), width: 3),
+                        border: Border.all(
+                          color: AppTheme.markerBorder(isDark),
+                          width: 3,
+                        ),
                         boxShadow: [
                           BoxShadow(
                             color: AppTheme.primaryColor.withValues(alpha: 0.4),
@@ -1136,8 +1225,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     final latDest = (row['lat_destino'] as num?)?.toDouble();
                     final lonDest = (row['lon_destino'] as num?)?.toDouble();
                     if (lat == null || lon == null) return <Marker?>[];
-                    final name = row['direccion_origen'] as String? ?? 'Cliente';
-                    final destName = row['direccion_destino'] as String? ?? 'Destino';
+                    final name =
+                        row['direccion_origen'] as String? ?? 'Cliente';
+                    final destName =
+                        row['direccion_destino'] as String? ?? 'Destino';
                     final request = TransportRequestModel.fromJson(row);
                     return [
                       // Origin marker (green)
@@ -1153,10 +1244,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                               decoration: BoxDecoration(
                                 color: AppTheme.success,
                                 shape: BoxShape.circle,
-                                border: Border.all(color: AppTheme.markerBorder(isDark), width: 2.5),
+                                border: Border.all(
+                                  color: AppTheme.markerBorder(isDark),
+                                  width: 2.5,
+                                ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppTheme.success.withValues(alpha: 0.45),
+                                    color: AppTheme.success.withValues(
+                                      alpha: 0.45,
+                                    ),
                                     blurRadius: 10,
                                     spreadRadius: 2,
                                   ),
@@ -1188,10 +1284,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                               decoration: BoxDecoration(
                                 color: AppTheme.error,
                                 shape: BoxShape.circle,
-                                border: Border.all(color: AppTheme.markerBorder(isDark), width: 2),
+                                border: Border.all(
+                                  color: AppTheme.markerBorder(isDark),
+                                  width: 2,
+                                ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppTheme.error.withValues(alpha: 0.4),
+                                    color: AppTheme.error.withValues(
+                                      alpha: 0.4,
+                                    ),
                                     blurRadius: 8,
                                     spreadRadius: 1,
                                   ),
@@ -1217,14 +1318,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: AppTheme.surface(isDark).withValues(alpha: 0.95),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: AppTheme.border(isDark),
-                  ),
+                  border: Border.all(color: AppTheme.border(isDark)),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.3),
@@ -1297,21 +1398,28 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                   onTap: _showRegisterVehicleSheet,
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 3),
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: AppTheme.primaryColor
-                                          .withValues(alpha: 0.15),
+                                      color: AppTheme.primaryColor.withValues(
+                                        alpha: 0.15,
+                                      ),
                                       borderRadius: BorderRadius.circular(20),
                                       border: Border.all(
-                                          color: AppTheme.primaryColor
-                                              .withValues(alpha: 0.4)),
+                                        color: AppTheme.primaryColor.withValues(
+                                          alpha: 0.4,
+                                        ),
+                                      ),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(Icons.directions_car,
-                                            color: AppTheme.primaryColor,
-                                            size: 12),
+                                        const Icon(
+                                          Icons.directions_car,
+                                          color: AppTheme.primaryColor,
+                                          size: 12,
+                                        ),
                                         const SizedBox(width: 4),
                                         Text(
                                           '${vehiculo['marca'] ?? ''} ${vehiculo['modelo'] ?? ''} · ${vehiculo['chapa'] ?? ''}'
@@ -1328,7 +1436,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                             '(${vehicleType['tipo'] ?? ''})',
                                             style: GoogleFonts.plusJakartaSans(
                                               fontSize: 10,
-                                              color: AppTheme.textTertiary(isDark),
+                                              color: AppTheme.textTertiary(
+                                                isDark,
+                                              ),
                                             ),
                                           ),
                                         ],
@@ -1340,20 +1450,28 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                   onTap: _showRegisterVehicleSheet,
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 3),
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: AppTheme.error
-                                          .withValues(alpha: 0.15),
+                                      color: AppTheme.error.withValues(
+                                        alpha: 0.15,
+                                      ),
                                       borderRadius: BorderRadius.circular(20),
                                       border: Border.all(
-                                          color: AppTheme.error
-                                              .withValues(alpha: 0.5)),
+                                        color: AppTheme.error.withValues(
+                                          alpha: 0.5,
+                                        ),
+                                      ),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(Icons.warning_amber_rounded,
-                                            color: AppTheme.error, size: 12),
+                                        const Icon(
+                                          Icons.warning_amber_rounded,
+                                          color: AppTheme.error,
+                                          size: 12,
+                                        ),
                                         const SizedBox(width: 4),
                                         Text(
                                           'Sin vehículo · Registrar',
@@ -1384,8 +1502,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                             value: _isOnline,
                             onChanged: (_) => _toggleOnlineStatus(),
                             activeColor: AppTheme.success,
-                            activeTrackColor:
-                                AppTheme.success.withValues(alpha: 0.3),
+                            activeTrackColor: AppTheme.success.withValues(
+                              alpha: 0.3,
+                            ),
                             inactiveThumbColor: vehiculo == null
                                 ? AppTheme.error
                                 : Colors.grey,
@@ -1531,7 +1650,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         ),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: AppTheme.success.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(20),
@@ -1554,8 +1675,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        const Icon(Icons.circle,
-                            color: AppTheme.success, size: 8),
+                        const Icon(
+                          Icons.circle,
+                          color: AppTheme.success,
+                          size: 8,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -1573,8 +1697,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        const Icon(Icons.circle,
-                            color: AppTheme.error, size: 8),
+                        const Icon(
+                          Icons.circle,
+                          color: AppTheme.error,
+                          size: 8,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -1679,9 +1806,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
-  Widget _buildRequestCard(TransportRequestModel request, int index, {bool isDark = true}) {
+  Widget _buildRequestCard(
+    TransportRequestModel request,
+    int index, {
+    bool isDark = true,
+  }) {
     final vehicleType = request.tipoVehiculo ?? 'auto';
-    final vehicleLabel = vehicleType[0].toUpperCase() + vehicleType.substring(1);
+    final vehicleLabel =
+        vehicleType[0].toUpperCase() + vehicleType.substring(1);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       padding: const EdgeInsets.all(16),
@@ -1726,8 +1858,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ),
               const Spacer(),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppTheme.success.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
@@ -1830,9 +1964,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   onPressed: () => _dismissRequest(index),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppTheme.textSecondary(isDark),
-                    side: BorderSide(
-                      color: AppTheme.border(isDark),
-                    ),
+                    side: BorderSide(color: AppTheme.border(isDark)),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
