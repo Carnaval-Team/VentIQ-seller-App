@@ -33,11 +33,14 @@ class FleetMapWidget extends StatelessWidget {
       options: const MapOptions(
         initialCenter: LatLng(22.40694, -79.96472), // Cuba por defecto
         initialZoom: 13,
+        maxZoom: 18,
       ),
       children: [
         TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
           userAgentPackageName: 'com.ventiq.superadmin',
+          maxZoom: 18,
+          maxNativeZoom: 18,
         ),
         // 1) Ruta del chofer seleccionado (polyline)
         if (rutaSeleccionada != null && rutaSeleccionada!.length >= 2)

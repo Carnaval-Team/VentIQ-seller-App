@@ -495,9 +495,9 @@ class _MueveteMapScreenState extends State<MueveteMapScreen> {
 
     return FlutterMap(
       mapController: _mapCtrl,
-      options: const MapOptions(initialCenter: LatLng(22.4069, -79.9657), initialZoom: 7),
+      options: const MapOptions(initialCenter: LatLng(22.4069, -79.9657), initialZoom: 7, maxZoom: 18),
       children: [
-        TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.inventtia.superadmin'),
+        TileLayer(urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', userAgentPackageName: 'com.inventtia.superadmin', maxZoom: 18, maxNativeZoom: 18),
         if (polylines.isNotEmpty) PolylineLayer(polylines: polylines),
         if (tripMarkers.isNotEmpty) MarkerLayer(markers: tripMarkers),
         MarkerLayer(markers: driverMarkers),

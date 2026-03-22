@@ -9,6 +9,7 @@ import '../services/subscription_service.dart';
 import '../utils/navigation_guard.dart';
 import '../services/changelog_service.dart';
 import '../services/update_service.dart';
+import '../services/carnaval_service.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/update_dialog.dart';
 
@@ -97,6 +98,17 @@ class _AdminDrawerState extends State<AdminDrawer> {
           _appVersion = 'v1.0.0 (100)'; // Fallback
         });
       }
+    }
+  }
+
+  /// Verificar si la tienda tiene admin_carnaval habilitado
+  Future<bool> _isCarnavalStore() async {
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      if (storeId == null) return false;
+      return await CarnavalService.isStoreSyncedWithCarnaval(storeId);
+    } catch (e) {
+      return false;
     }
   }
 
@@ -454,6 +466,31 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
                 const Divider(height: 1),
+
+                // Órdenes Carnaval (solo si admin_carnaval = true)
+                FutureBuilder<bool>(
+                  future: _isCarnavalStore(),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.receipt_long,
+                            title: 'Órdenes Carnaval',
+                            subtitle: 'Gestión de órdenes',
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.pushNamed(context, '/carnaval-orders');
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
 
                 // Trabajadores (solo Gerente y Supervisor)
                 FutureBuilder<bool>(

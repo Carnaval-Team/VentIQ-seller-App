@@ -653,7 +653,7 @@ class CarnavalService {
               .select('cantidad_final')
               .eq('id_producto', localProductId)
               .eq('id_ubicacion', idUbicacion)
-              .order('created_at', ascending: false)
+              .order('id', ascending: false).order('created_at', ascending: false)
               .limit(1)
               .maybeSingle();
 
@@ -987,7 +987,7 @@ class CarnavalService {
               .select('cantidad_final')
               .eq('id_producto', localProductId)
               .eq('id_ubicacion', newLocationId)
-              .order('created_at', ascending: false)
+              .order('id', ascending: false).order('created_at', ascending: false)
               .limit(1)
               .maybeSingle();
 
@@ -1033,6 +1033,293 @@ class CarnavalService {
     } catch (e) {
       print('❌ Error al actualizar ubicación del producto: $e');
       return false;
+    }
+  }
+
+  /// Obtiene los porcentajes globales de comisión
+  static Future<Map<String, double>> getGlobalPercentages() async {
+    try {
+      final response = await _supabase
+          .from('precio_global_productos_carnaval')
+          .select('porciento_efectivo, porciento_transferencia')
+          .limit(1)
+          .maybeSingle();
+
+      if (response == null) {
+        return {'efectivo': 5.0, 'transferencia': 15.0};
+      }
+      return {
+        'efectivo': (response['porciento_efectivo'] as num?)?.toDouble() ?? 5.0,
+        'transferencia':
+            (response['porciento_transferencia'] as num?)?.toDouble() ?? 15.0,
+      };
+    } catch (e) {
+      print('❌ Error obteniendo porcentajes globales: $e');
+      return {'efectivo': 5.0, 'transferencia': 15.0};
+    }
+  }
+
+  // =============================================
+  // ÓRDENES DE CARNAVAL
+  // =============================================
+
+  /// Obtiene órdenes paginadas del carnaval
+  /// Admin (id in [3,29,38]): órdenes donde proveedor_id = 3
+  /// No-admin: órdenes donde proveedores contiene su ID
+  static Future<List<Map<String, dynamic>>> getCarnavalOrders(
+    int carnavalStoreId,
+    bool isAdmin, {
+    int page = 0,
+    int pageSize = 20,
+    String? statusFilter,
+    int? orderIdFilter,
+  }) async {
+    try {
+      final from = page * pageSize;
+      final to = from + pageSize - 1;
+
+      var query = _supabase
+          .schema('carnavalapp')
+          .from('Orders')
+          .select('*');
+
+      if (!isAdmin) {
+        query = query.contains('proveedores', ['$carnavalStoreId']);
+      }
+
+      if (statusFilter != null) {
+        query = query.eq('status', statusFilter);
+      }
+
+      if (orderIdFilter != null) {
+        query = query.eq('id', orderIdFilter);
+      }
+
+      final response = await query
+          .order('id', ascending: false)
+          .order('created_at', ascending: false)
+          .range(from, to);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error al obtener órdenes de carnaval: $e');
+      return [];
+    }
+  }
+
+  /// Obtiene todas las órdenes completadas en un rango de fecha para dashboard
+  static Future<List<Map<String, dynamic>>> getCompletedOrdersForDashboard({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    try {
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('Orders')
+          .select('*')
+          .eq('status', 'Completado')
+          .gte('created_at', from.toIso8601String().split('T')[0])
+          .lte('created_at', to.toIso8601String().split('T')[0])
+          .order('created_at', ascending: true);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error al obtener órdenes completadas: $e');
+      return [];
+    }
+  }
+
+  /// Obtiene conteo de órdenes por status
+  static Future<Map<String, int>> getOrderStatusCounts() async {
+    try {
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('Orders')
+          .select('status');
+      final counts = <String, int>{};
+      for (final r in response) {
+        final s = r['status'] as String? ?? 'Desconocido';
+        counts[s] = (counts[s] ?? 0) + 1;
+      }
+      return counts;
+    } catch (e) {
+      print('❌ Error al obtener conteos: $e');
+      return {};
+    }
+  }
+
+  /// Obtiene nombres de proveedores por IDs
+  static Future<Map<int, String>> getProveedoresNames(List<int> ids) async {
+    try {
+      if (ids.isEmpty) return {};
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('proveedores')
+          .select('id, name')
+          .inFilter('id', ids);
+      final map = <int, String>{};
+      for (final r in response) {
+        map[r['id'] as int] = r['name'] as String? ?? 'Proveedor #${r['id']}';
+      }
+      return map;
+    } catch (e) {
+      print('❌ Error al obtener nombres de proveedores: $e');
+      return {};
+    }
+  }
+
+  /// Obtiene detalles de una orden con join a Productos
+  static Future<List<Map<String, dynamic>>> getOrderDetails(
+    int orderId, {
+    int? proveedorFilter,
+  }) async {
+    try {
+      var query = _supabase
+          .schema('carnavalapp')
+          .from('OrderDetails')
+          .select('*, Productos(id, name, image, price, proveedor)')
+          .eq('order_id', orderId);
+
+      if (proveedorFilter != null) {
+        query = query.eq('Productos.proveedor', proveedorFilter);
+      }
+
+      final response = await query;
+      // Filter out items where Productos is null (when proveedorFilter filtered them)
+      if (proveedorFilter != null) {
+        return List<Map<String, dynamic>>.from(
+          response.where((item) => item['Productos'] != null),
+        );
+      }
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error al obtener detalles de orden: $e');
+      return [];
+    }
+  }
+
+  /// Actualiza el status de una orden
+  static Future<bool> updateOrderStatus(int orderId, String newStatus) async {
+    try {
+      await _supabase
+          .schema('carnavalapp')
+          .from('Orders')
+          .update({'status': newStatus})
+          .eq('id', orderId);
+      return true;
+    } catch (e) {
+      print('❌ Error al actualizar status de orden: $e');
+      return false;
+    }
+  }
+
+  /// Asigna un repartidor a una orden y cambia status a 'Asignado'
+  static Future<bool> assignDelivery(int orderId, int repartidorId) async {
+    try {
+      await _supabase
+          .schema('carnavalapp')
+          .from('Orders')
+          .update({
+            'status': 'Asignado',
+            'repartidor_id': repartidorId,
+          })
+          .eq('id', orderId);
+      return true;
+    } catch (e) {
+      print('❌ Error al asignar repartidor: $e');
+      return false;
+    }
+  }
+
+  /// Lista repartidores activos
+  static Future<List<Map<String, dynamic>>> getRepartidores() async {
+    try {
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('repartidores')
+          .select('*')
+          .eq('status', true);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error al obtener repartidores: $e');
+      return [];
+    }
+  }
+
+  /// Actualiza la cantidad de un detalle de orden
+  static Future<bool> updateOrderDetailQuantity(
+    int detailId,
+    int newQuantity,
+  ) async {
+    try {
+      await _supabase
+          .schema('carnavalapp')
+          .from('OrderDetails')
+          .update({'quantity': newQuantity})
+          .eq('id', detailId);
+      return true;
+    } catch (e) {
+      print('❌ Error al actualizar cantidad: $e');
+      return false;
+    }
+  }
+
+  /// Elimina un detalle de orden
+  static Future<bool> deleteOrderDetail(int detailId) async {
+    try {
+      await _supabase
+          .schema('carnavalapp')
+          .from('OrderDetails')
+          .delete()
+          .eq('id', detailId);
+      return true;
+    } catch (e) {
+      print('❌ Error al eliminar detalle: $e');
+      return false;
+    }
+  }
+
+  /// Recalcula el total de una orden sumando price*quantity de sus detalles
+  static Future<bool> recalculateOrderTotal(int orderId) async {
+    try {
+      final details = await _supabase
+          .schema('carnavalapp')
+          .from('OrderDetails')
+          .select('price, quantity')
+          .eq('order_id', orderId);
+
+      double total = 0;
+      for (final d in details) {
+        final price = (d['price'] as num?)?.toDouble() ?? 0;
+        final qty = (d['quantity'] as num?)?.toInt() ?? 0;
+        total += price * qty;
+      }
+
+      await _supabase
+          .schema('carnavalapp')
+          .from('Orders')
+          .update({'total': total})
+          .eq('id', orderId);
+
+      return true;
+    } catch (e) {
+      print('❌ Error al recalcular total: $e');
+      return false;
+    }
+  }
+
+  /// Obtiene una orden por ID
+  static Future<Map<String, dynamic>?> getOrderById(int orderId) async {
+    try {
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('Orders')
+          .select('*')
+          .eq('id', orderId)
+          .maybeSingle();
+      return response;
+    } catch (e) {
+      print('❌ Error al obtener orden: $e');
+      return null;
     }
   }
 }

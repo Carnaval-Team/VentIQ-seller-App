@@ -52,6 +52,7 @@ import 'screens/wifi_printers_screen.dart';
 import 'screens/consignacion_screen.dart';
 import 'screens/interacciones_clientes_screen.dart';
 import 'screens/precios_productos_screen.dart';
+import 'screens/carnaval_orders_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -209,6 +210,7 @@ class MyApp extends StatelessWidget {
         '/consignacion': (context) => const ConsignacionScreen(),
         '/wifi-printers': (context) => const WiFiPrintersScreen(),
         '/interacciones-clientes': (context) => const InteraccionesClientesScreen(),
+        '/carnaval-orders': (context) => const CarnavalOrdersScreen(),
       },
     );
   }
