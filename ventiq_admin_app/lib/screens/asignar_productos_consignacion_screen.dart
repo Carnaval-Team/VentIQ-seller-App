@@ -47,6 +47,7 @@ class _AsignarProductosConsignacionScreenState
   Map<String, List<Map<String, dynamic>>> _zonasInventario =
       {}; // almacen_id_zona_id -> productos
   Map<String, bool> _loadingZonas = {}; // almacen_id_zona_id -> cargando
+  Map<String, TextEditingController> _zonaSearchControllers = {}; // key -> buscador
   bool _isLoading = true;
 
   @override
@@ -65,6 +66,9 @@ class _AsignarProductosConsignacionScreenState
     }
     for (final t in _cantTimers.values) {
       t.cancel();
+    }
+    for (final c in _zonaSearchControllers.values) {
+      c.dispose();
     }
     super.dispose();
   }
@@ -1150,12 +1154,64 @@ class _AsignarProductosConsignacionScreenState
           ),
           if (isExp) ...[
             const SizedBox(height: 8),
-            if (prods.isEmpty && !loading)
-              const Text(
-                'Sin productos en esta zona',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+            if (prods.isNotEmpty) ...[
+              TextField(
+                controller: _zonaSearchControllers.putIfAbsent(
+                  key,
+                  () => TextEditingController(),
+                ),
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'Buscar producto...',
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  suffixIcon: (_zonaSearchControllers[key]?.text.isNotEmpty ?? false)
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 16),
+                          onPressed: () {
+                            _zonaSearchControllers[key]!.clear();
+                            setState(() {});
+                          },
+                        )
+                      : null,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
               ),
-            ...prods.map((p) => _buildProductoTile(p)).toList(),
+              const SizedBox(height: 8),
+            ],
+            Builder(
+              builder: (context) {
+                final query = (_zonaSearchControllers[key]?.text ?? '').toLowerCase().trim();
+                final filtered = query.isEmpty
+                    ? prods
+                    : prods.where((p) {
+                        final nombre = (p['denominacion_producto'] as String? ?? '').toLowerCase();
+                        final sku = (p['sku_producto'] as String? ?? '').toLowerCase();
+                        return nombre.contains(query) || sku.contains(query);
+                      }).toList();
+                if (prods.isEmpty && !loading) {
+                  return const Text(
+                    'Sin productos en esta zona',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  );
+                }
+                if (filtered.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'No se encontraron productos con ese nombre',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  );
+                }
+                return Column(
+                  children: filtered.map((p) => _buildProductoTile(p)).toList(),
+                );
+              },
+            ),
           ],
           const Divider(),
         ],
@@ -1226,14 +1282,14 @@ class _AsignarProductosConsignacionScreenState
           ),
           if (isSelected)
             SizedBox(
-              width: 70,
+              width: 110,
               child: TextField(
                 controller: _controllerFor(idInv),
                 focusNode: _focusNodeFor(idInv, producto),
                 decoration: InputDecoration(
                   isDense: true,
-                  labelText: 'Cant.',
-                  contentPadding: const EdgeInsets.all(8),
+                  labelText: 'Cantidad',
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                   border: const OutlineInputBorder(),
                   suffixIcon:
                       tieneMovimiento

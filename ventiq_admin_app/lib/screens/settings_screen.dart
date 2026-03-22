@@ -123,8 +123,8 @@ class _SettingsScreenState extends State<SettingsScreen>
           unselectedLabelColor: Colors.white70,
           isScrollable: true,
           tabs: const [
-            Tab(text: 'Global', icon: Icon(Icons.settings_applications)),
             Tab(text: 'Tienda', icon: Icon(Icons.store)),
+            Tab(text: 'Global', icon: Icon(Icons.settings_applications)),
             Tab(text: 'Categorías', icon: Icon(Icons.category)),
             Tab(text: 'Variantes', icon: Icon(Icons.format_shapes)),
             Tab(text: 'Presentaciones', icon: Icon(Icons.format_paint)),
