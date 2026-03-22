@@ -740,7 +740,7 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
                             ),
                           ),
                           title: Text(
-                            product['name'],
+                            '${product['name']} (ID: ${product['id']})',
                             style: TextStyle(
                               color: isActive ? null : Colors.grey,
                             ),

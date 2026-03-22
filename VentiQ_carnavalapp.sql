@@ -70,7 +70,7 @@ CREATE TABLE carnavalapp.Orders (
   metodo_entrega text,
   direccion text,
   programada text,
-  fecha_entrega date,
+  fecha_entrega date DEFAULT (now())::date,
   costo_envio numeric,
   metodo_pago text,
   descrpcion text,
@@ -93,7 +93,8 @@ CREATE TABLE carnavalapp.Orders (
   telefono_destinatario text,
   peso text,
   es_alimento boolean NOT NULL DEFAULT false,
-  CONSTRAINT Orders_pkey PRIMARY KEY (id)
+  CONSTRAINT Orders_pkey PRIMARY KEY (id),
+  CONSTRAINT Orders_user_id_fkey FOREIGN KEY (user_id) REFERENCES carnavalapp.Usuarios(id)
 );
 CREATE TABLE carnavalapp.Productos (
   id bigint NOT NULL DEFAULT nextval('carnavalapp."Productos_id_seq"'::regclass),
@@ -101,7 +102,7 @@ CREATE TABLE carnavalapp.Productos (
   name text NOT NULL DEFAULT 'Nombre'::text,
   description character varying DEFAULT 'Descripcion'::character varying,
   price real NOT NULL DEFAULT '0'::real,
-  stock bigint NOT NULL DEFAULT '0'::bigint,
+  stock bigint NOT NULL DEFAULT '0'::bigint CHECK (stock >= 0),
   category_id smallint NOT NULL,
   image text DEFAULT 'https://kvgbekelvmkbxydqvtuy.supabase.co/storage/v1/object/public/productos/imagenes/imagen_articulo_por_defecto.jpg'::text,
   precio_descuento numeric NOT NULL DEFAULT '0'::numeric,
@@ -116,6 +117,7 @@ CREATE TABLE carnavalapp.Productos (
   es_alimento boolean NOT NULL DEFAULT false,
   alimento boolean NOT NULL DEFAULT false,
   sub_categoria bigint,
+  updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT Productos_pkey PRIMARY KEY (id),
   CONSTRAINT productos_category_id_fkey FOREIGN KEY (category_id) REFERENCES carnavalapp.Categorias(id),
   CONSTRAINT productos_proveedor_fkey FOREIGN KEY (proveedor) REFERENCES carnavalapp.proveedores(id)
@@ -148,6 +150,7 @@ CREATE TABLE carnavalapp.Usuarios (
   tienda bigint,
   email_confirmacion boolean DEFAULT false,
   id bigint NOT NULL DEFAULT nextval('carnavalapp."Usuarios_id_seq"'::regclass),
+  CONSTRAINT Usuarios_pkey PRIMARY KEY (id),
   CONSTRAINT usuarios_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id),
   CONSTRAINT usuarios_tienda_fkey FOREIGN KEY (tienda) REFERENCES carnavalapp.proveedores(id)
 );
@@ -191,6 +194,17 @@ CREATE TABLE carnavalapp.extras_productos (
   peso numeric,
   CONSTRAINT extras_productos_pkey PRIMARY KEY (id)
 );
+CREATE TABLE carnavalapp.horarios_tienda (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  tienda_id bigint NOT NULL,
+  dia_semana smallint NOT NULL,
+  hora_apertura time without time zone,
+  hora_cierre time without time zone,
+  activo boolean DEFAULT true,
+  CONSTRAINT horarios_tienda_pkey PRIMARY KEY (id),
+  CONSTRAINT horarios_tienda_tienda_id_fkey FOREIGN KEY (tienda_id) REFERENCES carnavalapp.proveedores(id)
+);
 CREATE TABLE carnavalapp.inventarioLogs (
   id bigint NOT NULL DEFAULT nextval('carnavalapp."inventarioLogs_id_seq"'::regclass),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
@@ -228,6 +242,9 @@ CREATE TABLE carnavalapp.notificaciones_usuario (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   titulo text,
   descripcion text,
+  id_usuario text,
+  leida boolean DEFAULT false,
+  tipo text,
   CONSTRAINT notificaciones_usuario_pkey PRIMARY KEY (id)
 );
 CREATE TABLE carnavalapp.payments (
@@ -237,6 +254,28 @@ CREATE TABLE carnavalapp.payments (
   currency text,
   description text,
   CONSTRAINT payments_pkey PRIMARY KEY (id)
+);
+CREATE TABLE carnavalapp.posicion_repartidor (
+  id bigint NOT NULL DEFAULT nextval('carnavalapp.posicion_repartidor_id_seq'::regclass),
+  uuid text NOT NULL UNIQUE,
+  repartidor_id integer,
+  nombre text,
+  latitud double precision NOT NULL,
+  longitud double precision NOT NULL,
+  ultima_actualizacion timestamp with time zone DEFAULT now(),
+  CONSTRAINT posicion_repartidor_pkey PRIMARY KEY (id),
+  CONSTRAINT posicion_repartidor_repartidor_id_fkey FOREIGN KEY (repartidor_id) REFERENCES carnavalapp.repartidores(id)
+);
+CREATE TABLE carnavalapp.posicion_repartidor_history (
+  id bigint NOT NULL DEFAULT nextval('carnavalapp.posicion_repartidor_history_id_seq'::regclass),
+  uuid text NOT NULL,
+  repartidor_id integer,
+  nombre text,
+  latitud double precision NOT NULL,
+  longitud double precision NOT NULL,
+  registrado_en timestamp with time zone DEFAULT now(),
+  CONSTRAINT posicion_repartidor_history_pkey PRIMARY KEY (id),
+  CONSTRAINT posicion_repartidor_history_repartidor_id_fkey FOREIGN KEY (repartidor_id) REFERENCES carnavalapp.repartidores(id)
 );
 CREATE TABLE carnavalapp.preOrden (
   id bigint NOT NULL DEFAULT nextval('carnavalapp."preOrden_id_seq"'::regclass),
@@ -250,7 +289,7 @@ CREATE TABLE carnavalapp.preOrden (
   CONSTRAINT preorden_producto_fkey FOREIGN KEY (producto) REFERENCES carnavalapp.Productos(id)
 );
 CREATE TABLE carnavalapp.proveedores (
-  id bigint NOT NULL UNIQUE,
+  id bigint NOT NULL DEFAULT nextval('carnavalapp.proveedor_serial'::regclass) UNIQUE,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   name text,
   descripcion text,

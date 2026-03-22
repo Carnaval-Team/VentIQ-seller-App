@@ -363,11 +363,89 @@ class CarnavalService {
     }
   }
 
-  /// Desincroniza la tienda de Carnaval
+  /// Desincroniza la tienda de Carnaval, eliminando productos, relaciones y proveedor.
+  /// Lanza una excepción con mensaje descriptivo si no se puede desvincular.
   static Future<void> unsyncStoreFromCarnaval(int storeId) async {
     try {
       print('🔧 Desincronizando tienda ID: $storeId de Carnaval');
 
+      // 1. Obtener el id_tienda_carnaval (proveedor en carnavalapp)
+      final storeData = await _supabase
+          .from('app_dat_tienda')
+          .select('id_tienda_carnaval')
+          .eq('id', storeId)
+          .single();
+
+      final carnavalStoreId = storeData['id_tienda_carnaval'];
+
+      if (carnavalStoreId != null) {
+        // 2. Obtener relaciones de productos de esta tienda
+        final relations = await _supabase
+            .from('relation_products_carnaval')
+            .select('id, id_producto, id_producto_carnaval')
+            .inFilter(
+              'id_producto',
+              (await _supabase
+                      .from('app_dat_producto')
+                      .select('id')
+                      .eq('id_tienda', storeId))
+                  .map((p) => p['id'])
+                  .toList(),
+            );
+
+        final relationList = List<Map<String, dynamic>>.from(relations);
+
+        if (relationList.isNotEmpty) {
+          final carnavalProductIds =
+              relationList.map((r) => r['id_producto_carnaval']).toList();
+          final relationIds = relationList.map((r) => r['id']).toList();
+          final localProductIds =
+              relationList.map((r) => r['id_producto']).toList();
+
+          // 3. Eliminar productos de carnavalapp.Productos
+          await _supabase
+              .schema('carnavalapp')
+              .from('Productos')
+              .delete()
+              .inFilter('id', carnavalProductIds);
+
+          print('✅ Eliminados ${carnavalProductIds.length} productos de Carnaval');
+
+          // 4. Eliminar relaciones
+          await _supabase
+              .from('relation_products_carnaval')
+              .delete()
+              .inFilter('id', relationIds);
+
+          print('✅ Eliminadas ${relationIds.length} relaciones');
+
+          // 5. Limpiar id_vendedor_app en productos locales
+          await _supabase
+              .from('app_dat_producto')
+              .update({'id_vendedor_app': null})
+              .inFilter('id', localProductIds);
+
+          print('✅ Limpiado id_vendedor_app de productos locales');
+        }
+
+        // 6. Eliminar proveedor de carnavalapp.Proveedores
+        try {
+          await _supabase
+              .schema('carnavalapp')
+              .from('Proveedores')
+              .delete()
+              .eq('id', carnavalStoreId);
+
+          print('✅ Proveedor $carnavalStoreId eliminado de Carnaval');
+        } catch (e) {
+          print('❌ No se pudo eliminar el proveedor: $e');
+          throw Exception(
+            'No se puede desvincular la tienda porque aún tiene productos, órdenes u otros datos asociados en Carnaval.',
+          );
+        }
+      }
+
+      // 7. Actualizar la tienda
       await _supabase
           .from('app_dat_tienda')
           .update({'admin_carnaval': false, 'id_tienda_carnaval': null})
@@ -479,26 +557,21 @@ class CarnavalService {
             localProductsResponse,
           ).where((p) => p['imagen'] != null).toList(); // Filtrar nulos en Dart
 
-      // 2. Obtener productos ya sincronizados en Carnaval (por nombre)
-      // Nota: Idealmente usaríamos un ID externo, pero por ahora usaremos el nombre
-      // para evitar duplicados obvios.
-      final carnavalProductsResponse = await _supabase
-          .schema('carnavalapp')
-          .from('Productos')
-          .select('name')
-          .eq('proveedor', carnavalStoreId);
+      // 2. Obtener IDs de productos ya sincronizados via relation_products_carnaval
+      final localProductIds = localProducts.map((p) => p['id']).toList();
+      final relationResponse = await _supabase
+          .from('relation_products_carnaval')
+          .select('id_producto')
+          .inFilter('id_producto', localProductIds);
 
-      final syncedNames =
-          List<Map<String, dynamic>>.from(
-            carnavalProductsResponse,
-          ).map((p) => p['name'].toString().toLowerCase()).toSet();
+      final syncedProductIds =
+          List<Map<String, dynamic>>.from(relationResponse)
+              .map((r) => r['id_producto'])
+              .toSet();
 
-      // 3. Filtrar
+      // 3. Filtrar productos que ya tienen relación
       final unsyncedProducts =
-          localProducts.where((p) {
-            final name = p['denominacion'].toString().toLowerCase();
-            return !syncedNames.contains(name);
-          }).toList();
+          localProducts.where((p) => !syncedProductIds.contains(p['id'])).toList();
 
       return unsyncedProducts;
     } catch (e) {
@@ -516,6 +589,19 @@ class CarnavalService {
   }) async {
     try {
       print('comenzando');
+
+      // 0. Verificar que no exista ya una relación para este producto
+      final existingRelation = await _supabase
+          .from('relation_products_carnaval')
+          .select('id')
+          .eq('id_producto', localProductId)
+          .maybeSingle();
+
+      if (existingRelation != null) {
+        print('⚠️ Producto $localProductId ya está sincronizado en Carnaval');
+        return false;
+      }
+
       // 1. Obtener datos del producto local
       final productData =
           await _supabase

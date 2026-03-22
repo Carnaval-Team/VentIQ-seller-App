@@ -239,7 +239,7 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
                               return DropdownMenuItem(
                                 value: product,
                                 child: Text(
-                                  product['denominacion'],
+                                  "${product['denominacion']} (ID: ${product['id']})",
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               );
