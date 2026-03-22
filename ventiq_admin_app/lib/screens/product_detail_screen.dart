@@ -1666,36 +1666,139 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       );
     }
 
-    // Verificar si todos los precios promedio son 0
+    return FutureBuilder<double>(
+      future: CurrencyService.getEffectiveUsdToCupRate(),
+      builder: (context, rateSnap) {
+        final usdRate = rateSnap.data ?? 0.0;
+        final cup = _product.basePrice;
+        final usd = _product.precioVentaUsd;
+        final hasBoth = cup > 0 && usd != null && usd > 0;
+        final mismatch = hasBoth && usdRate > 0
+            ? ((cup - usd * usdRate).abs() / (usd * usdRate)) > 0.02
+            : false;
+
+        return _buildPricingInfoContent(mismatch: mismatch, usdRate: usdRate);
+      },
+    );
+  }
+
+  Widget _buildPricingInfoContent({
+    required bool mismatch,
+    required double usdRate,
+  }) {
     final allPricesZero =
         _product.presentaciones.isEmpty ||
         _product.presentaciones.every(
           (pres) => (pres['precio_promedio'] ?? 0.0) == 0.0,
         );
 
+    final cup = _product.basePrice;
+    final usd = _product.precioVentaUsd;
+
     return _buildInfoCard(
       title: 'Información de Precios',
       icon: Icons.attach_money,
       children: [
+        // ── Precio de Venta CUP + USD ──────────────────────────
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Expanded(
-              child: _buildInfoRow(
-                'Precio Base',
-                '\$${NumberFormat('#,###.00').format(_product.basePrice)} CUP',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Precio de Venta',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (mismatch) ...[  
+                        const SizedBox(width: 6),
+                        Tooltip(
+                          message:
+                              'Los precios CUP y USD no coinciden con la tasa\n'
+                              'de conversión vigente (${usdRate.toStringAsFixed(0)} CUP/USD)',
+                          child: const Icon(
+                            Icons.warning_amber_rounded,
+                            size: 16,
+                            color: Colors.orange,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    cup > 0
+                        ? '₱${NumberFormat("#,###.00").format(cup)} CUP'
+                        : 'Sin precio CUP',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: cup > 0 ? AppColors.primary : AppColors.error,
+                    ),
+                  ),
+                  if (usd != null && usd > 0) ...[  
+                    const SizedBox(height: 2),
+                    Text(
+                      '\$${NumberFormat("#,###.00").format(usd)} USD',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: mismatch
+                            ? Colors.orange[700]
+                            : const Color(0xFF4A90E2),
+                      ),
+                    ),
+                  ] else ...[  
+                    const SizedBox(height: 2),
+                    Text(
+                      'Sin precio USD',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+                    ),
+                  ],
+                ],
               ),
             ),
             if (_isGerente)
               IconButton(
                 icon: const Icon(Icons.edit, size: 18),
                 onPressed: _editBasePriceDialog,
-                tooltip: 'Editar precio base',
+                tooltip: 'Editar precio de venta',
                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 padding: EdgeInsets.zero,
               ),
           ],
         ),
+        if (mismatch) ...[  
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.orange[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange[200]!),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, size: 14, color: Colors.orange[700]),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'CUP esperado: ₱${NumberFormat("#,###.00").format((_product.precioVentaUsd ?? 0) * usdRate)} '
+                    '(${usdRate.toStringAsFixed(0)} × USD)',
+                    style: TextStyle(fontSize: 12, color: Colors.orange[800]),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         if (_product.presentaciones.isNotEmpty) ...[
           const SizedBox(height: 16),
           // Sección de inicialización si todos los precios son 0
@@ -3306,11 +3409,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               priceController: priceController,
               exchangeRate: exchangeRate,
               rateLoaded: rateLoaded,
-              onSave: (double finalPrice) async {
+              initialUsdPrice: _product.precioVentaUsd,
+              onSave: (double finalCupPrice, double? finalUsdPrice) async {
                 try {
                   final success = await ProductService.updateBasePriceVenta(
                     productId: int.parse(_product.id),
-                    newPrice: finalPrice,
+                    newPrice: finalCupPrice,
+                    newPriceUsd: finalUsdPrice,
                   );
 
                   if (!mounted) return;
@@ -3627,23 +3732,23 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Diálogo para editar Precio Base (almacenado en CUP)
-// El usuario puede ingresar en USD o CUP.
-// Si ingresa USD  → se convierte a CUP antes de guardar.
-// Si ingresa CUP  → se guarda directo.
+// Diálogo para editar Precio Base con dos campos (CUP y USD).
+// Ambos campos están siempre visibles y se auto-convierten con la tasa actual.
 // ──────────────────────────────────────────────────────────────────────────────
 class _BasePriceEditDialog extends StatefulWidget {
   final String denominacion;
   final TextEditingController priceController;
   final double exchangeRate;
   final bool rateLoaded;
-  final Future<void> Function(double finalCupPrice) onSave;
+  final double? initialUsdPrice;
+  final Future<void> Function(double finalCupPrice, double? finalUsdPrice) onSave;
 
   const _BasePriceEditDialog({
     required this.denominacion,
     required this.priceController,
     required this.exchangeRate,
     required this.rateLoaded,
+    this.initialUsdPrice,
     required this.onSave,
   });
 
@@ -3652,116 +3757,118 @@ class _BasePriceEditDialog extends StatefulWidget {
 }
 
 class _BasePriceEditDialogState extends State<_BasePriceEditDialog> {
-  String _inputCurrency = 'cup'; // 'cup' | 'usd'
+  late final TextEditingController _usdController;
   bool _isSaving = false;
+  bool _updatingFromCup = false;
+  bool _updatingFromUsd = false;
 
-  String get _equivalentText {
-    if (!widget.rateLoaded || widget.exchangeRate <= 0) return '';
-    final v = double.tryParse(widget.priceController.text) ?? 0.0;
-    if (_inputCurrency == 'usd') {
-      final cup = v * widget.exchangeRate;
-      return '≈ ₱${NumberFormat("#,###.00").format(cup)} CUP';
-    } else {
-      final usd = v / widget.exchangeRate;
-      return '≈ \$${NumberFormat("#,###.00").format(usd)} USD';
-    }
+  @override
+  void initState() {
+    super.initState();
+    _usdController = TextEditingController(
+      text: widget.initialUsdPrice != null && widget.initialUsdPrice! > 0
+          ? widget.initialUsdPrice!.toStringAsFixed(2)
+          : '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _usdController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Editar Precio Base'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Producto: ${widget.denominacion}',
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-          ),
-          const SizedBox(height: 16),
-          // Selector de moneda
-          Row(
-            children: [
-              Expanded(
-                child: _CurrencyToggleButton(
-                  label: 'CUP',
-                  icon: Icons.payments_outlined,
-                  color: const Color(0xFF10B981),
-                  selected: _inputCurrency == 'cup',
-                  onTap: () => setState(() {
-                    _inputCurrency = 'cup';
-                    widget.priceController.clear();
-                  }),
-                ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Producto: ${widget.denominacion}',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
+            if (widget.rateLoaded && widget.exchangeRate > 0) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Tasa: ${widget.exchangeRate.toStringAsFixed(0)} CUP/USD',
+                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _CurrencyToggleButton(
-                  label: 'USD',
-                  icon: Icons.attach_money,
-                  color: const Color(0xFF4A90E2),
-                  selected: _inputCurrency == 'usd',
-                  onTap: () => setState(() {
-                    _inputCurrency = 'usd';
-                    widget.priceController.clear();
-                  }),
-                ),
+            ] else ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const SizedBox(width: 12, height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
+                  const SizedBox(width: 8),
+                  Text('Obteniendo tasa...', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                ],
               ),
             ],
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: widget.priceController,
-            keyboardType: const TextInputType.numberWithOptions(
-              decimal: true,
-              signed: false,
-            ),
-            onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(
-              labelText:
-                  _inputCurrency == 'cup'
-                      ? 'Nuevo precio en CUP'
-                      : 'Nuevo precio en USD',
-              prefixText: _inputCurrency == 'cup' ? '₱ ' : '\$ ',
-              border: const OutlineInputBorder(),
-              hintText: '0.00',
-            ),
-          ),
-          if (_equivalentText.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                borderRadius: BorderRadius.circular(6),
+            const SizedBox(height: 16),
+            // Campo CUP
+            TextField(
+              controller: widget.priceController,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false),
+              onChanged: (value) {
+                if (_updatingFromUsd) return;
+                _updatingFromCup = true;
+                if (widget.exchangeRate > 0) {
+                  final cup = double.tryParse(value);
+                  if (cup != null && cup > 0) {
+                    final usdText = (cup / widget.exchangeRate).toStringAsFixed(2);
+                    if (_usdController.text != usdText) {
+                      _usdController.text = usdText;
+                    }
+                  } else {
+                    _usdController.clear();
+                  }
+                }
+                setState(() {});
+                _updatingFromCup = false;
+              },
+              decoration: const InputDecoration(
+                labelText: 'Precio en CUP',
+                prefixText: '₱ ',
+                border: OutlineInputBorder(),
+                hintText: '0.00',
               ),
-              child: Text(
-                _equivalentText,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.blue[700],
-                  fontWeight: FontWeight.w500,
-                ),
+            ),
+            const SizedBox(height: 12),
+            // Campo USD
+            TextField(
+              controller: _usdController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false),
+              onChanged: (value) {
+                if (_updatingFromCup) return;
+                _updatingFromUsd = true;
+                if (widget.exchangeRate > 0) {
+                  final usd = double.tryParse(value);
+                  if (usd != null && usd > 0) {
+                    final cupText = (usd * widget.exchangeRate).toStringAsFixed(2);
+                    if (widget.priceController.text != cupText) {
+                      widget.priceController.text = cupText;
+                    }
+                  } else {
+                    widget.priceController.clear();
+                  }
+                }
+                setState(() {});
+                _updatingFromUsd = false;
+              },
+              decoration: const InputDecoration(
+                labelText: 'Precio en USD',
+                prefixText: '\$ ',
+                border: OutlineInputBorder(),
+                hintText: '0.00',
               ),
             ),
           ],
-          if (!widget.rateLoaded)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  SizedBox(width: 8),
-                  Text('Obteniendo tasa de cambio...', style: TextStyle(fontSize: 12)),
-                ],
-              ),
-            ),
-        ],
+        ),
       ),
       actions: [
         TextButton(
@@ -3773,34 +3880,36 @@ class _BasePriceEditDialogState extends State<_BasePriceEditDialog> {
               _isSaving
                   ? null
                   : () async {
-                    final raw = double.tryParse(widget.priceController.text);
-                    if (raw == null || raw < 0) {
+                    final cup = double.tryParse(widget.priceController.text);
+                    if (cup == null || cup <= 0) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Ingresa un precio válido'),
+                          content: Text('Ingresa un precio CUP válido'),
                           backgroundColor: Colors.red,
                         ),
                       );
                       return;
                     }
-                    // Convertir a CUP si el usuario ingresó USD
-                    final finalCup =
-                        _inputCurrency == 'usd'
-                            ? raw * widget.exchangeRate
-                            : raw;
+                    final usd = double.tryParse(_usdController.text);
+                    final finalUsd = (usd != null && usd > 0) ? usd : null;
                     setState(() => _isSaving = true);
-                    await widget.onSave(finalCup);
+                    await widget.onSave(cup, finalUsd);
                     if (mounted) setState(() => _isSaving = false);
                   },
-          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A90E2), foregroundColor: Colors.white),
-          child:
-              _isSaving
-                  ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
-                  )
-                  : const Text('Guardar'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF4A90E2),
+            foregroundColor: Colors.white,
+          ),
+          child: _isSaving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation(Colors.white),
+                  ),
+                )
+              : const Text('Guardar'),
         ),
       ],
     );

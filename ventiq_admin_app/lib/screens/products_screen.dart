@@ -78,6 +78,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   bool _hasAdvancedPlan = false;
   bool _isLoadingAdvancedPlan = true;
   bool _isAlmacenero = false;
+  double _usdRate = 0.0;
 
   @override
   void initState() {
@@ -137,6 +138,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
       // Fetch and update exchange rates first
       print('💱 Fetching exchange rates...');
       await CurrencyService.fetchAndUpdateExchangeRates();
+      final rate = await CurrencyService.getEffectiveUsdToCupRate();
 
       final productos = await ProductService.getProductsByTienda(
         categoryId: _selectedCategoryId,
@@ -145,6 +147,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
       setState(() {
         _products = productos;
+        _usdRate = rate;
         _isLoading = false;
       });
     } catch (e) {
@@ -851,14 +854,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text(
-                        '\$${product.basePrice.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
-                        ),
-                      ),
+                      _buildPriceBadge(product),
                       const SizedBox(height: 4),
                       Column(
                         children: [
@@ -1000,6 +996,61 @@ class _ProductsScreenState extends State<ProductsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildPriceBadge(Product product) {
+    final cup = product.basePrice;
+    final usd = product.precioVentaUsd;
+    final hasBoth = cup > 0 && usd != null && usd > 0;
+    final mismatch = hasBoth && _usdRate > 0
+        ? ((cup - usd * _usdRate).abs() / (usd * _usdRate)) > 0.02
+        : false;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (mismatch)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: Tooltip(
+                  message:
+                      'Los precios no coinciden con la tasa de conversión\n'
+                      '(Tasa: $_usdRate CUP/USD)',
+                  child: const Icon(
+                    Icons.warning_amber_rounded,
+                    size: 16,
+                    color: Colors.orange,
+                  ),
+                ),
+              ),
+            Text(
+              cup > 0
+                  ? '₱${cup.toStringAsFixed(2)} CUP'
+                  : 'Sin precio',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: cup > 0 ? AppColors.primary : AppColors.error,
+              ),
+            ),
+          ],
+        ),
+        if (usd != null && usd > 0) ...[
+          const SizedBox(height: 2),
+          Text(
+            '\$${usd.toStringAsFixed(2)} USD',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: mismatch ? Colors.orange : const Color(0xFF4A90E2),
+            ),
+          ),
+        ],
+      ],
     );
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
+import '../services/currency_service.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../widgets/admin_bottom_navigation.dart';
@@ -24,6 +25,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
   bool _filterSinPrecioVenta = false;
   bool _filterSinPrecioCosto = false;
   double? _filterPrecioCosto;
+  double _usdRate = 0.0;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _filterPrecioController = TextEditingController();
 
@@ -50,12 +52,15 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
       final storeId = await _userPrefs.getIdTienda();
       if (storeId == null) throw Exception('No se pudo obtener la tienda');
 
+      // Cargar tasa de cambio
+      _usdRate = await CurrencyService.getEffectiveUsdToCupRate();
+
       // Productos activos de la tienda con su precio de venta
       final productosResp = await _supabase
           .from('app_dat_producto')
           .select('''
             id, denominacion, sku, imagen,
-            app_dat_precio_venta(id, precio_venta_cup)
+            app_dat_precio_venta(id, precio_venta_cup, precio_venta_usd)
           ''')
           .eq('id_tienda', storeId)
           .isFilter('deleted_at', null)
@@ -93,6 +98,9 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
         final precioVenta = precioVentaList.isNotEmpty
             ? (precioVentaList.first['precio_venta_cup'] as num?)?.toDouble()
             : null;
+        final precioVentaUsd = precioVentaList.isNotEmpty
+            ? (precioVentaList.first['precio_venta_usd'] as num?)?.toDouble()
+            : null;
         final precioVentaId = precioVentaList.isNotEmpty
             ? precioVentaList.first['id'] as int?
             : null;
@@ -103,6 +111,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
           'sku': prod['sku'] ?? '',
           'imagen': prod['imagen'],
           'precio_venta': precioVenta,
+          'precio_venta_usd': precioVentaUsd,
           'precio_venta_id': precioVentaId,
           'presentaciones': pressByProduct[pid] ?? [],
         });
@@ -173,60 +182,140 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
   // ── edición precio de venta ───────────────────────────────────
 
   Future<void> _editPrecioVenta(Map<String, dynamic> producto) async {
-    final controller = TextEditingController(
-      text: producto['precio_venta']?.toStringAsFixed(2) ?? '',
+    final cupController = TextEditingController(
+      text: producto['precio_venta'] != null
+          ? (producto['precio_venta'] as double).toStringAsFixed(2)
+          : '',
     );
-    final confirmed = await showDialog<bool>(
+    final usdController = TextEditingController(
+      text: producto['precio_venta_usd'] != null
+          ? (producto['precio_venta_usd'] as double).toStringAsFixed(2)
+          : '',
+    );
+    bool updatingFromCup = false;
+    bool updatingFromUsd = false;
+
+    // Returns null if cancelled, otherwise {cup, usd}
+    final result = await showDialog<Map<String, double?>>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Editar Precio de Venta'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              producto['denominacion'] as String,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) {
+          return AlertDialog(
+            title: const Text('Editar Precio de Venta'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    producto['denominacion'] as String,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  if (_usdRate > 0) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Tasa: ${_usdRate.toStringAsFixed(0)} CUP/USD',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  // Campo CUP
+                  TextField(
+                    controller: cupController,
+                    autofocus: true,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (value) {
+                      if (updatingFromUsd) return;
+                      updatingFromCup = true;
+                      if (_usdRate > 0) {
+                        final cup = double.tryParse(value);
+                        if (cup != null && cup > 0) {
+                          final usdText = (cup / _usdRate).toStringAsFixed(2);
+                          if (usdController.text != usdText) {
+                            usdController.text = usdText;
+                          }
+                        } else {
+                          usdController.clear();
+                        }
+                      }
+                      setS(() {});
+                      updatingFromCup = false;
+                    },
+                    decoration: const InputDecoration(
+                      labelText: 'Precio CUP',
+                      prefixText: '₱ ',
+                      border: OutlineInputBorder(),
+                      hintText: '0.00',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Campo USD
+                  TextField(
+                    controller: usdController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (value) {
+                      if (updatingFromCup) return;
+                      updatingFromUsd = true;
+                      if (_usdRate > 0) {
+                        final usd = double.tryParse(value);
+                        if (usd != null && usd > 0) {
+                          final cupText = (usd * _usdRate).toStringAsFixed(2);
+                          if (cupController.text != cupText) {
+                            cupController.text = cupText;
+                          }
+                        } else {
+                          cupController.clear();
+                        }
+                      }
+                      setS(() {});
+                      updatingFromUsd = false;
+                    },
+                    decoration: const InputDecoration(
+                      labelText: 'Precio USD',
+                      prefixText: '\$ ',
+                      border: OutlineInputBorder(),
+                      hintText: '0.00',
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Precio de Venta CUP',
-                prefixText: '\$ ',
-                border: OutlineInputBorder(),
-                hintText: '0.00',
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar'),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Guardar'),
-          ),
-        ],
+              ElevatedButton(
+                onPressed: () {
+                  final cup = double.tryParse(cupController.text);
+                  if (cup == null || cup <= 0) return;
+                  final usd = double.tryParse(usdController.text);
+                  Navigator.pop(ctx, {
+                    'cup': cup,
+                    'usd': (usd != null && usd > 0) ? usd : null,
+                  });
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Guardar'),
+              ),
+            ],
+          );
+        },
       ),
     );
 
-    if (confirmed != true || !mounted) return;
+    if (result == null || !mounted) return;
 
-    final newPrice = double.tryParse(controller.text);
-    if (newPrice == null || newPrice < 0) {
+    final newCup = result['cup'];
+    final newUsd = result['usd'];
+    if (newCup == null || newCup < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Precio inválido'),
@@ -238,7 +327,8 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
 
     final success = await ProductService.updateBasePriceVenta(
       productId: producto['id'] as int,
-      newPrice: newPrice,
+      newPrice: newCup,
+      newPriceUsd: newUsd,
     );
 
     if (!mounted) return;
@@ -253,11 +343,14 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
       final productId = producto['id'] as int;
       final precioVentaList = await _supabase
           .from('app_dat_precio_venta')
-          .select('id, precio_venta_cup')
+          .select('id, precio_venta_cup, precio_venta_usd')
           .eq('id_producto', productId);
-      
+
       final precioVenta = precioVentaList.isNotEmpty
           ? (precioVentaList.first['precio_venta_cup'] as num?)?.toDouble()
+          : null;
+      final precioVentaUsd = precioVentaList.isNotEmpty
+          ? (precioVentaList.first['precio_venta_usd'] as num?)?.toDouble()
           : null;
       final precioVentaId = precioVentaList.isNotEmpty
           ? precioVentaList.first['id'] as int?
@@ -265,10 +358,10 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
 
       if (mounted) {
         setState(() {
-          // Encontrar y actualizar el producto en la lista
           final index = _productos.indexWhere((p) => p['id'] == productId);
           if (index != -1) {
             _productos[index]['precio_venta'] = precioVenta;
+            _productos[index]['precio_venta_usd'] = precioVentaUsd;
             _productos[index]['precio_venta_id'] = precioVentaId;
             _applyFilter();
           }
@@ -675,6 +768,15 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
     final presentaciones =
         (producto['presentaciones'] as List<Map<String, dynamic>>);
     final precioVenta = producto['precio_venta'] as double?;
+    final precioVentaUsd = producto['precio_venta_usd'] as double?;
+    final hasBoth = (precioVenta != null && precioVenta > 1) &&
+        (precioVentaUsd != null && precioVentaUsd > 0);
+    bool mismatch = false;
+    if (hasBoth && _usdRate > 0) {
+      final cup = (producto['precio_venta'] as double);
+      final usd = (producto['precio_venta_usd'] as double);
+      mismatch = ((cup - usd * _usdRate).abs() / (usd * _usdRate)) > 0.02;
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -735,26 +837,72 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
 
             // ── Precio de Venta ──
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.sell_outlined, size: 16, color: AppColors.primary),
-                const SizedBox(width: 6),
-                const Text(
-                  'Precio de Venta:',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Icon(Icons.sell_outlined, size: 16, color: AppColors.primary),
                 ),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text(
-                    precioVenta != null && precioVenta != 0 && precioVenta != 1
-                        ? '\$ ${precioVenta.toStringAsFixed(2)} CUP'
-                        : 'Sin precio',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: precioVenta != null && precioVenta != 0 && precioVenta != 1
-                          ? const Color(0xFF1F2937)
-                          : Colors.red[600],
-                      fontWeight: FontWeight.w600,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            'Precio de Venta',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                          ),
+                          if (mismatch) ...[
+                            const SizedBox(width: 6),
+                            Tooltip(
+                              message:
+                                  'CUP y USD no coinciden con la tasa\n'
+                                  '(Tasa: ${_usdRate.toStringAsFixed(0)} CUP/USD)',
+                              child: const Icon(
+                                Icons.warning_amber_rounded,
+                                size: 14,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        precioVenta != null && precioVenta > 1
+                            ? '₱${precioVenta.toStringAsFixed(2)} CUP'
+                            : 'Sin precio CUP',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: precioVenta != null && precioVenta > 1
+                              ? const Color(0xFF1F2937)
+                              : Colors.red[600],
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (precioVentaUsd != null && precioVentaUsd > 0) ...[
+                        const SizedBox(height: 1),
+                        Text(
+                          '\$${precioVentaUsd.toStringAsFixed(2)} USD',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: mismatch
+                                ? Colors.orange[700]
+                                : const Color(0xFF4A90E2),
+                          ),
+                        ),
+                      ],
+                      if (mismatch) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          'Esperado: ₱${(precioVentaUsd! * _usdRate).toStringAsFixed(2)} CUP',
+                          style: TextStyle(fontSize: 11, color: Colors.orange[700]),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 InkWell(
