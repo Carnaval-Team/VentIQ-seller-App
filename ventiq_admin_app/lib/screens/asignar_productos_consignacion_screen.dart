@@ -980,7 +980,7 @@ class _AsignarProductosConsignacionScreenState
         title: Text(
           widget.isDevolucion
               ? 'Crear Devolución'
-              : 'Asignar Productos en Consignación2',
+              : 'Asignar Productos en Consignación',
         ),
         backgroundColor:
             widget.isDevolucion ? Colors.deepOrange : AppColors.primary,
@@ -1329,23 +1329,22 @@ class _AsignarProductosConsignacionScreenState
               )
             ''')
             .eq('id_ubicacion', int.parse(zonaId))
-            .gt('cantidad_final', 0)
             .order('created_at', ascending: false);
 
-        // Agrupar por combinación única y quedarse solo con el más reciente
+        // 1. Agrupar por combinación única → último registro por combinación
         final Map<String, dynamic> productosUnicos = {};
         for (final item in inventarioResponse) {
-          // Crear clave única basada en producto-variante-presentación-opcion
           final key =
               '${item['id_producto']}_${item['id_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}';
-
-          // Solo guardar si no existe o si este es más reciente (ya viene ordenado por created_at desc)
           if (!productosUnicos.containsKey(key)) {
             productosUnicos[key] = item;
           }
         }
 
-        response = productosUnicos.values.toList();
+        // 2. Solo los que realmente tienen disponibilidad (cantidad_final > 0 en el último registro)
+        response = productosUnicos.values
+            .where((item) => ((item['cantidad_final'] as num?) ?? 0) > 0)
+            .toList();
 
         // Mapear la respuesta para tener la estructura esperada con información de variante/presentación
         response =
@@ -1407,7 +1406,7 @@ class _AsignarProductosConsignacionScreenState
               };
             }).toList();
       } else {
-        // Para envíos normales: también obtener solo el último registro por combinación única
+        // Para envíos normales: obtener todos los registros de la zona, sin filtro previo
         final inventarioResponse = await _supabase
             .from('app_dat_inventario_productos')
             .select('''
@@ -1439,10 +1438,9 @@ class _AsignarProductosConsignacionScreenState
               )
             ''')
             .eq('id_ubicacion', int.parse(zonaId))
-            .gt('cantidad_final', 0)
             .order('created_at', ascending: false);
 
-        // Agrupar por combinación única y quedarse solo con el más reciente
+        // 1. Agrupar por combinación única → último registro por combinación
         final Map<String, dynamic> productosUnicos = {};
         for (final item in inventarioResponse) {
           final key =
@@ -1452,8 +1450,11 @@ class _AsignarProductosConsignacionScreenState
           }
         }
 
+        // 2. Solo los que realmente tienen disponibilidad (cantidad_final > 0 en el último registro)
         response =
-            productosUnicos.values.map((item) {
+            productosUnicos.values
+                .where((item) => ((item['cantidad_final'] as num?) ?? 0) > 0)
+                .map((item) {
               final producto = item['app_dat_producto'] as Map<String, dynamic>;
               final presentacionData =
                   item['app_dat_producto_presentacion']
