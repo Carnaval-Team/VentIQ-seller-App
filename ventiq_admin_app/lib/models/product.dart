@@ -58,6 +58,9 @@ class Product {
   final int? idProveedor;
   final String? nombreProveedor;
 
+  // Precio en USD
+  final double? precioVentaUsd;
+
   Product({
     required this.id,
     required this.name,
@@ -114,6 +117,8 @@ class Product {
     // Campo de proveedor
     this.idProveedor,
     this.nombreProveedor,
+    // Precio en USD
+    this.precioVentaUsd,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -175,6 +180,8 @@ class Product {
       // Campo de proveedor
       idProveedor: json['id_proveedor'],
       nombreProveedor: json['nombre_proveedor'] ?? json['proveedor_nombre'],
+      // Precio en USD
+      precioVentaUsd: (json['precioVentaUsd'] ?? json['precio_venta_usd'])?.toDouble(),
     );
   }
 
@@ -219,6 +226,7 @@ class Product {
       'costoProduccion': costoProduccion,
       'id_proveedor': idProveedor,
       'nombre_proveedor': nombreProveedor,
+      'precio_venta_usd': precioVentaUsd,
     };
   }
 
@@ -311,6 +319,8 @@ class Product {
     double? costoProduccion,
     int? idProveedor,
     String? nombreProveedor,
+    double? precioVentaUsd,
+    bool clearPrecioVentaUsd = false,
   }) {
     return Product(
       id: id ?? this.id,
@@ -364,6 +374,7 @@ class Product {
       costoProduccion: costoProduccion ?? this.costoProduccion,
       idProveedor: idProveedor ?? this.idProveedor,
       nombreProveedor: nombreProveedor ?? this.nombreProveedor,
+      precioVentaUsd: clearPrecioVentaUsd ? null : (precioVentaUsd ?? this.precioVentaUsd),
     );
   }
 }

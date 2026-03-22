@@ -497,6 +497,7 @@ class ProductService {
         esElaborado: json['es_elaborado'] ?? false,
         idProveedor: json['id_proveedor'],
         nombreProveedor: json['nombre_proveedor'] ?? (json['app_dat_proveedor'] as Map<String, dynamic>?)?['denominacion'],
+        precioVentaUsd: (json['precio_venta_usd'] as num?)?.toDouble(),
       );
 
       // Log para verificar que el campo es_elaborado se lee correctamente del RPC
@@ -1507,17 +1508,19 @@ class ProductService {
 
       // Obtener precio de venta (tabla separada)
       double precioVenta = 0.0;
+      double? precioVentaUsd;
       try {
         final precioVentaResponse = await _supabase
             .from('app_dat_precio_venta')
-            .select('precio_venta_cup')
+            .select('precio_venta_cup, precio_venta_usd')
             .eq('id_producto', productId)
             .order('fecha_desde', ascending: false)
             .limit(1);
 
         if (precioVentaResponse.isNotEmpty) {
           precioVenta = (precioVentaResponse.first['precio_venta_cup'] as num?)?.toDouble() ?? 0.0;
-          print('💰 Precio de venta obtenido: $precioVenta');
+          precioVentaUsd = (precioVentaResponse.first['precio_venta_usd'] as num?)?.toDouble();
+          print('💰 Precio CUP: $precioVenta | Precio USD: $precioVentaUsd');
         }
       } catch (e) {
         print('⚠️ Error obteniendo precio de venta: $e');
@@ -1573,6 +1576,7 @@ class ProductService {
         esElaborado: productData['es_elaborado'] ?? false,
         idProveedor: productData['id_proveedor'],
         nombreProveedor: (productData['app_dat_proveedor'] as Map<String, dynamic>?)?['denominacion'],
+        precioVentaUsd: precioVentaUsd,
       );
     } catch (e, stackTrace) {
       print('❌ Error obteniendo producto completo: $e');
@@ -2630,14 +2634,16 @@ class ProductService {
   }
 
   /// Actualiza el precio base de venta de un producto.
+  /// Acepta precio en CUP (newPriceCup) y/o USD (newPriceUsd).
   /// Si no existe registro en app_dat_precio_venta, lo crea.
   static Future<bool> updateBasePriceVenta({
     required int productId,
     required double newPrice,
+    double? newPriceUsd,
   }) async {
     try {
       debugPrint('💰 Actualizando precio base de venta para producto: $productId');
-      debugPrint('📝 Nuevo precio: $newPrice');
+      debugPrint('📝 Nuevo precio CUP: $newPrice | USD: $newPriceUsd');
 
       // Verificar si ya existe un registro para este producto
       final existing = await _supabase
@@ -2649,21 +2655,22 @@ class ProductService {
           .maybeSingle();
 
       final today = DateTime.now().toIso8601String().substring(0, 10);
+      final updateData = <String, dynamic>{
+        'precio_venta_cup': newPrice,
+        'fecha_desde': today,
+      };
+      if (newPriceUsd != null) updateData['precio_venta_usd'] = newPriceUsd;
 
       if (existing != null) {
         await _supabase
             .from('app_dat_precio_venta')
-            .update({
-              'precio_venta_cup': newPrice,
-              'fecha_desde': today,
-            })
+            .update(updateData)
             .eq('id', existing['id']);
         debugPrint('✅ Precio base actualizado exitosamente');
       } else {
         await _supabase.from('app_dat_precio_venta').insert({
           'id_producto': productId,
-          'precio_venta_cup': newPrice,
-          'fecha_desde': today,
+          ...updateData,
           'id_variante': null,
         });
         debugPrint('✅ Precio base creado exitosamente (no existía registro)');

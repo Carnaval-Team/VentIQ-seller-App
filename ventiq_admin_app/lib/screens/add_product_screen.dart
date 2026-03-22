@@ -6,6 +6,7 @@ import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/openfoodfacts_service.dart';
+import '../services/currency_service.dart';
 import '../services/supplier_service.dart';
 import 'barcode_scanner_screen.dart';
 
@@ -53,6 +54,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final _diasAlertController = TextEditingController();
   final _codigoBarrasController = TextEditingController();
   final _precioVentaController = TextEditingController();
+  final _precioVentaUsdController = TextEditingController();
+  double _usdRate = 0.0;
   final _cantidadPresentacionController = TextEditingController(
     text: '1',
   ); // Controller for presentation quantity
@@ -163,6 +166,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
         print('⚠️ Precio base es 0, se cargará desde la base de datos');
       }
 
+      // Cargar precio USD si existe
+      if (widget.product!.precioVentaUsd != null &&
+          widget.product!.precioVentaUsd! > 0) {
+        _precioVentaUsdController.text =
+            widget.product!.precioVentaUsd!.toStringAsFixed(2);
+      }
+
       // Cargar propiedades booleanas
       _esRefrigerado = widget.product!.esRefrigerado ?? false;
       _esFragil = widget.product!.esFragil ?? false;
@@ -268,13 +278,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
     try {
       setState(() => _isLoadingData = true);
 
-      // Cargar datos iniciales en paralelo
+      // Cargar tasa USD y datos iniciales en paralelo
+      final usdRateFuture = CurrencyService.getEffectiveUsdToCupRate();
       final futures = await Future.wait([
         ProductService.getCategorias(),
         ProductService.getPresentaciones(),
         ProductService.getAtributos(),
         _loadProveedoresFromService(),
       ]);
+      _usdRate = await usdRateFuture;
 
       // ✅ NUEVO: En modo edición, cargar categoría y subcategorías ANTES del setState
       List<Map<String, dynamic>> subcategoriasParaEdicion = [];
@@ -1581,23 +1593,66 @@ class _AddProductScreenState extends State<AddProductScreen> {
         TextFormField(
           controller: _precioVentaController,
           decoration: const InputDecoration(
-            labelText: 'Precio de Venta Base *',
+            labelText: 'Precio de Venta CUP *',
             hintText: '0.00',
-            prefixText: '\$ ',
+            prefixText: '₱ ',
             border: OutlineInputBorder(),
-            helperText:
-                'Este precio se usará como base para calcular precios de presentaciones adicionales',
+            helperText: 'Precio base en Pesos Cubanos',
           ),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (value) {
+            if (_usdRate > 0) {
+              final cup = double.tryParse(value);
+              if (cup != null && cup > 0) {
+                final usd = cup / _usdRate;
+                final usdText = usd.toStringAsFixed(2);
+                if (_precioVentaUsdController.text != usdText) {
+                  _precioVentaUsdController.text = usdText;
+                }
+              } else {
+                _precioVentaUsdController.clear();
+              }
+              setState(() {});
+            }
+          },
           validator: (value) {
             if (value == null || value.isEmpty) {
-              return 'El precio de venta es requerido';
+              return 'El precio de venta CUP es requerido';
             }
             final price = double.tryParse(value);
             if (price == null || price <= 0) {
               return 'Ingresa un precio válido';
             }
             return null;
+          },
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _precioVentaUsdController,
+          decoration: InputDecoration(
+            labelText: 'Precio de Venta USD',
+            hintText: '0.00',
+            prefixText: '\$ ',
+            border: const OutlineInputBorder(),
+            helperText: _usdRate > 0
+                ? 'Tasa actual: ${_usdRate.toStringAsFixed(0)} CUP/USD'
+                : 'Cargando tasa de cambio...',
+          ),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (value) {
+            if (_usdRate > 0) {
+              final usd = double.tryParse(value);
+              if (usd != null && usd > 0) {
+                final cup = usd * _usdRate;
+                final cupText = cup.toStringAsFixed(2);
+                if (_precioVentaController.text != cupText) {
+                  _precioVentaController.text = cupText;
+                }
+              } else {
+                _precioVentaController.clear();
+              }
+              setState(() {});
+            }
           },
         ),
       ],
@@ -2514,9 +2569,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
 
     // Preparar precios
+    final precioUsd = double.tryParse(_precioVentaUsdController.text);
     final preciosData = [
       {
         'precio_venta_cup': double.parse(_precioVentaController.text),
+        if (precioUsd != null && precioUsd > 0) 'precio_venta_usd': precioUsd,
         'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
         'id_variante': null,
       },
@@ -3045,12 +3102,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
               .limit(1)
               .maybeSingle();
 
+      final precioUsd = double.tryParse(_precioVentaUsdController.text);
+      final usdMap = (precioUsd != null && precioUsd > 0)
+          ? {'precio_venta_usd': precioUsd}
+          : {};
+
       if (existingPrice != null) {
         // Actualizar precio existente
         await _supabase
             .from('app_dat_precio_venta')
             .update({
               'precio_venta_cup': precioVenta,
+              ...usdMap,
               'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
             })
             .eq('id', existingPrice['id']);
@@ -3061,6 +3124,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         await _supabase.from('app_dat_precio_venta').insert({
           'id_producto': productId,
           'precio_venta_cup': precioVenta,
+          ...usdMap,
           'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
           'id_variante': null,
         });
