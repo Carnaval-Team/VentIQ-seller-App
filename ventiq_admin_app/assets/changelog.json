@@ -1,9 +1,41 @@
 {
-  "current_version": "1.9.7",
-  "build": 197,
+  "current_version": "1.9.8",
+  "build": 198,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.9.8",
+      "date": "2026-03-22",
+      "title": "📊 Órdenes Carnaval: más visibilidad, más control",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Nuevo Dashboard de Órdenes Carnaval",
+          "description": "Estrenamos un panel dedicado para monitorear las órdenes de Carnaval con una vista más clara y orientada a resultados. Ideal para supervisar el día a día y tomar decisiones más rápido."
+        },
+        {
+          "type": "feature",
+          "title": "Detalle de orden más cómodo y rápido",
+          "description": "Ahora puedes abrir un detalle completo de cada orden en una vista optimizada para revisar productos, importes y estado sin perder el ritmo de trabajo."
+        },
+        {
+          "type": "improvement",
+          "title": "Búsqueda y listados más ágiles",
+          "description": "Mejoramos la búsqueda y el ordenamiento en pantallas clave (productos y ventas) para que encuentres lo que necesitas en menos pasos, incluso con catálogos grandes."
+        },
+        {
+          "type": "improvement",
+          "title": "Operaciones e inventario con mejor flujo",
+          "description": "Ajustamos el flujo de operaciones de inventario y movimientos para que el proceso sea más consistente y fácil de ejecutar en el día a día."
+        },
+        {
+          "type": "fix",
+          "title": "Correcciones de estabilidad y consistencia",
+          "description": "Pequeños ajustes internos para reducir errores en listados y operaciones, mejorando la confiabilidad general de la app."
+        }
+      ]
+    },
     {
       "version": "1.9.7",
       "date": "2026-02-23",
