@@ -1088,7 +1088,11 @@ class CarnavalService {
       }
 
       if (statusFilter != null) {
-        query = query.eq('status', statusFilter);
+        if (statusFilter == 'Nuevo') {
+          query = query.inFilter('status', ['Nuevo', 'En Revision', 'Pendiente de Pago']);
+        } else {
+          query = query.eq('status', statusFilter);
+        }
       }
 
       if (orderIdFilter != null) {

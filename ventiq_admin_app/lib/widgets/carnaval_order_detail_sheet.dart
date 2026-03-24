@@ -608,25 +608,17 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
         ));
         break;
       case 'En Revision':
-        actions.add(_actionButton(
-          'Validar Pago ($metodoPago)',
-          'Comprobante verificado, pasar a preparación',
-          Icons.verified_outlined,
-          Colors.green,
-          _validatePayment,
-        ));
-        actions.add(_actionButton(
-          'Rechazar / Cancelar',
-          'Pago no válido, cancelar orden',
-          Icons.cancel_outlined,
-          Colors.red,
-          _cancelOrder,
-        ));
-        break;
       case 'Pendiente de Pago':
         actions.add(_actionButton(
+          'Aceptar y Procesar',
+          'La orden pasará a preparación',
+          Icons.check_circle_outline,
+          Colors.green,
+          _acceptOrder,
+        ));
+        actions.add(_actionButton(
           'Cancelar Orden',
-          'El cliente no ha pagado',
+          'Se cancelará permanentemente',
           Icons.cancel_outlined,
           Colors.red,
           _cancelOrder,
