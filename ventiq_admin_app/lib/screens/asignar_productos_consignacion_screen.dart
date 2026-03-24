@@ -254,14 +254,12 @@ class _AsignarProductosConsignacionScreenState
     }
 
     // Si cantidad es 0 o vacío y ya existe un movimiento, revertirlo
+    // El producto permanece seleccionado para que el usuario pueda ingresar una nueva cantidad
     if (cantidad <= 0) {
       if (_idExtraccionProducto.containsKey(idInventario)) {
         await _quitarProductoDeExtraccion(idInventario);
-        setState(() {
-          _productosSeleccionados[idInventario]?['seleccionado'] = false;
-          _cantControllers[idInventario]?.clear();
-        });
       }
+      _confirmandoProducto.remove(idInventario);
       return;
     }
 

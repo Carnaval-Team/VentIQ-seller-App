@@ -7,6 +7,7 @@ import '../services/user_preferences_service.dart';
 import '../services/currency_display_service.dart';
 import 'confirmar_recepcion_consignacion_screen.dart';
 import '../utils/navigation_guard.dart';
+import '../services/inventory_service.dart';
 
 class ConsignacionEnvioDetallesScreen extends StatefulWidget {
   final int idEnvio;
@@ -33,6 +34,12 @@ class _ConsignacionEnvioDetallesScreenState
   bool _isAccepting = false;
 
   bool _canManageConsignacion = false;
+
+  // Operaciones vinculadas al envío
+  int? _idOperacionExtraccion;
+  int? _idOperacionRecepcion;
+  int _estadoOperacionExtraccion = 0; // 0=no cargado, 1=pendiente, 2=completada, 3=cancelada
+  int _estadoOperacionRecepcion = 0;
 
   @override
   void initState() {
@@ -96,6 +103,58 @@ class _ConsignacionEnvioDetallesScreenState
         widget.idEnvio,
       );
     });
+    _cargarOperacionesEnvio();
+  }
+
+  Future<void> _cargarOperacionesEnvio() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final envio = await supabase
+          .from('app_dat_consignacion_envio')
+          .select('id_operacion_extraccion, id_operacion_recepcion')
+          .eq('id', widget.idEnvio)
+          .maybeSingle();
+
+      if (envio == null || !mounted) return;
+
+      final idExt = envio['id_operacion_extraccion'] as int?;
+      final idRec = envio['id_operacion_recepcion'] as int?;
+
+      int estadoExt = 0;
+      int estadoRec = 0;
+
+      if (idExt != null) {
+        final eoExt = await supabase
+            .from('app_dat_estado_operacion')
+            .select('estado')
+            .eq('id_operacion', idExt)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        estadoExt = (eoExt?['estado'] as num?)?.toInt() ?? 1;
+      }
+
+      if (idRec != null) {
+        final eoRec = await supabase
+            .from('app_dat_estado_operacion')
+            .select('estado')
+            .eq('id_operacion', idRec)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        estadoRec = (eoRec?['estado'] as num?)?.toInt() ?? 1;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _idOperacionExtraccion = idExt;
+        _idOperacionRecepcion = idRec;
+        _estadoOperacionExtraccion = estadoExt;
+        _estadoOperacionRecepcion = estadoRec;
+      });
+    } catch (e) {
+      debugPrint('❌ Error cargando operaciones del envío: $e');
+    }
   }
 
   @override
@@ -178,6 +237,24 @@ class _ConsignacionEnvioDetallesScreenState
                           widget.rol == 'consignatario' &&
                           estadoEnvio == 1)));
 
+          // CONFIGURADO + extracción PENDIENTE → consignador puede completarla
+          final bool puedeCompletarExtraccion =
+              _canManageConsignacion &&
+              widget.rol == 'consignador' &&
+              estadoEnvio == ConsignacionEnvioListadoService.ESTADO_CONFIGURADO &&
+              _idOperacionExtraccion != null &&
+              _estadoOperacionExtraccion == 1; // 1 = pendiente
+
+          // CONFIGURADO + extracción COMPLETADA + recepción PENDIENTE → consignatario puede completarla
+          final bool puedeCompletarRecepcion =
+              _canManageConsignacion &&
+              widget.rol == 'consignatario' &&
+              estadoEnvio == ConsignacionEnvioListadoService.ESTADO_CONFIGURADO &&
+              _idOperacionExtraccion != null &&
+              _estadoOperacionExtraccion == 2 && // 2 = completada
+              _idOperacionRecepcion != null &&
+              _estadoOperacionRecepcion == 1; // 1 = pendiente
+
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -186,6 +263,16 @@ class _ConsignacionEnvioDetallesScreenState
                 _buildSeccionDetalles(detalles),
                 const SizedBox(height: 24),
                 _buildSeccionProductos(puedeEditar: puedeEditar),
+
+                if (puedeCompletarExtraccion) ...[
+                  const SizedBox(height: 24),
+                  _buildBotonCompletarExtraccion(),
+                ],
+
+                if (puedeCompletarRecepcion) ...[
+                  const SizedBox(height: 24),
+                  _buildBotonCompletarRecepcion(),
+                ],
 
                 if (puedeVerificarEnvio) ...[
                   const SizedBox(height: 24),
@@ -1041,6 +1128,260 @@ class _ConsignacionEnvioDetallesScreenState
           ),
         );
       }
+    }
+  }
+
+  Widget _buildBotonCompletarExtraccion() {
+    return Card(
+      color: Colors.blue[50],
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.local_shipping_outlined, color: Colors.blue[700]),
+                const SizedBox(width: 8),
+                Text(
+                  'Completar Extracción de Inventario',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue[700],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'El envío está configurado. Completa la operación de extracción para retirar '
+              'físicamente los productos del inventario y ponerlos en tránsito.',
+              style: TextStyle(fontSize: 13, color: Colors.blue[900]),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isAccepting ? null : _completarExtraccion,
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text(
+                  'Completar Extracción',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue[700],
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBotonCompletarRecepcion() {
+    return Card(
+      color: Colors.green[50],
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.move_to_inbox_outlined, color: Colors.green[700]),
+                const SizedBox(width: 8),
+                Text(
+                  'Completar Recepción de Inventario',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green[700],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'La extracción fue completada por el consignador. Completa la operación de '
+              'recepción para registrar los productos en tu inventario.',
+              style: TextStyle(fontSize: 13, color: Colors.green[900]),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isAccepting ? null : _completarRecepcion,
+                icon: const Icon(Icons.inventory_2_outlined),
+                label: const Text(
+                  'Completar Recepción',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green[700],
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _completarExtraccion() async {
+    if (!_canManageConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Completar extracción');
+      return;
+    }
+    final idOp = _idOperacionExtraccion;
+    if (idOp == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Completar Extracción'),
+        content: const Text(
+          '¿Confirmas que los productos han sido retirados físicamente del inventario?\n\n'
+          'Esta acción actualizará el stock y pondrá el envío en tránsito.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue[700],
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isAccepting = true);
+    try {
+      final userUuid = await UserPreferencesService().getUserId();
+      if (userUuid == null) throw Exception('Usuario no identificado');
+
+      final result = await InventoryService.completeOperation(
+        idOperacion: idOp,
+        comentario: 'Extracción completada desde detalles del envío #${widget.idEnvio}',
+        uuid: userUuid,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true || result['status'] == 'success') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Extracción completada. Envío en tránsito.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _refrescar();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ ${result['message'] ?? 'Error al completar extracción'}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAccepting = false);
+    }
+  }
+
+  Future<void> _completarRecepcion() async {
+    if (!_canManageConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Completar recepción');
+      return;
+    }
+    final idOp = _idOperacionRecepcion;
+    if (idOp == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Completar Recepción'),
+        content: const Text(
+          '¿Confirmas que los productos han sido recibidos físicamente?\n\n'
+          'Esta acción registrará los productos en tu inventario y marcará el envío como aceptado.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green[700],
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isAccepting = true);
+    try {
+      final userUuid = await UserPreferencesService().getUserId();
+      if (userUuid == null) throw Exception('Usuario no identificado');
+
+      final result = await InventoryService.completeOperation(
+        idOperacion: idOp,
+        comentario: 'Recepción completada desde detalles del envío #${widget.idEnvio}',
+        uuid: userUuid,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true || result['status'] == 'success') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Recepción completada. Productos registrados en inventario.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context, true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ ${result['message'] ?? 'Error al completar recepción'}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAccepting = false);
     }
   }
 
