@@ -1,9 +1,36 @@
 {
-  "current_version": "1.9.8",
-  "build": 198,
+  "current_version": "1.9.9",
+  "build": 199,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.9.9",
+      "date": "2026-03-24",
+      "title": "✅ Consignaciones sin errores y alertas de inventario",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Consignaciones más confiables al ajustar cantidades",
+          "description": "Mejoramos la asignación de productos en consignación para evitar errores al confirmar cantidades y prevenir acciones duplicadas. Ahora los cambios se aplican de forma más estable y predecible."
+        },
+        {
+          "type": "improvement",
+          "title": "Si pones cantidad en 0, se limpia automáticamente",
+          "description": "Cuando dejas una cantidad en cero, el sistema revierte/retira la selección y mantiene el inventario coherente, para que tu operación quede limpia sin pasos extra."
+        },
+        {
+          "type": "feature",
+          "title": "Alertas y reporte de desajustes de inventario",
+          "description": "Añadimos herramientas para detectar y reportar diferencias de inventario, ayudándote a encontrar inconsistencias más rápido y mantener el control de tus existencias."
+        },
+        {
+          "type": "improvement",
+          "title": "Órdenes Carnaval con flujo más claro",
+          "description": "Ajustamos el flujo de estados y el detalle de órdenes para que el seguimiento sea más fácil, con una lectura más clara de lo que está pasando en cada paso."
+        }
+      ]
+    },
     {
       "version": "1.9.8",
       "date": "2026-03-22",
