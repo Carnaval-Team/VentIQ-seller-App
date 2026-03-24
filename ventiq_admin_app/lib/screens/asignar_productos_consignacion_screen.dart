@@ -40,6 +40,7 @@ class _AsignarProductosConsignacionScreenState
   final Map<int, TextEditingController> _cantControllers = {};
   final Map<int, FocusNode> _cantFocusNodes = {};
   final Map<int, Timer> _cantTimers = {};
+  final Set<int> _confirmandoProducto = {}; // evita doble disparo timer+focusNode
 
   // Estados de expansión
   Map<String, bool> _expandedAlmacenes = {}; // almacen_id -> expandido
@@ -242,10 +243,27 @@ class _AsignarProductosConsignacionScreenState
     int idInventario,
     Map<String, dynamic> productoInventario,
   ) async {
+    if (_confirmandoProducto.contains(idInventario)) return;
+    _confirmandoProducto.add(idInventario);
+
     final cantidad =
         _productosSeleccionados[idInventario]?['cantidad'] as double? ?? 0.0;
-    if (cantidad <= 0) return;
-    if (_aplicandoMovimiento) return;
+    if (_aplicandoMovimiento) {
+      _confirmandoProducto.remove(idInventario);
+      return;
+    }
+
+    // Si cantidad es 0 o vacío y ya existe un movimiento, revertirlo
+    if (cantidad <= 0) {
+      if (_idExtraccionProducto.containsKey(idInventario)) {
+        await _quitarProductoDeExtraccion(idInventario);
+        setState(() {
+          _productosSeleccionados[idInventario]?['seleccionado'] = false;
+          _cantControllers[idInventario]?.clear();
+        });
+      }
+      return;
+    }
 
     _aplicandoMovimiento = true;
 
@@ -320,42 +338,30 @@ class _AsignarProductosConsignacionScreenState
 
         if (idEPExistente != null) {
           // ── Producto YA está en extracción: actualizar cantidad ───────────
-          // 1. Obtener el movimiento de inventario anterior vinculado a este EP
-          final invAnterior = await _supabase
+          // 1. Obtener la primera fila vinculada a este EP para leer el saldo
+          //    original (cantidad_inicial del primer movimiento = stock antes de reservar)
+          final invRows = await _supabase
               .from('app_dat_inventario_productos')
-              .select(
-                'id, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad_inicial, cantidad_final, sku_producto',
-              )
+              .select('id, cantidad_inicial')
               .eq('id_extraccion', idEPExistente)
-              .order('created_at', ascending: false)
+              .order('created_at', ascending: true)
               .limit(1);
 
-          if ((invAnterior as List).isEmpty) {
+          if ((invRows as List).isEmpty) {
             throw Exception(
               'No se encontró movimiento de inventario para EP #$idEPExistente',
             );
           }
 
-          final invPrev = invAnterior[0];
-          // cantidad_inicial del movimiento anterior = saldo antes de la extracción original
           final saldoOriginal =
-              (invPrev['cantidad_inicial'] as num?)?.toDouble() ?? 0.0;
+              (invRows[0]['cantidad_inicial'] as num?)?.toDouble() ?? 0.0;
           final nuevaCantidadFinal = saldoOriginal - cantidad;
 
-          // 2. Revertir movimiento anterior (insertar compensación)
-          await _supabase.from('app_dat_inventario_productos').insert({
-            'id_producto': invPrev['id_producto'],
-            'id_variante': invPrev['id_variante'],
-            'id_opcion_variante': invPrev['id_opcion_variante'],
-            'id_ubicacion': invPrev['id_ubicacion'],
-            'id_presentacion': invPrev['id_presentacion'],
-            'cantidad_inicial': invPrev['cantidad_final'],
-            'cantidad_final': saldoOriginal,
-            'sku_producto': invPrev['sku_producto'],
-            'origen_cambio': 2,
-            'id_extraccion': idEPExistente,
-            'created_at': DateTime.now().toIso8601String(),
-          });
+          // 2. Eliminar TODAS las filas anteriores de inventario vinculadas a este EP
+          await _supabase
+              .from('app_dat_inventario_productos')
+              .delete()
+              .eq('id_extraccion', idEPExistente);
 
           // 3. Actualizar cantidad en extraccion_productos
           await _supabase
@@ -363,7 +369,7 @@ class _AsignarProductosConsignacionScreenState
               .update({'cantidad': cantidad})
               .eq('id', idEPExistente);
 
-          // 4. Insertar nuevo movimiento con la cantidad actualizada
+          // 4. Insertar UNA SOLA fila con la cantidad actualizada
           await _supabase.from('app_dat_inventario_productos').insert({
             'id_producto': idProducto,
             'id_variante': idVariante,
@@ -481,6 +487,7 @@ class _AsignarProductosConsignacionScreenState
       }
     } finally {
       _aplicandoMovimiento = false;
+      _confirmandoProducto.remove(idInventario);
     }
   }
 
@@ -490,31 +497,12 @@ class _AsignarProductosConsignacionScreenState
     if (idEP == null || _idExtraccion == null) return;
 
     try {
-      // Obtener el movimiento de inventario vinculado a este registro de extracción
-      final invRows = await _supabase
+      // Eliminar TODAS las filas de inventario vinculadas a este EP
+      // (con el modelo de una sola fila por EP, esto deja el saldo en cantidad_inicial)
+      await _supabase
           .from('app_dat_inventario_productos')
-          .select('id, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad_inicial, cantidad_final, sku_producto')
-          .eq('id_extraccion', idEP)
-          .order('created_at', ascending: false)
-          .limit(1);
-
-      if ((invRows as List).isNotEmpty) {
-        final inv = invRows[0];
-        // Revertir: el nuevo saldo es cantidad_inicial (antes de la extracción)
-        await _supabase.from('app_dat_inventario_productos').insert({
-          'id_producto': inv['id_producto'],
-          'id_variante': inv['id_variante'],
-          'id_opcion_variante': inv['id_opcion_variante'],
-          'id_ubicacion': inv['id_ubicacion'],
-          'id_presentacion': inv['id_presentacion'],
-          'cantidad_inicial': inv['cantidad_final'], // saldo después de extracción
-          'cantidad_final': inv['cantidad_inicial'], // revertir al saldo original
-          'sku_producto': inv['sku_producto'],
-          'origen_cambio': 2,
-          'id_extraccion': idEP,
-          'created_at': DateTime.now().toIso8601String(),
-        });
-      }
+          .delete()
+          .eq('id_extraccion', idEP);
 
       // Eliminar de extraccion_productos
       await _supabase
