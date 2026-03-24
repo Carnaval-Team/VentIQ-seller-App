@@ -1081,7 +1081,7 @@ class CarnavalService {
       var query = _supabase
           .schema('carnavalapp')
           .from('Orders')
-          .select('*');
+          .select('*, Usuarios:user_id(name, telefono)');
 
       if (!isAdmin) {
         query = query.contains('proveedores', ['$carnavalStoreId']);
@@ -1176,7 +1176,7 @@ class CarnavalService {
       var query = _supabase
           .schema('carnavalapp')
           .from('OrderDetails')
-          .select('*, Productos(id, name, image, price, proveedor)')
+          .select('*, Productos(id, name, image, price, proveedor, proveedores(id, name))')
           .eq('order_id', orderId);
 
       if (proveedorFilter != null) {
@@ -1212,14 +1212,19 @@ class CarnavalService {
     }
   }
 
-  /// Asigna un repartidor a una orden y cambia status a 'Asignado'
-  static Future<bool> assignDelivery(int orderId, int repartidorId) async {
+  /// Asigna un repartidor a una orden. Si es recogida, marca Completado.
+  static Future<bool> assignDelivery(
+    int orderId,
+    int repartidorId, {
+    String metodoEntrega = 'Domicilio',
+  }) async {
     try {
+      final isRecogida = metodoEntrega == 'Entrega Cliente';
       await _supabase
           .schema('carnavalapp')
           .from('Orders')
           .update({
-            'status': 'Asignado',
+            'status': isRecogida ? 'Completado' : 'Asignado',
             'repartidor_id': repartidorId,
           })
           .eq('id', orderId);
@@ -1304,6 +1309,83 @@ class CarnavalService {
     } catch (e) {
       print('❌ Error al recalcular total: $e');
       return false;
+    }
+  }
+
+  /// Obtiene info del usuario de una orden desde carnavalapp.Usuarios
+  static Future<Map<String, dynamic>?> getOrderUserInfo(int userId) async {
+    try {
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('Usuarios')
+          .select('name, email, telefono, carnet_id')
+          .eq('id', userId)
+          .maybeSingle();
+      return response;
+    } catch (e) {
+      print('❌ Error al obtener info de usuario: $e');
+      return null;
+    }
+  }
+
+  /// Obtiene provincia y municipio de una dirección por su texto
+  static Future<Map<String, dynamic>?> getOrderDireccion(
+      String direccionText) async {
+    try {
+      final dirResponse = await _supabase
+          .schema('carnavalapp')
+          .from('Direcciones')
+          .select('id, address, provincia, municipio')
+          .eq('address', direccionText)
+          .limit(1)
+          .maybeSingle();
+
+      if (dirResponse == null) return null;
+
+      final result = Map<String, dynamic>.from(dirResponse);
+      final provinciaId = dirResponse['provincia'];
+      final municipioId = dirResponse['municipio'];
+
+      if (provinciaId != null) {
+        final prov = await _supabase
+            .schema('carnavalapp')
+            .from('Provincias')
+            .select('nombre')
+            .eq('id', provinciaId)
+            .maybeSingle();
+        result['provincia_nombre'] = prov?['nombre'];
+      }
+
+      if (municipioId != null) {
+        final mun = await _supabase
+            .schema('carnavalapp')
+            .from('municipios')
+            .select('municipio')
+            .eq('id', municipioId)
+            .maybeSingle();
+        result['municipio_nombre'] = mun?['nombre'];
+      }
+
+      return result;
+    } catch (e) {
+      print('❌ Error al obtener dirección: $e');
+      return null;
+    }
+  }
+
+  /// Obtiene el ID de operación VentIQ asociada a una orden de Carnaval
+  static Future<int?> getVentiqOperationId(int carnavalOrderId) async {
+    try {
+      final response = await _supabase
+          .from('app_dat_operaciones')
+          .select('id')
+          .ilike('observaciones', '%Venta desde orden $carnavalOrderId%')
+          .limit(1)
+          .maybeSingle();
+      return response?['id'] as int?;
+    } catch (e) {
+      print('❌ Error al obtener operación VentIQ: $e');
+      return null;
     }
   }
 

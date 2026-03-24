@@ -26,6 +26,11 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   List<Map<String, dynamic>> _details = [];
   Map<String, dynamic> _order = {};
 
+  // Extra data
+  Map<String, dynamic>? _userInfo;
+  Map<String, dynamic>? _direccionInfo;
+  int? _ventiqOperationId;
+
   @override
   void initState() {
     super.initState();
@@ -35,12 +40,39 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
 
   Future<void> _loadDetails() async {
     setState(() => _isLoading = true);
-    final details = await CarnavalService.getOrderDetails(
+
+    final detailsFuture = CarnavalService.getOrderDetails(
       _order['id'],
       proveedorFilter: widget.isAdmin ? null : widget.carnavalStoreId,
     );
+
+    // Load extra data in parallel
+    final userId = _order['user_id'] as int?;
+    final direccion = _order['direccion'] as String?;
+    final orderId = _order['id'] as int?;
+
+    final futures = await Future.wait([
+      detailsFuture,
+      if (userId != null) CarnavalService.getOrderUserInfo(userId),
+      if (direccion != null && direccion.isNotEmpty)
+        CarnavalService.getOrderDireccion(direccion),
+      if (orderId != null) CarnavalService.getVentiqOperationId(orderId),
+    ]);
+
+    int idx = 1;
     setState(() {
-      _details = details;
+      _details = futures[0] as List<Map<String, dynamic>>;
+      if (userId != null) {
+        _userInfo = futures[idx] as Map<String, dynamic>?;
+        idx++;
+      }
+      if (direccion != null && direccion.isNotEmpty) {
+        _direccionInfo = futures[idx] as Map<String, dynamic>?;
+        idx++;
+      }
+      if (orderId != null) {
+        _ventiqOperationId = futures[idx] as int?;
+      }
       _isLoading = false;
     });
   }
@@ -55,29 +87,27 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   String get _status => _order['status'] as String? ?? '';
 
   bool get _canEditProducts =>
-      const ['En Revision', 'Procesando', 'Pendiente de Pago', 'Pagado']
+      const ['Nuevo', 'En Revision', 'Procesando', 'Pendiente de Pago']
           .contains(_status);
 
   Color _statusColor(String? status) {
     switch (status) {
-      case 'Pendiente':
+      case 'Nuevo':
         return Colors.orange;
       case 'En Revision':
         return Colors.blue;
-      case 'Procesando':
-        return Colors.indigo;
-      case 'Pagado':
-        return Colors.green;
-      case 'Cancelado':
-        return Colors.red;
-      case 'Asignado':
-        return Colors.purple;
-      case 'Completado':
-        return Colors.teal;
-      case 'Creando':
-        return Colors.grey;
       case 'Pendiente de Pago':
         return Colors.amber;
+      case 'Procesando':
+        return Colors.indigo;
+      case 'Asignado':
+        return Colors.purple;
+      case 'Entregando':
+        return Colors.deepOrange;
+      case 'Completado':
+        return Colors.teal;
+      case 'Cancelado':
+        return Colors.red;
       default:
         return Colors.grey;
     }
@@ -104,6 +134,11 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
         CarnavalService.updateOrderStatus(_order['id'], 'Procesando'));
   }
 
+  Future<void> _validatePayment() async {
+    await _doAction(() =>
+        CarnavalService.updateOrderStatus(_order['id'], 'Procesando'));
+  }
+
   Future<void> _cancelOrder() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -124,11 +159,6 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
       await _doAction(() =>
           CarnavalService.updateOrderStatus(_order['id'], 'Cancelado'));
     }
-  }
-
-  Future<void> _confirmPayment() async {
-    await _doAction(() =>
-        CarnavalService.updateOrderStatus(_order['id'], 'Pagado'));
   }
 
   Future<void> _assignDelivery() async {
@@ -154,8 +184,10 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
       ),
     );
     if (selected != null) {
+      final metodoEntrega = _order['metodo_entrega'] as String? ?? 'Domicilio';
       await _doAction(() =>
-          CarnavalService.assignDelivery(_order['id'], selected));
+          CarnavalService.assignDelivery(_order['id'], selected,
+              metodoEntrega: metodoEntrega));
     }
   }
 
@@ -238,8 +270,37 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
                     // Header
                     _buildHeader(),
                     const SizedBox(height: 16),
+                    // VentIQ Operation
+                    if (_ventiqOperationId != null) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.indigo.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.link, size: 16, color: Colors.indigo),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Operación Inventtia #$_ventiqOperationId',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.indigo,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     // Cliente
                     _buildSection('Cliente', _buildClienteInfo()),
+                    const SizedBox(height: 12),
+                    // Dirección
+                    _buildSection('Dirección', _buildDireccionInfo()),
                     const SizedBox(height: 12),
                     // Entrega
                     _buildSection('Entrega', _buildEntregaInfo()),
@@ -301,7 +362,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: _statusColor(_status).withOpacity(0.15),
+            color: _statusColor(_status).withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(16),
           ),
           child: Text(
@@ -348,12 +409,34 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   }
 
   Widget _buildClienteInfo() {
+    final name = _userInfo?['name'] as String? ?? _order['destinatario'] ?? '-';
+    final email = _userInfo?['email'] as String? ?? '-';
+    final telefono =
+        _userInfo?['telefono'] as String? ?? _order['telefono'] ?? '-';
+    final carnet = _userInfo?['carnet_id']?.toString() ?? '-';
+
     return Column(
       children: [
-        _buildInfoRow('Dirección', _order['direccion'] ?? '-'),
+        _buildInfoRow('Nombre', name),
+        _buildInfoRow('Email', email),
+        _buildInfoRow('Teléfono', telefono),
+        _buildInfoRow('Carnet', carnet),
         _buildInfoRow('Destinatario', _order['destinatario'] ?? '-'),
-        _buildInfoRow('Teléfono', _order['telefono'] ?? '-'),
         _buildInfoRow('Notas', _order['notas'] ?? '-'),
+      ],
+    );
+  }
+
+  Widget _buildDireccionInfo() {
+    final provincia = _direccionInfo?['provincia_nombre'] ?? '-';
+    final municipio = _direccionInfo?['municipio_nombre'] ?? '-';
+    final direccion = _order['direccion'] ?? '-';
+
+    return Column(
+      children: [
+        _buildInfoRow('Provincia', provincia),
+        _buildInfoRow('Municipio', municipio),
+        _buildInfoRow('Dirección', direccion),
       ],
     );
   }
@@ -393,6 +476,8 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
         final producto = d['Productos'] as Map<String, dynamic>?;
         final name = producto?['name'] ?? 'Producto';
         final image = producto?['image'] as String?;
+        final proveedorData = producto?['proveedores'] as Map<String, dynamic>?;
+        final proveedorName = proveedorData?['name'] as String?;
         final qty = (d['quantity'] as num?)?.toInt() ?? 0;
         final price = (d['price'] as num?)?.toDouble() ?? 0;
         final subtotal = price * qty;
@@ -445,6 +530,27 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
                   ],
                 ),
               ),
+              if (proveedorName != null)
+                Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.deepPurple.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.storefront, size: 12, color: Colors.deepPurple),
+                      const SizedBox(width: 4),
+                      Text(proveedorName,
+                          style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.deepPurple)),
+                    ],
+                  ),
+                ),
               // Admin actions
               if (widget.isAdmin && _canEditProducts) ...[
                 IconButton(
@@ -481,40 +587,136 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
 
   Widget _buildAdminActions() {
     final actions = <Widget>[];
+    final metodoPago = _order['metodo_pago'] as String? ?? '';
+    final metodoEntrega = _order['metodo_entrega'] as String? ?? '';
 
-    if (_status == 'En Revision' || _status == 'Pagado') {
-      actions.add(_actionButton('Aceptar', Colors.green, _acceptOrder));
-    }
-    if (_status == 'En Revision' || _status == 'Pendiente de Pago') {
-      actions.add(_actionButton('Cancelar', Colors.red, _cancelOrder));
-    }
-    if (_status == 'Procesando') {
-      actions
-          .add(_actionButton('Asignar Repartidor', Colors.purple, _assignDelivery));
-    }
-    if (_status == 'Pendiente de Pago') {
-      actions
-          .add(_actionButton('Confirmar Pago', Colors.green, _confirmPayment));
+    switch (_status) {
+      case 'Nuevo':
+        actions.add(_actionButton(
+          'Aceptar y Procesar',
+          'La orden pasará a preparación',
+          Icons.check_circle_outline,
+          Colors.green,
+          _acceptOrder,
+        ));
+        actions.add(_actionButton(
+          'Cancelar Orden',
+          'Se cancelará permanentemente',
+          Icons.cancel_outlined,
+          Colors.red,
+          _cancelOrder,
+        ));
+        break;
+      case 'En Revision':
+        actions.add(_actionButton(
+          'Validar Pago ($metodoPago)',
+          'Comprobante verificado, pasar a preparación',
+          Icons.verified_outlined,
+          Colors.green,
+          _validatePayment,
+        ));
+        actions.add(_actionButton(
+          'Rechazar / Cancelar',
+          'Pago no válido, cancelar orden',
+          Icons.cancel_outlined,
+          Colors.red,
+          _cancelOrder,
+        ));
+        break;
+      case 'Pendiente de Pago':
+        actions.add(_actionButton(
+          'Cancelar Orden',
+          'El cliente no ha pagado',
+          Icons.cancel_outlined,
+          Colors.red,
+          _cancelOrder,
+        ));
+        break;
+      case 'Procesando':
+        final esRecogida = metodoEntrega == 'Entrega Cliente';
+        actions.add(_actionButton(
+          esRecogida ? 'Asignar y Completar' : 'Asignar Repartidor',
+          esRecogida
+              ? 'Recogida en tienda: se marcará como completada'
+              : 'Seleccionar repartidor para envío a domicilio',
+          esRecogida ? Icons.storefront : Icons.delivery_dining,
+          Colors.purple,
+          _assignDelivery,
+        ));
+        actions.add(_actionButton(
+          'Cancelar Orden',
+          'Cancelar preparación',
+          Icons.cancel_outlined,
+          Colors.red,
+          _cancelOrder,
+        ));
+        break;
+      case 'Asignado':
+        actions.add(_actionButton(
+          'Cancelar Orden',
+          'Cancelar antes de la entrega',
+          Icons.cancel_outlined,
+          Colors.red,
+          _cancelOrder,
+        ));
+        break;
     }
 
     if (actions.isEmpty) return const SizedBox.shrink();
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: actions,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(),
+        const SizedBox(height: 4),
+        Text('Acciones',
+            style: const TextStyle(
+                fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87)),
+        const SizedBox(height: 8),
+        ...actions,
+      ],
     );
   }
 
-  Widget _actionButton(String label, Color color, VoidCallback onPressed) {
-    return ElevatedButton(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  Widget _actionButton(
+    String label,
+    String subtitle,
+    IconData icon,
+    Color color,
+    VoidCallback onPressed,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600)),
+                  Text(subtitle,
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white.withValues(alpha: 0.85))),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios, size: 14),
+          ],
+        ),
       ),
-      child: Text(label),
     );
   }
 }

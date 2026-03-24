@@ -16,15 +16,14 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   static const _adminIds = [3, 29, 38];
   static const _pageSize = 20;
   static const _allStatuses = [
+    'Nuevo',
     'En Revision',
     'Pendiente de Pago',
-    'Pagado',
     'Procesando',
     'Asignado',
+    'Entregando',
     'Completado',
     'Cancelado',
-    'Creando',
-    'Pendiente',
   ];
 
   final ScrollController _scrollController = ScrollController();
@@ -37,6 +36,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   int? _carnavalStoreId;
   bool _isAdmin = false;
   List<Map<String, dynamic>> _orders = [];
+  Map<int, int> _ventiqOps = {}; // carnaval order id -> ventiq operation id
   String? _selectedStatus;
 
   @override
@@ -93,9 +93,32 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     return int.tryParse(text);
   }
 
+  Future<void> _loadVentiqOps(List<Map<String, dynamic>> orders) async {
+    final futures = <Future<MapEntry<int, int?>>>[];
+    for (final o in orders) {
+      final id = o['id'] as int?;
+      if (id != null && !_ventiqOps.containsKey(id)) {
+        futures.add(
+          CarnavalService.getVentiqOperationId(id)
+              .then((opId) => MapEntry(id, opId)),
+        );
+      }
+    }
+    if (futures.isEmpty) return;
+    final results = await Future.wait(futures);
+    final newOps = <int, int>{};
+    for (final entry in results) {
+      if (entry.value != null) newOps[entry.key] = entry.value!;
+    }
+    if (newOps.isNotEmpty && mounted) {
+      setState(() => _ventiqOps.addAll(newOps));
+    }
+  }
+
   Future<void> _loadOrders() async {
     setState(() => _isLoading = true);
     _currentPage = 0;
+    _ventiqOps = {};
     final orders = await CarnavalService.getCarnavalOrders(
       _carnavalStoreId!,
       _isAdmin,
@@ -109,6 +132,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       _hasMore = orders.length == _pageSize;
       _isLoading = false;
     });
+    _loadVentiqOps(orders);
   }
 
   Future<void> _loadMore() async {
@@ -128,30 +152,40 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       _hasMore = orders.length == _pageSize;
       _isLoadingMore = false;
     });
+    _loadVentiqOps(orders);
   }
 
   Color _statusColor(String? status) {
     switch (status) {
-      case 'Pendiente':
+      case 'Nuevo':
         return Colors.orange;
       case 'En Revision':
         return Colors.blue;
-      case 'Procesando':
-        return Colors.indigo;
-      case 'Pagado':
-        return Colors.green;
-      case 'Cancelado':
-        return Colors.red;
-      case 'Asignado':
-        return Colors.purple;
-      case 'Completado':
-        return Colors.teal;
-      case 'Creando':
-        return Colors.grey;
       case 'Pendiente de Pago':
         return Colors.amber;
+      case 'Procesando':
+        return Colors.indigo;
+      case 'Asignado':
+        return Colors.purple;
+      case 'Entregando':
+        return Colors.deepOrange;
+      case 'Completado':
+        return Colors.teal;
+      case 'Cancelado':
+        return Colors.red;
       default:
         return Colors.grey;
+    }
+  }
+
+  Color _paymentColor(String? metodoPago) {
+    switch (metodoPago?.toLowerCase()) {
+      case 'efectivo':
+        return Colors.green;
+      case 'transferencia':
+        return Colors.blue;
+      default:
+        return Colors.grey[600]!;
     }
   }
 
@@ -351,6 +385,10 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     final metodoPago = order['metodo_pago'] as String? ?? '-';
     final proveedorId = order['proveedor_id'];
     final repartidor = order['repartidor'];
+    final usuario = order['Usuarios'] as Map<String, dynamic>?;
+    final clienteName = usuario?['name'] as String? ?? '';
+    final clientePhone = usuario?['telefono'] as String? ?? '';
+    final ventiqOpId = _ventiqOps[orderId];
 
     String dateStr = '-';
     if (createdAt != null) {
@@ -399,6 +437,42 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                   ),
                 ],
               ),
+              if (clienteName.isNotEmpty || clientePhone.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.person, size: 14, color: Colors.grey[600]),
+                    const SizedBox(width: 4),
+                    if (clienteName.isNotEmpty)
+                      Flexible(
+                        child: Text(clienteName,
+                            style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                    if (clientePhone.isNotEmpty) ...[
+                      const SizedBox(width: 12),
+                      Icon(Icons.phone, size: 14, color: Colors.grey[600]),
+                      const SizedBox(width: 4),
+                      Text(clientePhone,
+                          style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                    ],
+                  ],
+                ),
+              ],
+              if (ventiqOpId != null) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.link, size: 14, color: Colors.indigo),
+                    const SizedBox(width: 4),
+                    Text('Op. Inventtia #$ventiqOpId',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.indigo)),
+                  ],
+                ),
+              ],
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -428,11 +502,13 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                       style:
                           TextStyle(fontSize: 12, color: Colors.grey[600])),
                   const SizedBox(width: 16),
-                  Icon(Icons.payment, size: 14, color: Colors.grey[600]),
+                  Icon(Icons.payment, size: 14, color: _paymentColor(metodoPago)),
                   const SizedBox(width: 4),
                   Text(metodoPago,
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey[600])),
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _paymentColor(metodoPago))),
                 ],
               ),
               const SizedBox(height: 6),
