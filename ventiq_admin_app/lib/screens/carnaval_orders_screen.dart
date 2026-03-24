@@ -17,8 +17,6 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   static const _pageSize = 20;
   static const _allStatuses = [
     'Nuevo',
-    'En Revision',
-    'Pendiente de Pago',
     'Procesando',
     'Asignado',
     'Entregando',
