@@ -1,9 +1,31 @@
 {
-  "current_version": "2.0.0",
-  "build": 200,
+  "current_version": "2.0.1",
+  "build": 201,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.0.1",
+      "date": "2026-03-26",
+      "title": "🚚 Asignación de repartidores mejorada",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Nuevo selector de repartidores más completo",
+          "description": "Reemplazamos el diálogo básico por un panel visual con nombre, teléfono y correo de cada repartidor, para que tomes mejores decisiones al asignar envíos."
+        },
+        {
+          "type": "feature",
+          "title": "Reasignar repartidor en órdenes asignadas",
+          "description": "Ahora puedes cambiar el repartidor de una orden que ya está en estado Asignado sin tener que cancelarla. El estado de la orden se mantiene intacto."
+        },
+        {
+          "type": "fix",
+          "title": "Corrección en la asignación de repartidor",
+          "description": "Se corrigió un error que impedía guardar correctamente el repartidor asignado a una orden."
+        }
+      ]
+    },
     {
       "version": "1.9.9",
       "date": "2026-03-24",
