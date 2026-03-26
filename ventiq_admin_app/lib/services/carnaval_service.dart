@@ -1229,12 +1229,27 @@ class CarnavalService {
           .from('Orders')
           .update({
             'status': isRecogida ? 'Completado' : 'Asignado',
-            'repartidor_id': repartidorId,
+            'repartidor': repartidorId,
           })
           .eq('id', orderId);
       return true;
     } catch (e) {
       print('❌ Error al asignar repartidor: $e');
+      return false;
+    }
+  }
+
+  /// Reasigna un repartidor a una orden sin cambiar el estado
+  static Future<bool> reassignDelivery(int orderId, int repartidorId) async {
+    try {
+      await _supabase
+          .schema('carnavalapp')
+          .from('Orders')
+          .update({'repartidor': repartidorId})
+          .eq('id', orderId);
+      return true;
+    } catch (e) {
+      print('❌ Error al reasignar repartidor: $e');
       return false;
     }
   }

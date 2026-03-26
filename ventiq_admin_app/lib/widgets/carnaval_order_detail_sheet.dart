@@ -161,33 +161,240 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     }
   }
 
-  Future<void> _assignDelivery() async {
+  Future<int?> _showRepartidorPicker() async {
     final repartidores = await CarnavalService.getRepartidores();
-    if (!mounted) return;
+    if (!mounted) return null;
     if (repartidores.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No hay repartidores disponibles')),
       );
-      return;
+      return null;
     }
 
-    final selected = await showDialog<int>(
+    final currentRepartidor = _order['repartidor'] as int?;
+
+    return showModalBottomSheet<int>(
       context: context,
-      builder: (_) => SimpleDialog(
-        title: const Text('Asignar Repartidor'),
-        children: repartidores
-            .map((r) => SimpleDialogOption(
-                  onPressed: () => Navigator.pop(context, r['id'] as int),
-                  child: Text(r['nombre'] ?? r['name'] ?? 'Repartidor #${r['id']}'),
-                ))
-            .toList(),
-      ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(top: 12, bottom: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              // Title
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.delivery_dining,
+                          color: Colors.purple, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Seleccionar Repartidor',
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold)),
+                          Text('Elige un repartidor disponible',
+                              style:
+                                  TextStyle(fontSize: 13, color: Colors.grey)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 20),
+              // List
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  itemCount: repartidores.length,
+                  itemBuilder: (_, i) {
+                    final r = repartidores[i];
+                    final id = r['id'] as int;
+                    final nombre =
+                        r['nombre'] as String? ?? 'Repartidor #$id';
+                    final telefono = r['telefono']?.toString() ?? '';
+                    final correo = r['correo'] as String? ?? '';
+                    final isCurrent = id == currentRepartidor;
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        color: isCurrent
+                            ? Colors.purple.withValues(alpha: 0.08)
+                            : Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isCurrent
+                              ? Colors.purple.withValues(alpha: 0.4)
+                              : Colors.grey[200]!,
+                          width: isCurrent ? 1.5 : 1,
+                        ),
+                      ),
+                      child: InkWell(
+                        onTap: () => Navigator.pop(ctx, id),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              // Avatar
+                              CircleAvatar(
+                                radius: 22,
+                                backgroundColor:
+                                    Colors.purple.withValues(alpha: 0.15),
+                                child: Text(
+                                  nombre.isNotEmpty
+                                      ? nombre[0].toUpperCase()
+                                      : '?',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.purple,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              // Info
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(nombre,
+                                              style: const TextStyle(
+                                                  fontSize: 15,
+                                                  fontWeight:
+                                                      FontWeight.w600),
+                                              overflow:
+                                                  TextOverflow.ellipsis),
+                                        ),
+                                        if (isCurrent) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.purple,
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: const Text('Actual',
+                                                style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: Colors.white,
+                                                    fontWeight:
+                                                        FontWeight.w600)),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    if (telefono.isNotEmpty)
+                                      Row(
+                                        children: [
+                                          Icon(Icons.phone,
+                                              size: 13,
+                                              color: Colors.grey[500]),
+                                          const SizedBox(width: 4),
+                                          Text(telefono,
+                                              style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[600])),
+                                        ],
+                                      ),
+                                    if (correo.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          Icon(Icons.email_outlined,
+                                              size: 13,
+                                              color: Colors.grey[500]),
+                                          const SizedBox(width: 4),
+                                          Flexible(
+                                            child: Text(correo,
+                                                style: TextStyle(
+                                                    fontSize: 12,
+                                                    color:
+                                                        Colors.grey[600]),
+                                                overflow: TextOverflow
+                                                    .ellipsis),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              // Arrow
+                              Icon(Icons.arrow_forward_ios,
+                                  size: 14, color: Colors.grey[400]),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  Future<void> _assignDelivery() async {
+    final selected = await _showRepartidorPicker();
     if (selected != null) {
       final metodoEntrega = _order['metodo_entrega'] as String? ?? 'Domicilio';
       await _doAction(() =>
           CarnavalService.assignDelivery(_order['id'], selected,
               metodoEntrega: metodoEntrega));
+    }
+  }
+
+  Future<void> _reassignDelivery() async {
+    final selected = await _showRepartidorPicker();
+    if (selected != null) {
+      await _doAction(() =>
+          CarnavalService.reassignDelivery(_order['id'], selected));
     }
   }
 
@@ -317,9 +524,9 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
                     ),
                     const SizedBox(height: 12),
                     // Repartidor
-                    if (_order['repartidor_id'] != null)
+                    if (_order['repartidor'] != null)
                       _buildSection('Repartidor', Text(
-                        'Repartidor #${_order['repartidor_id']}',
+                        'Repartidor #${_order['repartidor']}',
                         style: const TextStyle(fontSize: 14),
                       )),
                     const SizedBox(height: 16),
@@ -644,6 +851,13 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
         ));
         break;
       case 'Asignado':
+        actions.add(_actionButton(
+          'Reasignar Repartidor',
+          'Cambiar el repartidor asignado a esta orden',
+          Icons.swap_horiz,
+          Colors.purple,
+          _reassignDelivery,
+        ));
         actions.add(_actionButton(
           'Cancelar Orden',
           'Cancelar antes de la entrega',
