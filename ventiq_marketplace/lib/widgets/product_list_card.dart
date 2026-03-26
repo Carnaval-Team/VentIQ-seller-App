@@ -292,12 +292,12 @@ class ProductListCard extends StatelessWidget {
     return StockStatusChip(
       stock: availableStock,
       lowStockThreshold: 10,
-      showQuantity: false,
+      showQuantity: true,
       fontSize: 11,
       iconSize: 13,
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       borderRadius: 6,
-      maxWidth: 96,
+      maxWidth: 296,
     );
   }
 }
