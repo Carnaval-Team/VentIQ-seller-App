@@ -86,9 +86,60 @@ class _HomeScreenState extends State<HomeScreen>
   bool _isRecentUserScrolling = false;
   bool _isStoresUserScrolling = false;
 
+  // Section stagger animations
+  late AnimationController _sectionAnimationController;
+  late Animation<double> _section1Fade;
+  late Animation<Offset> _section1Slide;
+  late Animation<double> _section2Fade;
+  late Animation<Offset> _section2Slide;
+  late Animation<double> _section3Fade;
+  late Animation<Offset> _section3Slide;
+
   @override
   void initState() {
     super.initState();
+
+    // Section stagger animation setup
+    _sectionAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _section1Fade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _sectionAnimationController,
+        curve: const Interval(0.0, 0.33, curve: Curves.easeOutCubic),
+      ),
+    );
+    _section1Slide = Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero).animate(
+      CurvedAnimation(
+        parent: _sectionAnimationController,
+        curve: const Interval(0.0, 0.33, curve: Curves.easeOutCubic),
+      ),
+    );
+    _section2Fade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _sectionAnimationController,
+        curve: const Interval(0.2, 0.53, curve: Curves.easeOutCubic),
+      ),
+    );
+    _section2Slide = Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero).animate(
+      CurvedAnimation(
+        parent: _sectionAnimationController,
+        curve: const Interval(0.2, 0.53, curve: Curves.easeOutCubic),
+      ),
+    );
+    _section3Fade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _sectionAnimationController,
+        curve: const Interval(0.4, 0.73, curve: Curves.easeOutCubic),
+      ),
+    );
+    _section3Slide = Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero).animate(
+      CurvedAnimation(
+        parent: _sectionAnimationController,
+        curve: const Interval(0.4, 0.73, curve: Curves.easeOutCubic),
+      ),
+    );
 
     _loadData();
     _startBannerTimer();
@@ -512,8 +563,8 @@ class _HomeScreenState extends State<HomeScreen>
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => const Center(
-          child: CircularProgressIndicator(color: AppTheme.primaryColor),
+        builder: (ctx) => Center(
+          child: CircularProgressIndicator(color: AppTheme.getAccentColor(ctx)),
         ),
       );
 
@@ -1155,6 +1206,7 @@ class _HomeScreenState extends State<HomeScreen>
     _bestSellingScrollController.dispose();
     _recentProductsScrollController.dispose();
     _storesScrollController.dispose();
+    _sectionAnimationController.dispose();
     super.dispose();
   }
 
@@ -1176,6 +1228,9 @@ class _HomeScreenState extends State<HomeScreen>
       _loadMostRecentProducts(),
       _loadFeaturedStores(),
     ]);
+    if (mounted) {
+      _sectionAnimationController.forward(from: 0.0);
+    }
   }
 
   /// Cargar productos más vendidos
@@ -1293,8 +1348,8 @@ class _HomeScreenState extends State<HomeScreen>
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(color: AppTheme.primaryColor),
+        builder: (ctx) => Center(
+          child: CircularProgressIndicator(color: AppTheme.getAccentColor(ctx)),
         ),
       );
 
@@ -1350,7 +1405,7 @@ class _HomeScreenState extends State<HomeScreen>
             // Buscador fijo (aunque scrollea con el contenido, visualmente es el primer elemento)
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                padding: const EdgeInsets.symmetric(vertical: 4.0),
                 child: _buildSearchSection(),
               ),
             ),
@@ -1373,26 +1428,40 @@ class _HomeScreenState extends State<HomeScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: AppTheme.paddingM),
-
-          // Banner promocional
-          // _buildPromoBanner(),
-          const SizedBox(height: AppTheme.paddingM),
+          const SizedBox(height: AppTheme.paddingS),
 
           // Productos más vendidos
-          _buildBestSellingProducts(),
+          FadeTransition(
+            opacity: _section1Fade,
+            child: SlideTransition(
+              position: _section1Slide,
+              child: _buildBestSellingProducts(),
+            ),
+          ),
 
-          const SizedBox(height: AppTheme.paddingL),
+          const SizedBox(height: AppTheme.paddingM),
 
           // Productos nuevos
-          _buildMostRecentProducts(),
+          FadeTransition(
+            opacity: _section2Fade,
+            child: SlideTransition(
+              position: _section2Slide,
+              child: _buildMostRecentProducts(),
+            ),
+          ),
 
-          const SizedBox(height: AppTheme.paddingL),
+          const SizedBox(height: AppTheme.paddingM),
 
           // Tiendas destacadas
-          _buildTopStores(),
+          FadeTransition(
+            opacity: _section3Fade,
+            child: SlideTransition(
+              position: _section3Slide,
+              child: _buildTopStores(),
+            ),
+          ),
 
-          const SizedBox(height: AppTheme.paddingL),
+          const SizedBox(height: AppTheme.paddingM),
         ],
       ),
     );
@@ -1400,9 +1469,9 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildSearchResults() {
     if (_isLoadingSearch) {
-      return const SliverFillRemaining(
+      return SliverFillRemaining(
         child: Center(
-          child: CircularProgressIndicator(color: AppTheme.primaryColor),
+          child: CircularProgressIndicator(color: AppTheme.getAccentColor(context)),
         ),
       );
     }
@@ -1432,10 +1501,10 @@ class _HomeScreenState extends State<HomeScreen>
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Text(
               'Tiendas (${_searchResultsStores.length})',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: AppTheme.textPrimary,
+                color: AppTheme.getTextPrimaryColor(context),
               ),
             ),
           ),
@@ -1481,10 +1550,10 @@ class _HomeScreenState extends State<HomeScreen>
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Text(
               'Productos (${_searchResultsProducts.length})',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: AppTheme.textPrimary,
+                color: AppTheme.getTextPrimaryColor(context),
               ),
             ),
           ),
@@ -1527,12 +1596,13 @@ class _HomeScreenState extends State<HomeScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accentColor = AppTheme.getAccentColor(context);
     return SliverAppBar(
-      expandedHeight: 100.0,
+      expandedHeight: 85.0,
       floating: true,
       pinned: true,
       elevation: 0,
       backgroundColor: isDark ? AppTheme.darkSurfaceColor : AppTheme.primaryColor,
       flexibleSpace: FlexibleSpaceBar(
+        collapseMode: CollapseMode.parallax,
         background: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -1770,9 +1840,9 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             prefixIcon: Container(
               padding: const EdgeInsets.all(12),
-              child: const Icon(
+              child: Icon(
                 Icons.search_rounded,
-                color: AppTheme.primaryColor,
+                color: AppTheme.getAccentColor(context),
                 size: 24,
               ),
             ),
@@ -1809,6 +1879,9 @@ class _HomeScreenState extends State<HomeScreen>
       return const SizedBox.shrink();
     }
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = AppTheme.getAccentColor(context);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppTheme.paddingM,
@@ -1822,13 +1895,18 @@ class _HomeScreenState extends State<HomeScreen>
           _marqueeKey.currentState?.resetAnimation();
         },
         child: Container(
-          height: 36,
+          height: 32,
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [Colors.blue.shade50, Colors.blue.shade100],
+              colors: isDark
+                  ? [AppTheme.darkSurfaceColor, AppTheme.darkCardBackground]
+                  : [Colors.blue.shade50, Colors.blue.shade100],
             ),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.blue.shade200, width: 1),
+            border: Border.all(
+              color: isDark ? AppTheme.darkDividerColor : Colors.blue.shade200,
+              width: 1,
+            ),
           ),
           child: Row(
             children: [
@@ -1836,7 +1914,7 @@ class _HomeScreenState extends State<HomeScreen>
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Icon(
                   Icons.info_outline,
-                  color: Colors.blue.shade600,
+                  color: isDark ? accentColor : Colors.blue.shade600,
                   size: 20,
                 ),
               ),
@@ -1846,7 +1924,7 @@ class _HomeScreenState extends State<HomeScreen>
                   textSpan: TextSpan(
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.blue.shade900,
+                      color: isDark ? AppTheme.darkTextSecondary : Colors.blue.shade900,
                       fontWeight: FontWeight.w500,
                     ),
                     children: [
@@ -1858,8 +1936,8 @@ class _HomeScreenState extends State<HomeScreen>
                         text: 'envío a domicilio gratis',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          fontSize: 14, // Más grande
-                          color: Colors.blue.shade900,
+                          fontSize: 14,
+                          color: isDark ? AppTheme.darkTextPrimary : Colors.blue.shade900,
                         ),
                       ),
                       const TextSpan(
@@ -2067,21 +2145,15 @@ class _HomeScreenState extends State<HomeScreen>
         ),
         const SizedBox(height: AppTheme.paddingM),
         SizedBox(
-          height: 275,
+          height: 250,
           child: _isLoadingProducts
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.paddingM),
+                  child: Row(
                     children: [
-                      CircularProgressIndicator(color: accentColor),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Cargando productos...',
-                        style: TextStyle(
-                          color: textSecondary,
-                          fontSize: 14,
-                        ),
-                      ),
+                      Expanded(child: ShimmerLoading(width: double.infinity, height: 240, borderRadius: AppTheme.radiusL)),
+                      const SizedBox(width: AppTheme.paddingM),
+                      Expanded(child: ShimmerLoading(width: double.infinity, height: 240, borderRadius: AppTheme.radiusL)),
                     ],
                   ),
                 )
@@ -2160,6 +2232,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 0.0,
                             salesCount:
                                 (product['total_vendido'] as num?)?.toInt() ?? 0,
+                            heroTag: 'product_best_$index',
                             onTap: () {
                               Navigator.push(
                                 context,
@@ -2272,20 +2345,12 @@ class _HomeScreenState extends State<HomeScreen>
         SizedBox(
           height: 165,
           child: _isLoadingRecentProducts
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(color: accentColor),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Cargando novedades...',
-                        style: TextStyle(
-                          color: textSecondary,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.paddingM),
+                  child: ShimmerLoading(
+                    width: double.infinity,
+                    height: 150,
+                    borderRadius: AppTheme.radiusL,
                   ),
                 )
               : _mostRecentProducts.isEmpty
@@ -2411,7 +2476,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 child: Icon(
                                   Icons.arrow_forward_ios_rounded,
                                   size: 12,
-                                  color: AppTheme.textSecondary,
+                                  color: AppTheme.getTextSecondaryColor(context),
                                 ),
                               ),
                             ),
@@ -2790,21 +2855,15 @@ class _HomeScreenState extends State<HomeScreen>
         ),
         const SizedBox(height: AppTheme.paddingM),
         SizedBox(
-          height: 210,
+          height: 190,
           child: _isLoadingStores
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.paddingM),
+                  child: Row(
                     children: [
-                      CircularProgressIndicator(color: accentColor),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Cargando tiendas...',
-                        style: TextStyle(
-                          color: textSecondary,
-                          fontSize: 14,
-                        ),
-                      ),
+                      Expanded(child: ShimmerLoading(width: double.infinity, height: 180, borderRadius: AppTheme.radiusL)),
+                      const SizedBox(width: AppTheme.paddingM),
+                      Expanded(child: ShimmerLoading(width: double.infinity, height: 180, borderRadius: AppTheme.radiusL)),
                     ],
                   ),
                 )
@@ -2866,6 +2925,7 @@ class _HomeScreenState extends State<HomeScreen>
                         child: _AnimatedStoreCard(
                           index: index,
                           child: StoreCard(
+                            heroTag: 'store_top_$index',
                             storeName: store['nombre'] as String? ?? 'Tienda',
                             productCount:
                                 (store['total_productos'] as num?)?.toInt() ?? 0,

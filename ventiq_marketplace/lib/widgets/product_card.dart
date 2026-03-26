@@ -15,6 +15,7 @@ class ProductCard extends StatelessWidget {
   final int salesCount;
   final int? availableStock;
   final double? width;
+  final String? heroTag;
   final VoidCallback onTap;
 
   const ProductCard({
@@ -28,6 +29,7 @@ class ProductCard extends StatelessWidget {
     required this.salesCount,
     this.availableStock,
     this.width = 220,
+    this.heroTag,
     required this.onTap,
   });
 
@@ -62,7 +64,7 @@ class ProductCard extends StatelessWidget {
             Stack(
               children: [
                 Container(
-                  height: 150,
+                  height: 125,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
@@ -81,20 +83,38 @@ class ProductCard extends StatelessWidget {
                       topLeft: Radius.circular(AppTheme.radiusL),
                       topRight: Radius.circular(AppTheme.radiusL),
                     ),
-                    child: imageUrl != null
-                        ? SupabaseImage(
-                            imageUrl: imageUrl!,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            height: double.infinity,
+                    child: heroTag != null
+                        ? Hero(
+                            tag: heroTag!,
+                            child: imageUrl != null
+                                ? SupabaseImage(
+                                    imageUrl: imageUrl!,
+                                    fit: BoxFit.cover,
+                                    width: double.infinity,
+                                    height: double.infinity,
+                                  )
+                                : Center(
+                                    child: Icon(
+                                      Icons.shopping_bag_outlined,
+                                      size: 60,
+                                      color: isDark ? AppTheme.darkTextHint : Colors.grey[400],
+                                    ),
+                                  ),
                           )
-                        : Center(
-                            child: Icon(
-                              Icons.shopping_bag_outlined,
-                              size: 60,
-                              color: isDark ? AppTheme.darkTextHint : Colors.grey[400],
-                            ),
-                          ),
+                        : imageUrl != null
+                            ? SupabaseImage(
+                                imageUrl: imageUrl!,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                height: double.infinity,
+                              )
+                            : Center(
+                                child: Icon(
+                                  Icons.shopping_bag_outlined,
+                                  size: 60,
+                                  color: isDark ? AppTheme.darkTextHint : Colors.grey[400],
+                                ),
+                              ),
                   ),
                 ),
                 // Badge de categoría mejorado
@@ -199,7 +219,7 @@ class ProductCard extends StatelessWidget {
 
             // Información del producto con mejor diseño
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
