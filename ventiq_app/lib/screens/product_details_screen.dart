@@ -85,7 +85,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     super.initState();
 
     // Si el producto no tiene stock, mostrar aviso y volver
-    if (widget.product.cantidad <= 0) {
+    if (widget.product.cantidadReal <= 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         showDialog(
           context: context,
@@ -625,6 +625,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     item['ubicacion'] as Map<String, dynamic>?;
                 final cantidadDisponible =
                     (item['cantidad_disponible'] as num?)?.toInt() ?? 0;
+                final reservadoCarnavalItem =
+                    (item['reservado_carnaval'] as num?)?.toInt() ?? 0;
 
                 // Construir nombre de variante (igual que en ProductDetailService)
                 String variantName = 'Variante ${i + 1}';
@@ -699,6 +701,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                             ? variantDescription
                             : null,
                     inventoryMetadata: inventoryMetadata,
+                    reservadoCarnaval: reservadoCarnavalItem,
                   ),
                 );
               }
@@ -751,6 +754,34 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           widget.product.id,
         );
         print('✅ Detalles del producto cargados desde Supabase');
+      }
+
+      // Verificar si el stock real total (descontando reservas) es <= 0
+      if (detailedProduct.cantidadReal <= 0 &&
+          !detailedProduct.esElaborado &&
+          !detailedProduct.esServicio) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Sin stock disponible'),
+              content: const Text(
+                'Este producto no tiene stock disponible (todo está reservado).',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Volver'),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
       }
 
       setState(() {
@@ -1330,16 +1361,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   }
 
   double get maxQuantityForProduct {
-    return currentProduct.cantidad.toDouble();
+    return currentProduct.cantidadReal.toDouble();
   }
 
   double maxQuantityForVariant(ProductVariant variant) {
-    return variant.cantidad.toDouble();
+    return variant.cantidadReal.toDouble();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.product.cantidad <= 0) {
+    if (widget.product.cantidadReal <= 0) {
       return const Scaffold(
         backgroundColor: Colors.white,
         body: Center(child: CircularProgressIndicator()),
@@ -1839,7 +1870,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   ),
                 ),
                 // Solo mostrar stock si NO es un producto elaborado ni servicio
-                if (!currentProduct.esElaborado && !currentProduct.esServicio)
+                if (!currentProduct.esElaborado && !currentProduct.esServicio) ...[
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 6,
@@ -1850,7 +1881,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      '$totalStock',
+                      '${_getLocationStockReal(variants)}',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
@@ -1858,6 +1889,26 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                       ),
                     ),
                   ),
+                  if (_getLocationReservadoCarnaval(variants) > 0) ...[
+                    const SizedBox(width: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.orange[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange[300]!),
+                      ),
+                      child: Text(
+                        'Res: ${_getLocationReservadoCarnaval(variants)}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.orange[800],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ],
             ),
           ),
@@ -1978,15 +2029,35 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                         const SizedBox(width: 6),
                         // Solo mostrar stock si NO es un producto elaborado ni servicio
                         if (!currentProduct.esElaborado &&
-                            !currentProduct.esServicio)
+                            !currentProduct.esServicio) ...[
                           Text(
-                            'Stock: ${variant.cantidad}',
+                            'Stock: ${variant.cantidadReal}',
                             style: TextStyle(
                               fontSize: 10,
                               color: Colors.grey[600],
                               fontWeight: FontWeight.w500,
                             ),
                           ),
+                          if (variant.reservadoCarnaval > 0) ...[
+                            const SizedBox(width: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.orange[50],
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.orange[300]!),
+                              ),
+                              child: Text(
+                                'Res: ${variant.reservadoCarnaval}',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: Colors.orange[800],
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ],
                     ),
                   ],
@@ -2279,7 +2350,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                                 if (currentProduct.esElaborado ||
                                     currentProduct.esServicio ||
                                     variantQuantities[variant]! + step <=
-                                        variant.cantidad) {
+                                        variant.cantidadReal) {
                                   variantQuantities[variant] =
                                       variantQuantities[variant]! + step;
                                 }
@@ -2609,7 +2680,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         // Buscar la variante correspondiente
         for (var variant in currentProduct.variantes) {
           if (productName.contains(variant.nombre)) {
-            variantQuantities[variant] = newQuantity;
+            final maxQty = currentProduct.esElaborado || currentProduct.esServicio
+                ? newQuantity
+                : newQuantity.clamp(0.0, variant.cantidadReal.toDouble());
+            variantQuantities[variant] = maxQty;
             break;
           }
         }
@@ -2724,6 +2798,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   /// Get total stock for a location group
   double _getLocationStock(List<ProductVariant> variants) {
     return variants.fold(0.0, (sum, variant) => sum + variant.cantidad);
+  }
+
+  double _getLocationStockReal(List<ProductVariant> variants) {
+    return variants.fold(0.0, (sum, variant) => sum + variant.cantidadReal);
+  }
+
+  num _getLocationReservadoCarnaval(List<ProductVariant> variants) {
+    return variants.fold<num>(0, (sum, variant) => sum + variant.reservadoCarnaval);
   }
 
   bool _hasValidProductImage(String? url) {

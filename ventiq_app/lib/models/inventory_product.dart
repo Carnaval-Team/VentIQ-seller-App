@@ -5,11 +5,13 @@ class InventorySummary {
   final int totalInventario;
   final int totalConCantidadBaja;
   final int totalSinStock;
+  final Map<String, dynamic>? reservadoCarnaval;
 
   InventorySummary({
     required this.totalInventario,
     required this.totalConCantidadBaja,
     required this.totalSinStock,
+    this.reservadoCarnaval,
   });
 
   factory InventorySummary.fromJson(Map<String, dynamic> json) {
@@ -17,6 +19,7 @@ class InventorySummary {
       totalInventario: json['total_inventario'] ?? 0,
       totalConCantidadBaja: json['total_con_cantidad_baja'] ?? 0,
       totalSinStock: json['total_sin_stock'] ?? 0,
+      reservadoCarnaval: json['reservado_carnaval'] as Map<String, dynamic>?,
     );
   }
 }
@@ -87,6 +90,22 @@ class InventoryProduct {
   final int totalCount;
   final InventorySummary? resumenInventario;
   final PaginationInfo? infoPaginacion;
+
+  /// Cantidad reservada en Carnaval para este producto+ubicación
+  double get reservadoCarnaval {
+    final rc = resumenInventario?.reservadoCarnaval;
+    if (rc == null) return 0.0;
+    // Match: el JSON tiene id_producto e id_ubicacion que deben coincidir con esta fila
+    final rcProducto = rc['id_producto'];
+    final rcUbicacion = rc['id_ubicacion'];
+    if (rcProducto == id && rcUbicacion == idUbicacion) {
+      return (rc['cantidad'] as num?)?.toDouble() ?? 0.0;
+    }
+    return 0.0;
+  }
+
+  /// Stock real descontando reservas de Carnaval
+  double get cantidadFinalReal => (cantidadFinal - reservadoCarnaval).clamp(0.0, double.infinity);
 
   // Virtual fields for stock level calculation
   String get stockLevel {

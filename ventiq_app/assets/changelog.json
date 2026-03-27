@@ -1,9 +1,36 @@
 {
-  "current_version": "2.1.1",
-  "build": 821,
+  "current_version": "2.2.0",
+  "build": 822,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.2.0",
+      "date": "2026-03-27",
+      "title": "Reservas de Carnaval App visibles en tiempo real",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Stock real descontando reservas de Carnaval",
+          "description": "Ahora cuando ves un producto, el stock que se muestra ya descuenta automáticamente las unidades que los clientes tienen reservadas en Carnaval App. Así sabes exactamente cuánto tienes disponible para vender en tienda."
+        },
+        {
+          "type": "feature",
+          "title": "Indicador de productos reservados",
+          "description": "Verás un nuevo indicador en naranja que te dice cuántas unidades de cada producto están reservadas en Carnaval App. Aparece en el listado de productos, en la búsqueda global y en los detalles por ubicación."
+        },
+        {
+          "type": "improvement",
+          "title": "Apertura y cierre de turno con stock ajustado",
+          "description": "Al hacer el conteo de inventario en la apertura o cierre de turno, las cantidades del sistema ya reflejan el stock real descontando las reservas. Esto evita diferencias falsas entre lo que dice el sistema y lo que tienes físicamente."
+        },
+        {
+          "type": "improvement",
+          "title": "Protección al agregar al carrito",
+          "description": "Si un producto tiene todo su stock reservado en Carnaval App, la app no te permite agregarlo al carrito y te avisa que no hay disponibilidad. Así evitas vender unidades que ya están comprometidas."
+        }
+      ]
+    },
     {
       "version": "2.1.1",
       "date": "2026-03-16",

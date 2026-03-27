@@ -177,6 +177,10 @@ class ProductService {
               : data['es_servicio'] as bool? ?? false,
       categoria: data['categoria_nombre'] as String? ?? 'Sin categoría',
       variantes: [], // Empty variants for now
+      reservadoCarnaval:
+          (data['metadata'] != null && data['metadata']['reservado_carnaval'] != null)
+              ? data['metadata']['reservado_carnaval'] as num
+              : 0,
     );
   }
 

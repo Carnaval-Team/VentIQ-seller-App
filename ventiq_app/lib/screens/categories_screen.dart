@@ -786,37 +786,61 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                                     ),
                                     decoration: BoxDecoration(
                                       color:
-                                          (product.cantidad > 0
+                                          (product.cantidadReal > 0
                                               ? Colors.green[50]
                                               : Colors.red[50]) ??
                                           Colors.grey[100],
                                       borderRadius: BorderRadius.circular(10),
                                       border: Border.all(
                                         color:
-                                            (product.cantidad > 0
+                                            (product.cantidadReal > 0
                                                 ? Colors.green[300]
                                                 : Colors.red[300]) ??
                                             Colors.grey,
                                       ),
                                     ),
                                     child: Text(
-                                      product.cantidad > 0
-                                          ? 'Stock: ${product.cantidad}'
+                                      product.cantidadReal > 0
+                                          ? 'Stock: ${product.cantidadReal}'
                                           : 'Sin stock',
                                       style: TextStyle(
                                         fontSize: 11,
                                         color:
-                                            product.cantidad > 0
+                                            product.cantidadReal > 0
                                                 ? Colors.green[700]
                                                 : Colors.red[700],
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),
+                                  if (product.reservadoCarnaval > 0) ...[
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange[50],
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: Colors.orange[300]!,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'Reservado: ${product.reservadoCarnaval}',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.orange[800],
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                               onTap: () {
-                                if (product.cantidad <= 0) {
+                                if (product.cantidadReal <= 0) {
                                   showDialog(
                                     context: context,
                                     builder: (ctx) => AlertDialog(

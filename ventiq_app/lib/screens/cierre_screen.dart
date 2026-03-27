@@ -971,12 +971,18 @@ class _CierreScreenState extends State<CierreScreen> {
                                   (sum, loc) =>
                                       sum + (loc['cantidad'] as double),
                                 );
+                                final totalReservadoCarnaval = locations.fold<double>(
+                                  0.0,
+                                  (sum, loc) =>
+                                      sum + ((loc['reservado_carnaval'] as num?)?.toDouble() ?? 0.0),
+                                );
+                                final totalReal = (totalQuantity - totalReservadoCarnaval).clamp(0.0, double.infinity);
 
                                 if (snapshot.connectionState ==
                                         ConnectionState.done &&
                                     controller.text.trim().isEmpty) {
                                   controller.text = _formatInventoryCount(
-                                    totalQuantity,
+                                    totalReal,
                                   );
                                 }
 
@@ -1011,31 +1017,54 @@ class _CierreScreenState extends State<CierreScreen> {
                                                 ),
                                                 const SizedBox(height: 4),
                                                 // Mostrar cantidad total del sistema
-                                                Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 8,
-                                                        vertical: 4,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.blue[50],
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          4,
+                                                Row(
+                                                  children: [
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                            vertical: 4,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.blue[50],
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              4,
+                                                            ),
+                                                        border: Border.all(
+                                                          color: Colors.blue[200]!,
                                                         ),
-                                                    border: Border.all(
-                                                      color: Colors.blue[200]!,
+                                                      ),
+                                                      child: Text(
+                                                        'Sistema: ${totalReal.toStringAsFixed(2)} unidades',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color: Colors.blue[700],
+                                                        ),
+                                                      ),
                                                     ),
-                                                  ),
-                                                  child: Text(
-                                                    'Sistema: ${totalQuantity.toStringAsFixed(2)} unidades',
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.blue[700],
-                                                    ),
-                                                  ),
+                                                    if (totalReservadoCarnaval > 0) ...[
+                                                      const SizedBox(width: 6),
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.orange[50],
+                                                          borderRadius: BorderRadius.circular(4),
+                                                          border: Border.all(color: Colors.orange[300]!),
+                                                        ),
+                                                        child: Text(
+                                                          'Reservado: ${totalReservadoCarnaval.toStringAsFixed(0)}',
+                                                          style: TextStyle(
+                                                            fontSize: 10,
+                                                            fontWeight: FontWeight.w600,
+                                                            color: Colors.orange[800],
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
                                                 ),
                                               ],
                                             ),
@@ -1194,6 +1223,7 @@ class _CierreScreenState extends State<CierreScreen> {
                 'ubicacion': ubicacion['denominacion'] ?? 'Ubicación',
                 'almacen': almacen['denominacion'] ?? 'Almacén',
                 'cantidad': cantidad,
+                'reservado_carnaval': 0.0,
               };
             }
           }
@@ -1243,6 +1273,7 @@ class _CierreScreenState extends State<CierreScreen> {
                 'ubicacion': product.ubicacion,
                 'almacen': product.almacen,
                 'cantidad': product.cantidadFinal,
+                'reservado_carnaval': product.reservadoCarnaval,
               };
             }
           } catch (e) {
@@ -2356,8 +2387,8 @@ class _CierreScreenState extends State<CierreScreen> {
                 'cantidad': cantidadContada,
               });
 
-              // Calcular diferencia con cantidad del sistema
-              final cantidadSistema = product.cantidadFinal;
+              // Calcular diferencia con cantidad del sistema (descontando reservas Carnaval)
+              final cantidadSistema = product.cantidadFinalReal;
               final diferencia = cantidadContada - cantidadSistema;
 
               if (diferencia > 0) {

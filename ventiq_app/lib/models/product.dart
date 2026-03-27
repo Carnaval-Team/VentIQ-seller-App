@@ -19,6 +19,10 @@ class Product {
   final List<ProductVariant> variantes;
   final Map<String, dynamic>?
   inventoryMetadata; // Store inventory data for products without variants
+  final num reservadoCarnaval;
+
+  /// Stock real descontando reservas de Carnaval
+  num get cantidadReal => (cantidad - reservadoCarnaval).clamp(0, double.infinity);
 
   Product({
     required this.id,
@@ -40,6 +44,7 @@ class Product {
     required this.categoria,
     this.variantes = const [],
     this.inventoryMetadata,
+    this.reservadoCarnaval = 0,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -66,6 +71,7 @@ class Product {
               ?.map((v) => ProductVariant.fromJson(v))
               .toList() ??
           [],
+      reservadoCarnaval: json['reservado_carnaval'] ?? 0,
     );
   }
 
@@ -91,6 +97,7 @@ class Product {
       'categoria': categoria,
       'variantes': variantes.map((v) => v.toJson()).toList(),
       'inventoryMetadata': inventoryMetadata,
+      'reservado_carnaval': reservadoCarnaval,
     };
   }
 }
@@ -103,6 +110,10 @@ class ProductVariant {
   final String? descripcion;
   final Map<String, dynamic>?
   inventoryMetadata; // Store inventory data for this specific variant
+  final num reservadoCarnaval;
+
+  /// Stock real descontando reservas de Carnaval
+  num get cantidadReal => (cantidad - reservadoCarnaval).clamp(0, double.infinity);
 
   ProductVariant({
     required this.id,
@@ -111,6 +122,7 @@ class ProductVariant {
     required this.cantidad,
     this.descripcion,
     this.inventoryMetadata,
+    this.reservadoCarnaval = 0,
   });
 
   factory ProductVariant.fromJson(Map<String, dynamic> json) {
@@ -120,6 +132,7 @@ class ProductVariant {
       precio: json['precio']?.toDouble() ?? 0.0,
       cantidad: json['cantidad'] ?? 0,
       descripcion: json['descripcion'],
+      reservadoCarnaval: json['reservado_carnaval'] ?? 0,
     );
   }
 
@@ -132,6 +145,7 @@ class ProductVariant {
       'cantidad': cantidad,
       'descripcion': descripcion,
       'inventoryMetadata': inventoryMetadata,
+      'reservado_carnaval': reservadoCarnaval,
     };
   }
 }

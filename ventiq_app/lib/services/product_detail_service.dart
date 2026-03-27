@@ -65,12 +65,17 @@ class ProductDetailService {
 
     // Calculate total stock from all variants
     int totalStock = 0;
+    int totalReservadoCarnaval = 0;
     Map<String, dynamic>? productInventoryMetadata;
 
     if (variants.isNotEmpty) {
       totalStock = variants.fold(
         0,
         (sum, variant) => sum + variant.cantidad.toInt(),
+      );
+      totalReservadoCarnaval = variants.fold(
+        0,
+        (sum, variant) => sum + variant.reservadoCarnaval.toInt(),
       );
     } else {
       // If no variants, use inventory data for the product itself
@@ -145,6 +150,7 @@ class ProductDetailService {
       categoria: categoryName,
       variantes: variants,
       inventoryMetadata: productInventoryMetadata,
+      reservadoCarnaval: totalReservadoCarnaval,
     );
   }
 
@@ -163,6 +169,8 @@ class ProductDetailService {
       final presentacion = item['presentacion'] as Map<String, dynamic>?;
       final cantidadDisponible =
           (item['cantidad_disponible'] as num?)?.toInt() ?? 0;
+      final reservadoCarnaval =
+          (item['reservado_carnaval'] as num?)?.toInt() ?? 0;
 
       String variantName = 'Variante ${i + 1}';
       String variantDescription = '';
@@ -216,6 +224,7 @@ class ProductDetailService {
           descripcion:
               variantDescription.isNotEmpty ? variantDescription : null,
           inventoryMetadata: variantInventoryMetadata,
+          reservadoCarnaval: reservadoCarnaval,
         ),
       );
     }
