@@ -8,6 +8,7 @@ import '../services/user_preferences_service.dart';
 import '../services/openfoodfacts_service.dart';
 import '../services/currency_service.dart';
 import '../services/supplier_service.dart';
+import '../services/barcode_service.dart';
 import 'barcode_scanner_screen.dart';
 
 final _supabase = Supabase.instance.client;
@@ -67,6 +68,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool _isLoading = false;
   bool _isLoadingData = true;
   bool _isLoadingOpenFoodFacts = false;
+  String? _scannedBarcodeFormat;
   bool _isLoadingSubcategorias = false; // Estado de carga de subcategorías
   bool _isLoadingProveedores = false; // Estado de carga de proveedores
   bool _showAdvancedConfig =
@@ -1008,6 +1010,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          IconButton(
+            onPressed: _isLoading || _isLoadingOpenFoodFacts ? null : _openBarcodeScanner,
+            icon: _isLoadingOpenFoodFacts
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.qr_code_scanner),
+            tooltip: 'Escanear código de barras',
+          ),
           TextButton(
             onPressed: _isLoading ? null : _saveProduct,
             child:
@@ -2320,63 +2336,30 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _codigoBarrasController,
-                        decoration: InputDecoration(
-                          labelText: 'Código de Barras',
-                          hintText: 'Código de barras del producto',
-                          border: const OutlineInputBorder(),
-                          suffixIcon:
-                              _isLoadingOpenFoodFacts
-                                  ? const Padding(
-                                    padding: EdgeInsets.all(12.0),
-                                    child: SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              AppColors.primary,
-                                            ),
+                TextFormField(
+                  controller: _codigoBarrasController,
+                  decoration: InputDecoration(
+                    labelText: 'Código de Barras',
+                    hintText: 'Código de barras del producto',
+                    border: const OutlineInputBorder(),
+                    suffixIcon:
+                        _isLoadingOpenFoodFacts
+                            ? const Padding(
+                              padding: EdgeInsets.all(12.0),
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor:
+                                      AlwaysStoppedAnimation<Color>(
+                                        AppColors.primary,
                                       ),
-                                    ),
-                                  )
-                                  : null,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed:
-                            _isLoadingOpenFoodFacts
-                                ? null
-                                : _openBarcodeScanner,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                        ),
-                        child:
-                            _isLoadingOpenFoodFacts
-                                ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white,
-                                    ),
-                                  ),
-                                )
-                                : const Icon(Icons.qr_code_scanner, size: 24),
-                      ),
-                    ),
-                  ],
+                                ),
+                              ),
+                            )
+                            : null,
+                  ),
                 ),
               ],
             ),
@@ -2703,6 +2686,23 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
     }
 
+    // Guardar datos de código de barras
+    if (_codigoBarrasController.text.isNotEmpty) {
+      try {
+        await BarcodeService.saveBarcodeData(
+          idProducto: productId,
+          codigoBarras: _codigoBarrasController.text,
+          tipoCodigoBarras: _scannedBarcodeFormat ?? 'unknown',
+          fabricante: _nombreComercialController.text.isNotEmpty
+              ? _nombreComercialController.text
+              : null,
+        );
+        print('✅ Datos de código de barras guardados');
+      } catch (e) {
+        print('❌ Error guardando datos de código de barras: $e');
+      }
+    }
+
     _showSuccessSnackBar('Producto creado exitosamente');
     if (widget.onProductSaved != null) {
       widget.onProductSaved!();
@@ -2884,6 +2884,23 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       throw Exception('Error actualizando producto: $e');
+    }
+
+    // Guardar datos de código de barras
+    if (_codigoBarrasController.text.isNotEmpty) {
+      try {
+        await BarcodeService.saveBarcodeData(
+          idProducto: productId,
+          codigoBarras: _codigoBarrasController.text,
+          tipoCodigoBarras: _scannedBarcodeFormat ?? 'unknown',
+          fabricante: _nombreComercialController.text.isNotEmpty
+              ? _nombreComercialController.text
+              : null,
+        );
+        print('✅ Datos de código de barras guardados');
+      } catch (e) {
+        print('❌ Error guardando datos de código de barras: $e');
+      }
     }
 
     _showSuccessSnackBar('Producto actualizado exitosamente');
@@ -3576,13 +3593,28 @@ class _AddProductScreenState extends State<AddProductScreen> {
         MaterialPageRoute(builder: (context) => const BarcodeScannerScreen()),
       );
 
-      if (result != null && result is String) {
-        _codigoBarrasController.text = result;
+      if (result != null && result is Map<String, dynamic>) {
+        final barcode = result['barcode'] as String?;
+        final format = result['format'] as String? ?? 'unknown';
 
-        // Intentar obtener información del producto desde OpenFoodFacts
+        if (barcode == null || barcode.isEmpty) return;
+
+        _codigoBarrasController.text = barcode;
+        _scannedBarcodeFormat = format;
+
+        // 1. Buscar primero en BD local
+        final localResult = await BarcodeService.lookupBarcode(barcode);
+
+        if (localResult != null) {
+          // Encontrado en BD → mostrar diálogo
+          _showLocalProductFoundDialog(localResult);
+          return;
+        }
+
+        // 2. Si no existe en BD, buscar en OpenFoodFacts
         try {
           final response = await OpenFoodFactsService.getProductByBarcode(
-            result,
+            barcode,
           );
           if (response.isSuccess && response.product != null) {
             _showProductInfoDialog(response.product!.toJson());
@@ -3596,6 +3628,56 @@ class _AddProductScreenState extends State<AddProductScreen> {
     } finally {
       setState(() => _isLoadingOpenFoodFacts = false);
     }
+  }
+
+  void _showLocalProductFoundDialog(Map<String, dynamic> data) {
+    final denominacion = data['denominacion'] ?? 'Sin nombre';
+    final nombreComercial = data['nombre_comercial'] ?? '';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Producto Encontrado en BD'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Este código de barras ya está asociado a un producto existente:'),
+            const SizedBox(height: 12),
+            Text('Denominación: $denominacion',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            if (nombreComercial.isNotEmpty)
+              Text('Nombre Comercial: $nombreComercial'),
+            const SizedBox(height: 12),
+            const Text('¿Desea usar esta información para auto-completar?'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (data['denominacion'] != null) {
+                _denominacionController.text = data['denominacion'];
+              }
+              if (data['nombre_comercial'] != null && data['nombre_comercial'].toString().isNotEmpty) {
+                _nombreComercialController.text = data['nombre_comercial'];
+              }
+              Navigator.pop(context);
+              setState(() {});
+              _showSuccessSnackBar('Información auto-completada desde BD');
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Usar Información'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showProductInfoDialog(Map<String, dynamic> productInfo) {

@@ -13,6 +13,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   bool isFlashOn = false;
   bool isFrontCamera = false;
   String? lastScannedCode;
+  BarcodeFormat? lastScannedFormat;
   DateTime? lastScanTime;
   static const Duration scanCooldown = Duration(seconds: 2); // 2 segundos entre escaneos
 
@@ -135,7 +136,10 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                           ),
                           const SizedBox(height: 8),
                           ElevatedButton(
-                            onPressed: () => Navigator.pop(context, lastScannedCode),
+                            onPressed: () => Navigator.pop(context, {
+                              'barcode': lastScannedCode,
+                              'format': lastScannedFormat?.name ?? 'unknown',
+                            }),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.white,
                               foregroundColor: const Color(0xFF4A90E2),
@@ -203,6 +207,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
         lastScanTime = now;
         setState(() {
           lastScannedCode = barcode.rawValue;
+          lastScannedFormat = barcode.format;
         });
         
         // Debug print del código escaneado
