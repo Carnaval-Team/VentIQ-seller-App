@@ -1611,6 +1611,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   ),
                                 ),
                               ),
+                            if (_getCarnavalOrderId(order.notas) == null)
                             SizedBox(
                               width: double.infinity,
                               child: OutlinedButton.icon(
@@ -2103,7 +2104,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
         ],
 
         // Botones de gestión solo para órdenes que no estén en estado final
-        if (order.status != OrderStatus.cancelada &&
+        // Las órdenes de Carnaval no permiten acciones de gestión
+        if (_getCarnavalOrderId(order.notas) == null &&
+            order.status != OrderStatus.cancelada &&
             order.status != OrderStatus.devuelta &&
             order.status != OrderStatus.completada) ...[
           // Botón Editar orden (solo para órdenes pendientes con operationId y si la config lo permite)
@@ -2458,6 +2461,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         final payments = snapshot.data ?? [];
         final canEdit =
             !_isOfflineMode &&
+            _getCarnavalOrderId(order.notas) == null &&
             _canEditPaymentBreakdown(order) &&
             payments.isNotEmpty;
 

@@ -105,9 +105,24 @@ class _AperturaScreenState extends State<AperturaScreen> {
           final createdAtRaw = opResponse?['created_at'] as String?;
           if (createdAtRaw == null) continue;
           final fechaOperacion = DateTime.parse(createdAtRaw);
-          if (fechaOperacion.isBefore(fechaTurno)) {
-            prevTurnNotifications.add(notification);
+          if (!fechaOperacion.isBefore(fechaTurno)) continue;
+
+          // Verificar que el último estado de la operación sea 1 (pendiente)
+          final estadoResponse = await supabase
+              .from('app_dat_estado_operacion')
+              .select('estado')
+              .eq('id_operacion', opId)
+              .order('id', ascending: false)
+              .limit(1)
+              .maybeSingle();
+
+          final ultimoEstado = estadoResponse?['estado'] as int?;
+          if (ultimoEstado != null && ultimoEstado != 1) {
+            print('⏭️ Operación $opId tiene estado $ultimoEstado, no se puede recibir');
+            continue;
           }
+
+          prevTurnNotifications.add(notification);
         } catch (e) {
           print('⚠️ No se pudo validar operación $opId: $e');
         }
@@ -192,6 +207,21 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
       if (!fechaOperacion.isBefore(fechaTurno)) {
         print('⏭️ Operación $operacionId es posterior al turno, se omite');
+        return false;
+      }
+
+      // Verificar que el último estado de la operación sea 1 (pendiente)
+      final estadoResponse = await supabase
+          .from('app_dat_estado_operacion')
+          .select('estado')
+          .eq('id_operacion', operacionId)
+          .order('id', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      final ultimoEstado = estadoResponse?['estado'] as int?;
+      if (ultimoEstado != null && ultimoEstado != 1) {
+        print('⏭️ Operación $operacionId tiene estado $ultimoEstado, no se puede recibir');
         return false;
       }
 
