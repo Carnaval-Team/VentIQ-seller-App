@@ -566,6 +566,13 @@ class _LoginScreenState extends State<LoginScreen> {
           // Verificar si la suscripción está próxima a vencer
           await _checkAndShowSubscriptionWarning(defaultStoreId);
 
+          // Si es usuario HR puro, ir al dashboard HR
+          if (userRole == UserRole.recursosHumanos && mounted) {
+            print('✅ Usuario Recursos Humanos - navegando a HR dashboard');
+            Navigator.pushReplacementNamed(context, '/hr-dashboard');
+            return;
+          }
+
           Navigator.pushReplacementNamed(context, '/dashboard');
         } else {
           print(

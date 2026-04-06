@@ -223,6 +223,26 @@ class _WorkersScreenState extends State<WorkersScreen>
               onPressed: _showSyncUUIDDialog,
               tooltip: 'Sincronizar UUID desde Roles',
             ),
+          // Boton HR para gerente
+          FutureBuilder<bool>(
+            future: NavigationGuard.canPerformAction('hr.dashboard'),
+            builder: (context, snapshot) {
+              if (snapshot.data == true) {
+                return IconButton(
+                  icon: const Icon(Icons.badge, color: Colors.white),
+                  onPressed: () {
+                    Navigator.pushNamed(
+                      context,
+                      '/hr-dashboard',
+                      arguments: {'fromGerente': true},
+                    );
+                  },
+                  tooltip: 'Recursos Humanos',
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: () => _initializeData(),
@@ -387,6 +407,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                   'auditor',
                   'vendedor',
                   'almacenero',
+                  'recursos_humanos',
                 ].map((role) {
                   return DropdownMenuItem(
                     value: role,
@@ -577,9 +598,10 @@ class _WorkersScreenState extends State<WorkersScreen>
 
   // Método para obtener el rol con mayor jerarquía
   String _getRolPrincipal(WorkerData worker) {
-    // Jerarquía: gerente > supervisor > almacenero > vendedor
+    // Jerarquía: gerente > supervisor > recursos_humanos > almacenero > vendedor
     if (worker.esGerente) return 'gerente';
     if (worker.esSupervisor) return 'supervisor';
+    if (worker.esRecursosHumanos) return 'recursos_humanos';
     if (worker.esAlmacenero) return 'almacenero';
     if (worker.esVendedor) return 'vendedor';
 
@@ -610,6 +632,8 @@ class _WorkersScreenState extends State<WorkersScreen>
         return AppColors.primary;
       case 'almacenero':
         return Colors.green;
+      case 'recursos_humanos':
+        return Colors.indigo;
       default:
         return Colors.grey;
     }
@@ -627,6 +651,8 @@ class _WorkersScreenState extends State<WorkersScreen>
         return 'Vendedor';
       case 'almacenero':
         return 'Almacenero';
+      case 'recursos_humanos':
+        return 'Recursos Humanos';
       case 'todos':
         return 'Todos';
       case 'sin_rol':
@@ -684,7 +710,8 @@ class _WorkersScreenState extends State<WorkersScreen>
       if (denominacion.contains('auditor')) return 'auditor';
       if (denominacion.contains('vendedor')) return 'vendedor';
       if (denominacion.contains('almacenero')) return 'almacenero';
-      
+      if (denominacion.contains('recursos humanos') || denominacion.contains('recursos_humanos')) return 'recursos_humanos';
+
       return null;
     } catch (e) {
       print('⚠️ No se encontró rol con ID: $roleId');
@@ -775,6 +802,12 @@ class _WorkersScreenState extends State<WorkersScreen>
           'label': 'Gerente',
           'icon': Icons.admin_panel_settings,
           'color': Colors.purple,
+        };
+      case 'recursos_humanos':
+        return {
+          'label': 'Recursos Humanos',
+          'icon': Icons.people_alt,
+          'color': Colors.indigo,
         };
       default:
         return {'label': role, 'icon': Icons.label, 'color': Colors.grey};
@@ -1352,6 +1385,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                                         'auditor',
                                         'vendedor',
                                         'almacenero',
+                                        'recursos_humanos',
                                       ]
                                       .map(
                                         (role) => DropdownMenuItem(
@@ -1455,6 +1489,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                                   'auditor',
                                   'vendedor',
                                   'almacenero',
+                                  'recursos_humanos',
                                 ]
                                     .map(
                                       (role) => DropdownMenuItem(

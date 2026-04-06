@@ -1799,6 +1799,19 @@ CREATE TABLE public.app_versiones (
   activa boolean DEFAULT true,
   CONSTRAINT app_versiones_pkey PRIMARY KEY (id)
 );
+
+CREATE TABLE public.app_dat_recursos_humanos (
+   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+   uuid uuid NOT NULL,
+   id_tienda bigint NOT NULL,
+   created_at timestamp with time zone NOT NULL DEFAULT now(),
+   id_trabajador bigint,
+   CONSTRAINT app_dat_recursos_humanos_pkey PRIMARY KEY (id),
+   CONSTRAINT app_dat_recursos_humanos_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
+   CONSTRAINT app_dat_recursos_humanos_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id),
+   CONSTRAINT app_dat_recursos_humanos_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id)
+ );
+ 
 CREATE TABLE public.auditor (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   uuid uuid NOT NULL,
