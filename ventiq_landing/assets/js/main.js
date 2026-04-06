@@ -148,18 +148,25 @@ function initAnimations() {
 // Download buttons functionality
 function initDownloadButtons() {
     const downloadButtons = document.querySelectorAll('.download-btn, .download-app-btn, .download-link');
-    
+
     downloadButtons.forEach(button => {
+        // Skip buttons that already have onclick handlers
+        if (button.getAttribute('onclick')) return;
+
         button.addEventListener('click', function(e) {
             e.preventDefault();
-            
-            // Determine which app based on button class or content
-            const isSellerApp = this.classList.contains('seller-app') || 
-                              this.textContent.toLowerCase().includes('seller') ||
+
+            const isCatalogApp = this.classList.contains('catalog-app') ||
+                                this.textContent.toLowerCase().includes('catálogo') ||
+                                this.textContent.toLowerCase().includes('catalogo');
+            const isSellerApp = this.classList.contains('seller-app') ||
+                              this.textContent.toLowerCase().includes('vendedor') ||
                               this.textContent.toLowerCase().includes('móvil');
-            
-            if (isSellerApp) {
-                showDownloadModal('Inventtia', 'seller');
+
+            if (isCatalogApp) {
+                showDownloadModal('Inventtia Catálogo', 'catalogo');
+            } else if (isSellerApp) {
+                showDownloadModal('Inventtia Vendedor', 'seller');
             } else {
                 showDownloadModal('Inventtia Admin', 'admin');
             }
@@ -182,83 +189,63 @@ function showDownloadModal(appName, appType) {
     
     title.textContent = `Descargar ${appName}`;
     
-    if (appType === 'seller') {
-        content.innerHTML = `
-            <div class="download-options">
-                <div class="download-option">
-                    <i class="fab fa-android"></i>
-                    <div>
-                        <h4>Android</h4>
-                        <p>Aplicación nativa Flutter</p>
-                        <button class="btn btn-primary" onclick="downloadApp('android-seller')">
-                            <i class="fas fa-download"></i>
-                            Descargar APK
-                        </button>
-                    </div>
-                </div>
-                <div class="download-option" style="opacity: 0.5; pointer-events: none;">
-                    <i class="fab fa-apple"></i>
-                    <div>
-                        <h4>iOS</h4>
-                        <p>Próximamente disponible</p>
-                        <button class="btn btn-secondary" disabled>
-                            <i class="fas fa-clock"></i>
-                            Próximamente
-                        </button>
-                    </div>
-                </div>
-                <div class="download-option">
-                    <i class="fas fa-globe"></i>
-                    <div>
-                        <h4>Web</h4>
-                        <p>Acceso directo desde navegador</p>
-                        <button class="btn btn-primary" onclick="openWebApp('seller')">
-                            <i class="fas fa-external-link-alt"></i>
-                            Abrir Inventtia Web
-                        </button>
-                    </div>
+    const appConfigs = {
+        seller: {
+            androidBtn: "downloadApp('android-seller')",
+            webBtn: "openWebApp('seller')",
+            webLabel: 'Abrir Inventtia Vendedor'
+        },
+        admin: {
+            androidBtn: "downloadApp('android-admin')",
+            webBtn: "openWebApp('admin')",
+            webLabel: 'Abrir Inventtia Admin'
+        },
+        catalogo: {
+            androidBtn: "downloadApp('android-catalogo')",
+            webBtn: "openWebApp('catalogo')",
+            webLabel: 'Abrir Inventtia Catálogo'
+        }
+    };
+
+    const config = appConfigs[appType] || appConfigs.seller;
+
+    content.innerHTML = `
+        <div class="download-options">
+            <div class="download-option">
+                <i class="fab fa-android"></i>
+                <div>
+                    <h4>Android</h4>
+                    <p>Aplicación nativa Flutter</p>
+                    <button class="btn btn-primary" onclick="${config.androidBtn}">
+                        <i class="fas fa-download"></i>
+                        Descargar APK
+                    </button>
                 </div>
             </div>
-        `;
-    } else {
-        content.innerHTML = `
-            <div class="download-options">
-                <div class="download-option">
-                    <i class="fab fa-android"></i>
-                    <div>
-                        <h4>Android</h4>
-                        <p>Aplicación nativa Flutter</p>
-                        <button class="btn btn-primary" onclick="downloadApp('android-admin')">
-                            <i class="fas fa-download"></i>
-                            Descargar APK
-                        </button>
-                    </div>
-                </div>
-                <div class="download-option" style="opacity: 0.5; pointer-events: none;">
-                    <i class="fab fa-apple"></i>
-                    <div>
-                        <h4>iOS</h4>
-                        <p>Próximamente disponible</p>
-                        <button class="btn btn-secondary" disabled>
-                            <i class="fas fa-clock"></i>
-                            Próximamente
-                        </button>
-                    </div>
-                </div>
-                <div class="download-option">
-                    <i class="fas fa-globe"></i>
-                    <div>
-                        <h4>Web</h4>
-                        <p>Acceso directo desde navegador</p>
-                        <button class="btn btn-primary" onclick="openWebApp('admin')">
-                            <i class="fas fa-external-link-alt"></i>
-                            Abrir Inventtia Admin
-                        </button>
-                    </div>
+            <div class="download-option" style="opacity: 0.5; pointer-events: none;">
+                <i class="fab fa-apple"></i>
+                <div>
+                    <h4>iOS</h4>
+                    <p>Próximamente disponible</p>
+                    <button class="btn btn-secondary" disabled>
+                        <i class="fas fa-clock"></i>
+                        Próximamente
+                    </button>
                 </div>
             </div>
-        `;
-    }
+            <div class="download-option">
+                <i class="fas fa-globe"></i>
+                <div>
+                    <h4>Web</h4>
+                    <p>Acceso directo desde navegador</p>
+                    <button class="btn btn-primary" onclick="${config.webBtn}">
+                        <i class="fas fa-external-link-alt"></i>
+                        ${config.webLabel}
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
     
     // Show modal
     modal.classList.add('active');
@@ -449,27 +436,35 @@ function closeDownloadModal() {
 // Download app functions
 function downloadApp(platform) {
     if (platform === 'android-seller') {
-        showNotification('Descarga iniciada', 'La descarga del APK de Inventtia comenzará en breve.', 'success');
+        showNotification('Descarga iniciada', 'La descarga del APK de Inventtia Vendedor comenzará en breve.', 'success');
         window.open('https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20cuba.apk', '_blank');
-    } else if (platform === 'ios-seller') {
-        showNotification('Próximamente', 'Inventtia para iOS estará disponible pronto.', 'info');
     } else if (platform === 'android-admin') {
         showNotification('Descarga iniciada', 'La descarga del APK de Inventtia Admin comenzará en breve.', 'success');
         window.open('https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20admin.apk', '_blank');
-    } else if (platform === 'ios-admin') {
-        showNotification('Próximamente', 'Inventtia Admin para iOS estará disponible pronto.', 'info');
+    } else if (platform === 'android-catalogo') {
+        showNotification('Descarga iniciada', 'La descarga del APK de Inventtia Catálogo comenzará en breve.', 'success');
+        window.open('https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/inventtia%20catalogo.apk', '_blank');
+    } else if (platform.startsWith('ios-')) {
+        showNotification('Próximamente', 'La versión para iOS estará disponible pronto.', 'info');
     }
     closeDownloadModal();
 }
 
 function openWebApp(appType) {
-    if (appType === 'seller') {
-        showNotification('Abriendo aplicación...', 'Inventtia Web se abrirá en una nueva pestaña.', 'info');
-        window.open('https://ventiq-seller.appwrite.network', '_blank');
-    } else {
-        showNotification('Abriendo aplicación...', 'Inventtia Admin se abrirá en una nueva pestaña.', 'info');
-        window.open('https://inventtia-admin.appwrite.network', '_blank');
-    }
+    const urls = {
+        seller: 'https://venta.inventtia.com',
+        admin: 'https://admin.inventtia.com',
+        catalogo: 'https://catalogo.inventtia.com'
+    };
+    const names = {
+        seller: 'Inventtia Vendedor',
+        admin: 'Inventtia Admin',
+        catalogo: 'Inventtia Catálogo'
+    };
+    const url = urls[appType] || urls.seller;
+    const name = names[appType] || 'Inventtia';
+    showNotification('Abriendo aplicación...', `${name} se abrirá en una nueva pestaña.`, 'info');
+    window.open(url, '_blank');
     closeDownloadModal();
 }
 

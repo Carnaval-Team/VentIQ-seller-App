@@ -708,7 +708,7 @@ class PromotionService {
         id: '1',
         idTienda: '1',
         idTipoPromocion: '1',
-        nombre: 'Descuento Verano 2024',
+        nombre: 'Descuento Verano 2026',
         descripcion: 'Descuento especial para productos de temporada',
         codigoPromocion: 'VERANO2024',
         valorDescuento: 15.0,

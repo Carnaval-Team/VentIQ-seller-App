@@ -27,15 +27,20 @@
                 <a href="tutorials.html" class="nav-link active">Tutoriales</a>
                 <a href="contact.html" class="nav-link">Contacto</a>
                 <div class="download-buttons">
-                    <a href="https://ventiq-seller.appwrite.network" target="_blank" class="download-btn seller-app"
-                        title="Abrir Inventtia Seller Web">
+                    <a href="https://venta.inventtia.com" target="_blank" class="download-btn seller-app"
+                        title="Abrir Inventtia Vendedor Web">
                         <i class="fas fa-mobile-alt"></i>
-                        <span>Seller App</span>
+                        <span>Vendedor</span>
                     </a>
-                    <a href="https://inventtia-admin.netlify.app" target="_blank" class="download-btn admin-app"
+                    <a href="https://admin.inventtia.com" target="_blank" class="download-btn admin-app"
                         title="Abrir Inventtia Admin Web">
                         <i class="fas fa-desktop"></i>
-                        <span>Admin App</span>
+                        <span>Admin</span>
+                    </a>
+                    <a href="https://catalogo.inventtia.com" target="_blank" class="download-btn catalog-app"
+                        title="Abrir Inventtia Catálogo Web">
+                        <i class="fas fa-store"></i>
+                        <span>Catálogo</span>
                     </a>
                 </div>
             </div>
@@ -79,6 +84,14 @@
                     </div>
                     <h3>Inventtia Admin</h3>
                     <p>Aplicación multiplataforma administrativa</p>
+                </div>
+
+                <div class="category-card catalog-category" data-category="catalogo">
+                    <div class="category-icon">
+                        <i class="fas fa-store"></i>
+                    </div>
+                    <h3>Inventtia Catálogo</h3>
+                    <p>Marketplace y catálogo en línea</p>
                 </div>
             </div>
         </div>
@@ -412,6 +425,98 @@
         </div>
     </section>
 
+    <!-- Catalogo App Tutorials -->
+    <section class="tutorials-content catalogo-tutorials">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <i class="fas fa-store"></i>
+                    Tutoriales Inventtia Catálogo
+                </h2>
+                <p class="section-subtitle">
+                    Aprende a comprar productos, hacer pedidos y recibir entregas desde la app
+                </p>
+            </div>
+
+            <div class="tutorials-grid">
+                <!-- Tutorial: Crear cuenta y explorar -->
+                <div class="tutorial-card" data-tutorial="catalogo-registro">
+                    <div class="tutorial-header">
+                        <div class="tutorial-icon">
+                            <i class="fas fa-user-plus"></i>
+                        </div>
+                        <div class="tutorial-info">
+                            <h3>Registrarse y explorar</h3>
+                            <p>Crea tu cuenta y descubre las tiendas disponibles</p>
+                        </div>
+                        <div class="tutorial-duration">
+                            <i class="fas fa-clock"></i>
+                            <span>3 min</span>
+                        </div>
+                    </div>
+                    <div class="tutorial-preview">
+                        <div class="step-indicator">
+                            <span class="step active">1</span>
+                            <span class="step">2</span>
+                            <span class="step">3</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tutorial: Buscar y comprar -->
+                <div class="tutorial-card" data-tutorial="catalogo-compra">
+                    <div class="tutorial-header">
+                        <div class="tutorial-icon">
+                            <i class="fas fa-shopping-cart"></i>
+                        </div>
+                        <div class="tutorial-info">
+                            <h3>Buscar productos y comprar</h3>
+                            <p>Encuentra lo que necesitas y completa tu pedido</p>
+                        </div>
+                        <div class="tutorial-duration">
+                            <i class="fas fa-clock"></i>
+                            <span>5 min</span>
+                        </div>
+                    </div>
+                    <div class="tutorial-preview">
+                        <div class="step-indicator">
+                            <span class="step active">1</span>
+                            <span class="step">2</span>
+                            <span class="step">3</span>
+                            <span class="step">4</span>
+                            <span class="step">5</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tutorial: Seguimiento y pago -->
+                <div class="tutorial-card" data-tutorial="catalogo-pedidos">
+                    <div class="tutorial-header">
+                        <div class="tutorial-icon">
+                            <i class="fas fa-truck"></i>
+                        </div>
+                        <div class="tutorial-info">
+                            <h3>Pago y seguimiento de pedidos</h3>
+                            <p>Paga de forma segura y sigue tu entrega en tiempo real</p>
+                        </div>
+                        <div class="tutorial-duration">
+                            <i class="fas fa-clock"></i>
+                            <span>4 min</span>
+                        </div>
+                    </div>
+                    <div class="tutorial-preview">
+                        <div class="step-indicator">
+                            <span class="step active">1</span>
+                            <span class="step">2</span>
+                            <span class="step">3</span>
+                            <span class="step">4</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Tutorial Detail Modal -->
     <div class="tutorial-modal" id="tutorialModal">
         <div class="modal-overlay"></div>
@@ -464,10 +569,10 @@
                 <div class="footer-section">
                     <h4>Aplicaciones</h4>
                     <ul>
-                        <li><a href="#">Inventtia</a></li>
-                        <li><a href="#">Inventtia Admin</a></li>
+                        <li><a href="https://venta.inventtia.com" target="_blank">Inventtia Vendedor</a></li>
+                        <li><a href="https://admin.inventtia.com" target="_blank">Inventtia Admin</a></li>
+                        <li><a href="https://catalogo.inventtia.com" target="_blank">Inventtia Catálogo</a></li>
                         <li><a href="tutorials.html">Tutoriales</a></li>
-                        <li><a href="#">Documentación</a></li>
                     </ul>
                 </div>
 
@@ -503,7 +608,7 @@
             </div>
 
             <div class="footer-bottom">
-                <p>&copy; 2024 Inventtia. Todos los derechos reservados.</p>
+                <p>&copy; 2026 Inventtia. Todos los derechos reservados.</p>
             </div>
         </div>
     </footer>

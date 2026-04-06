@@ -179,5 +179,5 @@ dependencies:
 
 ---
 
-**Última actualización**: 2024-11-07
+**Última actualización**: 2026-11-07
 **Versión actual**: 1.0.0 (Fase 1 completada)

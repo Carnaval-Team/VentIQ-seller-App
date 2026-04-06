@@ -429,9 +429,9 @@ body {
 
 .apps-showcase {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: var(--spacing-2xl);
-    max-width: 1000px;
+    max-width: 1200px;
     margin: 0 auto;
 }
 
@@ -455,6 +455,18 @@ body {
 
 .admin-card {
     border-top: 4px solid var(--success);
+}
+
+.catalog-card {
+    border-top: 4px solid #9b59b6;
+}
+
+.catalog-icon {
+    background: linear-gradient(135deg, #9b59b6, #8e44ad);
+}
+
+.catalog-card .feature-item i {
+    color: #9b59b6;
 }
 
 .app-header {
@@ -870,4 +882,33 @@ body {
     .cta-content h2 {
         font-size: 2rem;
     }
+}
+
+/* Carnaval Section */
+.carnaval-section {
+    padding: var(--spacing-3xl) 0;
+    background: var(--background);
+}
+
+.carnaval-features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: var(--spacing-xl);
+    margin-bottom: var(--spacing-2xl);
+}
+
+.carnaval-cta {
+    text-align: center;
+    margin-top: var(--spacing-xl);
+}
+
+/* Catalog nav button */
+.download-btn.catalog-app {
+    background: linear-gradient(135deg, #9b59b6, #8e44ad);
+    color: white;
+}
+
+.download-btn.catalog-app:hover {
+    background: linear-gradient(135deg, #8e44ad, #7d3c98);
+    color: white;
 }
