@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/subscription.dart';
 import '../models/subscription_plan.dart';
 import '../models/subscription_history.dart';
+import 'store_selector_service.dart';
 
 class SubscriptionService {
   final _supabase = Supabase.instance.client;
@@ -423,6 +424,24 @@ class SubscriptionService {
           planName.contains('advanced');
     } catch (e) {
       print('❌ Error verificando plan pro: $e');
+      return false;
+    }
+  }
+
+  /// Verifica si ALGUNA tienda del gerente tiene plan Pro o superior
+  Future<bool> hasProPlanInAnyStore() async {
+    try {
+      final selectorService = StoreSelectorService();
+      await selectorService.initialize();
+      final stores = selectorService.userStores;
+
+      for (final store in stores) {
+        final hasPro = await hasProPlan(store.id);
+        if (hasPro) return true;
+      }
+      return false;
+    } catch (e) {
+      print('❌ Error verificando plan pro en tiendas: $e');
       return false;
     }
   }

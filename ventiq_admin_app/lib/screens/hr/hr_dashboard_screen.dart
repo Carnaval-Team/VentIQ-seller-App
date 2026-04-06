@@ -5,6 +5,7 @@ import '../../config/app_colors.dart';
 import '../../models/hr/hr_dashboard_data.dart';
 import '../../services/hr/hr_dashboard_service.dart';
 import '../../services/store_service.dart';
+import '../../services/subscription_service.dart';
 import '../../widgets/hr/hr_drawer.dart';
 import '../../widgets/hr/hr_kpi_card.dart';
 
@@ -67,6 +68,21 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
 
   Future<void> _initializeData() async {
     try {
+      // Verificar que tiene plan Pro o Avanzado
+      final hasPlan = await SubscriptionService().hasProPlanInAnyStore();
+      if (!hasPlan) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('El módulo de Recursos Humanos requiere plan Pro o Avanzado'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          Navigator.pop(context);
+        }
+        return;
+      }
+
       final storeData = await StoreService.getWorkerRequiredData();
       if (storeData == null) {
         if (mounted) setState(() => _isLoading = false);
