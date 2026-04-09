@@ -312,6 +312,12 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
             Colors.green,
           ),
           if (_activeRoles.contains('almacenero')) _buildAlmaceneroConfig(),
+          _buildRoleCheckbox(
+            'recursos_humanos',
+            'Recursos Humanos',
+            Icons.people_alt,
+            Colors.indigo,
+          ),
         ],
       ),
     );

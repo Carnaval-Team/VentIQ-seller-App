@@ -111,6 +111,15 @@
     background: var(--gradient-success);
 }
 
+.catalog-category.active {
+    border-color: #9b59b6;
+    background: linear-gradient(135deg, rgba(155, 89, 182, 0.05), rgba(155, 89, 182, 0.1));
+}
+
+.catalog-category .category-icon {
+    background: linear-gradient(135deg, #9b59b6, #8e44ad);
+}
+
 .category-card.active .category-icon {
     transform: scale(1.1);
 }

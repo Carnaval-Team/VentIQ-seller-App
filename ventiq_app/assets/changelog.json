@@ -1,9 +1,26 @@
 {
-  "current_version": "2.2.0",
-  "build": 822,
+  "current_version": "2.2.1",
+  "build": 823,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.2.1",
+      "date": "2026-04-01",
+      "title": "Mayor control sobre órdenes de Carnaval y recepción inteligente",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Protección de órdenes de Carnaval",
+          "description": "Las órdenes que llegan desde Carnaval App ahora están protegidas: no se pueden cancelar, devolver, editar ni completar manualmente. Solo puedes imprimir la factura o exportarla en PDF. Esto evita modificaciones accidentales en ventas que se gestionan desde la plataforma de Carnaval."
+        },
+        {
+          "type": "feature",
+          "title": "Recepción inteligente de órdenes pendientes",
+          "description": "Al recibir órdenes de turnos anteriores, ya sea desde las notificaciones o al abrir un nuevo turno, la app ahora verifica automáticamente el estado real de cada orden. Solo te permite recibir órdenes que aún están pendientes, evitando que aceptes ventas que ya fueron procesadas, canceladas o completadas por otro medio."
+        }
+      ]
+    },
     {
       "version": "2.2.0",
       "date": "2026-03-27",

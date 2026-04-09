@@ -1,9 +1,41 @@
 {
-  "current_version": "2.0.1",
-  "build": 201,
+  "current_version": "2.1.0",
+  "build": 210,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.1.0",
+      "date": "2026-04-06",
+      "title": "👥 Nuevo módulo de Recursos Humanos",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Módulo completo de Recursos Humanos",
+          "description": "Gestiona la asistencia, turnos y salarios de tu equipo desde un solo lugar. Registra entradas y salidas, configura tarifas por hora para cada trabajador y genera reportes de nómina automáticos."
+        },
+        {
+          "type": "feature",
+          "title": "Dashboard HR con indicadores clave",
+          "description": "Visualiza de un vistazo las horas trabajadas, costos de nómina, asistencia del equipo y los trabajadores con más horas. Todo en un panel claro con gráficas por mes."
+        },
+        {
+          "type": "feature",
+          "title": "Reportes de salario y exportación a PDF",
+          "description": "Consulta el detalle de horas y pagos de cada trabajador por período. Exporta reportes profesionales en PDF listos para compartir o archivar."
+        },
+        {
+          "type": "feature",
+          "title": "Rol de Recursos Humanos",
+          "description": "Nuevo rol dedicado para que asignes a un miembro de tu equipo la gestión de asistencia y nómina, sin darle acceso a ventas ni inventario."
+        },
+        {
+          "type": "improvement",
+          "title": "Acceso exclusivo con plan Pro y Avanzado",
+          "description": "El módulo de Recursos Humanos está disponible para tiendas con plan Pro o Avanzado, asegurando herramientas premium para quienes más las necesitan."
+        }
+      ]
+    },
     {
       "version": "2.0.1",
       "date": "2026-03-26",

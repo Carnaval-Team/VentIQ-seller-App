@@ -787,12 +787,52 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
                               ],
                             ],
                           ),
-                          trailing: Icon(
-                            isActive
-                                ? Icons.check_circle
-                                : Icons.visibility_off,
-                            color: isActive ? Colors.green : Colors.grey,
-                            size: 16,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Tooltip(
+                                message: !isActive
+                                    ? 'Activa el producto para destacarlo'
+                                    : (product['destacado'] == true
+                                        ? 'Destacado'
+                                        : 'No destacado'),
+                                child: Icon(
+                                  Icons.star,
+                                  size: 16,
+                                  color: product['destacado'] == true && isActive
+                                      ? Colors.amber
+                                      : Colors.grey.shade300,
+                                ),
+                              ),
+                              Switch(
+                                value: isActive && product['destacado'] == true,
+                                activeColor: Colors.amber,
+                                onChanged: !isActive
+                                    ? null
+                                    : (value) async {
+                                        final success = await CarnavalService
+                                            .updateProductDestacado(
+                                          carnavalProductId: product['id'],
+                                          destacado: value,
+                                        );
+                                        if (success) {
+                                          setState(() {
+                                            product['destacado'] = value;
+                                          });
+                                        } else if (mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Error al actualizar destacado',
+                                              ),
+                                              backgroundColor: Colors.red,
+                                            ),
+                                          );
+                                        }
+                                      },
+                              ),
+                            ],
                           ),
                         ),
                       );

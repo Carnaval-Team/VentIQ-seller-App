@@ -7,6 +7,7 @@ import '../models/hr_models.dart';
 import '../services/worker_service.dart';
 import '../services/store_service.dart';
 import '../services/hr_service.dart';
+import '../services/subscription_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/navigation_guard.dart';
 import '../utils/screen_protection_mixin.dart';
@@ -49,6 +50,7 @@ class _WorkersScreenState extends State<WorkersScreen>
 
   bool _canEditWorkers = false;
   bool _canDeleteWorkers = false;
+  bool _hasHRPlan = false;
 
   // Filtros
   String _selectedRole = 'Todos';
@@ -68,7 +70,7 @@ class _WorkersScreenState extends State<WorkersScreen>
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 3, // Personal, Roles y Rec. Hum.
+      length: 2, // Inicialmente solo Personal y Roles
       vsync: this,
     );
     // Listener para actualizar el FAB cuando cambia de tab
@@ -77,6 +79,27 @@ class _WorkersScreenState extends State<WorkersScreen>
     });
     _loadPermissions();
     _initializeData();
+    _checkHRPlan();
+  }
+
+  Future<void> _checkHRPlan() async {
+    try {
+      final hasPlan = await SubscriptionService().hasProPlanInAnyStore();
+      if (!mounted) return;
+      setState(() {
+        _hasHRPlan = hasPlan;
+        _tabController.dispose();
+        _tabController = TabController(
+          length: hasPlan ? 3 : 2,
+          vsync: this,
+        );
+        _tabController.addListener(() {
+          setState(() {});
+        });
+      });
+    } catch (e) {
+      print('❌ Error verificando plan HR: $e');
+    }
   }
 
   Future<void> _loadPermissions() async {
@@ -223,6 +246,27 @@ class _WorkersScreenState extends State<WorkersScreen>
               onPressed: _showSyncUUIDDialog,
               tooltip: 'Sincronizar UUID desde Roles',
             ),
+          // Boton HR para gerente (solo con plan Pro o Avanzado)
+          if (_hasHRPlan)
+            FutureBuilder<bool>(
+              future: NavigationGuard.canPerformAction('hr.dashboard'),
+              builder: (context, snapshot) {
+                if (snapshot.data == true) {
+                  return IconButton(
+                    icon: const Icon(Icons.badge, color: Colors.white),
+                    onPressed: () {
+                      Navigator.pushNamed(
+                        context,
+                        '/hr-dashboard',
+                        arguments: {'fromGerente': true},
+                      );
+                    },
+                    tooltip: 'Recursos Humanos',
+                  );
+                }
+                return const SizedBox.shrink();
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: () => _initializeData(),
@@ -242,13 +286,14 @@ class _WorkersScreenState extends State<WorkersScreen>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           indicatorColor: Colors.white,
-          tabs: const [
-            Tab(text: 'Personal', icon: Icon(Icons.people, size: 18)),
-            Tab(
+          tabs: [
+            const Tab(text: 'Personal', icon: Icon(Icons.people, size: 18)),
+            const Tab(
               text: 'Roles',
               icon: Icon(Icons.admin_panel_settings, size: 18),
             ),
-            Tab(text: 'Rec. Hum.', icon: Icon(Icons.attach_money, size: 18)),
+            if (_hasHRPlan)
+              const Tab(text: 'Rec. Hum.', icon: Icon(Icons.attach_money, size: 18)),
           ],
         ),
       ),
@@ -257,12 +302,13 @@ class _WorkersScreenState extends State<WorkersScreen>
         children: [
           _buildWorkersTab(),
           _buildRolesTab(),
-          _buildHRTab(), // 💰 Nuevo tab de Recursos Humanos
+          if (_hasHRPlan)
+            _buildHRTab(),
         ],
       ),
       endDrawer: const AdminDrawer(),
       floatingActionButton:
-          _tabController.index == 2 && _shifts.isNotEmpty
+          _hasHRPlan && _tabController.index == 2 && _shifts.isNotEmpty
               ? FloatingActionButton.extended(
                 onPressed: _exportHRReportToPDF,
                 backgroundColor: AppColors.primary,
@@ -387,6 +433,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                   'auditor',
                   'vendedor',
                   'almacenero',
+                  'recursos_humanos',
                 ].map((role) {
                   return DropdownMenuItem(
                     value: role,
@@ -577,9 +624,10 @@ class _WorkersScreenState extends State<WorkersScreen>
 
   // Método para obtener el rol con mayor jerarquía
   String _getRolPrincipal(WorkerData worker) {
-    // Jerarquía: gerente > supervisor > almacenero > vendedor
+    // Jerarquía: gerente > supervisor > recursos_humanos > almacenero > vendedor
     if (worker.esGerente) return 'gerente';
     if (worker.esSupervisor) return 'supervisor';
+    if (worker.esRecursosHumanos) return 'recursos_humanos';
     if (worker.esAlmacenero) return 'almacenero';
     if (worker.esVendedor) return 'vendedor';
 
@@ -610,6 +658,8 @@ class _WorkersScreenState extends State<WorkersScreen>
         return AppColors.primary;
       case 'almacenero':
         return Colors.green;
+      case 'recursos_humanos':
+        return Colors.indigo;
       default:
         return Colors.grey;
     }
@@ -627,6 +677,8 @@ class _WorkersScreenState extends State<WorkersScreen>
         return 'Vendedor';
       case 'almacenero':
         return 'Almacenero';
+      case 'recursos_humanos':
+        return 'Recursos Humanos';
       case 'todos':
         return 'Todos';
       case 'sin_rol':
@@ -684,7 +736,8 @@ class _WorkersScreenState extends State<WorkersScreen>
       if (denominacion.contains('auditor')) return 'auditor';
       if (denominacion.contains('vendedor')) return 'vendedor';
       if (denominacion.contains('almacenero')) return 'almacenero';
-      
+      if (denominacion.contains('recursos humanos') || denominacion.contains('recursos_humanos')) return 'recursos_humanos';
+
       return null;
     } catch (e) {
       print('⚠️ No se encontró rol con ID: $roleId');
@@ -775,6 +828,12 @@ class _WorkersScreenState extends State<WorkersScreen>
           'label': 'Gerente',
           'icon': Icons.admin_panel_settings,
           'color': Colors.purple,
+        };
+      case 'recursos_humanos':
+        return {
+          'label': 'Recursos Humanos',
+          'icon': Icons.people_alt,
+          'color': Colors.indigo,
         };
       default:
         return {'label': role, 'icon': Icons.label, 'color': Colors.grey};
@@ -1352,6 +1411,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                                         'auditor',
                                         'vendedor',
                                         'almacenero',
+                                        if (_hasHRPlan) 'recursos_humanos',
                                       ]
                                       .map(
                                         (role) => DropdownMenuItem(
@@ -1455,6 +1515,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                                   'auditor',
                                   'vendedor',
                                   'almacenero',
+                                  if (_hasHRPlan) 'recursos_humanos',
                                 ]
                                     .map(
                                       (role) => DropdownMenuItem(

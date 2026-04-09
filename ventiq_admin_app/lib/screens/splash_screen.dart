@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/user_preferences_service.dart';
+import '../services/permissions_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -27,7 +28,23 @@ class _SplashScreenState extends State<SplashScreen> {
       final hasValidSession = await _userPreferencesService.hasValidSession();
 
       if (hasValidSession) {
-        print('✅ Valid admin session found, navigating to dashboard...');
+        print('✅ Valid admin session found, checking role...');
+
+        // Verificar si es usuario HR puro
+        try {
+          final role = await PermissionsService().getUserRole();
+          if (role == UserRole.recursosHumanos && mounted) {
+            print('✅ Usuario HR detectado, navegando a HR dashboard...');
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              '/hr-dashboard',
+              (route) => false,
+            );
+            return;
+          }
+        } catch (e) {
+          print('⚠️ Error verificando rol en splash: $e');
+        }
+
         Navigator.of(context).pushNamedAndRemoveUntil(
           '/dashboard',
           (route) => false,

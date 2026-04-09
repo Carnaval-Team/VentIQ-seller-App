@@ -1,0 +1,561 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-04-01",
+  "description": "Base de conocimientos de la app Carnaval Tienda. Úsala para responder preguntas de los usuarios sobre la app, cómo funciona, qué pueden hacer, y cómo resolver problemas.",
+
+  "app": {
+    "nombre": "Carnaval Tienda",
+    "descripcion": "Plataforma de compras y delivery en Cuba. Compra productos, comida y envía paquetes desde tu celular.",
+    "version_actual": "1.1.47",
+    "plataformas": ["Android", "iOS"],
+    "url_descarga": "https://play.google.com/store/apps/details?id=com.carnaval24&pcampaignid=web_share",
+    "idioma": "Español",
+    "monedas_soportadas": ["CUP", "USD", "EUR"],
+    "metodos_pago": ["Transferencia bancaria", "Tropipay"]
+  },
+
+  "preguntas_frecuentes": [
+    {
+      "id": "que_es",
+      "categoria": "general",
+      "preguntas": [
+        "¿Qué es Carnaval?",
+        "¿Para qué sirve la app?",
+        "¿Qué puedo hacer con Carnaval?",
+        "¿De qué va esta aplicación?"
+      ],
+      "respuesta": "Carnaval Tienda es una aplicación de compras y delivery en Cuba. Desde tu celular puedes buscar productos en distintas tiendas, comparar precios, hacer pedidos y recibirlos en tu casa. También puedes pedir comida de cafeterías y restaurantes, y enviar paquetes a otras provincias."
+    },
+    {
+      "id": "descargar",
+      "categoria": "general",
+      "preguntas": [
+        "¿Dónde descargo la app?",
+        "¿Cómo instalo Carnaval?",
+        "¿Está en Google Play?",
+        "¿Dónde la bajo?",
+        "Link de descarga"
+      ],
+      "respuesta": "Puedes descargar Carnaval Tienda desde Google Play Store en este enlace: https://play.google.com/store/apps/details?id=com.carnaval24&pcampaignid=web_share"
+    },
+    {
+      "id": "gratis",
+      "categoria": "general",
+      "preguntas": [
+        "¿La app es gratis?",
+        "¿Hay que pagar para usarla?",
+        "¿Tiene costo?"
+      ],
+      "respuesta": "Sí, la app es completamente gratis para descargar y usar. Solo pagas cuando haces una compra: el precio de los productos más el costo de envío."
+    },
+    {
+      "id": "como_funciona",
+      "categoria": "general",
+      "preguntas": [
+        "¿Cómo funciona?",
+        "¿Cómo compro?",
+        "¿Cómo hago un pedido?",
+        "Explícame cómo usar la app"
+      ],
+      "respuesta": "Es muy sencillo: 1) Crea tu cuenta con tu email. 2) Busca productos por nombre o explora las categorías. 3) Añade al carrito lo que quieras. 4) Elige tu dirección de entrega. 5) Revisa el total con el envío incluido. 6) Paga por transferencia o Tropipay. 7) Recibe tu pedido en casa y sigue su estado desde la app."
+    },
+
+    {
+      "id": "crear_cuenta",
+      "categoria": "cuenta",
+      "preguntas": [
+        "¿Cómo me registro?",
+        "¿Cómo creo una cuenta?",
+        "¿Qué necesito para registrarme?",
+        "No puedo crear mi cuenta"
+      ],
+      "respuesta": "Para registrarte necesitas: tu nombre completo, un correo electrónico válido, tu número de carnet de identidad (CI) y crear una contraseña. Abre la app, toca 'Registrarse', llena los datos y confirma tu email. Una vez confirmado ya puedes entrar."
+    },
+    {
+      "id": "recuperar_contrasena",
+      "categoria": "cuenta",
+      "preguntas": [
+        "Olvidé mi contraseña",
+        "¿Cómo recupero mi contraseña?",
+        "No puedo entrar a mi cuenta",
+        "¿Cómo cambio la contraseña?"
+      ],
+      "respuesta": "Si olvidaste tu contraseña, en la pantalla de inicio de sesión toca 'Recuperar contraseña'. Escribe tu email y te llegará un enlace para crear una nueva contraseña. Si ya estás dentro de la app, puedes cambiarla desde 'Mi Cuenta' > 'Cambiar contraseña'."
+    },
+    {
+      "id": "editar_perfil",
+      "categoria": "cuenta",
+      "preguntas": [
+        "¿Cómo cambio mis datos?",
+        "¿Puedo cambiar mi nombre?",
+        "¿Cómo actualizo mi teléfono?",
+        "¿Cómo edito mi perfil?"
+      ],
+      "respuesta": "Ve a 'Mi Cuenta' desde el menú inferior. Ahí puedes editar tu nombre, email, teléfono, carnet y ciudad. Toca el dato que quieras cambiar, modifícalo y guarda."
+    },
+
+    {
+      "id": "buscar_productos",
+      "categoria": "productos",
+      "preguntas": [
+        "¿Cómo busco un producto?",
+        "¿Dónde busco?",
+        "¿Cómo encuentro lo que quiero?",
+        "¿Tienen buscador?"
+      ],
+      "respuesta": "En la pantalla principal verás una barra de búsqueda arriba. Escribe el nombre del producto (ej: 'aceite', 'cerveza', 'jabón') y te aparecerán todos los resultados disponibles con su precio y tienda. También puedes explorar por categorías tocando las secciones en la pantalla principal."
+    },
+    {
+      "id": "ver_tiendas",
+      "categoria": "productos",
+      "preguntas": [
+        "¿Qué tiendas hay?",
+        "¿Puedo ver las tiendas?",
+        "¿Dónde veo los proveedores?",
+        "¿Cuáles son las tiendas disponibles?"
+      ],
+      "respuesta": "Puedes ver todas las tiendas disponibles en la sección 'Tiendas' de la app. Ahí aparecen todos los proveedores activos con su logo, descripción y productos. Toca cualquier tienda para ver qué productos ofrece."
+    },
+    {
+      "id": "categorias",
+      "categoria": "productos",
+      "preguntas": [
+        "¿Qué categorías hay?",
+        "¿Qué tipo de productos venden?",
+        "¿Qué secciones tiene la app?"
+      ],
+      "respuesta": "La app tiene varias categorías de productos que incluyen alimentos, bebidas, productos de higiene, y más. Cada categoría agrupa productos similares para que encuentres fácilmente lo que necesitas. Las categorías se muestran en la pantalla principal."
+    },
+    {
+      "id": "detalles_producto",
+      "categoria": "productos",
+      "preguntas": [
+        "¿Cómo veo más info de un producto?",
+        "¿Puedo ver las calorías?",
+        "¿Hay fotos del producto?",
+        "¿Cómo sé si hay stock?"
+      ],
+      "respuesta": "Toca cualquier producto para ver sus detalles completos: foto, descripción, precio (y precio con descuento si aplica), stock disponible, calificaciones de otros compradores, y para comida: calorías y tiempo de preparación. Solo se muestran productos que tienen stock disponible."
+    },
+    {
+      "id": "precios_descuentos",
+      "categoria": "productos",
+      "preguntas": [
+        "¿Hay descuentos?",
+        "¿Tienen ofertas?",
+        "¿Los precios son en CUP?",
+        "¿En qué moneda son los precios?"
+      ],
+      "respuesta": "Los precios se muestran en CUP (peso cubano) de forma predeterminada. La app también soporta USD y EUR con tasas de cambio configuradas. Algunos productos tienen precio con descuento que se muestra junto al precio regular. Los descuentos los define cada tienda."
+    },
+
+    {
+      "id": "agregar_carrito",
+      "categoria": "carrito",
+      "preguntas": [
+        "¿Cómo agrego algo al carrito?",
+        "¿Cómo compro un producto?",
+        "¿Cómo añado productos?"
+      ],
+      "respuesta": "Entra al producto que quieras, selecciona la cantidad y toca 'Agregar al carrito'. Verás un número en el ícono del carrito que indica cuántos productos llevas. Puedes seguir comprando y agregar más productos de distintas tiendas."
+    },
+    {
+      "id": "ver_carrito",
+      "categoria": "carrito",
+      "preguntas": [
+        "¿Dónde veo mi carrito?",
+        "¿Cómo veo lo que llevo?",
+        "¿Cómo cambio la cantidad?",
+        "¿Cómo elimino un producto del carrito?"
+      ],
+      "respuesta": "Toca el ícono del carrito en la barra inferior para ver todo lo que llevas. Ahí puedes ver cada producto con su precio, cambiar cantidades o eliminar productos. El total se actualiza en tiempo real."
+    },
+    {
+      "id": "carrito_varias_tiendas",
+      "categoria": "carrito",
+      "preguntas": [
+        "¿Puedo comprar de varias tiendas a la vez?",
+        "¿Se mezclan productos de distintas tiendas?"
+      ],
+      "respuesta": "Sí, puedes agregar productos de distintas tiendas en un mismo carrito. El pedido se gestionará con cada proveedor correspondiente."
+    },
+
+    {
+      "id": "como_pagar",
+      "categoria": "pagos",
+      "preguntas": [
+        "¿Cómo pago?",
+        "¿Qué métodos de pago aceptan?",
+        "¿Puedo pagar por transferencia?",
+        "¿Aceptan Tropipay?"
+      ],
+      "respuesta": "Aceptamos dos métodos de pago: 1) Transferencia bancaria: haces la transferencia al número de cuenta que te indicamos y la verificamos manualmente. 2) Tropipay: pago en línea con tarjeta o saldo Tropipay (funciona con EUR). Ambos métodos son seguros."
+    },
+    {
+      "id": "monedas",
+      "categoria": "pagos",
+      "preguntas": [
+        "¿En qué moneda puedo pagar?",
+        "¿Aceptan dólares?",
+        "¿Puedo pagar en euros?",
+        "¿Cuál es la tasa de cambio?"
+      ],
+      "respuesta": "Puedes pagar en CUP (peso cubano), USD (dólares) o EUR (euros). Las tasas de cambio se actualizan periódicamente en la app. Al momento del pago verás el total en la moneda que elijas."
+    },
+    {
+      "id": "costo_envio",
+      "categoria": "pagos",
+      "preguntas": [
+        "¿Cuánto cuesta el envío?",
+        "¿El delivery es gratis?",
+        "¿Cómo se calcula el envío?",
+        "¿Varía el precio del envío?"
+      ],
+      "respuesta": "El costo de envío depende de tu municipio y del tipo de producto. Los productos de comida tienen una tarifa de envío diferente a los productos regulares. Al llegar al checkout verás el costo exacto de envío para tu dirección antes de confirmar el pago."
+    },
+
+    {
+      "id": "direcciones",
+      "categoria": "envio",
+      "preguntas": [
+        "¿Cómo agrego mi dirección?",
+        "¿Puedo tener varias direcciones?",
+        "¿Cómo cambio la dirección de entrega?"
+      ],
+      "respuesta": "Ve a la sección de direcciones desde tu perfil o durante el checkout. Puedes guardar varias direcciones con nombre (ej: 'Casa', 'Trabajo'), indicando calle, provincia, municipio y cualquier aclaración especial para el repartidor. Al hacer un pedido solo seleccionas cuál quieres usar."
+    },
+    {
+      "id": "areas_entrega",
+      "categoria": "envio",
+      "preguntas": [
+        "¿A dónde entregan?",
+        "¿Llegan a mi municipio?",
+        "¿En qué provincias operan?",
+        "¿Hacen envíos a toda Cuba?"
+      ],
+      "respuesta": "Las zonas de entrega dependen de cada tienda y de los municipios configurados en el sistema. Al seleccionar tu dirección durante el checkout, la app calcula automáticamente si se puede entregar en tu zona y cuánto cuesta el envío."
+    },
+
+    {
+      "id": "estado_pedido",
+      "categoria": "pedidos",
+      "preguntas": [
+        "¿Cómo veo el estado de mi pedido?",
+        "¿Dónde veo mis pedidos?",
+        "¿Cómo sé si mi pedido fue aceptado?",
+        "¿Cómo rastreo mi entrega?"
+      ],
+      "respuesta": "Ve a 'Mis Pedidos' desde el menú. Ahí ves todos tus pedidos con su estado actual: creado, confirmado, en camino o entregado. También recibes notificaciones cuando el estado cambia. Puedes ver los detalles de cada pedido tocándolo."
+    },
+    {
+      "id": "cancelar_pedido",
+      "categoria": "pedidos",
+      "preguntas": [
+        "¿Puedo cancelar un pedido?",
+        "¿Cómo cancelo?",
+        "Quiero cancelar mi compra"
+      ],
+      "respuesta": "El estado de tu pedido se gestiona por la tienda. Si necesitas cancelar un pedido, contacta al soporte a través de WhatsApp (disponible en la app) lo antes posible. Una vez que el pedido está en camino puede que no sea posible cancelarlo."
+    },
+    {
+      "id": "historial",
+      "categoria": "pedidos",
+      "preguntas": [
+        "¿Puedo ver pedidos anteriores?",
+        "¿Hay historial de compras?",
+        "¿Dónde veo lo que he comprado antes?"
+      ],
+      "respuesta": "Sí, en 'Mis Pedidos' tienes pestañas para ver todos tus pedidos, los pendientes y los completados. Puedes revisar qué compraste, cuánto pagaste y cuándo fue cada pedido."
+    },
+
+    {
+      "id": "calificar",
+      "categoria": "resenas",
+      "preguntas": [
+        "¿Puedo dejar una reseña?",
+        "¿Cómo califico un producto?",
+        "¿Dónde dejo mi opinión?",
+        "¿Cómo puntúo una tienda?"
+      ],
+      "respuesta": "Después de recibir tu pedido, puedes calificar los productos con estrellas (1 a 5) y dejar un comentario. Ve al producto o a tu pedido completado y encontrarás la opción de calificar. Tus reseñas ayudan a otros compradores a elegir mejor."
+    },
+
+    {
+      "id": "envio_paquetes",
+      "categoria": "servicios",
+      "preguntas": [
+        "¿Puedo enviar paquetes?",
+        "¿Cómo mando un paquete?",
+        "¿Hacen mensajería?",
+        "¿Cuánto cuesta enviar un paquete?"
+      ],
+      "respuesta": "Sí, Carnaval tiene un servicio de envío de paquetes. Ve a la sección 'Envío de Paquetes', indica el peso en libras, la dirección de destino y el teléfono del destinatario. La app calcula el precio según el peso y la distancia. Es ideal para enviar cosas a familiares en otras provincias."
+    },
+    {
+      "id": "comida",
+      "categoria": "servicios",
+      "preguntas": [
+        "¿Puedo pedir comida?",
+        "¿Tienen delivery de comida?",
+        "¿Hay restaurantes en la app?",
+        "¿Qué es Carnaval Food?"
+      ],
+      "respuesta": "Sí, Carnaval Food es la sección de comida de la app. Puedes pedir comida de cafeterías y restaurantes afiliados. Los productos de comida muestran calorías, tiempo de preparación y tienen tarifas de envío especiales. Busca la sección 'Cafeterías' en la app."
+    },
+
+    {
+      "id": "notificaciones",
+      "categoria": "app",
+      "preguntas": [
+        "¿Recibo notificaciones?",
+        "¿Me avisan cuando llega mi pedido?",
+        "¿Cómo activo las notificaciones?"
+      ],
+      "respuesta": "Sí, la app te envía notificaciones sobre: actualizaciones de tu pedido (confirmado, en camino, entregado), promociones especiales, alertas de stock y mensajes del sistema. Asegúrate de tener las notificaciones activadas en los ajustes de tu teléfono."
+    },
+    {
+      "id": "problemas_app",
+      "categoria": "soporte",
+      "preguntas": [
+        "La app no funciona",
+        "Tengo un problema",
+        "La app se cierra sola",
+        "No me carga la app"
+      ],
+      "respuesta": "Si tienes problemas con la app: 1) Asegúrate de tener la última versión instalada desde Google Play. 2) Verifica tu conexión a internet. 3) Cierra la app completamente y vuelve a abrirla. 4) Si el problema persiste, contacta a soporte por WhatsApp desde la app o escribe al correo de soporte."
+    },
+    {
+      "id": "contacto_soporte",
+      "categoria": "soporte",
+      "preguntas": [
+        "¿Cómo contacto a soporte?",
+        "¿Tienen WhatsApp?",
+        "¿Cómo me comunico con ustedes?",
+        "Necesito ayuda"
+      ],
+      "respuesta": "Puedes contactarnos por WhatsApp directamente desde la app (busca el ícono de WhatsApp o el enlace en la sección de ayuda). También puedes llamar a nuestros números de soporte que aparecen en la configuración de la app. Estamos para ayudarte."
+    },
+    {
+      "id": "seguridad",
+      "categoria": "soporte",
+      "preguntas": [
+        "¿Es segura la app?",
+        "¿Mis datos están protegidos?",
+        "¿Es confiable pagar por la app?"
+      ],
+      "respuesta": "Sí, tu seguridad es nuestra prioridad. Usamos encriptación para proteger tus datos y contraseñas. Los pagos por Tropipay se procesan en una plataforma segura certificada. Las transferencias bancarias se verifican manualmente por nuestro equipo. Nunca compartimos tus datos personales con terceros."
+    },
+    {
+      "id": "actualizar",
+      "categoria": "app",
+      "preguntas": [
+        "¿Cómo actualizo la app?",
+        "¿Hay una nueva versión?",
+        "Me pide actualizar"
+      ],
+      "respuesta": "La app te avisa automáticamente cuando hay una actualización disponible. Para actualizar, ve a Google Play Store, busca 'Carnaval Tienda' y toca 'Actualizar'. Recomendamos siempre usar la última versión para tener las mejores funciones y correcciones."
+    }
+  ],
+
+  "flujos_usuario": {
+    "descripcion": "Flujos principales que un usuario puede realizar en la app",
+    "flujos": [
+      {
+        "id": "registro_y_login",
+        "nombre": "Registrarse y entrar",
+        "pasos": [
+          "Abrir la app",
+          "Tocar 'Registrarse'",
+          "Llenar: nombre, email, carnet de identidad, contraseña",
+          "Confirmar el email (revisar bandeja de entrada)",
+          "Entrar con email y contraseña"
+        ]
+      },
+      {
+        "id": "compra_completa",
+        "nombre": "Hacer una compra de principio a fin",
+        "pasos": [
+          "Iniciar sesión",
+          "Buscar productos por nombre o explorar categorías",
+          "Tocar un producto para ver detalles",
+          "Seleccionar cantidad y tocar 'Agregar al carrito'",
+          "Repetir para más productos (pueden ser de distintas tiendas)",
+          "Ir al carrito y revisar productos y total",
+          "Tocar 'Proceder al pago'",
+          "Seleccionar o agregar dirección de entrega",
+          "Revisar subtotal + costo de envío = total",
+          "Elegir método de pago (transferencia o Tropipay)",
+          "Confirmar el pago",
+          "El pedido se crea y el carrito se vacía",
+          "Seguir el estado del pedido en 'Mis Pedidos'",
+          "Recibir notificaciones de cambios de estado",
+          "Calificar los productos después de recibirlos"
+        ]
+      },
+      {
+        "id": "enviar_paquete",
+        "nombre": "Enviar un paquete",
+        "pasos": [
+          "Ir a la sección 'Envío de Paquetes'",
+          "Indicar el peso del paquete en libras",
+          "Seleccionar provincia y municipio de destino",
+          "Escribir la dirección de entrega",
+          "Indicar el teléfono del destinatario",
+          "Ver el costo calculado según peso y distancia",
+          "Confirmar y pagar el envío"
+        ]
+      },
+      {
+        "id": "gestionar_direcciones",
+        "nombre": "Gestionar direcciones de entrega",
+        "pasos": [
+          "Ir a 'Mi Cuenta' o durante el checkout tocar 'Mis Direcciones'",
+          "Tocar 'Agregar dirección'",
+          "Llenar: calle, provincia, municipio, título (ej: 'Casa')",
+          "Agregar aclaraciones especiales si es necesario",
+          "Guardar la dirección",
+          "Al hacer un pedido, simplemente seleccionar la dirección guardada"
+        ]
+      },
+      {
+        "id": "pedir_comida",
+        "nombre": "Pedir comida (Carnaval Food)",
+        "pasos": [
+          "Ir a la sección 'Cafeterías' o 'Carnaval Food'",
+          "Ver las cafeterías y restaurantes disponibles",
+          "Explorar sus menús y productos",
+          "Ver calorías y tiempo de preparación de cada plato",
+          "Agregar al carrito",
+          "Completar el pedido (el envío de comida tiene tarifa especial)"
+        ]
+      }
+    ]
+  },
+
+  "caracteristicas_principales": {
+    "descripcion": "Resumen de las características clave de la app para marketing",
+    "features": [
+      {
+        "nombre": "Compra en múltiples tiendas",
+        "descripcion": "Agrega productos de distintas tiendas en un solo carrito y haz un pedido unificado.",
+        "icono": "shopping_cart"
+      },
+      {
+        "nombre": "Búsqueda inteligente",
+        "descripcion": "Encuentra cualquier producto escribiendo su nombre. La búsqueda funciona incluso sin acentos.",
+        "icono": "search"
+      },
+      {
+        "nombre": "Delivery a tu puerta",
+        "descripcion": "Recibe tus compras en casa. El costo de envío se calcula automáticamente según tu ubicación.",
+        "icono": "delivery"
+      },
+      {
+        "nombre": "Multi-moneda",
+        "descripcion": "Paga en CUP, USD o EUR. Las tasas de cambio se actualizan en la app.",
+        "icono": "currency"
+      },
+      {
+        "nombre": "Carnaval Food",
+        "descripcion": "Pide comida de cafeterías y restaurantes con info nutricional y tiempo de preparación.",
+        "icono": "restaurant"
+      },
+      {
+        "nombre": "Envío de paquetes",
+        "descripcion": "Manda paquetes a familiares en otras provincias. Precio calculado por peso y distancia.",
+        "icono": "package"
+      },
+      {
+        "nombre": "Seguimiento en tiempo real",
+        "descripcion": "Sigue el estado de tu pedido y recibe notificaciones en cada paso.",
+        "icono": "tracking"
+      },
+      {
+        "nombre": "Reseñas y calificaciones",
+        "descripcion": "Lee opiniones de otros compradores y califica los productos que compras.",
+        "icono": "star"
+      },
+      {
+        "nombre": "Múltiples direcciones",
+        "descripcion": "Guarda varias direcciones de entrega y elige cuál usar en cada pedido.",
+        "icono": "location"
+      },
+      {
+        "nombre": "Pagos seguros",
+        "descripcion": "Paga por transferencia bancaria o Tropipay con total seguridad.",
+        "icono": "security"
+      }
+    ]
+  },
+
+  "glosario": {
+    "descripcion": "Términos que los usuarios pueden usar y qué significan en contexto de la app",
+    "terminos": {
+      "proveedor": "Tienda o negocio que vende productos a través de la app",
+      "repartidor": "Persona que entrega los pedidos a domicilio",
+      "CUP": "Peso cubano, la moneda principal de Cuba",
+      "Tropipay": "Plataforma de pago en línea que funciona con EUR, popular en Cuba",
+      "delivery": "Servicio de entrega a domicilio",
+      "carrito": "Lista de productos que el usuario quiere comprar",
+      "checkout": "Proceso de revisión y pago del pedido",
+      "municipio": "División geográfica que determina el costo de envío",
+      "CI": "Carnet de identidad cubano, requerido para el registro",
+      "stock": "Cantidad disponible de un producto",
+      "destacado": "Producto promocionado o en oferta especial",
+      "cafetería": "Establecimiento de comida que vende a través de Carnaval Food",
+      "Carnaval Food": "Sección de la app dedicada a pedidos de comida"
+    }
+  },
+
+  "resolucion_problemas": [
+    {
+      "problema": "No puedo iniciar sesión",
+      "soluciones": [
+        "Verifica que tu email y contraseña sean correctos",
+        "Si olvidaste la contraseña, usa 'Recuperar contraseña'",
+        "Verifica que confirmaste tu email al registrarte (revisa bandeja de spam)",
+        "Asegúrate de tener conexión a internet",
+        "Si nada funciona, contacta a soporte por WhatsApp"
+      ]
+    },
+    {
+      "problema": "No veo productos",
+      "soluciones": [
+        "Verifica tu conexión a internet",
+        "Algunos productos pueden estar agotados (sin stock)",
+        "Prueba buscar por nombre en el buscador",
+        "Algunas tiendas pueden estar temporalmente inactivas",
+        "Actualiza la app a la última versión"
+      ]
+    },
+    {
+      "problema": "No puedo pagar",
+      "soluciones": [
+        "Para transferencia: verifica que tengas los datos de la cuenta correctos",
+        "Para Tropipay: asegúrate de tener saldo suficiente en EUR",
+        "Verifica que hayas seleccionado una dirección de entrega",
+        "Asegúrate de que el carrito no esté vacío",
+        "Si el error persiste, contacta a soporte"
+      ]
+    },
+    {
+      "problema": "Mi pedido no llega",
+      "soluciones": [
+        "Revisa el estado de tu pedido en 'Mis Pedidos'",
+        "Verifica que la dirección de entrega sea correcta",
+        "Contacta a soporte por WhatsApp con tu número de pedido",
+        "Ten en cuenta que los tiempos de entrega varían según la distancia"
+      ]
+    },
+    {
+      "problema": "La app se cierra o no carga",
+      "soluciones": [
+        "Cierra la app completamente y vuelve a abrirla",
+        "Verifica tu conexión a internet",
+        "Actualiza a la última versión desde Google Play",
+        "Si persiste, desinstala y vuelve a instalar la app (tus datos se mantienen con tu cuenta)",
+        "Contacta a soporte si nada funciona"
+      ]
+    }
+  ]
+}

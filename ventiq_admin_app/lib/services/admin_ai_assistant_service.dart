@@ -90,6 +90,8 @@ class AdminAiAssistantService {
         return 'almacenero';
       case UserRole.vendedor:
         return 'vendedor';
+      case UserRole.recursosHumanos:
+        return 'recursos_humanos';
       case UserRole.none:
         return 'gerente'; // Default to gerente for generic help
     }

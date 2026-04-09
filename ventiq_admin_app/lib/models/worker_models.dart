@@ -42,6 +42,7 @@ class WorkerData {
   final String? usuarioUuid;
   final String? email; // 📧 Email del trabajador desde auth.users
   final double salarioHoras; // 💰 Salario por hora del trabajador
+  final double pagoPorResultado; // 💰 Pago por resultado del trabajador
   final bool? manejaAperturaControl; // 📋 Control de inventario en turnos
 
   // 🆕 Nuevos campos para roles múltiples
@@ -50,6 +51,7 @@ class WorkerData {
   final bool esSupervisor;
   final bool esVendedor;
   final bool esAlmacenero;
+  final bool esRecursosHumanos;
 
   WorkerData({
     required this.trabajadorId,
@@ -63,12 +65,14 @@ class WorkerData {
     this.usuarioUuid,
     this.email, // 📧 Email opcional
     this.salarioHoras = 0.0, // Valor por defecto 0
+    this.pagoPorResultado = 0.0, // Valor por defecto 0
     this.manejaAperturaControl, // 📋 Puede ser null
     this.tieneUsuario = false,
     this.esGerente = false,
     this.esSupervisor = false,
     this.esVendedor = false,
     this.esAlmacenero = false,
+    this.esRecursosHumanos = false,
   });
 
   factory WorkerData.fromJson(Map<String, dynamic> json) {
@@ -87,6 +91,9 @@ class WorkerData {
       salarioHoras:
           (json['salario_horas'] as num?)?.toDouble() ??
           0.0, // 💰 Parsear salario
+      pagoPorResultado:
+          (json['pago_por_resultado'] as num?)?.toDouble() ??
+          0.0, // 💰 Parsear PPR
       manejaAperturaControl:
           json['maneja_apertura_control']
               as bool?, // 📋 Parsear control inventario
@@ -96,6 +103,7 @@ class WorkerData {
       esSupervisor: json['es_supervisor'] as bool? ?? false,
       esVendedor: json['es_vendedor'] as bool? ?? false,
       esAlmacenero: json['es_almacenero'] as bool? ?? false,
+      esRecursosHumanos: json['es_recursos_humanos'] as bool? ?? false,
     );
   }
 
@@ -110,6 +118,7 @@ class WorkerData {
     if (esSupervisor == true) roles.add('supervisor');
     if (esVendedor == true) roles.add('vendedor');
     if (esAlmacenero == true) roles.add('almacenero');
+    if (esRecursosHumanos == true) roles.add('recursos_humanos');
     return roles;
   }
 
@@ -141,6 +150,7 @@ class WorkerData {
       'usuario_uuid': usuarioUuid,
       'email': email, // 📧 Incluir email en JSON
       'salario_horas': salarioHoras, // 💰 Incluir salario en JSON
+      'pago_por_resultado': pagoPorResultado, // 💰 Incluir PPR en JSON
       'maneja_apertura_control':
           manejaAperturaControl, // 📋 Incluir control inventario en JSON
       // 🆕 Incluir nuevos campos en JSON
@@ -149,6 +159,7 @@ class WorkerData {
       'es_supervisor': esSupervisor,
       'es_vendedor': esVendedor,
       'es_almacenero': esAlmacenero,
+      'es_recursos_humanos': esRecursosHumanos,
     };
   }
 }

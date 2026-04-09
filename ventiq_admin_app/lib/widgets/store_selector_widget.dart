@@ -472,6 +472,8 @@ class _AppBarStoreSelectorWidgetState extends State<AppBarStoreSelectorWidget> {
         return Colors.orange;
       case UserRole.vendedor:
         return Colors.purple;
+      case UserRole.recursosHumanos:
+        return Colors.teal;
       case UserRole.none:
         return Colors.grey;
     }
