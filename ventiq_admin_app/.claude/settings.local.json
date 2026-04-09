@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(flutter analyze:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(find lib:*)",
+      "Bash(sed \"s/\\\\.rpc\\('//\")",
+      "Bash(sed \"s/'$//\")",
+      "Bash(sed \"s/.*\\\\.rpc\\('//\")",
+      "Bash(sed \"s/'.*$//\")"
     ]
   }
 }

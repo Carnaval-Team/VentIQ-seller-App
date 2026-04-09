@@ -528,13 +528,31 @@ class CarnavalService {
       final response = await _supabase
           .schema('carnavalapp')
           .from('Categorias')
-          .select('id, name, icon')
-          .order('name');
+          .select('id, name, icon, descripcion, orden')
+          .order('orden');
 
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('❌ Error al obtener categorías de Carnaval: $e');
       return [];
+    }
+  }
+
+  /// Actualiza la categoría de un producto en carnavalapp.Productos
+  static Future<bool> updateProductCategory({
+    required int carnavalProductId,
+    required int newCategoryId,
+  }) async {
+    try {
+      await _supabase
+          .schema('carnavalapp')
+          .from('Productos')
+          .update({'category_id': newCategoryId})
+          .eq('id', carnavalProductId);
+      return true;
+    } catch (e) {
+      print('❌ Error al actualizar categoría: $e');
+      return false;
     }
   }
 
@@ -1037,6 +1055,24 @@ class CarnavalService {
   }
 
   /// Obtiene los porcentajes globales de comisión
+  /// Actualiza el campo 'destacado' de un producto en carnavalapp.Productos
+  static Future<bool> updateProductDestacado({
+    required int carnavalProductId,
+    required bool destacado,
+  }) async {
+    try {
+      await _supabase
+          .schema('carnavalapp')
+          .from('Productos')
+          .update({'destacado': destacado})
+          .eq('id', carnavalProductId);
+      return true;
+    } catch (e) {
+      print('❌ Error al actualizar destacado: $e');
+      return false;
+    }
+  }
+
   static Future<Map<String, double>> getGlobalPercentages() async {
     try {
       final response = await _supabase
