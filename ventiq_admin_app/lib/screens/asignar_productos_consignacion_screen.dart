@@ -278,6 +278,10 @@ class _AsignarProductosConsignacionScreenState
       final skuProducto = productoInventario['sku_producto'] as String?;
       final idTiendaConsignadora =
           widget.contrato['id_tienda_consignadora'] as int;
+      // Para devoluciones la extracción ocurre en la tienda consignataria
+      final idTiendaExtraccion = widget.isDevolucion
+          ? (widget.contrato['id_tienda_consignataria'] as int)
+          : idTiendaConsignadora;
 
       if (_idExtraccion == null) {
         // ── Primera vez: crear la extracción completa ──────────────────────
@@ -287,9 +291,10 @@ class _AsignarProductosConsignacionScreenState
             'p_autorizado_por': email,
             'p_estado_inicial': 1,
             'p_id_motivo_operacion': 21,
-            'p_id_tienda': idTiendaConsignadora,
-            'p_observaciones':
-                'Envío a consignación - Contrato #${widget.idContrato} (Reserva inicial)',
+            'p_id_tienda': idTiendaExtraccion,
+            'p_observaciones': widget.isDevolucion
+                ? 'Devolución de consignación - Contrato #${widget.idContrato} (Reserva inicial)'
+                : 'Envío a consignación - Contrato #${widget.idContrato} (Reserva inicial)',
             'p_productos': [
               {
                 'id_producto': idProducto,
@@ -900,15 +905,11 @@ class _AsignarProductosConsignacionScreenState
       final user = _supabase.auth.currentUser;
       if (user == null) throw Exception('Usuario no autenticado');
 
-      final idTiendaConsignataria =
-          widget.contrato['id_tienda_consignataria'] as int;
-      final almacenes = await _supabase
-          .from('app_dat_almacen')
-          .select('id')
-          .eq('id_tienda', idTiendaConsignataria)
-          .limit(1);
-      final idAlmacenOrigen =
-          (almacenes as List).isNotEmpty ? almacenes[0]['id'] as int : 0;
+      // Usar el almacén destino del contrato (donde están físicamente los productos consignados)
+      final idAlmacenOrigen = widget.contrato['id_almacen_destino'] as int?;
+      if (idAlmacenOrigen == null) {
+        throw Exception('El contrato no tiene un almacén destino configurado');
+      }
 
       final productosParaDevolucion =
           productos
@@ -920,6 +921,9 @@ class _AsignarProductosConsignacionScreenState
                   'precio_costo_usd': p['precio_costo_usd'],
                   'precio_costo_cup': p['precio_costo_cup'],
                   'tasa_cambio': p['tasa_cambio'],
+                  'id_presentacion': p['id_presentacion'],
+                  'id_variante': p['id_variante'],
+                  'id_ubicacion': p['id_ubicacion'],
                 },
               )
               .toList();
@@ -929,6 +933,7 @@ class _AsignarProductosConsignacionScreenState
         idAlmacenOrigen: idAlmacenOrigen,
         idUsuario: user.id,
         productos: productosParaDevolucion,
+        idOperacionExtraccion: _idExtraccion,
         descripcion:
             'Devolución de productos - ${widget.contrato['tienda_consignataria']['denominacion']}',
       );

@@ -384,6 +384,7 @@ CREATE TABLE public.app_dat_configuracion_tienda (
   permitir_imprimir_pendientes boolean,
   metodo_redondeo_precio_venta text NOT NULL DEFAULT 'NO_REDONDEAR'::text CHECK (metodo_redondeo_precio_venta = ANY (ARRAY['NO_REDONDEAR'::text, 'REDONDEAR_POR_DEFECTO'::text, 'REDONDEAR_POR_EXCESO'::text, 'REDONDEAR_A_MULT_5_POR_DEFECTO'::text, 'REDONDEAR_A_MULT_5_POR_EXCESO'::text])),
   allow_seller_make_order_modifications boolean DEFAULT false,
+  precio_venta_regido_por_usd boolean NOT NULL DEFAULT false,
   CONSTRAINT app_dat_configuracion_tienda_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_configuracion_tienda_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
 );
@@ -1810,6 +1811,25 @@ CREATE TABLE public.auditor (
   CONSTRAINT app_dat_auditor_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id),
   CONSTRAINT app_dat_auditor_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id)
 );
+CREATE TABLE public.codigo_producto (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_producto bigint NOT NULL,
+  codigo_barras character varying NOT NULL,
+  tipo_codigo character varying NOT NULL,
+  prefijo_pais character varying,
+  codigo_fabricante character varying,
+  codigo_producto character varying,
+  digito_control character varying,
+  numero_sistema character varying,
+  pais_origen character varying,
+  fabricante character varying,
+  descripcion character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  created_by uuid,
+  CONSTRAINT codigo_producto_pkey PRIMARY KEY (id),
+  CONSTRAINT codigo_producto_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT codigo_producto_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id)
+);
 CREATE TABLE public.config_asistant_model (
   id bigint NOT NULL DEFAULT nextval('config_asistant_model_id_seq'::regclass),
   api_key text NOT NULL,
@@ -1841,6 +1861,14 @@ CREATE TABLE public.municipios (
   precio_alimentos numeric NOT NULL DEFAULT '0'::numeric,
   CONSTRAINT municipios_pkey PRIMARY KEY (id),
   CONSTRAINT municipios_provincia_fkey FOREIGN KEY (provincia) REFERENCES public.provincias(id)
+);
+CREATE TABLE public.precio_global_productos_carnaval (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  porciento_efectivo numeric DEFAULT '5'::numeric,
+  porciento_transferencia numeric DEFAULT '15'::numeric,
+  CONSTRAINT precio_global_productos_carnaval_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.project_docs (
   id integer NOT NULL DEFAULT nextval('project_docs_id_seq'::regclass),
