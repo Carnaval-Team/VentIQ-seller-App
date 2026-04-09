@@ -194,7 +194,7 @@ document.addEventListener('DOMContentLoaded', function() {
             } else if (buttonText.includes('descargar')) {
                 // Use the download functionality from main.js
                 if (typeof showDownloadModal === 'function') {
-                    showDownloadModal('VentIQ Apps', 'both');
+                    showDownloadModal('Inventtia Apps', 'both');
                 }
             }
         });
@@ -209,7 +209,7 @@ function requestDemo() {
     const messageTextarea = form.querySelector('#message');
     
     subjectSelect.value = 'demo';
-    messageTextarea.value = 'Hola, me gustaría solicitar una demo de VentIQ para conocer mejor las funcionalidades del sistema. Por favor contáctenme para coordinar una presentación.';
+    messageTextarea.value = 'Hola, me gustaría solicitar una demo de Inventtia para conocer mejor las funcionalidades del sistema. Por favor contáctenme para coordinar una presentación.';
     
     // Scroll to form
     form.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -240,7 +240,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (icon.classList.contains('fa-envelope')) {
                 // Email
-                window.location.href = 'mailto:contacto@ventiq.com';
+                window.location.href = 'mailto:soporteinventtia@gmail.com';
             } else if (icon.classList.contains('fa-phone')) {
                 // Phone
                 window.location.href = 'tel:+15551234567';
@@ -288,11 +288,11 @@ function saveFormData() {
     const formData = new FormData(form);
     const data = Object.fromEntries(formData);
     
-    localStorage.setItem('ventiq_contact_form', JSON.stringify(data));
+    localStorage.setItem('inventtia_contact_form', JSON.stringify(data));
 }
 
 function loadFormData() {
-    const savedData = localStorage.getItem('ventiq_contact_form');
+    const savedData = localStorage.getItem('inventtia_contact_form');
     
     if (savedData) {
         const data = JSON.parse(savedData);
@@ -312,7 +312,7 @@ function loadFormData() {
 }
 
 function clearFormData() {
-    localStorage.removeItem('ventiq_contact_form');
+    localStorage.removeItem('inventtia_contact_form');
 }
 
 // Initialize auto-save

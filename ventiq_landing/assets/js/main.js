@@ -1,4 +1,4 @@
-// Main JavaScript for VentIQ Landing Page
+// Main JavaScript for Inventtia Landing Page
 
 // Supabase configuration
 const SUPABASE_URL = 'https://vsieeihstajlrdvpuooh.supabase.co';
@@ -657,7 +657,7 @@ window.addEventListener('scroll', debouncedScroll);
 // Load global statistics from Supabase
 async function loadGlobalStats() {
     try {
-        console.log('🔄 Cargando estadísticas globales de VentIQ...');
+        console.log('🔄 Cargando estadísticas globales de Inventtia...');
         
         let { data, error } = await supabase
             .rpc('fn_estadisticas_globales_ventiq');
