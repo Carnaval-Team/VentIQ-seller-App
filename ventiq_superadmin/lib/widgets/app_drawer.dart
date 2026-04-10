@@ -179,6 +179,17 @@ class AppDrawer extends StatelessWidget {
                 ),
                 _buildMenuSection(
                   context,
+                  title: 'Carnaval',
+                  items: [
+                    _DrawerItem(
+                      icon: Icons.festival,
+                      title: 'Info de Carnaval',
+                      route: '/carnaval-dashboard',
+                    ),
+                  ],
+                ),
+                _buildMenuSection(
+                  context,
                   title: 'Sistema',
                   items: [
                     _DrawerItem(
@@ -334,7 +345,8 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/control-flota' ||
                 item.route.startsWith('/muevete/') ||
                 item.route == '/agentes' ||
-                item.route == '/ingresos-distribucion') {
+                item.route == '/ingresos-distribucion' ||
+                item.route == '/carnaval-dashboard') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas
