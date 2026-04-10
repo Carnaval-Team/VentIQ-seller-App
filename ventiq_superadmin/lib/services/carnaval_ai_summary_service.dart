@@ -49,7 +49,7 @@ class CarnavalAiSummaryService {
 
       final response = await http
           .post(uri, headers: headers, body: jsonEncode(body))
-          .timeout(const Duration(seconds: 40));
+          .timeout(const Duration(seconds: 120));
 
       if (response.statusCode != 200) {
         return 'Error al obtener resumen IA (${response.statusCode}). Intenta de nuevo.';
