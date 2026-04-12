@@ -477,9 +477,9 @@ class _CarnavalDashboardScreenState extends State<CarnavalDashboardScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.08),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+          border: Border.all(color: AppColors.primary, width: 1.5),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -492,7 +492,7 @@ class _CarnavalDashboardScreenState extends State<CarnavalDashboardScreen> {
               style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: AppColors.primary,
+                color: AppColors.primaryDark,
               ),
             ),
             const SizedBox(width: 6),
@@ -582,6 +582,17 @@ class _CarnavalDashboardScreenState extends State<CarnavalDashboardScreen> {
             Expanded(child: _buildDineroPorMonedaChart(d)),
           ],
         ),
+        const SizedBox(height: 16),
+
+        // Charts Row 2b: Nuevo/En Revision + Pendiente de Pago
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _buildOrdenesNuevoRevisionChart(d)),
+            const SizedBox(width: 16),
+            Expanded(child: _buildOrdenesPendientePagoChart(d)),
+          ],
+        ),
         const SizedBox(height: 32),
 
         // Charts Row 3: Productos por proveedor + Vendidos por proveedor
@@ -661,6 +672,10 @@ class _CarnavalDashboardScreenState extends State<CarnavalDashboardScreen> {
         _buildDineroPorMetodoPagoChart(d),
         const SizedBox(height: 16),
         _buildDineroPorMonedaChart(d),
+        const SizedBox(height: 16),
+        _buildOrdenesNuevoRevisionChart(d),
+        const SizedBox(height: 16),
+        _buildOrdenesPendientePagoChart(d),
         const SizedBox(height: 24),
         _sectionTitle('Proveedores'),
         const SizedBox(height: 12),
@@ -853,6 +868,79 @@ class _CarnavalDashboardScreenState extends State<CarnavalDashboardScreen> {
       valueExtractor: (dates) =>
           dates.map((dc) => FlSpot(0, dc.count.toDouble())).toList(),
       isCount: true,
+    );
+  }
+
+  // Ordenes Nuevo / En Revision (multi-line, 2 líneas)
+  Widget _buildOrdenesNuevoRevisionChart(CarnavalDashboardData d) {
+    return _buildMultiLineChart(
+      title: 'Ordenes Nuevo / En Revisión',
+      subtitle: 'Evolución diaria por estado',
+      dataMap: d.ordenesNuevoRevisionPorDia,
+      valueExtractor: (dates) =>
+          dates.map((dc) => FlSpot(0, dc.count.toDouble())).toList(),
+      isCount: true,
+    );
+  }
+
+  // Ordenes Pendiente de Pago (single line)
+  Widget _buildOrdenesPendientePagoChart(CarnavalDashboardData d) {
+    final data = d.ordenesPendientePagoPorDia;
+    final spots = data.asMap().entries
+        .map((e) => FlSpot(e.key.toDouble(), e.value.count.toDouble()))
+        .toList();
+    final labels =
+        data.map((e) => DateFormat('dd/MM').format(e.date)).toList();
+
+    return ChartCard(
+      title: 'Ordenes Pendiente de Pago',
+      subtitle: 'Evolución diaria',
+      chart: SizedBox(
+        height: 280,
+        child: spots.isEmpty
+            ? _emptyChart()
+            : LineChart(
+                LineChartData(
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    horizontalInterval: _calcInterval(
+                        spots.map((s) => s.y).reduce((a, b) => a > b ? a : b)),
+                    getDrawingHorizontalLine: (value) => FlLine(
+                      color: AppColors.divider,
+                      strokeWidth: 0.8,
+                    ),
+                  ),
+                  titlesData: _buildTitles(labels, spots),
+                  borderData: FlBorderData(show: false),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: spots,
+                      isCurved: true,
+                      color: AppColors.warning,
+                      barWidth: 3,
+                      isStrokeCapRound: true,
+                      dotData: FlDotData(show: spots.length <= 15),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: AppColors.warning.withOpacity(0.1),
+                      ),
+                    ),
+                  ],
+                  lineTouchData: LineTouchData(
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (spots) => spots
+                          .map((s) => LineTooltipItem(
+                                '${labels[s.x.toInt()]}\n${s.y.toInt()} órdenes',
+                                const TextStyle(
+                                    color: Colors.white, fontSize: 12),
+                              ))
+                          .toList(),
+                    ),
+                  ),
+                ),
+              ),
+      ),
     );
   }
 

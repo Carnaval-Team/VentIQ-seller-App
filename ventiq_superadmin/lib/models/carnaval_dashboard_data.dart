@@ -43,6 +43,11 @@ class CarnavalDashboardData {
   final List<NameValue> top5Compradores;
   final List<NameCount> top5Proveedores;
 
+  // Órdenes por estado (Nuevo/En Revision) por día
+  final Map<String, List<DateCount>> ordenesNuevoRevisionPorDia;
+  // Órdenes Pendiente de Pago por día
+  final List<DateCount> ordenesPendientePagoPorDia;
+
   const CarnavalDashboardData({
     required this.totalUsuarios,
     required this.usuariosPorDia,
@@ -59,5 +64,7 @@ class CarnavalDashboardData {
     required this.top5Productos,
     required this.top5Compradores,
     required this.top5Proveedores,
+    required this.ordenesNuevoRevisionPorDia,
+    required this.ordenesPendientePagoPorDia,
   });
 }

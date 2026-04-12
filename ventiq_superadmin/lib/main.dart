@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/app_theme.dart';
 import 'config/supabase_config.dart';
@@ -36,6 +38,9 @@ import 'services/auth_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Inicializar datos de locale para DateFormat
+  await initializeDateFormatting('es_ES', null);
+
   // Inicializar Supabase
   await Supabase.initialize(
     url: SupabaseConfig.supabaseUrl,
@@ -54,6 +59,16 @@ class VentIQSuperAdminApp extends StatelessWidget {
       title: 'Inventtia Super Admin',
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('es', 'ES'),
+        Locale('en', 'US'),
+      ],
+      locale: const Locale('es', 'ES'),
       initialRoute: '/',
       routes: {
         '/': (context) => const AuthWrapper(),

@@ -8,8 +8,8 @@ class CarnavalDashboardService {
     DateTime from,
     DateTime to,
   ) async {
-    final fromStr = from.toIso8601String().substring(0, 10);
-    final toStr = to.toIso8601String().substring(0, 10);
+    final fromStr = '${from.toIso8601String().substring(0, 10)}T00:00:00';
+    final toStr = '${to.toIso8601String().substring(0, 10)}T23:59:59';
 
     // Fetch all data in parallel - only needed columns, minimal data
     final results = await Future.wait([
@@ -61,6 +61,8 @@ class CarnavalDashboardService {
     final dineroMetodoGroups = <String, Map<String, double>>{};
     final dineroPorMoneda = <String, double>{};
     final userOrderTotals = <int, double>{};
+    final nuevoRevisionGroups = <String, Map<String, int>>{};
+    final pendientePagoByDate = <String, int>{};
 
     for (final o in orders) {
       final status = (o['status'] ?? '').toString();
@@ -92,6 +94,18 @@ class CarnavalDashboardService {
         dineroPorMoneda[moneda] = (dineroPorMoneda[moneda] ?? 0) + amount;
       }
       if (isCancelado) ordenesCanceladas++;
+
+      // Órdenes Nuevo / En Revision por día
+      if (status == 'Nuevo' || status == 'En Revision') {
+        nuevoRevisionGroups.putIfAbsent(status, () => {});
+        nuevoRevisionGroups[status]![dateStr] =
+            (nuevoRevisionGroups[status]![dateStr] ?? 0) + 1;
+      }
+      // Órdenes Pendiente de Pago por día
+      if (status == 'Pendiente de Pago') {
+        pendientePagoByDate[dateStr] =
+            (pendientePagoByDate[dateStr] ?? 0) + 1;
+      }
 
       // 7: Ordenes por método de pago
       metodoPagoGroups.putIfAbsent(metodo, () => {});
@@ -187,6 +201,22 @@ class CarnavalDashboardService {
         .map((e) => NameCount(proveedorNames[e.key] ?? 'ID ${e.key}', e.value))
         .toList();
 
+    // Nuevo/En Revision grouped by status
+    final ordenesNuevoRevisionPorDia = <String, List<DateCount>>{};
+    for (final entry in nuevoRevisionGroups.entries) {
+      final sorted = entry.value.entries.toList()
+        ..sort((a, b) => a.key.compareTo(b.key));
+      ordenesNuevoRevisionPorDia[entry.key] =
+          sorted.map((e) => DateCount(DateTime.parse(e.key), e.value)).toList();
+    }
+
+    // Pendiente de Pago sorted by date
+    final sortedPendiente = pendientePagoByDate.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    final ordenesPendientePagoPorDia = sortedPendiente
+        .map((e) => DateCount(DateTime.parse(e.key), e.value))
+        .toList();
+
     return CarnavalDashboardData(
       totalUsuarios: totalUsuarios,
       usuariosPorDia: usuariosPorDia,
@@ -203,6 +233,8 @@ class CarnavalDashboardService {
       top5Productos: top5Productos,
       top5Compradores: top5Compradores,
       top5Proveedores: top5Proveedores,
+      ordenesNuevoRevisionPorDia: ordenesNuevoRevisionPorDia,
+      ordenesPendientePagoPorDia: ordenesPendientePagoPorDia,
     );
   }
 
@@ -215,7 +247,7 @@ class CarnavalDashboardService {
         .from('Usuarios')
         .select('created_at')
         .gte('created_at', from)
-        .lte('created_at', '${to}T23:59:59');
+        .lte('created_at', to);
     // Group client-side but only fetched 1 column
     final grouped = <String, int>{};
     for (final r in response) {
@@ -233,7 +265,7 @@ class CarnavalDashboardService {
         .from('Usuarios')
         .select('id')
         .gte('created_at', from)
-        .lte('created_at', '${to}T23:59:59')
+        .lte('created_at', to)
         .count();
     return response.count;
   }
