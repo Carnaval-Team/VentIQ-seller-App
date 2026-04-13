@@ -1,9 +1,31 @@
 {
-  "current_version": "2.2.1",
-  "build": 823,
+  "current_version": "2.2.2",
+  "build": 824,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.2.2",
+      "date": "2026-04-13",
+      "title": "Servicios tratados como productos elaborados",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Productos de tipo servicio sin límite de stock",
+          "description": "Los productos marcados como servicio ahora se comportan igual que los elaborados: no tienen límite de cantidad al agregar al carrito, no muestran stock y se pueden vender sin restricciones de inventario."
+        },
+        {
+          "type": "improvement",
+          "title": "Verificación de ingredientes al confirmar orden",
+          "description": "Al confirmar una orden con productos elaborados o servicios, la app ahora verifica el stock de cada ingrediente necesario en lugar de buscar el producto directamente en inventario. Si algún ingrediente no tiene suficiente disponibilidad, se te avisa antes de continuar."
+        },
+        {
+          "type": "improvement",
+          "title": "Chip visual diferenciado para servicios",
+          "description": "Los productos de tipo servicio ahora muestran un chip azul con la etiqueta SERV, mientras que los elaborados siguen mostrando el chip naranja ELAB. Así puedes distinguirlos fácilmente en el listado y en los detalles."
+        }
+      ]
+    },
     {
       "version": "2.2.1",
       "date": "2026-04-01",

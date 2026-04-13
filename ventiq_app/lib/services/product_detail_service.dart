@@ -254,25 +254,43 @@ class ProductDetailService {
     };
   }
 
-  /// Verifica si un producto es elaborado
+  /// Verifica si un producto es elaborado o servicio
   Future<bool> isProductElaborated(int productId) async {
     try {
-      debugPrint('🔍 Verificando si producto $productId es elaborado...');
+      debugPrint('🔍 Verificando si producto $productId es elaborado o servicio...');
 
       final response =
           await _supabase
               .from('app_dat_producto')
-              .select('es_elaborado')
+              .select('es_elaborado,es_servicio')
               .eq('id', productId)
               .single();
 
       final isElaborated = response['es_elaborado'] ?? false;
-      debugPrint('🔍 Producto $productId - es_elaborado: $isElaborated');
+      final isServicio = response['es_servicio'] ?? false;
+      debugPrint('🔍 Producto $productId - es_elaborado: $isElaborated, es_servicio: $isServicio');
       debugPrint('🔍 Respuesta completa: $response');
 
-      return isElaborated;
+      return isElaborated || isServicio;
     } catch (e) {
-      debugPrint('❌ Error verificando si producto $productId es elaborado: $e');
+      debugPrint('❌ Error verificando si producto $productId es elaborado/servicio: $e');
+      return false;
+    }
+  }
+
+  /// Verifica si un producto es servicio (para diferenciar chip visual)
+  Future<bool> isProductServicio(int productId) async {
+    try {
+      final response =
+          await _supabase
+              .from('app_dat_producto')
+              .select('es_servicio')
+              .eq('id', productId)
+              .single();
+
+      return response['es_servicio'] ?? false;
+    } catch (e) {
+      debugPrint('❌ Error verificando si producto $productId es servicio: $e');
       return false;
     }
   }

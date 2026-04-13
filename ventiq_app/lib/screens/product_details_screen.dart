@@ -84,8 +84,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   void initState() {
     super.initState();
 
-    // Si el producto no tiene stock, mostrar aviso y volver
-    if (widget.product.cantidadReal <= 0) {
+    // Si el producto no tiene stock, mostrar aviso y volver (excepto elaborados y servicios)
+    if (widget.product.cantidadReal <= 0 &&
+        !widget.product.esElaborado &&
+        !widget.product.esServicio) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         showDialog(
           context: context,
@@ -1370,7 +1372,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (widget.product.cantidadReal <= 0) {
+    if (widget.product.cantidadReal <= 0 &&
+        !widget.product.esElaborado &&
+        !widget.product.esServicio) {
       return const Scaffold(
         backgroundColor: Colors.white,
         body: Center(child: CircularProgressIndicator()),

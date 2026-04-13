@@ -973,7 +973,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
   }
 
   /// Verifica disponibilidad de inventario para todos los items de la orden.
-  /// Incluye validación por presentación (id_presentacion)
+  /// Para productos elaborados/servicios, verifica el stock de sus ingredientes.
+  /// Para productos normales, verifica directamente en inventario.
   /// Retorna lista de problemas: [{nombre, cantidad_pedida, stock_disponible, diferencia, presentacion}]
   Future<List<Map<String, dynamic>>> _checkInventoryAvailability(
     List<OrderItem> items,
@@ -984,57 +985,85 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
     for (final item in items) {
       try {
-        final idProducto = item.producto.id;
-        final idUbicacion = item.inventoryData?['id_ubicacion'];
-        final idVariante = item.inventoryData?['id_variante'];
-        final idPresentacion = item.inventoryData?['id_presentacion'];
+        final isElaboradoOrServicio = item.producto.esElaborado || item.producto.esServicio;
 
-        double stockActual = 0.0;
+        if (isElaboradoOrServicio && !isOfflineMode) {
+          // Para elaborados/servicios: verificar stock de cada ingrediente
+          print('🍽️ Verificando ingredientes para producto elaborado/servicio: ${item.nombre}');
+          final ingredientes = await _productDetailService.getProductIngredients(item.producto.id);
 
-        if (isOfflineMode) {
-          // En modo offline, usar datos del cache local
-          print('🔌 Verificando stock en modo offline para ${item.nombre}');
-          // El stock en modo offline se valida contra cantidadInicial
-          stockActual = item.cantidadInicial ?? 0.0;
+          if (ingredientes.isEmpty) {
+            print('⚠️ Producto elaborado/servicio ${item.nombre} sin ingredientes definidos, se permite continuar');
+            continue;
+          }
+
+          for (final ingrediente in ingredientes) {
+            final idIngrediente = ingrediente['producto_id'] as int?;
+            final cantidadNecesaria = ((ingrediente['cantidad_necesaria'] as num?)?.toDouble() ?? 0.0) * item.cantidad;
+            final cantidadDisponible = (ingrediente['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+            final nombreIngrediente = ingrediente['producto_nombre'] as String? ?? 'Ingrediente desconocido';
+
+            if (idIngrediente == null) continue;
+
+            if (cantidadDisponible < cantidadNecesaria) {
+              problems.add({
+                'nombre': '${item.nombre} → $nombreIngrediente',
+                'cantidad_pedida': cantidadNecesaria,
+                'stock_disponible': cantidadDisponible,
+                'diferencia': cantidadNecesaria - cantidadDisponible,
+                'ubicacion': item.ubicacionAlmacen,
+                'presentacion': ' (ingrediente)',
+              });
+            }
+          }
         } else {
-          // En modo online, consultar Supabase
-          var query = supabase
-              .from('app_dat_inventario_productos')
-              .select('cantidad_final')
-              .eq('id_producto', idProducto);
+          // Para productos normales: verificar directamente en inventario
+          final idProducto = item.producto.id;
+          final idUbicacion = item.inventoryData?['id_ubicacion'];
+          final idVariante = item.inventoryData?['id_variante'];
+          final idPresentacion = item.inventoryData?['id_presentacion'];
 
-          // Filtrar por ubicación si está disponible
-          if (idUbicacion != null) {
-            query = query.eq('id_ubicacion', idUbicacion);
+          double stockActual = 0.0;
+
+          if (isOfflineMode) {
+            print('🔌 Verificando stock en modo offline para ${item.nombre}');
+            stockActual = item.cantidadInicial ?? 0.0;
+          } else {
+            var query = supabase
+                .from('app_dat_inventario_productos')
+                .select('cantidad_final')
+                .eq('id_producto', idProducto);
+
+            if (idUbicacion != null) {
+              query = query.eq('id_ubicacion', idUbicacion);
+            }
+
+            if (idVariante != null) {
+              query = query.eq('id_variante', idVariante);
+            }
+
+            if (idPresentacion != null) {
+              query = query.eq('id_presentacion', idPresentacion);
+            }
+
+            final response = await query.order('created_at', ascending: false).limit(1);
+
+            if (response.isNotEmpty) {
+              stockActual = (response.first['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+            }
           }
 
-          // Filtrar por variante si aplica
-          if (idVariante != null) {
-            query = query.eq('id_variante', idVariante);
+          if (stockActual < item.cantidad) {
+            final presentacionInfo = idPresentacion != null ? ' (Presentación ID: $idPresentacion)' : '';
+            problems.add({
+              'nombre': item.nombre,
+              'cantidad_pedida': item.cantidad,
+              'stock_disponible': stockActual,
+              'diferencia': item.cantidad - stockActual,
+              'ubicacion': item.ubicacionAlmacen,
+              'presentacion': presentacionInfo,
+            });
           }
-
-          // Filtrar por presentación si aplica
-          if (idPresentacion != null) {
-            query = query.eq('id_presentacion', idPresentacion);
-          }
-
-          final response = await query.order('created_at', ascending: false).limit(1);
-
-          if (response.isNotEmpty) {
-            stockActual = (response.first['cantidad_final'] as num?)?.toDouble() ?? 0.0;
-          }
-        }
-
-        if (stockActual < item.cantidad) {
-          final presentacionInfo = idPresentacion != null ? ' (Presentación ID: $idPresentacion)' : '';
-          problems.add({
-            'nombre': item.nombre,
-            'cantidad_pedida': item.cantidad,
-            'stock_disponible': stockActual,
-            'diferencia': item.cantidad - stockActual,
-            'ubicacion': item.ubicacionAlmacen,
-            'presentacion': presentacionInfo,
-          });
         }
       } catch (e) {
         print('⚠️ Error verificando stock para ${item.nombre}: $e');
