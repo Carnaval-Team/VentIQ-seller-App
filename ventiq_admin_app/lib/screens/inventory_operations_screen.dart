@@ -3434,6 +3434,20 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         }
       }
 
+      // Obtener nombre del almacén (igual que el bottom sheet)
+      String almacenNombre = 'N/A';
+      final tipoOp = operation['tipo_operacion_nombre'] ?? '';
+      final tipoLC = tipoOp.toLowerCase();
+      if (tipoLC.contains('recepción') || tipoLC.contains('recepcion') ||
+          tipoLC.contains('reception') || tipoLC.contains('extracción') ||
+          tipoLC.contains('extraccion') || tipoLC.contains('extraction') ||
+          tipoLC.contains('productos')) {
+        almacenNombre = await InventoryService.getWarehouseFromOperation(
+          operation['id'],
+          tipoOp,
+        );
+      }
+
       if (!mounted) return;
 
       // Mostrar diálogo de progreso
@@ -3456,6 +3470,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         context: context,
         operation: operation,
         items: items,
+        almacenNombre: almacenNombre,
       );
 
       if (mounted) {
