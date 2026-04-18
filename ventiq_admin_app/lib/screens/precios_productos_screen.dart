@@ -94,16 +94,14 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
       final List<Map<String, dynamic>> combined = [];
       for (final prod in productosResp) {
         final pid = prod['id'] as int;
-        final precioVentaList = prod['app_dat_precio_venta'] as List? ?? [];
-        final precioVenta = precioVentaList.isNotEmpty
-            ? (precioVentaList.first['precio_venta_cup'] as num?)?.toDouble()
-            : null;
-        final precioVentaUsd = precioVentaList.isNotEmpty
-            ? (precioVentaList.first['precio_venta_usd'] as num?)?.toDouble()
-            : null;
-        final precioVentaId = precioVentaList.isNotEmpty
-            ? precioVentaList.first['id'] as int?
-            : null;
+        final precioVentaList =
+            List<Map<String, dynamic>>.from(prod['app_dat_precio_venta'] as List? ?? []);
+        // Sort descending by id to get the latest record first
+        precioVentaList.sort((a, b) => (b['id'] as int).compareTo(a['id'] as int));
+        final latest = precioVentaList.isNotEmpty ? precioVentaList.first : null;
+        final precioVenta = (latest?['precio_venta_cup'] as num?)?.toDouble();
+        final precioVentaUsd = (latest?['precio_venta_usd'] as num?)?.toDouble();
+        final precioVentaId = latest?['id'] as int?;
 
         combined.add({
           'id': pid,
@@ -339,22 +337,19 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
           backgroundColor: AppColors.success,
         ),
       );
-      // Actualizar solo el producto modificado
+      // Recargar solo el producto modificado (último precio = mayor id)
       final productId = producto['id'] as int;
       final precioVentaList = await _supabase
           .from('app_dat_precio_venta')
           .select('id, precio_venta_cup, precio_venta_usd')
-          .eq('id_producto', productId);
+          .eq('id_producto', productId)
+          .order('id', ascending: false)
+          .limit(1);
 
-      final precioVenta = precioVentaList.isNotEmpty
-          ? (precioVentaList.first['precio_venta_cup'] as num?)?.toDouble()
-          : null;
-      final precioVentaUsd = precioVentaList.isNotEmpty
-          ? (precioVentaList.first['precio_venta_usd'] as num?)?.toDouble()
-          : null;
-      final precioVentaId = precioVentaList.isNotEmpty
-          ? precioVentaList.first['id'] as int?
-          : null;
+      final latest = precioVentaList.isNotEmpty ? precioVentaList.first : null;
+      final precioVenta = (latest?['precio_venta_cup'] as num?)?.toDouble();
+      final precioVentaUsd = (latest?['precio_venta_usd'] as num?)?.toDouble();
+      final precioVentaId = latest?['id'] as int?;
 
       if (mounted) {
         setState(() {
@@ -418,7 +413,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
               autofocus: true,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
-                labelText: 'Precio Costo (Promedio) CUP',
+                labelText: 'Precio Costo (Promedio) USD',
                 prefixText: '\$ ',
                 border: OutlineInputBorder(),
                 hintText: '0.00',
@@ -875,11 +870,11 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
                             ? '₱${precioVenta.toStringAsFixed(2)} CUP'
                             : 'Sin precio CUP',
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: 16,
                           color: precioVenta != null && precioVenta > 1
                               ? const Color(0xFF1F2937)
                               : Colors.red[600],
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       if (precioVentaUsd != null && precioVentaUsd > 0) ...[
@@ -887,8 +882,8 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
                         Text(
                           '\$${precioVentaUsd.toStringAsFixed(2)} USD',
                           style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
                             color: mismatch
                                 ? Colors.orange[700]
                                 : const Color(0xFF4A90E2),
@@ -899,7 +894,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
                         const SizedBox(height: 3),
                         Text(
                           'Esperado: ₱${(precioVentaUsd! * _usdRate).toStringAsFixed(2)} CUP',
-                          style: TextStyle(fontSize: 11, color: Colors.orange[700]),
+                          style: TextStyle(fontSize: 13, color: Colors.orange[700]),
                         ),
                       ],
                     ],
@@ -965,8 +960,30 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
     final nomPres =
         (pres['app_nom_presentacion'] as Map?)?['denominacion'] ?? 'Base';
     final cantidad = (pres['cantidad'] as num?)?.toDouble() ?? 1.0;
-    final costo = (pres['precio_promedio'] as num?)?.toDouble() ?? 0.0;
+    final rawCosto = pres['precio_promedio'];
+    final costoUsdVal = rawCosto is num
+        ? rawCosto.toDouble()
+        : double.tryParse(rawCosto?.toString() ?? '') ?? 0.0;
     final esBase = pres['es_base'] as bool? ?? false;
+
+    final tieneCosto = costoUsdVal > 0 && costoUsdVal != 0.0019;
+
+    // Precio de venta en USD (directo o convertido desde CUP)
+    final ventaCup = (producto['precio_venta'] as double?) ?? 0.0;
+    final ventaUsd = (producto['precio_venta_usd'] as double?) ??
+        (_usdRate > 0 && ventaCup > 1 ? ventaCup / _usdRate : null);
+
+    // Costo ya está en USD (precio_promedio se almacena en USD)
+    final costoUsd = tieneCosto ? costoUsdVal : null;
+
+    // Ganancia
+    double? gananciaUsd;
+    double? porcGanancia;
+    if (ventaUsd != null && ventaUsd > 0 && costoUsd != null && costoUsd > 0) {
+      gananciaUsd = ventaUsd - costoUsd;
+      porcGanancia = (gananciaUsd / ventaUsd) * 100;
+    }
+    final esPositiva = gananciaUsd != null && gananciaUsd >= 0;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -996,24 +1013,62 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
               style: const TextStyle(fontSize: 12, color: Color(0xFF374151)),
             ),
           ),
-          Text(
-            costo != 0 && costo != 0.0019 ? '\$ ${costo.toStringAsFixed(4)}' : 'Sin costo',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: costo != 0 && costo != 0.0019 ? const Color(0xFF1F2937) : Colors.red[600],
+          if (!tieneCosto)
+            Text(
+              'Sin costo',
+              style: TextStyle(fontSize: 11, color: Colors.red[400]),
+            )
+          else ...[
+            Text(
+              '\$${costoUsdVal.toStringAsFixed(2)} USD',
+              style: const TextStyle(fontSize: 16, color: Colors.grey, fontWeight: FontWeight.w600),
             ),
-          ),
+            if (gananciaUsd != null) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: (esPositiva ? Colors.green : Colors.red).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      esPositiva ? Icons.trending_up : Icons.trending_down,
+                      size: 13,
+                      color: esPositiva ? Colors.green[700] : Colors.red[700],
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      '\$${gananciaUsd.toStringAsFixed(2)}  ${porcGanancia!.toStringAsFixed(1)}%',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: esPositiva ? Colors.green[700] : Colors.red[700],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if (ventaUsd == null) ...[
+              const SizedBox(width: 6),
+              Text(
+                'Sin precio venta',
+                style: TextStyle(fontSize: 12, color: Colors.orange[600]),
+              ),
+            ],
+          ],
           const SizedBox(width: 6),
           InkWell(
             onTap: () => _editPrecioPromedio(producto, pres),
             borderRadius: BorderRadius.circular(6),
             child: Padding(
               padding: const EdgeInsets.all(4),
-              child: Icon(
+              child: const Icon(
                 Icons.edit,
                 size: 14,
-                color: const Color(0xFF10B981),
+                color: Color(0xFF10B981),
               ),
             ),
           ),

@@ -18,13 +18,14 @@ create table if not exists public.app_dat_precio_general_tienda (
 --------------------------------------------------------------------------------
 -- 2) RPC: Obtener productos con su último precio (evita N+1)
 --------------------------------------------------------------------------------
-create or replace function public.rpc_get_products_last_price(p_store_id bigint)
+create or replace function public.rpc_get_products_last_price2(p_store_id bigint)
 returns table (
   id_producto bigint,
   denominacion text,
   sku text,
   id_vendedor_app bigint,
   precio_venta_cup numeric,
+  precio_venta_usd numeric,
   created_at timestamptz
 ) language plpgsql as $$
 begin
@@ -34,10 +35,11 @@ begin
          p.sku,
          p.id_vendedor_app,
          pv.precio_venta_cup,
+         pv.precio_venta_usd,
          pv.created_at
   from app_dat_producto p
   left join lateral (
-    select precio_venta_cup, created_at
+    select precio_venta_cup, precio_venta_usd, created_at
     from app_dat_precio_venta
     where id_producto = p.id
     order by created_at desc

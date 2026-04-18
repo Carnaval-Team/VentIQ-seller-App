@@ -5,29 +5,38 @@ class ProductPriceItem {
   final String name;
   final String sku;
   final double? lastPrice;
+  final double? lastPriceUsd;
   final DateTime? lastPriceDate;
   final int? vendedorAppId;
+  final List<Map<String, dynamic>> presentaciones;
 
   ProductPriceItem({
     required this.id,
     required this.name,
     required this.sku,
     required this.lastPrice,
+    this.lastPriceUsd,
     required this.lastPriceDate,
     required this.vendedorAppId,
+    this.presentaciones = const [],
   });
 
   factory ProductPriceItem.fromJson(Map<String, dynamic> json) {
+    final presList = (json['presentaciones'] as List<dynamic>? ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
     return ProductPriceItem(
       id: json['id_producto'] ?? json['id'] ?? 0,
       name: json['denominacion'] ?? json['nombre'] ?? '',
       sku: json['sku'] ?? '',
       lastPrice: (json['precio_venta_cup'] ?? json['last_price'])?.toDouble(),
+      lastPriceUsd: (json['precio_venta_usd'])?.toDouble(),
       lastPriceDate:
           json['created_at'] != null
               ? DateTime.tryParse(json['created_at'].toString())
               : null,
       vendedorAppId: json['id_vendedor_app'],
+      presentaciones: presList,
     );
   }
 }
@@ -54,7 +63,7 @@ class PriceManagementService {
   ) async {
     try {
       final response = await _supabase.rpc(
-        'rpc_get_products_last_price',
+        'rpc_get_products_last_price2',
         params: {'p_store_id': storeId},
       );
 
@@ -62,45 +71,68 @@ class PriceManagementService {
         return response.map((e) => ProductPriceItem.fromJson(e)).toList();
       }
     } catch (e) {
-      print('❌ RPC rpc_get_products_last_price no disponible: $e');
+      print('❌ RPC rpc_get_products_last_price2 no disponible: $e');
     }
 
     // Fallback: consulta compacta (puede ser menos eficiente)
     try {
       final data = await _supabase
           .from('app_dat_producto')
-          .select('''
-            id,
-            denominacion,
-            sku,
-            id_vendedor_app,
-            app_dat_precio_venta!left(
-              precio_venta_cup,
-              created_at
-            )
-            ''')
+          .select('id, denominacion, sku, id_vendedor_app')
           .eq('id_tienda', storeId);
 
+      final productoIds =
+          (data as List).map((item) => item['id'] as int).toList();
+
+      if (productoIds.isEmpty) return [];
+
+      // Fetch only the latest price per product (one query, ordered desc)
+      final preciosResp = await _supabase
+          .from('app_dat_precio_venta')
+          .select('id_producto, precio_venta_cup, precio_venta_usd, created_at')
+          .inFilter('id_producto', productoIds)
+          .order('created_at', ascending: false);
+
+      // Keep only the first (latest) price per product
+      final Map<int, Map<String, dynamic>> latestPrice = {};
+      for (final row in (preciosResp as List)) {
+        final pid = row['id_producto'] as int;
+        if (!latestPrice.containsKey(pid)) {
+          latestPrice[pid] = Map<String, dynamic>.from(row);
+        }
+      }
+
+      final presentacionesResp = await _supabase
+          .from('app_dat_producto_presentacion')
+          .select('''
+            id, id_producto, cantidad, es_base, precio_promedio,
+            app_nom_presentacion!inner(id, denominacion)
+          ''')
+          .inFilter('id_producto', productoIds);
+
+      final Map<int, List<Map<String, dynamic>>> pressByProduct = {};
+      for (final p in (presentacionesResp as List)) {
+        final pid = p['id_producto'] as int;
+        pressByProduct.putIfAbsent(pid, () => []).add(
+              Map<String, dynamic>.from(p),
+            );
+      }
+
       return data.map<ProductPriceItem>((item) {
-        final prices = item['app_dat_precio_venta'] as List<dynamic>? ?? [];
-        prices.sort(
-          (a, b) => DateTime.parse(
-            b['created_at'],
-          ).compareTo(DateTime.parse(a['created_at'])),
-        );
-        final last = prices.isNotEmpty ? prices.first : null;
+        final pid = item['id'] as int;
+        final last = latestPrice[pid];
 
         return ProductPriceItem(
-          id: item['id'],
+          id: pid,
           name: item['denominacion'] ?? '',
           sku: item['sku'] ?? '',
           vendedorAppId: item['id_vendedor_app'],
-          lastPrice:
-              last != null
-                  ? (last['precio_venta_cup'] as num?)?.toDouble()
-                  : null,
-          lastPriceDate:
-              last != null ? DateTime.tryParse(last['created_at']) : null,
+          lastPrice: (last?['precio_venta_cup'] as num?)?.toDouble(),
+          lastPriceUsd: (last?['precio_venta_usd'] as num?)?.toDouble(),
+          lastPriceDate: last != null
+              ? DateTime.tryParse(last['created_at'].toString())
+              : null,
+          presentaciones: pressByProduct[pid] ?? [],
         );
       }).toList();
     } catch (e) {
