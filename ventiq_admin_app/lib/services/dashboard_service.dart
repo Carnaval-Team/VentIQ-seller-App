@@ -25,6 +25,16 @@ class DashboardService {
         return false;
       }
 
+      // Gerentes have full access to their stores — no need to check supervisor tables
+      final rolesByStore = await _prefsService.getUserRolesByStore();
+      final isGerente = rolesByStore.values.any(
+        (r) => r.toLowerCase() == 'gerente',
+      );
+      if (isGerente) {
+        print('✅ User is Gerente — store access granted without supervisor check');
+        return true;
+      }
+
       final supervisorStores = await authService.verifySupervisorPermissions(
         currentUser.id,
       );
