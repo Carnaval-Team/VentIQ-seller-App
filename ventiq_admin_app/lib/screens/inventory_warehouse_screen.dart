@@ -1022,6 +1022,7 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
           productsData.map((productData) {
             return InventoryProduct(
               id: productData['id'] ?? 0,
+              idProducto: productData['id_producto'] ?? productData['id'] ?? 0,
               nombreProducto:
                   productData['denominacion'] ?? 'Producto sin nombre',
               skuProducto: productData['sku'] ?? 'N/A',

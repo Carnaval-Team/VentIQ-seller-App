@@ -53,6 +53,7 @@ class PaginationInfo {
 // New model for Supabase RPC response
 class InventoryProduct {
   final int id;
+  final int idProducto;
   final String skuProducto;
   final String nombreProducto;
   final String? denominacionCorta;
@@ -116,6 +117,7 @@ class InventoryProduct {
 
   InventoryProduct({
     required this.id,
+    required this.idProducto,
     required this.skuProducto,
     required this.nombreProducto,
     this.denominacionCorta,
@@ -203,6 +205,7 @@ class InventoryProduct {
 
     return InventoryProduct(
       id: map['id'] ?? 0,
+      idProducto: map['id_producto'] ?? 0,
       skuProducto: map['sku_producto'] ?? '',
       nombreProducto: map['nombre_producto'] ?? '',
       denominacionCorta: map['denominacion_corta'],
@@ -255,6 +258,7 @@ class InventoryProduct {
   factory InventoryProduct.fromList(List<dynamic> row) {
     return InventoryProduct(
       id: row[0] ?? 0,
+      idProducto: 0,
       skuProducto: row[1] ?? '',
       nombreProducto: row[2] ?? '',
       nombreComercial: row[3],

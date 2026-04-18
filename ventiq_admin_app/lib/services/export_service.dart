@@ -1677,6 +1677,7 @@ class ExportService {
     return inventoryData.map((item) {
       return InventoryProduct(
         id: int.tryParse(item['id']?.toString() ?? '0') ?? 0,
+        idProducto: int.tryParse(item['id_producto']?.toString() ?? '0') ?? 0,
         skuProducto: item['sku_producto']?.toString() ?? '',
         nombreProducto: item['nombre_producto']?.toString() ?? 'Sin nombre',
         denominacionCorta: item['denominacion_corta']?.toString(),

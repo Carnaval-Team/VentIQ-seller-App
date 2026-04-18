@@ -5,9 +5,6 @@ import '../models/warehouse.dart';
 import '../services/warehouse_service.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
-import '../widgets/product_selector_widget.dart';
-import '../services/product_search_service.dart';
-import '../widgets/transfer_product_quantity_dialog.dart';
 
 class InventoryTransferScreen extends StatefulWidget {
   const InventoryTransferScreen({super.key});
@@ -32,6 +29,24 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   WarehouseZone? _selectedDestinationLocation;
   bool _isLoading = false;
   bool _isLoadingWarehouses = true;
+
+  // Inline product list state
+  List<Map<String, dynamic>> _sourceProducts = [];
+  bool _isLoadingProducts = false;
+  // qty controllers keyed by variant_key
+  final Map<String, TextEditingController> _qtyControllers = {};
+  // Search
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  List<Map<String, dynamic>> get _filteredProducts {
+    if (_searchQuery.isEmpty) return _sourceProducts;
+    final q = _searchQuery.toLowerCase();
+    return _sourceProducts
+        .where((p) =>
+            (p['nombre_producto']?.toString().toLowerCase() ?? '').contains(q))
+        .toList();
+  }
 
   // Progress tracking
   double _transferProgress = 0.0;
@@ -62,6 +77,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   void dispose() {
     _autorizadoPorController.dispose();
     _observacionesController.dispose();
+    _searchController.dispose();
+    for (final c in _qtyControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -85,57 +104,110 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     }
   }
 
-  void _addProductToTransfer(Map<String, dynamic> product) {
-    // Validar que hay zona de origen seleccionada
-    if (_selectedSourceLocation == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debe seleccionar una zona de origen primero'),
-          backgroundColor: Colors.orange,
-        ),
+  Future<void> _loadSourceProducts() async {
+    if (_selectedSourceLocation == null) return;
+    final layoutId = _getZoneIdFromLocation(_selectedSourceLocation!);
+
+    setState(() {
+      _isLoadingProducts = true;
+      _sourceProducts = [];
+      // Dispose old controllers
+      for (final c in _qtyControllers.values) {
+        c.dispose();
+      }
+      _qtyControllers.clear();
+      _selectedProducts = [];
+      _searchController.clear();
+      _searchQuery = '';
+    });
+
+    try {
+      final variants = await InventoryService.getProductVariantsInLocation(
+        idProducto: 0, // 0 means all products
+        idLayout: layoutId,
       );
-      return;
-    }
 
-    // Asegurar que el producto tiene los campos necesarios normalizados
-    final productWithId = Map<String, dynamic>.from(product);
-    if (productWithId['id_producto'] == null && productWithId['id'] != null) {
-      productWithId['id_producto'] = productWithId['id'];
-    }
-    if (productWithId['id'] == null && productWithId['id_producto'] != null) {
-      productWithId['id'] = productWithId['id_producto'];
-    }
+      // If returns empty with idProducto=0, fall back to getInventoryProducts
+      List<Map<String, dynamic>> products;
+      if (variants.isNotEmpty) {
+        products = variants;
+      } else {
+        final resp = await InventoryService.getInventoryProducts(
+          idUbicacion: layoutId,
+          mostrarSinStock: false,
+        );
+        products = resp.products
+            .where((p) => p.cantidadFinal > 0)
+            .map((p) => {
+                  'id_producto': p.idProducto,
+                  'nombre_producto': p.nombreProducto,
+                  'sku_producto': p.skuProducto,
+                  'id_variante': p.idVariante,
+                  'variante_nombre': p.variante,
+                  'id_opcion_variante': p.idOpcionVariante,
+                  'opcion_variante_nombre': p.opcionVariante,
+                  'id_presentacion': p.idPresentacion,
+                  'presentacion_nombre': p.presentacion,
+                  'presentacion_codigo': p.presentacion,
+                  'stock_disponible': p.cantidadFinal,
+                  'stock_reservado': p.stockReservado,
+                  'stock_actual': p.cantidadFinal,
+                  'precio_unitario': p.precioVenta ?? 0.0,
+                  'id_layout': layoutId,
+                  'variant_key':
+                      '${p.id}_${p.idVariante ?? 'null'}_${p.idOpcionVariante ?? 'null'}_${p.idPresentacion ?? 'null'}',
+                })
+            .toList();
+      }
 
-    showDialog(
-      context: context,
-      builder:
-          (context) => TransferProductQuantityDialog(
-            product: productWithId,
-            sourceLayoutId: _getZoneIdFromLocation(_selectedSourceLocation!),
-            onAdd: (productData) {
-              print('🔍 DEBUG: Producto agregado a _selectedProducts:');
-              print('   - id_producto: ${productData['id_producto']}');
-              print('   - nombre_producto: ${productData['nombre_producto']}');
-              print('   - id_presentacion: ${productData['id_presentacion']}');
-              print(
-                '   - presentacion_nombre: ${productData['presentacion_nombre']}',
-              );
-              print(
-                '   - Tipo de id_presentacion: ${productData['id_presentacion'].runtimeType}',
-              );
+      // Create qty controllers for each row
+      final controllers = <String, TextEditingController>{};
+      for (final p in products) {
+        final key = p['variant_key']?.toString() ??
+            '${p['id_producto']}_${p['id_presentacion']}';
+        p['variant_key'] = key;
+        controllers[key] = TextEditingController(text: '');
+      }
 
-              setState(() {
-                _selectedProducts.add(productData);
-              });
-            },
-          ),
-    );
+      if (mounted) {
+        setState(() {
+          _sourceProducts = products;
+          _qtyControllers.addAll(controllers);
+          _isLoadingProducts = false;
+        });
+      }
+    } catch (e) {
+      print('❌ Error cargando productos del origen: $e');
+      if (mounted) setState(() => _isLoadingProducts = false);
+    }
   }
 
-  void _removeProduct(int index) {
-    setState(() {
-      _selectedProducts.removeAt(index);
-    });
+  /// Build _selectedProducts from qty inputs before submitting
+  void _buildSelectedProductsFromInputs() {
+    final sourceLayoutId = _getZoneIdFromLocation(_selectedSourceLocation!);
+    final result = <Map<String, dynamic>>[];
+    for (final p in _sourceProducts) {
+      final key = p['variant_key'].toString();
+      final qty = double.tryParse(_qtyControllers[key]?.text.trim() ?? '') ?? 0;
+      if (qty > 0) {
+        result.add({
+          'id_producto': p['id_producto'],
+          'nombre_producto': p['nombre_producto'],
+          'cantidad': qty,
+          'precio_unitario': p['precio_unitario'] ?? 0.0,
+          'id_variante': p['id_variante'],
+          'variante_nombre': p['variante_nombre'],
+          'id_opcion_variante': p['id_opcion_variante'],
+          'opcion_variante_nombre': p['opcion_variante_nombre'],
+          'id_presentacion': p['id_presentacion'],
+          'presentacion_nombre': p['presentacion_nombre'],
+          'stock_disponible': p['stock_disponible'],
+          'variant_key': key,
+          'id_ubicacion': sourceLayoutId,
+        });
+      }
+    }
+    _selectedProducts = result;
   }
 
   void _showProgressDialog() {
@@ -193,11 +265,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   }
 
   Future<void> _submitTransfer() async {
+    _buildSelectedProductsFromInputs();
     if (!_formKey.currentState!.validate() || _selectedProducts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text(
-            'Complete todos los campos y agregue al menos un producto',
+            'Complete todos los campos y agregue al menos un producto con cantidad > 0',
           ),
         ),
       );
@@ -544,22 +617,26 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         child: Column(
           children: [
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildTransferInfoSection(),
-                    const SizedBox(height: 24),
-                    _buildSourceLocationSection(),
-                    const SizedBox(height: 24),
-                    _buildDestinationLocationSection(),
-                    const SizedBox(height: 24),
-                    _buildProductSelectionSection(),
-                    const SizedBox(height: 24),
-                    _buildSelectedProductsSection(),
-                  ],
-                ),
+              child: CustomScrollView(
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate([
+                        _buildTransferInfoSection(),
+                        const SizedBox(height: 24),
+                        _buildSourceLocationSection(),
+                        const SizedBox(height: 24),
+                        _buildDestinationLocationSection(),
+                        const SizedBox(height: 24),
+                        _buildProductSectionHeader(),
+                        const SizedBox(height: 8),
+                      ]),
+                    ),
+                  ),
+                  ..._buildProductSlivers(),
+                  const SliverPadding(padding: EdgeInsets.only(bottom: 16)),
+                ],
               ),
             ),
             _buildBottomSection(),
@@ -710,12 +787,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  Widget _buildProductSelectionSection() {
+  /// Header card for the product section (rendered as a sliver item)
+  Widget _buildProductSectionHeader() {
     final isEnabled = _selectedSourceLocation != null;
-
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -725,15 +802,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   width: 24,
                   height: 24,
                   decoration: BoxDecoration(
-                    color:
-                        _selectedProducts.isNotEmpty
-                            ? Colors.green
-                            : isEnabled
-                            ? Colors.blue
-                            : Colors.grey,
+                    color: !isEnabled
+                        ? Colors.grey
+                        : _isLoadingProducts
+                        ? Colors.blue
+                        : Colors.green,
                     shape: BoxShape.circle,
                   ),
-                  child: Center(
+                  child: const Center(
                     child: Text(
                       '3',
                       style: TextStyle(
@@ -745,35 +821,16 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  'Seleccionar Productos',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color:
-                        _selectedProducts.isNotEmpty
-                            ? Colors.green
-                            : isEnabled
-                            ? null
-                            : Colors.grey,
-                  ),
+                const Text(
+                  'Productos a Transferir',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                if (_selectedProducts.isNotEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(left: 8),
-                    child: Icon(
-                      Icons.check_circle,
-                      color: Colors.green,
-                      size: 20,
-                    ),
-                  ),
               ],
             ),
-            const SizedBox(height: 16),
-
-            if (!isEnabled)
+            if (!isEnabled) ...[  
+              const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: Colors.grey.shade100,
                   border: Border.all(color: Colors.grey.shade300),
@@ -785,7 +842,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Seleccione una zona de origen primero para buscar productos',
+                        'Seleccione una zona de origen primero',
                         style: TextStyle(
                           color: Colors.grey.shade600,
                           fontStyle: FontStyle.italic,
@@ -794,80 +851,253 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     ),
                   ],
                 ),
-              )
-            else
-              SizedBox(
-                height: 400, // Altura fija necesaria para que funcione
-                child: ProductSelectorWidget(
-                  searchType: ProductSearchType.withStock,
-                  requireInventory: true,
-                  locationId: _getZoneIdFromLocation(_selectedSourceLocation!),
-                  searchHint:
-                      'Buscar productos en ${_selectedSourceLocation!.name}...',
-                  onProductSelected: _addProductToTransfer,
+              ),
+            ] else if (_isLoadingProducts) ...[  
+              const SizedBox(height: 16),
+              const Center(child: CircularProgressIndicator()),
+              const SizedBox(height: 16),
+            ] else if (_sourceProducts.isEmpty) ...[  
+              const SizedBox(height: 12),
+              const Center(
+                child: Text(
+                  'No hay productos con existencia en esta zona',
+                  style: TextStyle(color: Colors.grey),
                 ),
               ),
+            ] else ...[
+              const SizedBox(height: 12),
+              // Search bar
+              TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'Buscar producto...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                ),
+                onChanged: (val) => setState(() => _searchQuery = val.trim()),
+              ),
+              const SizedBox(height: 10),
+              // Column header row
+              Row(
+                children: [
+                  Expanded(
+                    flex: 4,
+                    child: Text(
+                      'Producto / Presentación',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 68,
+                    child: Text(
+                      'Disponible',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 72,
+                    child: Text(
+                      'Cantidad',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 64,
+                    child: Text(
+                      'Quedará',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 8),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSelectedProductsSection() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Productos Seleccionados (${_selectedProducts.length})',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            if (_selectedProducts.isEmpty)
-              const Center(
-                child: Text(
-                  'No hay productos seleccionados',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              )
-            else
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _selectedProducts.length,
-                itemBuilder: (context, index) {
-                  final item = _selectedProducts[index];
-                  return ListTile(
-                    title: Text(item['nombre_producto']),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Cantidad: ${item['cantidad']}'),
-                        if (_buildVariantInfo(item).isNotEmpty)
-                          Text(
-                            _buildVariantInfo(item),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                      ],
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(
-                        Icons.remove_circle,
-                        color: AppColors.error,
-                      ),
-                      onPressed: () => _removeProduct(index),
-                    ),
-                  );
-                },
+  /// Product rows as lazy slivers — only visible rows are built
+  List<Widget> _buildProductSlivers() {
+    final filtered = _filteredProducts;
+    if (_sourceProducts.isEmpty) return [];
+    if (filtered.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Center(
+              child: Text(
+                'Sin resultados para "$_searchQuery"',
+                style: const TextStyle(color: Colors.grey),
               ),
-          ],
+            ),
+          ),
         ),
+      ];
+    }
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final isLast = index == filtered.length - 1;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildProductRow(filtered[index]),
+                  if (!isLast) const Divider(height: 1),
+                ],
+              );
+            },
+            childCount: filtered.length,
+          ),
+        ),
+      ),
+    ];
+  }
+
+  Widget _buildProductRow(Map<String, dynamic> product) {
+    final key = product['variant_key'].toString();
+    final ctrl = _qtyControllers[key]!;
+    final stock = (product['stock_disponible'] as num?)?.toDouble() ?? 0.0;
+    final nombre = product['nombre_producto']?.toString() ?? '';
+    final presNombre = product['presentacion_nombre']?.toString() ?? '';
+    final varNombre = product['variante_nombre']?.toString() ?? '';
+    final hasVariant = varNombre.isNotEmpty && varNombre != 'Sin variante';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Product name + presentation
+          Expanded(
+            flex: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  nombre,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (presNombre.isNotEmpty)
+                  Text(
+                    presNombre + (hasVariant ? ' · $varNombre' : ''),
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  ),
+              ],
+            ),
+          ),
+          // Available stock
+          SizedBox(
+            width: 68,
+            child: Text(
+              stock.toInt().toString(),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: stock > 0 ? Colors.green[700] : Colors.red[600],
+              ),
+            ),
+          ),
+          // Qty input
+          SizedBox(
+            width: 72,
+            child: StatefulBuilder(
+              builder: (context, setRowState) {
+                return TextFormField(
+                  controller: ctrl,
+                  textAlign: TextAlign.center,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 8,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    hintText: '0',
+                  ),
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) return null;
+                    final q = double.tryParse(val.trim());
+                    if (q == null || q < 0) return 'Inválido';
+                    if (q > stock) return '>stock';
+                    return null;
+                  },
+                  onChanged: (_) => setState(() {}),
+                );
+              },
+            ),
+          ),
+          // Remaining after transfer
+          SizedBox(
+            width: 64,
+            child: Builder(builder: (context) {
+              final qty = double.tryParse(ctrl.text.trim()) ?? 0;
+              final remaining = stock - qty;
+              final isValid = qty >= 0 && qty <= stock;
+              return Text(
+                isValid ? remaining.toInt().toString() : '—',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: !isValid
+                      ? Colors.red
+                      : remaining == 0
+                      ? Colors.orange[700]
+                      : Colors.blueGrey[700],
+                ),
+              );
+            }),
+          ),
+        ],
       ),
     );
   }
@@ -888,23 +1118,34 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Total productos:',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              Text(
-                '${_selectedProducts.length}',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
+          Builder(builder: (context) {
+            final selected = _sourceProducts
+                .where((p) {
+                  final key = p['variant_key'].toString();
+                  final qty =
+                      double.tryParse(_qtyControllers[key]?.text.trim() ?? '') ??
+                      0;
+                  return qty > 0;
+                })
+                .length;
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Productos a transferir:',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-              ),
-            ],
-          ),
+                Text(
+                  '$selected',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
+            );
+          }),
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
@@ -971,6 +1212,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             _selectedDestinationLocation = newZone;
           }
         });
+        if (isSource) _loadSourceProducts();
       },
     );
   }
@@ -1001,26 +1243,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     return warehouse.name;
   }
 
-  String _buildVariantInfo(Map<String, dynamic> item) {
-    List<String> info = [];
-
-    if (item['variante_nombre'] != null &&
-        item['variante_nombre'].toString().isNotEmpty) {
-      info.add('Variante: ${item['variante_nombre']}');
-    }
-
-    if (item['opcion_variante_nombre'] != null &&
-        item['opcion_variante_nombre'].toString().isNotEmpty) {
-      info.add('Opción: ${item['opcion_variante_nombre']}');
-    }
-
-    if (item['presentacion_nombre'] != null &&
-        item['presentacion_nombre'].toString().isNotEmpty) {
-      info.add('Presentación: ${item['presentacion_nombre']}');
-    }
-
-    return info.join(' | ');
-  }
 }
 
 // Product Quantity Dialog - Enhanced with location-specific variants
