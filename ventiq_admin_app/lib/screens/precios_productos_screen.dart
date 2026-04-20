@@ -986,7 +986,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
     final esPositiva = gananciaUsd != null && gananciaUsd >= 0;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         children: [
           const SizedBox(width: 22),
@@ -1019,14 +1019,15 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
               style: TextStyle(fontSize: 11, color: Colors.red[400]),
             )
           else ...[
+            const SizedBox(width: 16),
             Text(
               '\$${costoUsdVal.toStringAsFixed(2)} USD',
-              style: const TextStyle(fontSize: 16, color: Colors.grey, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: 20, color: Colors.grey, fontWeight: FontWeight.w600),
             ),
             if (gananciaUsd != null) ...[
-              const SizedBox(width: 6),
+              const SizedBox(width: 24),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                 decoration: BoxDecoration(
                   color: (esPositiva ? Colors.green : Colors.red).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(4),
@@ -1036,14 +1037,23 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
                   children: [
                     Icon(
                       esPositiva ? Icons.trending_up : Icons.trending_down,
-                      size: 13,
+                      size: 15,
                       color: esPositiva ? Colors.green[700] : Colors.red[700],
                     ),
-                    const SizedBox(width: 3),
+                    const SizedBox(width: 4),
                     Text(
-                      '\$${gananciaUsd.toStringAsFixed(2)}  ${porcGanancia!.toStringAsFixed(1)}%',
+                      '\$${gananciaUsd.toStringAsFixed(2)}',
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w700,
+                        color: esPositiva ? Colors.green[700] : Colors.red[700],
+                      ),
+                    ),
+                    const SizedBox(width: 24),
+                    Text(
+                      '${porcGanancia!.toStringAsFixed(1)}%',
+                      style: TextStyle(
+                        fontSize: 19,
                         fontWeight: FontWeight.w700,
                         color: esPositiva ? Colors.green[700] : Colors.red[700],
                       ),
