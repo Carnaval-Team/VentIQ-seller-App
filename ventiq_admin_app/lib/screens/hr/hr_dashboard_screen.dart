@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../../config/app_colors.dart';
+import '../../models/hr/hr_attendance.dart';
 import '../../models/hr/hr_dashboard_data.dart';
+import '../../services/hr/hr_attendance_service.dart';
 import '../../services/hr/hr_dashboard_service.dart';
 import '../../services/store_service.dart';
 import '../../services/subscription_service.dart';
@@ -23,6 +25,7 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
 
   HRDashboardSummary? _summary;
   List<HRTopWorker> _topWorkers = [];
+  List<HRAttendance> _currentlyWorking = [];
 
   // Selector de mes
   late DateTime _selectedMonth;
@@ -116,12 +119,14 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
           fechaDesde: _fechaDesde,
           fechaHasta: _fechaHasta,
         ),
+        HRAttendanceService.getWorkersCurrentlyWorking(_storeId!),
       ]);
 
       if (mounted) {
         setState(() {
           _summary = results[0] as HRDashboardSummary;
           _topWorkers = results[1] as List<HRTopWorker>;
+          _currentlyWorking = results[2] as List<HRAttendance>;
           _isLoading = false;
         });
       }
@@ -191,6 +196,8 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
                     _buildSalaryChart(),
                     const SizedBox(height: 20),
                     _buildTopWorkersSection(),
+                    const SizedBox(height: 20),
+                    _buildCurrentlyWorkingSection(),
                   ],
                 ),
               ),
@@ -674,6 +681,221 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
           ),
         ],
+      ),
+    );
+  }
+
+  String _formatDuration(double hours) {
+    final h = hours.floor();
+    final m = ((hours - h) * 60).round();
+    return '${h}h ${m}m';
+  }
+
+  Widget _buildCurrentlyWorkingSection() {
+    final timeFormat = DateFormat('HH:mm');
+    final totalWorking = _currentlyWorking.length;
+
+    // Acumulados
+    double totalHorasAcum = 0;
+    double totalGanadoAcum = 0;
+    double totalProyectado = 0; // suponiendo hasta 8h tope
+    for (final w in _currentlyWorking) {
+      final horas = w.horasTranscurridas ?? 0;
+      totalHorasAcum += horas;
+      final ganadoBase = horas * w.salarioHora;
+      totalGanadoAcum += ganadoBase;
+      final horasProyectadas = horas.clamp(0, 8).toDouble();
+      totalProyectado += horasProyectadas * w.salarioHora +
+          (w.pagoPorResultado > 0 ? w.pagoPorResultado : 0);
+    }
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.work_history, size: 18, color: AppColors.primary),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Trabajadores Activos Ahora',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                if (totalWorking > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: AppColors.success,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$totalWorking activos',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.success,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            if (totalWorking > 0) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  _buildMiniStat('Horas acum.', _formatDuration(totalHorasAcum)),
+                  const SizedBox(width: 16),
+                  _buildMiniStat('Ganado ahora', '\$${_currencyFormat.format(totalGanadoAcum)}'),
+                  const SizedBox(width: 16),
+                  _buildMiniStat('Proy. (8h+PPR)', '\$${_currencyFormat.format(totalProyectado)}'),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            if (_currentlyWorking.isEmpty)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    children: [
+                      Icon(Icons.person_off, size: 48, color: Colors.grey[300]),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No hay trabajadores activos en este momento',
+                        style: TextStyle(color: Colors.grey[500]),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minWidth: MediaQuery.of(context).size.width - 64,
+                  ),
+                  child: DataTable(
+                    columnSpacing: 12,
+                    headingTextStyle: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                      color: AppColors.textPrimary,
+                    ),
+                    dataTextStyle: const TextStyle(fontSize: 11),
+                    headingRowColor: WidgetStateProperty.all(
+                      AppColors.success.withOpacity(0.05),
+                    ),
+                    columns: const [
+                      DataColumn(label: Text('Nombre')),
+                      DataColumn(label: Text('Rol')),
+                      DataColumn(label: Text('Entrada')),
+                      DataColumn(label: Text('Tiempo'), numeric: true),
+                      DataColumn(label: Text('\$/h'), numeric: true),
+                      DataColumn(label: Text('Ganado'), numeric: true),
+                      DataColumn(label: Text('Proy. (8h)'), numeric: true),
+                      DataColumn(label: Text('PPR'), numeric: true),
+                      DataColumn(label: Text('Total proy.'), numeric: true),
+                    ],
+                    rows: List.generate(_currentlyWorking.length, (i) {
+                      final w = _currentlyWorking[i];
+                      final horas = w.horasTranscurridas ?? 0;
+                      final ganado = horas * w.salarioHora;
+                      final horasProy = horas.clamp(0, 8).toDouble();
+                      final proyBase = horasProy * w.salarioHora;
+                      final totalProy = proyBase +
+                          (w.pagoPorResultado > 0 ? w.pagoPorResultado : 0);
+                      return DataRow(
+                        cells: [
+                          DataCell(Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircleAvatar(
+                                radius: 10,
+                                backgroundColor: AppColors.primary.withOpacity(0.1),
+                                child: Text(
+                                  w.nombres.isNotEmpty
+                                      ? w.nombres[0].toUpperCase()
+                                      : '?',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                w.nombreCompleto,
+                                style: const TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                            ],
+                          )),
+                          DataCell(Text(
+                            w.rolNombre ?? '-',
+                            style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                          )),
+                          DataCell(Text(
+                            w.horaEntrada != null
+                                ? timeFormat.format(w.horaEntrada!)
+                                : '--:--',
+                          )),
+                          DataCell(Text(_formatDuration(horas))),
+                          DataCell(Text('\$${w.salarioHora.toStringAsFixed(2)}')),
+                          DataCell(Text(
+                            '\$${_currencyFormat.format(ganado)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.success,
+                            ),
+                          )),
+                          DataCell(Text('\$${_currencyFormat.format(proyBase)}')),
+                          DataCell(
+                            w.pagoPorResultado > 0
+                                ? Text(
+                                    '\$${_currencyFormat.format(w.pagoPorResultado)}',
+                                    style: const TextStyle(
+                                      color: AppColors.warning,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  )
+                                : Text(
+                                    '-',
+                                    style: TextStyle(color: Colors.grey[400]),
+                                  ),
+                          ),
+                          DataCell(Text(
+                            '\$${_currencyFormat.format(totalProy)}',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          )),
+                        ],
+                      );
+                    }),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

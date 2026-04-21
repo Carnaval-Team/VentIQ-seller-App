@@ -1,9 +1,31 @@
 {
-  "current_version": "2.1.0",
-  "build": 210,
+  "current_version": "2.1.1",
+  "build": 211,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.1.1",
+      "date": "2026-04-20",
+      "title": "👀 Visibilidad en tiempo real de tu equipo",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Mira quién está trabajando ahora mismo",
+          "description": "Agregamos al Dashboard de Recursos Humanos una nueva sección con los trabajadores que tienen la entrada abierta en este momento. Así sabes de un vistazo quiénes están en la tienda sin salir del panel principal."
+        },
+        {
+          "type": "feature",
+          "title": "Cuánto llevan ganado y cuánto van a ganar",
+          "description": "Para cada trabajador activo verás su hora de entrada, el tiempo que lleva, su tarifa por hora, lo que ha ganado hasta ahora y la proyección de su pago al cierre del turno (incluyendo el pago por resultado si aplica)."
+        },
+        {
+          "type": "feature",
+          "title": "Totales del momento a la vista",
+          "description": "Un resumen rápido te muestra las horas acumuladas del equipo, el dinero ganado hasta este instante y el costo proyectado del día, para que tomes decisiones informadas en tiempo real."
+        }
+      ]
+    },
     {
       "version": "2.1.0",
       "date": "2026-04-06",
