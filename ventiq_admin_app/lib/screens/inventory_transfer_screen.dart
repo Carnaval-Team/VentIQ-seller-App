@@ -160,18 +160,37 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             .toList();
       }
 
+      // Deduplicate by id_producto + id_presentacion, summing stock for duplicates
+      final Map<String, Map<String, dynamic>> deduped = {};
+      for (final p in products) {
+        final dedupKey =
+            '${p['id_producto']}_${p['id_presentacion'] ?? 'null'}';
+        if (!deduped.containsKey(dedupKey)) {
+          final entry = Map<String, dynamic>.from(p);
+          entry['variant_key'] = dedupKey;
+          deduped[dedupKey] = entry;
+        } else {
+          final existing = deduped[dedupKey]!;
+          existing['stock_disponible'] =
+              ((existing['stock_disponible'] as num?) ?? 0) +
+              ((p['stock_disponible'] as num?) ?? 0);
+          existing['stock_actual'] =
+              ((existing['stock_actual'] as num?) ?? 0) +
+              ((p['stock_actual'] as num?) ?? 0);
+        }
+      }
+      final dedupedProducts = deduped.values.toList();
+
       // Create qty controllers for each row
       final controllers = <String, TextEditingController>{};
-      for (final p in products) {
-        final key = p['variant_key']?.toString() ??
-            '${p['id_producto']}_${p['id_presentacion']}';
-        p['variant_key'] = key;
+      for (final p in dedupedProducts) {
+        final key = p['variant_key'].toString();
         controllers[key] = TextEditingController(text: '');
       }
 
       if (mounted) {
         setState(() {
-          _sourceProducts = products;
+          _sourceProducts = dedupedProducts;
           _qtyControllers.addAll(controllers);
           _isLoadingProducts = false;
         });
