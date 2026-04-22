@@ -1,9 +1,41 @@
 {
-  "current_version": "2.1.1",
-  "build": 211,
+  "current_version": "2.1.2",
+  "build": 212,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.1.2",
+      "date": "2026-04-22",
+      "title": "💰 Cuánto vale tu inventario, de un vistazo",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Resumen del valor total de tu inventario",
+          "description": "Al entrar a la pestaña de Almacenes verás arriba un resumen con el valor de todo lo que tienes en stock: cuánto invertiste, cuánto recibirías si se vendiera todo y cuánta ganancia te dejaría. Todo en USD y en CUP usando la tasa de cambio que tienes configurada en tu tienda."
+        },
+        {
+          "type": "feature",
+          "title": "Valor por cada almacén",
+          "description": "Debajo de cada almacén aparecen tres etiquetas: lo invertido en costo, lo que vale si se vende y la ganancia potencial. Así comparas de un vistazo qué almacén concentra más valor."
+        },
+        {
+          "type": "feature",
+          "title": "Detalle por zona del almacén",
+          "description": "Al abrir un almacén verás la misma información para cada zona interna (estantes, áreas, pasillos). Identifica rápido dónde está el dinero dentro de cada local."
+        },
+        {
+          "type": "feature",
+          "title": "Detalle producto por producto",
+          "description": "Al ver los productos de una zona, cada uno muestra su costo acumulado, el valor de venta y la ganancia que aportaría. Perfecto para decidir qué productos priorizar."
+        },
+        {
+          "type": "fix",
+          "title": "Corrección en alertas de stock bajo",
+          "description": "Arreglamos un error que impedía cargar correctamente la lista de productos con stock bajo en el panel principal."
+        }
+      ]
+    },
     {
       "version": "2.1.1",
       "date": "2026-04-20",

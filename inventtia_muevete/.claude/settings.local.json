@@ -13,7 +13,8 @@
       "Bash(do cp:*)",
       "Bash(xargs grep:*)",
       "Bash(flutter:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(grep -n \"fitCamera\\\\|CameraFit\\\\|fitBounds\" C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\inventtia_muevete\\\\lib\\\\screens\\\\**\\\\*.dart)"
     ]
   }
 }

@@ -55,6 +55,25 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
 
     // Focus destination field if origin is already set
     if (_originPoint != null) _activeField = 'dest';
+
+    // Fit both points on the map on first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fitBounds());
+  }
+
+  void _fitBounds() {
+    if (!mounted) return;
+    if (_originPoint != null && _destPoint != null) {
+      final bounds = LatLngBounds.fromPoints([_originPoint!, _destPoint!]);
+      _mapController.fitCamera(
+        CameraFit.bounds(
+          bounds: bounds,
+          padding: const EdgeInsets.all(60),
+        ),
+      );
+    } else {
+      final p = _destPoint ?? _originPoint;
+      if (p != null) _mapController.move(p, 15.0);
+    }
   }
 
   @override
@@ -118,7 +137,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
         _destController.text = result.displayName;
       }
     });
-    _mapController.move(point, 15.0);
+    _fitBounds();
   }
 
   // ── Map tap to set point ──────────────────────────────────────────────────
@@ -134,6 +153,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
       }
       _suggestions = [];
     });
+    _fitBounds();
   }
 
   // ── Confirm route ─────────────────────────────────────────────────────────
@@ -171,32 +191,57 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> {
       if (_originPoint != null)
         Marker(
           point: _originPoint!,
-          width: 36,
-          height: 36,
-          child: Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppTheme.success,
-              border: Border.all(color: Colors.white, width: 2.5),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.success.withValues(alpha: 0.4),
-                  blurRadius: 6,
-                  spreadRadius: 1,
+          width: 44,
+          height: 44,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() {
+              _activeField = 'origin';
+              _suggestions = [];
+            }),
+            child: Center(
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppTheme.success,
+                  border: Border.all(
+                    color: Colors.white,
+                    width: _activeField == 'origin' ? 3.5 : 2.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.success.withValues(alpha: 0.4),
+                      blurRadius: 6,
+                      spreadRadius: 1,
+                    ),
+                  ],
                 ),
-              ],
+                child: const Icon(Icons.my_location,
+                    color: Colors.white, size: 16),
+              ),
             ),
-            child: const Icon(Icons.my_location, color: Colors.white, size: 16),
           ),
         ),
       if (_destPoint != null)
         Marker(
           point: _destPoint!,
-          width: 36,
-          height: 50,
+          width: 44,
+          height: 56,
           alignment: Alignment.topCenter,
-          child: const Icon(Icons.location_on,
-              color: AppTheme.error, size: 36),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() {
+              _activeField = 'dest';
+              _suggestions = [];
+            }),
+            child: Icon(
+              Icons.location_on,
+              color: AppTheme.error,
+              size: _activeField == 'dest' ? 42 : 36,
+            ),
+          ),
         ),
     ];
 

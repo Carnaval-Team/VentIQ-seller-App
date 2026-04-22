@@ -74,6 +74,14 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+    _pulseAnimation = Tween<double>(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
     _asyncInit();
   }
 
@@ -85,15 +93,6 @@ class _HomeMapScreenState extends State<HomeMapScreen>
     }
 
     if (!mounted) return;
-
-    WidgetsBinding.instance.addObserver(this);
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-    _pulseAnimation = Tween<double>(begin: 0.4, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final locationProvider = context.read<LocationProvider>();
@@ -119,6 +118,7 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       locationProvider.addListener(_onLocationChanged);
 
       context.read<TransportProvider>().loadVehicleTypes();
+      context.read<TransportProvider>().startVehicleTypesRealtime();
       final uuid = context.read<AuthProvider>().user?.id;
       if (uuid != null) {
         context.read<AddressProvider>().loadAddresses(uuid);
@@ -1708,19 +1708,36 @@ class _HomeMapScreenState extends State<HomeMapScreen>
                     ),
                   ),
                 )
+              else if (transportProvider.vehicleTypes.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    'No hay tipos de vehículo disponibles',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      color: isDark ? Colors.white54 : Colors.grey[600],
+                    ),
+                  ),
+                )
               else
                 ...transportProvider.vehicleTypes.map((vt) {
                   final isSelected =
                       transportProvider.selectedVehicleType?.id == vt.id;
+                  final distKm = transportProvider.routeDistanceKm;
+                  final hasRoute = distKm > 0;
+                  final price = hasRoute
+                      ? (vt.precioInsideSc ?? vt.precioKmDefault * distKm)
+                      : vt.precioKmDefault;
+                  final eta = hasRoute ? vt.etaString(distKm) : '—';
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: TransportTypeCard(
                       vehicleType: vt.displayName,
                       icon: vt.icon,
                       passengerCount: vt.passengerCount,
-                      price: vt.precioKmDefault,
-                      eta:
-                          '${vt.tiempoMinPorKm.toStringAsFixed(1)} min/km',
+                      price: price,
+                      priceSuffix: hasRoute ? null : '/km',
+                      eta: eta,
                       isSelected: isSelected,
                       onTap: () => context
                           .read<TransportProvider>()

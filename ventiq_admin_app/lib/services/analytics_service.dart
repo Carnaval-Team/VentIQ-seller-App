@@ -433,11 +433,11 @@ class AnalyticsService {
           .from('app_dat_inventario_productos')
           .select('''
           id_producto,
-          cantidad_disponible,
-          app_dat_producto!inner(denominacion)
+          cantidad_final,
+          app_dat_producto!inner(id_tienda, denominacion)
         ''')
-          .eq('id_tienda', userStoreId!)
-          .lte('cantidad_disponible', 10); // Solo productos con stock bajo
+          .eq('app_dat_producto.id_tienda', userStoreId!)
+          .lte('cantidad_final', 10); // Solo productos con stock bajo
 
       print(
         '📦 Datos de inventario obtenidos: ${inventoryData.length} productos',
@@ -447,7 +447,7 @@ class AnalyticsService {
 
       for (final item in inventoryData) {
         try {
-          final quantity = (item['cantidad_disponible'] ?? 0).toDouble();
+          final quantity = (item['cantidad_final'] ?? 0).toDouble();
           final productId = item['id_producto'] ?? 0;
 
           // Manejo seguro del nombre del producto

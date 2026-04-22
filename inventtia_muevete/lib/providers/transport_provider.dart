@@ -23,6 +23,7 @@ class TransportProvider extends ChangeNotifier {
   // Vehicle types loaded from DB
   List<VehicleTypeModel> _vehicleTypes = [];
   bool _loadingVehicleTypes = false;
+  bool _vehicleTypesSubscribed = false;
 
   // Route planning
   LatLng? _pickupLocation;
@@ -74,23 +75,44 @@ class TransportProvider extends ChangeNotifier {
   bool get hasRoute => _routePolyline != null && _routePolyline!.isNotEmpty;
 
   /// Loads active vehicle types from muevete.vehicle_type.
-  /// Skips if already loaded or currently loading.
-  Future<void> loadVehicleTypes() async {
-    if (_loadingVehicleTypes || _vehicleTypes.isNotEmpty) return;
+  /// Skips if already loaded or currently loading, unless [force] is true
+  /// (used by the realtime subscription to refresh when the table changes).
+  Future<void> loadVehicleTypes({bool force = false}) async {
+    if (_loadingVehicleTypes) return;
+    if (!force && _vehicleTypes.isNotEmpty) return;
     _loadingVehicleTypes = true;
     notifyListeners();
     try {
+      final prevId = _selectedVehicleType?.id;
       _vehicleTypes = await _vehicleTypeService.getActiveTypes();
-      if (_vehicleTypes.isNotEmpty) {
+      if (prevId != null) {
+        final match = _vehicleTypes.where((vt) => vt.id == prevId);
+        _selectedVehicleType = match.isNotEmpty
+            ? match.first
+            : (_vehicleTypes.isNotEmpty ? _vehicleTypes.first : null);
+      } else if (_vehicleTypes.isNotEmpty) {
         _selectedVehicleType = _vehicleTypes.first;
-        _calculatePrice();
+      } else {
+        _selectedVehicleType = null;
       }
+      _calculatePrice();
     } catch (e) {
       _error = 'Error cargando tipos de vehículo: $e';
     } finally {
       _loadingVehicleTypes = false;
       notifyListeners();
     }
+  }
+
+  /// Starts a realtime subscription to muevete.vehicle_type so prices,
+  /// times and availability stay in sync when admins edit the table.
+  /// Idempotent — safe to call on every screen init.
+  void startVehicleTypesRealtime() {
+    if (_vehicleTypesSubscribed) return;
+    _vehicleTypesSubscribed = true;
+    _vehicleTypeService.subscribeToChanges(() {
+      loadVehicleTypes(force: true);
+    });
   }
 
   void setPickup(LatLng location, {String? address}) {
@@ -505,6 +527,7 @@ class TransportProvider extends ChangeNotifier {
   @override
   void dispose() {
     _requestService.unsubscribe();
+    _vehicleTypeService.unsubscribe();
     super.dispose();
   }
 }
