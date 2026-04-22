@@ -52,15 +52,21 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
       final storeId = await _userPrefs.getIdTienda();
       if (storeId == null) throw Exception('No se pudo obtener la tienda');
 
-      // Cargar tasa de cambio
-      _usdRate = await CurrencyService.getEffectiveUsdToCupRate();
+      // Cargar tasa de cambio (con fallback si falla)
+      try {
+        _usdRate = await CurrencyService.getEffectiveUsdToCupRate();
+        if (_usdRate <= 0) _usdRate = 440.0;
+      } catch (_) {
+        _usdRate = 440.0;
+      }
 
-      // Productos activos de la tienda con su precio de venta
+      // Productos activos de la tienda con su precio de venta y proveedor
       final productosResp = await _supabase
           .from('app_dat_producto')
           .select('''
-            id, denominacion, sku, imagen,
-            app_dat_precio_venta(id, precio_venta_cup, precio_venta_usd)
+            id, denominacion, sku, imagen, id_proveedor,
+            app_dat_precio_venta(id, precio_venta_cup, precio_venta_usd),
+            app_dat_proveedor(id, denominacion)
           ''')
           .eq('id_tienda', storeId)
           .isFilter('deleted_at', null)
@@ -90,6 +96,54 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
         pressByProduct.putIfAbsent(pid, () => []).add(p);
       }
 
+      // Stock por (id_producto, id_presentacion): sumar cantidad_final
+      // del último registro de cada ubicación (fuente: app_dat_inventario_productos).
+      final Map<String, double> stockByProductoPresentacion = {};
+      if (productoIds.isNotEmpty) {
+        final presentacionIds = presentacionesResp
+            .map((p) => p['id'] as int)
+            .toSet()
+            .toList();
+        if (presentacionIds.isNotEmpty) {
+          final inventarioResp = await _supabase
+              .from('app_dat_inventario_productos')
+              .select(
+                'id, id_producto, id_presentacion, id_ubicacion, cantidad_final, created_at',
+              )
+              .inFilter('id_producto', productoIds)
+              .inFilter('id_presentacion', presentacionIds)
+              .order('created_at', ascending: false)
+              .order('id', ascending: false);
+
+          // Último registro por (producto, presentacion, ubicacion)
+          final Map<String, double> lastByCombo = {};
+          for (final row in (inventarioResp as List)) {
+            final pid = row['id_producto'];
+            final presId = row['id_presentacion'];
+            final ubId = row['id_ubicacion'];
+            if (pid == null || presId == null) continue;
+            final key = '${pid}_${presId}_${ubId ?? 'null'}';
+            if (lastByCombo.containsKey(key)) continue; // ya tenemos el más reciente
+            final qty = (row['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+            lastByCombo[key] = qty;
+          }
+
+          // Sumar por (producto, presentacion)
+          lastByCombo.forEach((key, qty) {
+            final parts = key.split('_');
+            final aggKey = '${parts[0]}_${parts[1]}';
+            stockByProductoPresentacion[aggKey] =
+                (stockByProductoPresentacion[aggKey] ?? 0) + qty;
+          });
+        }
+      }
+
+      // Adjuntar stock a cada presentación
+      for (final p in presentacionesResp) {
+        final aggKey = '${p['id_producto']}_${p['id']}';
+        p['stock_total'] = stockByProductoPresentacion[aggKey] ?? 0.0;
+      }
+
       // Combinar
       final List<Map<String, dynamic>> combined = [];
       for (final prod in productosResp) {
@@ -103,11 +157,14 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
         final precioVentaUsd = (latest?['precio_venta_usd'] as num?)?.toDouble();
         final precioVentaId = latest?['id'] as int?;
 
+        final proveedor = prod['app_dat_proveedor'] as Map<String, dynamic>?;
         combined.add({
           'id': pid,
           'denominacion': prod['denominacion'] ?? '',
           'sku': prod['sku'] ?? '',
           'imagen': prod['imagen'],
+          'id_proveedor': prod['id_proveedor'],
+          'proveedor': proveedor?['denominacion'] as String?,
           'precio_venta': precioVenta,
           'precio_venta_usd': precioVentaUsd,
           'precio_venta_id': precioVentaId,
@@ -820,6 +877,30 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
                             color: Colors.grey[500],
                           ),
                         ),
+                      if ((producto['proveedor'] as String?)?.isNotEmpty ?? false) ...[
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.local_shipping_outlined,
+                              size: 11,
+                              color: Colors.grey[500],
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                producto['proveedor'] as String,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
+                                  fontStyle: FontStyle.italic,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -985,101 +1066,204 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
     }
     final esPositiva = gananciaUsd != null && gananciaUsd >= 0;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
-      child: Row(
+    final costoCup = (tieneCosto && _usdRate > 0) ? costoUsdVal * _usdRate : null;
+    final stockTotal = (pres['stock_total'] as num?)?.toDouble() ?? 0.0;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(width: 22),
-          if (esBase)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-              margin: const EdgeInsets.only(right: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF10B981).withOpacity(0.12),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Text(
-                'BASE',
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF10B981),
+          // Fila 1: nombre presentación + badge BASE + botón editar
+          Row(
+            children: [
+              if (esBase)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  margin: const EdgeInsets.only(right: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'BASE',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF10B981),
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: Text(
+                  '$nomPres (x${cantidad % 1 == 0 ? cantidad.toInt() : cantidad})',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF374151),
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            ),
-          Expanded(
-            child: Text(
-              '$nomPres (x${cantidad % 1 == 0 ? cantidad.toInt() : cantidad})',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF374151)),
-            ),
+              InkWell(
+                onTap: () => _editPrecioPromedio(producto, pres),
+                borderRadius: BorderRadius.circular(6),
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(
+                    Icons.edit,
+                    size: 14,
+                    color: Color(0xFF10B981),
+                  ),
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 6),
+          // Fila 2: Costo (label + USD + CUP)
           if (!tieneCosto)
             Text(
               'Sin costo',
-              style: TextStyle(fontSize: 11, color: Colors.red[400]),
+              style: TextStyle(fontSize: 12, color: Colors.red[400]),
             )
           else ...[
-            const SizedBox(width: 16),
-            Text(
-              '\$${costoUsdVal.toStringAsFixed(2)} USD',
-              style: const TextStyle(fontSize: 20, color: Colors.grey, fontWeight: FontWeight.w600),
-            ),
-            if (gananciaUsd != null) ...[
-              const SizedBox(width: 24),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                decoration: BoxDecoration(
-                  color: (esPositiva ? Colors.green : Colors.red).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  'Costo',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-                child: Row(
+                const Spacer(),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      esPositiva ? Icons.trending_up : Icons.trending_down,
-                      size: 15,
-                      color: esPositiva ? Colors.green[700] : Colors.red[700],
-                    ),
-                    const SizedBox(width: 4),
                     Text(
-                      '\$${gananciaUsd.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w700,
-                        color: esPositiva ? Colors.green[700] : Colors.red[700],
+                      '\$${costoUsdVal.toStringAsFixed(2)} USD',
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        color: Color(0xFF1F2937),
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(width: 24),
-                    Text(
-                      '${porcGanancia!.toStringAsFixed(1)}%',
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w700,
-                        color: esPositiva ? Colors.green[700] : Colors.red[700],
+                    if (costoCup != null)
+                      Text(
+                        '${_formatMoney(costoCup)} CUP',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: Colors.grey[700],
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ),
                   ],
                 ),
-              ),
-            ] else if (ventaUsd == null) ...[
-              const SizedBox(width: 6),
-              Text(
-                'Sin precio venta',
-                style: TextStyle(fontSize: 12, color: Colors.orange[600]),
-              ),
-            ],
+              ],
+            ),
           ],
-          const SizedBox(width: 6),
-          InkWell(
-            onTap: () => _editPrecioPromedio(producto, pres),
-            borderRadius: BorderRadius.circular(6),
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: const Icon(
-                Icons.edit,
-                size: 14,
-                color: Color(0xFF10B981),
-              ),
+          // Fila 3: Stock (izq) + Ganancia (der)
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Stock por presentación a la izquierda
+              _buildStockBadge(stockTotal),
+              const Spacer(),
+              // Ganancia alineada a la derecha
+              if (gananciaUsd != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: (esPositiva ? Colors.green : Colors.red).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        esPositiva ? Icons.trending_up : Icons.trending_down,
+                        size: 14,
+                        color: esPositiva ? Colors.green[700] : Colors.red[700],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '\$${gananciaUsd.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: esPositiva ? Colors.green[700] : Colors.red[700],
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '(${porcGanancia!.toStringAsFixed(1)}%)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: esPositiva ? Colors.green[700] : Colors.red[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else if (tieneCosto && ventaUsd == null)
+                Text(
+                  'Sin precio venta',
+                  style: TextStyle(fontSize: 11, color: Colors.orange[600]),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatMoney(double v) {
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final remaining = s.length - i;
+      buf.write(s[i]);
+      if (remaining > 1 && remaining % 3 == 1) buf.write(',');
+    }
+    return buf.toString();
+  }
+
+  Widget _buildStockBadge(double stock) {
+    final hasStock = stock > 0;
+    final color = hasStock ? const Color(0xFF4A90E2) : Colors.grey;
+    final qtyText = stock % 1 == 0
+        ? stock.toInt().toString()
+        : stock.toStringAsFixed(2);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.inventory_outlined, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            'Stock: $qtyText',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: color,
             ),
           ),
         ],
