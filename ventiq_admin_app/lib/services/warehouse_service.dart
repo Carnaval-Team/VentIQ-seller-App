@@ -1040,7 +1040,11 @@ class WarehouseService {
       final rawProducts =
           (response as List).map((item) {
             return {
-              'id': item['id'],
+              'id': item['id_producto'],
+              'id_producto': item['id_producto'],
+              'id_variante': item['id_variante'],
+              'id_opcion_variante': item['id_opcion_variante'],
+              'id_presentacion': item['id_presentacion'],
               'denominacion': item['nombre_producto'] ?? 'Producto sin nombre',
               'sku': item['sku_producto'] ?? 'N/A',
               'descripcion': item['categoria'] ?? '',
