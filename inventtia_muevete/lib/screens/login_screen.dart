@@ -354,17 +354,20 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: () async {
-                        setState(() => _rememberMe = !_rememberMe);
-                        if (!_rememberMe) {
-                          await _clearSavedCredentials();
-                        }
-                      },
-                      child: Text(
-                        'Recordarme',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: textSecondary,
+                    Flexible(
+                      child: GestureDetector(
+                        onTap: () async {
+                          setState(() => _rememberMe = !_rememberMe);
+                          if (!_rememberMe) {
+                            await _clearSavedCredentials();
+                          }
+                        },
+                        child: Text(
+                          'Recordarme',
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: textSecondary,
+                          ),
                         ),
                       ),
                     ),
@@ -449,7 +452,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           // Google sign-in placeholder
                         },
                         icon: const Icon(Icons.g_mobiledata, size: 24),
-                        label: const Text('Google'),
+                        label: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('Google'),
+                        ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: textPrimary,
                           side: BorderSide(color: borderColor),
@@ -467,7 +473,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           // Facebook sign-in placeholder
                         },
                         icon: const Icon(Icons.facebook, size: 22),
-                        label: const Text('Facebook'),
+                        label: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('Facebook'),
+                        ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: textPrimary,
                           side: BorderSide(color: borderColor),

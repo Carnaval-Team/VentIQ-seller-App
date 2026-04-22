@@ -6,6 +6,7 @@ import '../services/inventory_service.dart';
 import '../services/warehouse_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/export_service.dart';
+import '../services/warehouse_valuation_service.dart';
 import '../widgets/export_dialog.dart';
 
 class InventoryWarehouseScreen extends StatefulWidget {
@@ -21,6 +22,8 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
   final InventoryService _inventoryService = InventoryService();
   final WarehouseService _warehouseService = WarehouseService();
   final ExportService _exportService = ExportService();
+  final WarehouseValuationService _valuationService =
+      WarehouseValuationService();
 
   // State variables
   bool _isLoading = false;
@@ -40,6 +43,16 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
   Map<String, bool> _loadingInventory = {};
   Map<String, int> _layoutProductCounts = {};
 
+  // ===== Valuation state =====
+  WarehousesValuationSummary? _valuationSummary;
+  bool _loadingValuation = false;
+  // Per-warehouse valuation details (zones) — keyed by warehouse id string
+  final Map<String, WarehouseZonesValuation> _warehouseZonesValuation = {};
+  final Map<String, bool> _loadingWarehouseValuation = {};
+  // Per-zone product valuation — keyed by layout (zone) id string
+  final Map<String, ZoneProductsValuation> _zoneProductsValuation = {};
+  final Map<String, bool> _loadingZoneValuation = {};
+
   @override
   void initState() {
     super.initState();
@@ -54,7 +67,11 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
 
     try {
       // Solo cargar la lista básica de warehouses, sin conteos de productos
-      await Future.wait([_loadWarehouses(), _loadInventoryData()]);
+      await Future.wait([
+        _loadWarehouses(),
+        _loadInventoryData(),
+        _loadValuationSummary(),
+      ]);
       // Eliminamos _loadAllProductCounts() para mejorar rendimiento inicial
     } catch (e) {
       setState(() {
@@ -95,6 +112,90 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
       // _loadAllWarehouseInventory();
     } catch (e) {
       print('Error loading inventory: $e');
+    }
+  }
+
+  /// Carga la valoración total de todos los almacenes de la tienda
+  Future<void> _loadValuationSummary() async {
+    if (!mounted) return;
+    setState(() {
+      _loadingValuation = true;
+    });
+    try {
+      final summary = await _valuationService.getTiendaSummary();
+      if (!mounted) return;
+      setState(() {
+        _valuationSummary = summary;
+      });
+      print(
+        '💰 Valuation summary cargada: '
+        'costo=${summary.totales.valorCostoUsd.toStringAsFixed(2)} USD, '
+        'venta=${summary.totales.valorVentaUsd.toStringAsFixed(2)} USD, '
+        'ganancia=${summary.totales.gananciaUsd.toStringAsFixed(2)} USD, '
+        'almacenes=${summary.almacenes.length}',
+      );
+    } catch (e) {
+      print('❌ Error cargando valoración global: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingValuation = false;
+        });
+      }
+    }
+  }
+
+  /// Carga valoración por zonas de un almacén específico
+  Future<void> _loadWarehouseValuation(String warehouseId) async {
+    if (_warehouseZonesValuation.containsKey(warehouseId)) return;
+    final idAlmacen = int.tryParse(warehouseId) ?? 0;
+    if (idAlmacen == 0) return;
+
+    setState(() {
+      _loadingWarehouseValuation[warehouseId] = true;
+    });
+
+    try {
+      final data = await _valuationService.getWarehouseZones(idAlmacen);
+      if (!mounted) return;
+      setState(() {
+        _warehouseZonesValuation[warehouseId] = data;
+      });
+    } catch (e) {
+      print('❌ Error cargando valoración del almacén $warehouseId: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingWarehouseValuation[warehouseId] = false;
+        });
+      }
+    }
+  }
+
+  /// Carga valoración de productos por zona/layout
+  Future<void> _loadZoneValuation(String zoneId) async {
+    if (_zoneProductsValuation.containsKey(zoneId)) return;
+    final idLayout = int.tryParse(zoneId) ?? 0;
+    if (idLayout == 0) return;
+
+    setState(() {
+      _loadingZoneValuation[zoneId] = true;
+    });
+
+    try {
+      final data = await _valuationService.getZoneProducts(idLayout);
+      if (!mounted) return;
+      setState(() {
+        _zoneProductsValuation[zoneId] = data;
+      });
+    } catch (e) {
+      print('❌ Error cargando valoración de zona $zoneId: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingZoneValuation[zoneId] = false;
+        });
+      }
     }
   }
 
@@ -214,9 +315,457 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
       color: AppColors.primary,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
-        itemCount: _warehouses.length,
-        itemBuilder:
-            (context, index) => _buildWarehouseTreeNode(_warehouses[index]),
+        // +1 for the summary header
+        itemCount: _warehouses.length + 1,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return _buildValuationSummaryCard();
+          }
+          return _buildWarehouseTreeNode(_warehouses[index - 1]);
+        },
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Valuation UI helpers
+  // ===========================================================================
+
+  String _formatUsd(double v) {
+    // Two decimals, thousands separator
+    return '\$${_formatNumber(v, 2)}';
+  }
+
+  String _formatCup(double v) {
+    return '${_formatNumber(v, 0)} CUP';
+  }
+
+  String _formatNumber(double v, int decimals) {
+    if (v.isNaN || v.isInfinite) return '0';
+    final fixed = v.toStringAsFixed(decimals);
+    final parts = fixed.split('.');
+    final intPart = parts[0];
+    final buf = StringBuffer();
+    for (int i = 0; i < intPart.length; i++) {
+      final remaining = intPart.length - i;
+      buf.write(intPart[i]);
+      if (remaining > 1 && remaining % 3 == 1) buf.write(',');
+    }
+    return decimals > 0 ? '${buf.toString()}.${parts[1]}' : buf.toString();
+  }
+
+  Widget _buildValuationSummaryCard() {
+    final summary = _valuationSummary;
+    if (_loadingValuation && summary == null) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: const Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: CircularProgressIndicator(color: AppColors.primary),
+          ),
+        ),
+      );
+    }
+
+    final totales = summary?.totales ?? ValuationTotals.empty;
+    final tasa = summary?.tasa ?? 0;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primary,
+            AppColors.primary.withOpacity(0.85),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.25),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.account_balance_wallet_outlined,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Valoración Total de Inventario',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (tasa > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '1 USD = ${_formatNumber(tasa, 0)} CUP',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Costo total
+            _buildValuationMetricRow(
+              label: 'Costo (valor invertido)',
+              usd: totales.valorCostoUsd,
+              cup: totales.valorCostoCup,
+              icon: Icons.inventory_2_outlined,
+            ),
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: Colors.white24),
+            const SizedBox(height: 10),
+            // Venta total
+            _buildValuationMetricRow(
+              label: 'Si se vende todo',
+              usd: totales.valorVentaUsd,
+              cup: totales.valorVentaCup,
+              icon: Icons.sell_outlined,
+            ),
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: Colors.white24),
+            const SizedBox(height: 10),
+            // Ganancia total
+            _buildValuationMetricRow(
+              label: 'Ganancia potencial',
+              usd: totales.gananciaUsd,
+              cup: totales.gananciaCup,
+              icon: Icons.trending_up,
+              highlight: true,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildValuationMetricRow({
+    required String label,
+    required double usd,
+    required double cup,
+    required IconData icon,
+    bool highlight = false,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(icon, color: Colors.white, size: 18),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.9),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              _formatUsd(usd),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: highlight ? 16 : 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            Text(
+              _formatCup(cup),
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.85),
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Finds a warehouse valuation entry from the summary by id
+  WarehouseValuation? _findWarehouseValuation(String warehouseId) {
+    final summary = _valuationSummary;
+    if (summary == null) return null;
+    final id = int.tryParse(warehouseId);
+    if (id == null) return null;
+    for (final w in summary.almacenes) {
+      if (w.idAlmacen == id) return w;
+    }
+    return null;
+  }
+
+  Widget _buildWarehouseValuationChips(String warehouseId) {
+    final wv = _findWarehouseValuation(warehouseId);
+    if (wv == null) {
+      if (_loadingValuation) {
+        return const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: SizedBox(
+            height: 12,
+            child: LinearProgressIndicator(
+              color: AppColors.primary,
+              backgroundColor: Colors.transparent,
+              minHeight: 2,
+            ),
+          ),
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        children: [
+          _buildValChip(
+            label: 'Costo',
+            usd: wv.valorCostoUsd,
+            cup: wv.valorCostoCup,
+            color: const Color(0xFF4A90E2),
+            icon: Icons.inventory_2_outlined,
+          ),
+          _buildValChip(
+            label: 'Venta',
+            usd: wv.valorVentaUsd,
+            cup: wv.valorVentaCup,
+            color: const Color(0xFF10B981),
+            icon: Icons.sell_outlined,
+          ),
+          _buildValChip(
+            label: 'Ganancia',
+            usd: wv.gananciaUsd,
+            cup: wv.gananciaCup,
+            color: const Color(0xFFFF8C42),
+            icon: Icons.trending_up,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildValChip({
+    required String label,
+    required double usd,
+    required double cup,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$label • ${_formatUsd(usd)}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+              Text(
+                _formatCup(cup),
+                style: TextStyle(
+                  fontSize: 10,
+                  color: color.withOpacity(0.8),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildZoneValuationChips(String warehouseId, String zoneId) {
+    final wzv = _warehouseZonesValuation[warehouseId];
+    if (wzv == null) return const SizedBox.shrink();
+    final id = int.tryParse(zoneId);
+    if (id == null) return const SizedBox.shrink();
+    ZoneValuation? zv;
+    for (final z in wzv.zonas) {
+      if (z.idLayout == id) {
+        zv = z;
+        break;
+      }
+    }
+    if (zv == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        children: [
+          _buildValChip(
+            label: 'Costo',
+            usd: zv.valorCostoUsd,
+            cup: zv.valorCostoCup,
+            color: const Color(0xFF4A90E2),
+            icon: Icons.inventory_2_outlined,
+          ),
+          _buildValChip(
+            label: 'Venta',
+            usd: zv.valorVentaUsd,
+            cup: zv.valorVentaCup,
+            color: const Color(0xFF10B981),
+            icon: Icons.sell_outlined,
+          ),
+          _buildValChip(
+            label: 'Ganancia',
+            usd: zv.gananciaUsd,
+            cup: zv.gananciaCup,
+            color: const Color(0xFFFF8C42),
+            icon: Icons.trending_up,
+          ),
+        ],
+      ),
+    );
+  }
+
+  ProductValuation? _findProductValuation(String zoneId, int idProducto) {
+    final zpv = _zoneProductsValuation[zoneId];
+    if (zpv == null) return null;
+    for (final p in zpv.productos) {
+      if (p.idProducto == idProducto) return p;
+    }
+    return null;
+  }
+
+  Widget _buildProductValuationRow(ProductValuation pv) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        _buildMiniValChip(
+          label: 'Costo',
+          usd: pv.valorCostoUsd,
+          cup: pv.valorCostoCup,
+          color: const Color(0xFF4A90E2),
+        ),
+        _buildMiniValChip(
+          label: 'Venta',
+          usd: pv.valorVentaUsd,
+          cup: pv.valorVentaCup,
+          color: const Color(0xFF10B981),
+        ),
+        _buildMiniValChip(
+          label: 'Ganancia',
+          usd: pv.gananciaUsd,
+          cup: pv.gananciaCup,
+          color: const Color(0xFFFF8C42),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMiniValChip({
+    required String label,
+    required double usd,
+    required double cup,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: TextStyle(
+                fontSize: 10,
+                color: color.withOpacity(0.8),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            TextSpan(
+              text: _formatUsd(usd),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+            TextSpan(
+              text: ' / ${_formatCup(cup)}',
+              style: TextStyle(
+                fontSize: 10,
+                color: color.withOpacity(0.8),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -237,8 +786,10 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
               if (!isExpanded) {
                 // Cargar detalles del warehouse antes de expandir
                 await _loadWarehouseDetails(warehouse.id);
+                // Cargar valoración por zonas en paralelo (no bloquea)
+                _loadWarehouseValuation(warehouse.id);
               }
-              
+
               setState(() {
                 _expandedWarehouses[warehouse.id] = !isExpanded;
 
@@ -342,6 +893,8 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
               ),
             ),
           ),
+          // Valoración del almacén (chips)
+          _buildWarehouseValuationChips(warehouse.id),
           // Expanded zones with hierarchy
           if (isExpanded) ...[
             const Divider(height: 1),
@@ -709,7 +1262,7 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          hasProductCountLoaded 
+                          hasProductCountLoaded
                               ? '$productCount productos'
                               : 'Cargando...',
                           style: TextStyle(
@@ -744,7 +1297,12 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
                 ),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
+
+              // Valoración de la zona (chips)
+              _buildZoneValuationChips(warehouseId, zone.id),
+
+              const SizedBox(height: 6),
 
               // Botones "Ver productos" y "Exportar"
               if (hasProductCountLoaded && productCount > 0)
@@ -763,6 +1321,10 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
                             if (!isExpanded &&
                                 _layoutInventory[layoutKey] == null) {
                               _loadLayoutInventory(layoutKey, zone.id);
+                            }
+                            // Cargar valoración por producto (idempotente)
+                            if (!isExpanded) {
+                              _loadZoneValuation(zone.id);
                             }
                           },
                           borderRadius: BorderRadius.circular(8),
@@ -887,6 +1449,10 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children:
                           inventory.map((product) {
+                            final pv = _findProductValuation(
+                              zone.id,
+                              product.idProducto,
+                            );
                             return Container(
                               margin: const EdgeInsets.only(bottom: 8),
                               padding: const EdgeInsets.all(12),
@@ -897,60 +1463,76 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
                                   color: Colors.grey.withOpacity(0.2),
                                 ),
                               ),
-                              child: Row(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          product.nombreProducto,
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                        if (product.skuProducto.isNotEmpty)
-                                          Text(
-                                            product.skuProducto,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey[600],
-                                              fontFamily: 'monospace',
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          product.stockDisponible > 0
-                                              ? AppColors.success.withOpacity(
-                                                0.1,
-                                              )
-                                              : AppColors.error.withOpacity(
-                                                0.1,
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              product.nombreProducto,
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
                                               ),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      '${product.stockDisponible.toInt()}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color:
-                                            product.stockDisponible > 0
+                                            ),
+                                            if (product.skuProducto.isNotEmpty)
+                                              Text(
+                                                product.skuProducto,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[600],
+                                                  fontFamily: 'monospace',
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: product.stockDisponible > 0
+                                              ? AppColors.success
+                                                  .withOpacity(0.1)
+                                              : AppColors.error
+                                                  .withOpacity(0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          '${product.stockDisponible.toInt()}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: product.stockDisponible > 0
                                                 ? AppColors.success
                                                 : AppColors.error,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (pv != null) ...[
+                                    const SizedBox(height: 8),
+                                    _buildProductValuationRow(pv),
+                                  ] else if (_loadingZoneValuation[zone.id] ==
+                                      true) ...[
+                                    const SizedBox(height: 8),
+                                    const SizedBox(
+                                      height: 2,
+                                      child: LinearProgressIndicator(
+                                        color: AppColors.primary,
+                                        backgroundColor: Colors.transparent,
                                       ),
                                     ),
-                                  ),
+                                  ],
                                 ],
                               ),
                             );

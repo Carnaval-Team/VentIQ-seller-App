@@ -151,32 +151,32 @@ BEGIN
         ORDER BY pp.id_producto, pp.created_at DESC
     )
     SELECT
-        a.id                         AS id_almacen,
-        a.denominacion               AS almacen_nombre,
-        la.id                        AS id_layout,
-        la.denominacion              AS layout_nombre,
-        la.id_layout_padre           AS id_layout_padre,
-        p.id                         AS id_producto,
-        p.denominacion               AS producto_nombre,
-        p.sku                        AS sku,
-        li.id_variante               AS id_variante,
-        li.id_opcion_variante        AS id_opcion_variante,
-        li.id_presentacion           AS id_presentacion,
-        COALESCE(li.cantidad_final, 0)                                   AS cantidad,
-        COALESCE(lc.precio_promedio, lcf.precio_promedio, 0)::NUMERIC    AS precio_costo_usd,
-        (COALESCE(lc.precio_promedio, lcf.precio_promedio, 0) * v_tasa)  AS precio_costo_cup,
-        COALESCE(lp.precio_venta_cup, 0)                                 AS precio_venta_cup,
-        (COALESCE(lp.precio_venta_cup, 0) / NULLIF(v_tasa, 0))           AS precio_venta_usd,
-        v_tasa                                                           AS tasa,
+        a.id::BIGINT                         AS id_almacen,
+        a.denominacion::VARCHAR              AS almacen_nombre,
+        la.id::BIGINT                        AS id_layout,
+        la.denominacion::VARCHAR             AS layout_nombre,
+        la.id_layout_padre::BIGINT           AS id_layout_padre,
+        p.id::BIGINT                         AS id_producto,
+        p.denominacion::VARCHAR              AS producto_nombre,
+        p.sku::VARCHAR                       AS sku,
+        li.id_variante::BIGINT               AS id_variante,
+        li.id_opcion_variante::BIGINT        AS id_opcion_variante,
+        li.id_presentacion::BIGINT           AS id_presentacion,
+        COALESCE(li.cantidad_final, 0)::NUMERIC                                                                          AS cantidad,
+        COALESCE(lc.precio_promedio, lcf.precio_promedio, 0)::NUMERIC                                                    AS precio_costo_usd,
+        (COALESCE(lc.precio_promedio, lcf.precio_promedio, 0)::NUMERIC * v_tasa)::NUMERIC                                AS precio_costo_cup,
+        COALESCE(lp.precio_venta_cup, 0)::NUMERIC                                                                        AS precio_venta_cup,
+        (COALESCE(lp.precio_venta_cup, 0)::NUMERIC / NULLIF(v_tasa, 0))::NUMERIC                                         AS precio_venta_usd,
+        v_tasa::NUMERIC                                                                                                  AS tasa,
         -- Valor de costo total (stock * costo)
-        (COALESCE(li.cantidad_final, 0) * COALESCE(lc.precio_promedio, lcf.precio_promedio, 0))                  AS valor_costo_usd,
-        (COALESCE(li.cantidad_final, 0) * COALESCE(lc.precio_promedio, lcf.precio_promedio, 0) * v_tasa)         AS valor_costo_cup,
+        (COALESCE(li.cantidad_final, 0)::NUMERIC * COALESCE(lc.precio_promedio, lcf.precio_promedio, 0)::NUMERIC)::NUMERIC                                                                AS valor_costo_usd,
+        (COALESCE(li.cantidad_final, 0)::NUMERIC * COALESCE(lc.precio_promedio, lcf.precio_promedio, 0)::NUMERIC * v_tasa)::NUMERIC                                                       AS valor_costo_cup,
         -- Valor de venta total (stock * precio venta)
-        (COALESCE(li.cantidad_final, 0) * (COALESCE(lp.precio_venta_cup, 0) / NULLIF(v_tasa, 0)))                AS valor_venta_usd,
-        (COALESCE(li.cantidad_final, 0) * COALESCE(lp.precio_venta_cup, 0))                                      AS valor_venta_cup,
+        (COALESCE(li.cantidad_final, 0)::NUMERIC * (COALESCE(lp.precio_venta_cup, 0)::NUMERIC / NULLIF(v_tasa, 0)))::NUMERIC                                                              AS valor_venta_usd,
+        (COALESCE(li.cantidad_final, 0)::NUMERIC * COALESCE(lp.precio_venta_cup, 0)::NUMERIC)::NUMERIC                                                                                    AS valor_venta_cup,
         -- Ganancia (venta - costo) * stock
-        (COALESCE(li.cantidad_final, 0) * ((COALESCE(lp.precio_venta_cup, 0) / NULLIF(v_tasa, 0)) - COALESCE(lc.precio_promedio, lcf.precio_promedio, 0)))        AS ganancia_usd,
-        (COALESCE(li.cantidad_final, 0) * (COALESCE(lp.precio_venta_cup, 0) - (COALESCE(lc.precio_promedio, lcf.precio_promedio, 0) * v_tasa)))                    AS ganancia_cup
+        (COALESCE(li.cantidad_final, 0)::NUMERIC * ((COALESCE(lp.precio_venta_cup, 0)::NUMERIC / NULLIF(v_tasa, 0)) - COALESCE(lc.precio_promedio, lcf.precio_promedio, 0)::NUMERIC))::NUMERIC      AS ganancia_usd,
+        (COALESCE(li.cantidad_final, 0)::NUMERIC * (COALESCE(lp.precio_venta_cup, 0)::NUMERIC - (COALESCE(lc.precio_promedio, lcf.precio_promedio, 0)::NUMERIC * v_tasa)))::NUMERIC                AS ganancia_cup
     FROM latest_inv li
     JOIN app_dat_layout_almacen la ON la.id = li.id_ubicacion AND la.deleted_at IS NULL
     JOIN app_dat_almacen a         ON a.id = la.id_almacen AND a.deleted_at IS NULL

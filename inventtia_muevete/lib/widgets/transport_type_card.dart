@@ -7,6 +7,7 @@ class TransportTypeCard extends StatelessWidget {
   final IconData icon;
   final int passengerCount;
   final double price;
+  final String? priceSuffix;
   final String eta;
   final bool isSelected;
   final VoidCallback? onTap;
@@ -17,6 +18,7 @@ class TransportTypeCard extends StatelessWidget {
     required this.icon,
     required this.passengerCount,
     required this.price,
+    this.priceSuffix,
     required this.eta,
     this.isSelected = false,
     this.onTap,
@@ -162,7 +164,7 @@ class TransportTypeCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  '\$${price.toStringAsFixed(2)}',
+                  '\$${price.toStringAsFixed(2)}${priceSuffix ?? ''}',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: textPrimary,
