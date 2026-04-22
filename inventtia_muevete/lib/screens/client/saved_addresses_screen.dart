@@ -126,37 +126,40 @@ class _SavedAddressesScreenState extends State<SavedAddressesScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  for (final entry in _iconOptions.entries)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: GestureDetector(
-                        onTap: () =>
-                            setModalState(() => selectedIcon = entry.key),
-                        child: Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: selectedIcon == entry.key
-                                ? AppTheme.primaryColor
-                                : (isDark
-                                    ? AppTheme.darkCard
-                                    : Colors.grey[100]),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(
-                            entry.value,
-                            color: selectedIcon == entry.key
-                                ? Colors.white
-                                : (isDark
-                                    ? Colors.white54
-                                    : Colors.grey[600]),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final entry in _iconOptions.entries)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: GestureDetector(
+                          onTap: () =>
+                              setModalState(() => selectedIcon = entry.key),
+                          child: Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: selectedIcon == entry.key
+                                  ? AppTheme.primaryColor
+                                  : (isDark
+                                      ? AppTheme.darkCard
+                                      : Colors.grey[100]),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              entry.value,
+                              color: selectedIcon == entry.key
+                                  ? Colors.white
+                                  : (isDark
+                                      ? Colors.white54
+                                      : Colors.grey[600]),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
               const SizedBox(height: 16),
 

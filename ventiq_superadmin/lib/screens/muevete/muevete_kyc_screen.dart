@@ -33,7 +33,7 @@ class _MueveteKycScreenState extends State<MueveteKycScreen> {
       backgroundColor: AppColors.background,
       drawer: const AppDrawer(),
       body: CustomScrollView(slivers: [
-        SliverAppBar(floating: true, backgroundColor: Colors.white, surfaceTintColor: Colors.white, elevation: 0.5,
+        SliverAppBar(floating: true, backgroundColor: Colors.white, foregroundColor: Colors.black, surfaceTintColor: Colors.black, elevation: 0.5,
           title: Row(children: [
             Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(
               gradient: _pending.isNotEmpty ? LinearGradient(colors: [AppColors.error, AppColors.error.withOpacity(0.7)]) : LinearGradient(colors: [AppColors.success, AppColors.success.withOpacity(0.7)]),
