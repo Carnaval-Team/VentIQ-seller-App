@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Muevete - Home</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&amp;family=Work+Sans:wght@600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary-fixed": "#081c36",
+                        "secondary-container": "#fe6b00",
+                        "on-background": "#0b1c30",
+                        "on-surface": "#0b1c30",
+                        "tertiary-container": "#00230d",
+                        "on-primary-fixed-variant": "#364763",
+                        "on-secondary-container": "#572000",
+                        "background": "#f8f9ff",
+                        "on-error-container": "#93000a",
+                        "surface-tint": "#4e5f7c",
+                        "surface-container": "#e5eeff",
+                        "on-tertiary-container": "#00994f",
+                        "inverse-primary": "#b6c7e9",
+                        "outline": "#75777e",
+                        "tertiary-fixed": "#7efba4",
+                        "on-surface-variant": "#44474d",
+                        "secondary": "#a04100",
+                        "secondary-fixed": "#ffdbcc",
+                        "primary-fixed": "#d6e3ff",
+                        "on-tertiary": "#ffffff",
+                        "error": "#ba1a1a",
+                        "surface-bright": "#f8f9ff",
+                        "outline-variant": "#c5c6ce",
+                        "surface-container-low": "#eff4ff",
+                        "on-secondary-fixed-variant": "#7a3000",
+                        "on-primary-container": "#7586a5",
+                        "primary-fixed-dim": "#b6c7e9",
+                        "inverse-surface": "#213145",
+                        "inverse-on-surface": "#eaf1ff",
+                        "secondary-fixed-dim": "#ffb693",
+                        "on-tertiary-fixed": "#00210c",
+                        "primary": "#00030a",
+                        "on-primary": "#ffffff",
+                        "surface-container-highest": "#d3e4fe",
+                        "tertiary": "#000401",
+                        "on-tertiary-fixed-variant": "#005228",
+                        "surface-dim": "#cbdbf5",
+                        "on-secondary-fixed": "#351000",
+                        "surface-variant": "#d3e4fe",
+                        "surface-container-high": "#dce9ff",
+                        "primary-container": "#0a1d37",
+                        "surface-container-lowest": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "surface": "#f8f9ff",
+                        "on-error": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed-dim": "#61de8a"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "margin": "24px",
+                        "xs": "0.5rem",
+                        "base": "4px",
+                        "md": "1.5rem",
+                        "sm": "1rem",
+                        "xl": "3rem",
+                        "gutter": "16px",
+                        "lg": "2rem"
+                    },
+                    "fontFamily": {
+                        "display-lg": ["Inter"],
+                        "label-caps": ["Work Sans"],
+                        "headline-md": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "title-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "title-sm": ["18px", { "lineHeight": "24px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: #f8f9ff; }
+        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid #e2e8f0; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="font-body-md text-on-surface antialiased bg-surface">
+<!-- TopAppBar -->
+<header class="bg-slate-50 dark:bg-slate-950 font-['Inter'] font-semibold tracking-tight docked full-width top-0 border-b border-b border-slate-200 dark:border-slate-800 shadow-sm sticky z-50">
+<div class="flex justify-between items-center w-full px-6 py-3 max-w-7xl mx-auto">
+<div class="flex items-center gap-xs">
+<span class="material-symbols-outlined text-[#0A1D37] dark:text-slate-100 text-2xl" style="font-variation-settings: 'FILL' 1;">local_shipping</span>
+<span class="text-xl font-black text-[#0A1D37] dark:text-white">Muevete</span>
+</div>
+<nav class="hidden md:flex items-center gap-md">
+<a class="text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors px-3 py-2 rounded-lg" href="#">Precios</a>
+<a class="text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors px-3 py-2 rounded-lg" href="#">Acerca de</a>
+<a class="text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors px-3 py-2 rounded-lg" href="#">Contactos</a>
+</nav>
+<div class="flex items-center gap-xs">
+<button class="hidden md:block px-4 py-2 text-primary-container border-2 border-primary-container rounded-lg font-title-sm text-title-sm hover:bg-slate-100 transition-colors">Registrar</button>
+<button class="px-4 py-2 bg-secondary-container text-on-secondary font-title-sm text-title-sm rounded-lg hover:opacity-90 active:opacity-80 transition-all duration-200 shadow-[0_4px_12px_rgba(10,29,55,0.05)]">Iniciar</button>
+</div>
+</div>
+</header>
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-xl pb-32">
+<!-- Hero Section / Context -->
+<div class="mb-xl text-center">
+<h1 class="font-display-lg text-display-lg text-primary-container mb-sm">Logística Inteligente y Eficiente</h1>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-2xl mx-auto">Conectando transportistas con cargas en tiempo real. Optimiza tus rutas, encuentra combustible y gestiona tu flota con Muevete.</p>
+</div>
+<!-- Information Cards Row (Bento Grid Style) -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-md mb-xl">
+<div class="glass-card rounded-xl p-md shadow-[0_4px_12px_rgba(10,29,55,0.05)] hover:shadow-[0_8px_20px_rgba(10,29,55,0.10)] transition-shadow flex flex-col gap-sm">
+<div class="w-12 h-12 bg-surface-container-high rounded-full flex items-center justify-center text-primary-container">
+<span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1;">local_gas_station</span>
+</div>
+<div>
+<h3 class="font-title-sm text-title-sm text-primary-container mb-base">Combustible</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Sitios donde repostar combustible con los mejores precios en tu ruta.</p>
+</div>
+</div>
+<div class="glass-card rounded-xl p-md shadow-[0_4px_12px_rgba(10,29,55,0.05)] hover:shadow-[0_8px_20px_rgba(10,29,55,0.10)] transition-shadow flex flex-col gap-sm relative overflow-hidden group">
+<div class="absolute inset-0 bg-cover bg-center opacity-10 group-hover:opacity-20 transition-opacity" data-alt="high contrast digital map showing logistics routes and glowing nodes representing active trucks and cargo drops" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAGffl63xtIGlbvPxwkplGknCTpZegJJpZJphbBZVGJIfTzA1iwp9jCUE3mdjE5N8WQ_CVcZaglq19nWo7Fo2UuN1PBywzfoJaztQdVPKzvJ8Xo4lmedZkhRtdziFPwzIu5grY77sk_OG-RbP4ld0WKIEo7DBoI_5gAcoQo8sr1_-73ulULtLZqW0Ssn-q5gdxGYoTFMDyuiJBn2Dd3d-a83bvH--W-ewYg8E2EdAJ377llrze-rQb_Vk_RQLgMyqG6gSt1Tl6MONJD');"></div>
+<div class="w-12 h-12 bg-surface-container-high rounded-full flex items-center justify-center text-primary-container relative z-10">
+<span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1;">map</span>
+</div>
+<div class="relative z-10">
+<h3 class="font-title-sm text-title-sm text-primary-container mb-base">Mapa</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Ver combustibles, cargas y transportistas en tiempo real.</p>
+</div>
+</div>
+<div class="glass-card rounded-xl p-md shadow-[0_4px_12px_rgba(10,29,55,0.05)] hover:shadow-[0_8px_20px_rgba(10,29,55,0.10)] transition-shadow flex flex-col gap-sm">
+<div class="w-12 h-12 bg-surface-container-high rounded-full flex items-center justify-center text-primary-container">
+<span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1;">package_2</span>
+</div>
+<div>
+<h3 class="font-title-sm text-title-sm text-primary-container mb-base">Cargas</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Listado de tus cargas (Cliente) o Cargas activas (Chofer).</p>
+</div>
+</div>
+</section>
+<!-- Memberships: Transportistas -->
+<section class="mb-xl">
+<h2 class="font-headline-md text-headline-md text-primary-container mb-md border-b-2 border-surface-container pb-xs inline-block">Planes Transportistas</h2>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-md">
+<!-- Básico -->
+<div class="glass-card rounded-xl p-md shadow-[0_4px_12px_rgba(10,29,55,0.05)] flex flex-col relative overflow-hidden">
+<div class="absolute top-0 right-0 bg-surface-container px-3 py-1 rounded-bl-lg font-label-caps text-label-caps text-on-primary-fixed-variant">BÁSICO</div>
+<div class="mb-sm mt-4">
+<span class="font-display-lg text-display-lg text-primary-container">$20</span><span class="font-body-sm text-body-sm text-on-surface-variant">/mes</span>
+</div>
+<ul class="space-y-sm flex-grow mb-md">
+<li class="flex items-start gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-on-tertiary-container text-lg">check_circle</span>
+<span>Cargas con 30 min retraso</span>
+</li>
+<li class="flex items-start gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-on-tertiary-container text-lg">check_circle</span>
+<span>Aceptar cargas</span>
+</li>
+<li class="flex items-start gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-on-tertiary-container text-lg">check_circle</span>
+<span>Cargas recomendadas</span>
+</li>
+</ul>
+<button class="w-full py-2 border-2 border-primary-container text-primary-container rounded-lg font-title-sm text-title-sm hover:bg-slate-50 transition-colors">Seleccionar Básico</button>
+</div>
+<!-- Pro -->
+<div class="glass-card rounded-xl p-md shadow-[0_8px_20px_rgba(10,29,55,0.10)] border-2 border-secondary-container flex flex-col relative transform md:-translate-y-2 z-10">
+<div class="absolute top-0 right-0 bg-secondary-container text-on-secondary px-3 py-1 rounded-bl-lg font-label-caps text-label-caps">PRO</div>
+<div class="mb-sm mt-4 flex flex-wrap items-center gap-2">
+<div><span class="font-display-lg text-display-lg text-primary-container">$40</span><span class="font-body-sm text-body-sm text-on-surface-variant">/mes</span></div>
+<span class="bg-secondary-container text-on-secondary px-2 py-0.5 rounded font-label-caps text-[10px] uppercase tracking-wider">¡3 meses GRATIS!</span>
+</div>
+<ul class="space-y-sm flex-grow mb-md">
+<li class="flex items-start gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-secondary-container text-lg">check_circle</span>
+<span class="font-semibold text-primary-container">Acceso instantáneo a cargas</span>
+</li>
+<li class="flex items-start gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-secondary-container text-lg">check_circle</span>
+<span>Mapa avanzado (zonas importantes)</span>
+</li>
+<li class="flex items-start gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-secondary-container text-lg">check_circle</span>
+<span>Recomendaciones por ubicación</span>
+</li>
+</ul>
+<button class="w-full py-2 bg-secondary-container text-on-secondary rounded-lg font-title-sm text-title-sm hover:opacity-90 transition-opacity">Seleccionar Pro</button>
+</div>
+<!-- Dispatchers -->
+<div class="glass-card rounded-xl p-md shadow-[0_4px_12px_rgba(10,29,55,0.05)] flex flex-col relative">
+<div class="absolute top-0 right-0 bg-inverse-surface text-inverse-on-surface px-3 py-1 rounded-bl-lg font-label-caps text-label-caps">DISPATCHERS</div>
+<div class="mb-sm mt-4">
+<span class="font-display-lg text-display-lg text-primary-container">$150</span><span class="font-body-sm text-body-sm text-on-surface-variant">/mes</span>
+</div>
+<ul class="space-y-sm flex-grow mb-md">
+<li class="flex items-start gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-on-tertiary-container text-lg">check_circle</span>
+<span class="font-semibold text-primary-container">Todo lo de Pro</span>
+</li>
+<li class="flex items-start gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-on-tertiary-container text-lg">check_circle</span>
+<span>Gestión de múltiples vehículos</span>
+</li>
+<li class="flex items-start gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-on-tertiary-container text-lg">check_circle</span>
+<span>Asignación de rutas avanzadas</span>
+</li>
+</ul>
+<button class="w-full py-2 border-2 border-primary-container text-primary-container rounded-lg font-title-sm text-title-sm hover:bg-slate-50 transition-colors">Seleccionar Dispatcher</button>
+</div>
+</div>
+</section>
+<!-- Memberships: Clientes -->
+<section>
+<h2 class="font-headline-md text-headline-md text-primary-container mb-md border-b-2 border-surface-container pb-xs inline-block">Plan Clientes / MiPyMES</h2>
+<div class="max-w-md">
+<div class="glass-card rounded-xl p-md shadow-[0_4px_12px_rgba(10,29,55,0.05)] flex flex-col relative bg-gradient-to-br from-surface-container-lowest to-surface-container-low">
+<div class="absolute top-0 right-0 bg-primary-container text-on-primary px-3 py-1 rounded-bl-lg font-label-caps text-label-caps">PLAN ÚNICO</div>
+<div class="mb-sm mt-4 flex flex-wrap items-center gap-2">
+<div><span class="font-display-lg text-display-lg text-primary-container">$50</span><span class="font-body-sm text-body-sm text-on-surface-variant">/mes</span></div>
+<span class="bg-primary-container text-on-primary px-2 py-0.5 rounded font-label-caps text-[10px] uppercase tracking-wider">¡Primeros 3 meses GRATIS!</span>
+</div>
+<ul class="space-y-sm flex-grow mb-md">
+<li class="flex items-start gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-primary-container text-lg">check_circle</span>
+<span>Crear cargas ilimitadas</span>
+</li>
+<li class="flex items-start gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-primary-container text-lg">check_circle</span>
+<span>Mapa interactivo de choferes</span>
+</li>
+<li class="flex items-start gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-primary-container text-lg">check_circle</span>
+<span>Ver rating e información detallada de choferes</span>
+</li>
+</ul>
+<button class="w-full py-2 bg-primary-container text-on-primary rounded-lg font-title-sm text-title-sm hover:opacity-90 transition-opacity">Seleccionar Plan Único</button>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden bg-white dark:bg-slate-900 font-['Inter'] text-[12px] font-medium hidden fixed bottom-0 w-full z-50 border-t border-t border-slate-200 dark:border-slate-800 shadow-[0_-4px_12px_rgba(10,29,55,0.05)] scale-95 active:scale-90 transition-transform fixed bottom-0 left-0 w-full z-50 flex justify-around items-center bg-white/90 backdrop-blur-md pb-safe" style="display: flex;">
+<button class="flex flex-col items-center justify-center text-orange-600 dark:text-orange-400 hover:text-orange-500 py-3 w-full">
+<span class="material-symbols-outlined text-2xl mb-1" style="font-variation-settings: 'FILL' 1;">home</span>
+<span>Inicio</span>
+</button>
+<button class="flex flex-col items-center justify-center text-slate-500 dark:text-slate-400 hover:text-orange-500 py-3 w-full">
+<span class="material-symbols-outlined text-2xl mb-1">map</span>
+<span>Mapa</span>
+</button>
+<button class="flex flex-col items-center justify-center text-slate-500 dark:text-slate-400 hover:text-orange-500 py-3 w-full">
+<span class="material-symbols-outlined text-2xl mb-1">package_2</span>
+<span>Cargas</span>
+</button>
+<button class="flex flex-col items-center justify-center text-slate-500 dark:text-slate-400 hover:text-orange-500 py-3 w-full">
+<span class="material-symbols-outlined text-2xl mb-1">person</span>
+<span>Cuenta</span>
+</button>
+</nav>
+</body></html>

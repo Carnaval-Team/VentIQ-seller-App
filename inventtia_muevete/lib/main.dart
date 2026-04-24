@@ -19,6 +19,7 @@ import 'providers/transport_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/address_provider.dart';
 import 'screens/splash_screen.dart';
+import 'screens/landing_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/client/home_map_screen.dart';
@@ -117,7 +118,9 @@ class MueveteApp extends StatelessWidget {
               );
             },
             routes: {
-              '/': (context) => const SplashScreen(),
+              '/': (context) =>
+                  kIsWeb ? const LandingScreen() : const SplashScreen(),
+              '/landing': (context) => const LandingScreen(),
               '/login': (context) => const LoginScreen(),
               '/register': (context) => const RegisterScreen(),
               '/client/home': (context) => const HomeMapScreen(),

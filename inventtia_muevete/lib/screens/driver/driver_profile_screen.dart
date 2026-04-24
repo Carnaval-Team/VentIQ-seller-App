@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -585,49 +586,97 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Offline map toggle
-              Container(
-                decoration: BoxDecoration(
-                  color: isDark ? AppTheme.darkCard : Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: isDark ? AppTheme.darkBorder : Colors.grey[200]!,
-                  ),
-                ),
-                child: SwitchListTile(
-                  secondary: Icon(
-                    Icons.map_outlined,
-                    color: AppTheme.primaryColor,
-                    size: 22,
-                  ),
-                  title: Text(
-                    'Mapa Offline',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                      color: isDark ? Colors.white : Colors.black87,
+              // Offline map toggle (mobile only — MbTiles is not supported on web)
+              if (!kIsWeb)
+                Container(
+                  decoration: BoxDecoration(
+                    color: isDark ? AppTheme.darkCard : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isDark ? AppTheme.darkBorder : Colors.grey[200]!,
                     ),
                   ),
-                  subtitle: Text(
-                    MbTilesService.instance.isAvailable
-                        ? 'Usar mapa descargado (sin internet)'
-                        : 'Archivo de mapa no disponible',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 12,
-                      color: isDark ? Colors.white54 : Colors.grey[500],
+                  child: SwitchListTile(
+                    secondary: Icon(
+                      Icons.map_outlined,
+                      color: AppTheme.primaryColor,
+                      size: 22,
+                    ),
+                    title: Text(
+                      'Mapa Offline',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    subtitle: Text(
+                      MbTilesService.instance.isAvailable
+                          ? 'Usar mapa descargado (sin internet)'
+                          : 'Archivo de mapa no disponible',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: isDark ? Colors.white54 : Colors.grey[500],
+                      ),
+                    ),
+                    value: MbTilesService.instance.useOffline,
+                    activeColor: AppTheme.primaryColor,
+                    onChanged: MbTilesService.instance.isAvailable
+                        ? (val) async {
+                            await MbTilesService.instance.toggleOffline(val);
+                            setState(() {});
+                          }
+                        : null,
+                  ),
+                ),
+              const SizedBox(height: 16),
+
+              if (kIsWeb)
+                Container(
+                  decoration: BoxDecoration(
+                    color: isDark ? AppTheme.darkCard : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isDark ? AppTheme.darkBorder : Colors.grey[200]!,
                     ),
                   ),
-                  value: MbTilesService.instance.useOffline,
-                  activeColor: AppTheme.primaryColor,
-                  onChanged: MbTilesService.instance.isAvailable
-                      ? (val) async {
-                          await MbTilesService.instance.toggleOffline(val);
-                          setState(() {});
-                        }
-                      : null,
+                  child: ListTile(
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.inventory_2_outlined,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                    title: Text(
+                      'Ir a cargas',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Ver planes y servicios',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: isDark ? Colors.white54 : Colors.grey[500],
+                      ),
+                    ),
+                    trailing: Icon(
+                      Icons.chevron_right,
+                      color: isDark ? Colors.white38 : Colors.grey[400],
+                    ),
+                    onTap: () => Navigator.pushNamed(context, '/landing'),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 32),
+              if (kIsWeb) const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
               // Sign out
               SizedBox(
@@ -638,7 +687,10 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                     final nav = Navigator.of(context);
                     await authProvider.signOut();
                     if (mounted) {
-                      nav.pushNamedAndRemoveUntil('/login', (_) => false);
+                      nav.pushNamedAndRemoveUntil(
+                        kIsWeb ? '/landing' : '/login',
+                        (_) => false,
+                      );
                     }
                   },
                   icon: const Icon(Icons.logout, size: 18),

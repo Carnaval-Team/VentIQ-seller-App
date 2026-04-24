@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -185,6 +186,18 @@ class _ClientDrawerState extends State<ClientDrawer> {
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
+                  if (kIsWeb)
+                    _DrawerItem(
+                      icon: Icons.inventory_2_outlined,
+                      label: 'Ir a cargas',
+                      subtitle: 'Ver planes y servicios',
+                      isDark: isDark,
+                      cardColor: cardColor,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.pushNamed(context, '/landing');
+                      },
+                    ),
                   _DrawerItem(
                     icon: Icons.person_outline,
                     label: 'Mi Perfil',
@@ -278,7 +291,10 @@ class _ClientDrawerState extends State<ClientDrawer> {
                 await context.read<AuthProvider>().signOut();
                 if (context.mounted) {
                   Navigator.pushNamedAndRemoveUntil(
-                      context, '/login', (_) => false);
+                    context,
+                    kIsWeb ? '/landing' : '/login',
+                    (_) => false,
+                  );
                 }
               },
             ),
