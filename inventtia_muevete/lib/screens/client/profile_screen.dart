@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -449,53 +450,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Offline map toggle
-              Container(
-                decoration: BoxDecoration(
-                  color: isDark ? AppTheme.darkCard : Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isDark ? AppTheme.darkBorder : Colors.grey[200]!,
+              // Offline map toggle (mobile only — MbTiles is not supported on web)
+              if (!kIsWeb) ...[
+                Container(
+                  decoration: BoxDecoration(
+                    color: isDark ? AppTheme.darkCard : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark ? AppTheme.darkBorder : Colors.grey[200]!,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        secondary: Icon(
+                          Icons.map_outlined,
+                          color: AppTheme.primaryColor,
+                          size: 22,
+                        ),
+                        title: Text(
+                          'Mapa Offline',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                        subtitle: Text(
+                          MbTilesService.instance.isAvailable
+                              ? 'Usar mapa descargado (sin internet)'
+                              : 'Archivo de mapa no disponible',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            color: isDark ? Colors.white54 : Colors.grey[500],
+                          ),
+                        ),
+                        value: MbTilesService.instance.useOffline,
+                        activeColor: AppTheme.primaryColor,
+                        onChanged: MbTilesService.instance.isAvailable
+                            ? (val) async {
+                                await MbTilesService.instance
+                                    .toggleOffline(val);
+                                setState(() {});
+                              }
+                            : null,
+                      ),
+                    ],
                   ),
                 ),
-                child: Column(
-                  children: [
-                    SwitchListTile(
-                      secondary: Icon(
-                        Icons.map_outlined,
-                        color: AppTheme.primaryColor,
-                        size: 22,
-                      ),
-                      title: Text(
-                        'Mapa Offline',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
-                          color: isDark ? Colors.white : Colors.black87,
-                        ),
-                      ),
-                      subtitle: Text(
-                        MbTilesService.instance.isAvailable
-                            ? 'Usar mapa descargado (sin internet)'
-                            : 'Archivo de mapa no disponible',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          color: isDark ? Colors.white54 : Colors.grey[500],
-                        ),
-                      ),
-                      value: MbTilesService.instance.useOffline,
-                      activeColor: AppTheme.primaryColor,
-                      onChanged: MbTilesService.instance.isAvailable
-                          ? (val) async {
-                              await MbTilesService.instance.toggleOffline(val);
-                              setState(() {});
-                            }
-                          : null,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 40),
+                const SizedBox(height: 40),
+              ],
 
               // Sign out
               if (!_isEditing)
@@ -506,7 +510,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       await authProvider.signOut();
                       if (context.mounted) {
                         Navigator.pushNamedAndRemoveUntil(
-                            context, '/login', (_) => false);
+                          context,
+                          kIsWeb ? '/landing' : '/login',
+                          (_) => false,
+                        );
                       }
                     },
                     icon: const Icon(Icons.logout, color: AppTheme.error),

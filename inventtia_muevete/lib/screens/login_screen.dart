@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -112,7 +113,9 @@ class _LoginScreenState extends State<LoginScreen> {
         );
         return;
       }
-      if (authProvider.isDriver) {
+      if (kIsWeb) {
+        Navigator.pushNamedAndRemoveUntil(context, '/landing', (_) => false);
+      } else if (authProvider.isDriver) {
         Navigator.pushReplacementNamed(context, '/driver/home');
       } else {
         Navigator.pushReplacementNamed(context, '/client/home');
@@ -192,17 +195,13 @@ class _LoginScreenState extends State<LoginScreen> {
         : Colors.grey[500]!;
     final borderColor = isDark ? AppTheme.darkBorder : Colors.grey[300]!;
 
-    return Scaffold(
-      backgroundColor: isDark ? AppTheme.darkBg : AppTheme.lightBg,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 60),
+    final form = Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!kIsWeb) const SizedBox(height: 60),
+          if (kIsWeb) const SizedBox(height: 8),
 
                 // App logo
                 Center(
@@ -556,10 +555,236 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
 
                 const SizedBox(height: 32),
-              ],
+        ],
+      ),
+    );
+
+    return Scaffold(
+      backgroundColor: isDark ? AppTheme.darkBg : AppTheme.lightBg,
+      body: SafeArea(
+        child: kIsWeb
+            ? _WebAuthShell(isDark: isDark, child: form)
+            : SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: form,
+              ),
+      ),
+    );
+  }
+}
+
+class _WebAuthShell extends StatefulWidget {
+  final bool isDark;
+  final Widget child;
+  const _WebAuthShell({required this.isDark, required this.child});
+
+  @override
+  State<_WebAuthShell> createState() => _WebAuthShellState();
+}
+
+class _WebAuthShellState extends State<_WebAuthShell> {
+  final ScrollController _scrollController = ScrollController();
+  bool _showHint = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final max = _scrollController.position.maxScrollExtent;
+    final current = _scrollController.position.pixels;
+    final canScroll = max > 0 && (max - current) > 16;
+    if (canScroll != _showHint) {
+      setState(() => _showHint = canScroll);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = widget.isDark;
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            isDark
+                ? 'assets/images/back_oscuro.png'
+                : 'assets/images/back_claro.png',
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) =>
+                Container(color: AppTheme.bg(isDark)),
+          ),
+        ),
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: isDark
+                    ? [
+                        AppTheme.darkBg.withValues(alpha: 0.45),
+                        AppTheme.darkBg.withValues(alpha: 0.75),
+                      ]
+                    : [
+                        AppTheme.lightBg.withValues(alpha: 0.35),
+                        AppTheme.lightBg.withValues(alpha: 0.70),
+                      ],
+              ),
             ),
           ),
         ),
+        Positioned.fill(
+          child: ScrollConfiguration(
+            behavior: ScrollConfiguration.of(context).copyWith(
+              scrollbars: false,
+            ),
+            child: Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: true,
+              trackVisibility: true,
+              thickness: 10,
+              radius: const Radius.circular(8),
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 32,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 460),
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(32, 24, 32, 32),
+                      decoration: BoxDecoration(
+                        color: AppTheme.card(isDark)
+                            .withValues(alpha: isDark ? 0.92 : 0.97),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppTheme.border(isDark)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isDark
+                                ? Colors.black.withValues(alpha: 0.45)
+                                : const Color(0x1F0A1D37),
+                            blurRadius: 32,
+                            offset: const Offset(0, 12),
+                          ),
+                        ],
+                      ),
+                      child: widget.child,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 16,
+          child: IgnorePointer(
+            child: Center(
+              child: _ScrollHint(isDark: isDark, visible: _showHint),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ScrollHint extends StatefulWidget {
+  final bool isDark;
+  final bool visible;
+  const _ScrollHint({required this.isDark, required this.visible});
+
+  @override
+  State<_ScrollHint> createState() => _ScrollHintState();
+}
+
+class _ScrollHintState extends State<_ScrollHint>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: widget.visible ? 1 : 0,
+      duration: const Duration(milliseconds: 240),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final dy = (1 - _controller.value) * 4;
+          return Transform.translate(
+            offset: Offset(0, dy),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 8,
+              ),
+              decoration: BoxDecoration(
+                color: AppTheme.card(widget.isDark)
+                    .withValues(alpha: widget.isDark ? 0.85 : 0.95),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: AppTheme.border(widget.isDark)),
+                boxShadow: [
+                  BoxShadow(
+                    color: widget.isDark
+                        ? Colors.black.withValues(alpha: 0.35)
+                        : const Color(0x140A1D37),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Desliza para más',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textSecondary(widget.isDark),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: AppTheme.textSecondary(widget.isDark),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
