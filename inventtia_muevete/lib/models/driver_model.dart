@@ -1,4 +1,5 @@
 class DriverModel {
+  // ── Existing fields (unchanged) ──────────────────────────────────────────
   final int? id;
   final DateTime? createdAt;
   final String? name;
@@ -15,6 +16,24 @@ class DriverModel {
   final bool? revisado;
   final String? motivo;
   final String? uuid;
+
+  // ── New fields ────────────────────────────────────────────────────────────
+  // Discriminator: 'conductor_pasajeros' | 'carrier_carga' | 'dispatcher'
+  final String? tipoUsuario;
+  // FK to dispatcher that registered this carrier (null = independent)
+  final int? dispatcherId;
+  // Carrier / dispatcher professional fields
+  final String? mcNumber;
+  final String? dotNumber;
+  final String? tipoCarroceria;
+  final double? capacidadTon;
+  final double? longitudPlataformaM;
+  final bool? seguroCargaVigente;
+  final String? seguroCargaUrl;
+  // Dispatcher company fields
+  final String? empresaNombre;
+  final String? empresaRut;
+  final String? empresaDireccion;
 
   DriverModel({
     this.id,
@@ -33,7 +52,24 @@ class DriverModel {
     this.revisado,
     this.motivo,
     this.uuid,
+    this.tipoUsuario,
+    this.dispatcherId,
+    this.mcNumber,
+    this.dotNumber,
+    this.tipoCarroceria,
+    this.capacidadTon,
+    this.longitudPlataformaM,
+    this.seguroCargaVigente,
+    this.seguroCargaUrl,
+    this.empresaNombre,
+    this.empresaRut,
+    this.empresaDireccion,
   });
+
+  bool get isConductorPasajeros =>
+      tipoUsuario == 'conductor_pasajeros' || tipoUsuario == null;
+  bool get isCarrierCarga => tipoUsuario == 'carrier_carga';
+  bool get isDispatcher => tipoUsuario == 'dispatcher';
 
   factory DriverModel.fromJson(Map<String, dynamic> json) {
     return DriverModel(
@@ -55,6 +91,22 @@ class DriverModel {
       revisado: json['revisado'] as bool?,
       motivo: json['motivo'] as String?,
       uuid: json['uuid'] as String?,
+      tipoUsuario: json['tipo_usuario'] as String?,
+      dispatcherId: json['dispatcher_id'] as int?,
+      mcNumber: json['mc_number'] as String?,
+      dotNumber: json['dot_number'] as String?,
+      tipoCarroceria: json['tipo_carroceria'] as String?,
+      capacidadTon: json['capacidad_ton'] != null
+          ? (json['capacidad_ton'] as num).toDouble()
+          : null,
+      longitudPlataformaM: json['longitud_plataforma_m'] != null
+          ? (json['longitud_plataforma_m'] as num).toDouble()
+          : null,
+      seguroCargaVigente: json['seguro_carga_vigente'] as bool?,
+      seguroCargaUrl: json['seguro_carga_url'] as String?,
+      empresaNombre: json['empresa_nombre'] as String?,
+      empresaRut: json['empresa_rut'] as String?,
+      empresaDireccion: json['empresa_direccion'] as String?,
     );
   }
 
@@ -74,6 +126,19 @@ class DriverModel {
       'revisado': revisado,
       'motivo': motivo,
       'uuid': uuid,
+      if (tipoUsuario != null) 'tipo_usuario': tipoUsuario,
+      if (dispatcherId != null) 'dispatcher_id': dispatcherId,
+      if (mcNumber != null) 'mc_number': mcNumber,
+      if (dotNumber != null) 'dot_number': dotNumber,
+      if (tipoCarroceria != null) 'tipo_carroceria': tipoCarroceria,
+      if (capacidadTon != null) 'capacidad_ton': capacidadTon,
+      if (longitudPlataformaM != null)
+        'longitud_plataforma_m': longitudPlataformaM,
+      if (seguroCargaVigente != null) 'seguro_carga_vigente': seguroCargaVigente,
+      if (seguroCargaUrl != null) 'seguro_carga_url': seguroCargaUrl,
+      if (empresaNombre != null) 'empresa_nombre': empresaNombre,
+      if (empresaRut != null) 'empresa_rut': empresaRut,
+      if (empresaDireccion != null) 'empresa_direccion': empresaDireccion,
     };
   }
 
@@ -94,6 +159,18 @@ class DriverModel {
     bool? revisado,
     String? motivo,
     String? uuid,
+    String? tipoUsuario,
+    int? dispatcherId,
+    String? mcNumber,
+    String? dotNumber,
+    String? tipoCarroceria,
+    double? capacidadTon,
+    double? longitudPlataformaM,
+    bool? seguroCargaVigente,
+    String? seguroCargaUrl,
+    String? empresaNombre,
+    String? empresaRut,
+    String? empresaDireccion,
   }) {
     return DriverModel(
       id: id ?? this.id,
@@ -112,6 +189,18 @@ class DriverModel {
       revisado: revisado ?? this.revisado,
       motivo: motivo ?? this.motivo,
       uuid: uuid ?? this.uuid,
+      tipoUsuario: tipoUsuario ?? this.tipoUsuario,
+      dispatcherId: dispatcherId ?? this.dispatcherId,
+      mcNumber: mcNumber ?? this.mcNumber,
+      dotNumber: dotNumber ?? this.dotNumber,
+      tipoCarroceria: tipoCarroceria ?? this.tipoCarroceria,
+      capacidadTon: capacidadTon ?? this.capacidadTon,
+      longitudPlataformaM: longitudPlataformaM ?? this.longitudPlataformaM,
+      seguroCargaVigente: seguroCargaVigente ?? this.seguroCargaVigente,
+      seguroCargaUrl: seguroCargaUrl ?? this.seguroCargaUrl,
+      empresaNombre: empresaNombre ?? this.empresaNombre,
+      empresaRut: empresaRut ?? this.empresaRut,
+      empresaDireccion: empresaDireccion ?? this.empresaDireccion,
     );
   }
 }

@@ -13,6 +13,13 @@ class UserModel {
   final String? municipality;
   final String? direccion;
   final String? pais;
+  // New: user type discriminator and shipper fields
+  final String? tipoUsuario;
+  final String? tipoCuenta;
+  final String? empresaNombre;
+  final String? empresaRut;
+  final String? empresaDireccion;
+  final List<String>? mercaderiasHabituales;
 
   UserModel({
     this.userId,
@@ -29,9 +36,23 @@ class UserModel {
     this.municipality,
     this.direccion,
     this.pais,
+    this.tipoUsuario,
+    this.tipoCuenta,
+    this.empresaNombre,
+    this.empresaRut,
+    this.empresaDireccion,
+    this.mercaderiasHabituales,
   });
 
+  bool get isShipper => tipoUsuario == 'shipper';
+  bool get isClientePasajero => tipoUsuario == 'cliente_pasajero' || tipoUsuario == null;
+
   factory UserModel.fromJson(Map<String, dynamic> json) {
+    List<String>? mercaderias;
+    final raw = json['mercaderias_habituales'];
+    if (raw is List) {
+      mercaderias = raw.map((e) => e.toString()).toList();
+    }
     return UserModel(
       userId: json['user_id'] as int?,
       createdAt: json['created_at'] != null
@@ -49,6 +70,12 @@ class UserModel {
       municipality: json['municipality'] as String?,
       direccion: json['direccion'] as String?,
       pais: json['pais'] as String?,
+      tipoUsuario: json['tipo_usuario'] as String?,
+      tipoCuenta: json['tipo_cuenta'] as String?,
+      empresaNombre: json['empresa_nombre'] as String?,
+      empresaRut: json['empresa_rut'] as String?,
+      empresaDireccion: json['empresa_direccion'] as String?,
+      mercaderiasHabituales: mercaderias,
     );
   }
 
@@ -66,6 +93,13 @@ class UserModel {
       'municipality': municipality,
       'direccion': direccion,
       'pais': pais,
+      if (tipoUsuario != null) 'tipo_usuario': tipoUsuario,
+      if (tipoCuenta != null) 'tipo_cuenta': tipoCuenta,
+      if (empresaNombre != null) 'empresa_nombre': empresaNombre,
+      if (empresaRut != null) 'empresa_rut': empresaRut,
+      if (empresaDireccion != null) 'empresa_direccion': empresaDireccion,
+      if (mercaderiasHabituales != null)
+        'mercaderias_habituales': mercaderiasHabituales,
     };
   }
 
@@ -84,6 +118,12 @@ class UserModel {
     String? municipality,
     String? direccion,
     String? pais,
+    String? tipoUsuario,
+    String? tipoCuenta,
+    String? empresaNombre,
+    String? empresaRut,
+    String? empresaDireccion,
+    List<String>? mercaderiasHabituales,
   }) {
     return UserModel(
       userId: userId ?? this.userId,
@@ -100,6 +140,13 @@ class UserModel {
       municipality: municipality ?? this.municipality,
       direccion: direccion ?? this.direccion,
       pais: pais ?? this.pais,
+      tipoUsuario: tipoUsuario ?? this.tipoUsuario,
+      tipoCuenta: tipoCuenta ?? this.tipoCuenta,
+      empresaNombre: empresaNombre ?? this.empresaNombre,
+      empresaRut: empresaRut ?? this.empresaRut,
+      empresaDireccion: empresaDireccion ?? this.empresaDireccion,
+      mercaderiasHabituales:
+          mercaderiasHabituales ?? this.mercaderiasHabituales,
     );
   }
 }

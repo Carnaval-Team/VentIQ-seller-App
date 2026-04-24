@@ -109,6 +109,40 @@ class AuthService {
     return response != null;
   }
 
+  /// Returns the tipo_usuario string for the current user.
+  /// Checks drivers table first (faster for the driver majority),
+  /// then users table. Returns null if unauthenticated.
+  Future<String?> getTipoUsuario() async {
+    final user = currentUser;
+    if (user == null) return null;
+
+    // Check drivers table first
+    final driverRow = await _supabase
+        .schema('muevete')
+        .from('drivers')
+        .select('tipo_usuario')
+        .eq('uuid', user.id)
+        .maybeSingle();
+
+    if (driverRow != null) {
+      return (driverRow['tipo_usuario'] as String?) ?? 'conductor_pasajeros';
+    }
+
+    // Check users table
+    final userRow = await _supabase
+        .schema('muevete')
+        .from('users')
+        .select('tipo_usuario')
+        .eq('uuid', user.id)
+        .maybeSingle();
+
+    if (userRow != null) {
+      return (userRow['tipo_usuario'] as String?) ?? 'cliente_pasajero';
+    }
+
+    return null;
+  }
+
   /// Checks if the current authenticated user has a record in muevete.users.
   Future<bool> isClient() async {
     final user = currentUser;
@@ -132,6 +166,28 @@ class AuthService {
   /// Creates a new driver profile in muevete.drivers.
   Future<void> createDriverProfile(Map<String, dynamic> data) async {
     await _supabase.schema('muevete').from('drivers').insert(data);
+  }
+
+  /// Inserts a row into muevete.vehiculos and returns the new vehicle id.
+  Future<int?> createVehicle(Map<String, dynamic> data) async {
+    final row = await _supabase
+        .schema('muevete')
+        .from('vehiculos')
+        .insert(data)
+        .select('id')
+        .single();
+    return row['id'] as int?;
+  }
+
+  /// Updates the `vehiculo` FK on the driver row so it points to [vehicleId].
+  Future<void> linkVehicleToDriver(int vehicleId) async {
+    final user = currentUser;
+    if (user == null) throw Exception('No authenticated user');
+    await _supabase
+        .schema('muevete')
+        .from('drivers')
+        .update({'vehiculo': vehicleId})
+        .eq('uuid', user.id);
   }
 
   /// Updates the driver profile in the muevete.drivers table.

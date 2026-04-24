@@ -56,10 +56,8 @@ class _SplashScreenState extends State<SplashScreen>
       if (authProvider.role == null) {
         // Profile failed to load (e.g. no connection) — go to login
         Navigator.pushReplacementNamed(context, '/login');
-      } else if (authProvider.isDriver) {
-        Navigator.pushReplacementNamed(context, '/driver/home');
       } else {
-        Navigator.pushReplacementNamed(context, '/client/home');
+        Navigator.pushReplacementNamed(context, authProvider.homeRoute);
       }
     } else {
       // Not logged in -- go to login

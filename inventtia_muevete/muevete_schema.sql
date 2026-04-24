@@ -1,6 +1,26 @@
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
 
+CREATE TABLE muevete.carrocerias (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  driver_id bigint NOT NULL,
+  marca text,
+  modelo text,
+  matricula text,
+  tipo_carroceria text NOT NULL,
+  capacidad_ton numeric,
+  longitud_m numeric,
+  seguro_vigente boolean NOT NULL DEFAULT false,
+  seguro_vence date,
+  seguro_url text,
+  mc_number text,
+  dot_number text,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT carrocerias_pkey PRIMARY KEY (id),
+  CONSTRAINT carrocerias_driver_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id)
+);
 CREATE TABLE muevete.configuracion_navegacion (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   precio_x_km numeric,
@@ -41,7 +61,24 @@ CREATE TABLE muevete.drivers (
   tipo_documento text,
   doc_frente_url text,
   doc_dorso_url text,
+  tipo_usuario text NOT NULL DEFAULT 'conductor_pasajeros'::text,
+  dispatcher_id bigint,
+  mc_number text,
+  dot_number text,
+  tipo_carroceria text,
+  capacidad_ton numeric,
+  longitud_plataforma_m numeric,
+  seguro_carga_vigente boolean DEFAULT false,
+  seguro_carga_vence date,
+  seguro_carga_url text,
+  empresa_nombre text,
+  empresa_rut text,
+  empresa_direccion text,
+  pais text,
+  province text,
+  municipality text,
   CONSTRAINT drivers_pkey PRIMARY KEY (id),
+  CONSTRAINT drivers_dispatcher_id_fkey FOREIGN KEY (dispatcher_id) REFERENCES muevete.drivers(id),
   CONSTRAINT drivers_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id),
   CONSTRAINT drivers_vehiculo_fkey FOREIGN KEY (vehiculo) REFERENCES muevete.vehiculos(id)
 );
@@ -130,6 +167,23 @@ CREATE TABLE muevete.solicitudes_transporte (
   CONSTRAINT solicitudes_transporte_pkey PRIMARY KEY (id),
   CONSTRAINT solicitudes_transporte_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
+CREATE TABLE muevete.sub_usuarios (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  propietario_uuid uuid NOT NULL,
+  tipo_propietario text NOT NULL,
+  sub_uuid uuid NOT NULL,
+  sub_driver_id bigint,
+  rol text NOT NULL DEFAULT 'conductor'::text,
+  invitacion_estado text NOT NULL DEFAULT 'pendiente'::text,
+  invitacion_email text,
+  invitacion_token text,
+  activo boolean NOT NULL DEFAULT false,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT sub_usuarios_pkey PRIMARY KEY (id),
+  CONSTRAINT sub_usuarios_propietario_fkey FOREIGN KEY (propietario_uuid) REFERENCES auth.users(id),
+  CONSTRAINT sub_usuarios_sub_uuid_fkey FOREIGN KEY (sub_uuid) REFERENCES auth.users(id),
+  CONSTRAINT sub_usuarios_sub_driver_fkey FOREIGN KEY (sub_driver_id) REFERENCES muevete.drivers(id)
+);
 CREATE TABLE muevete.suscription_plan (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   name text,
@@ -201,6 +255,12 @@ CREATE TABLE muevete.users (
   tipo_documento text,
   doc_frente_url text,
   doc_dorso_url text,
+  tipo_usuario text NOT NULL DEFAULT 'cliente_pasajero'::text,
+  tipo_cuenta text DEFAULT 'individual'::text,
+  empresa_nombre text,
+  empresa_rut text,
+  empresa_direccion text,
+  mercaderias_habituales jsonb DEFAULT '[]'::jsonb,
   CONSTRAINT users_pkey PRIMARY KEY (user_id),
   CONSTRAINT clientes_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id)
 );
@@ -241,6 +301,17 @@ CREATE TABLE muevete.vehiculos (
   descripcion character varying,
   color character varying,
   id_tipo_vehiculo bigint,
+  tipo_carroceria text,
+  capacidad_ton numeric,
+  longitud_m numeric,
+  año integer,
+  tiene_gps boolean DEFAULT false,
+  seguro_vigente boolean DEFAULT false,
+  seguro_vence date,
+  condicion text DEFAULT 'bueno'::text,
+  aire_acondicionado boolean NOT NULL DEFAULT false,
+  capacidad_int integer,
+  driver_uuid uuid,
   CONSTRAINT vehiculos_pkey PRIMARY KEY (id),
   CONSTRAINT vehiculos_id_tipo_vehiculo_fkey FOREIGN KEY (id_tipo_vehiculo) REFERENCES muevete.vehicle_type(id)
 );

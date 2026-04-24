@@ -33,6 +33,9 @@ import 'screens/driver/driver_home_screen.dart';
 import 'screens/driver/incoming_requests_screen.dart';
 import 'screens/driver/active_ride_screen.dart';
 import 'screens/driver/driver_wallet_screen.dart';
+import 'screens/shipper/shipper_home_screen.dart';
+import 'screens/carrier/carrier_home_screen.dart';
+import 'screens/dispatcher/dispatcher_home_screen.dart';
 import 'widgets/notification_overlay.dart';
 
 Future<void> main() async {
@@ -133,6 +136,9 @@ class MueveteApp extends StatelessWidget {
                   const IncomingRequestsScreen(),
               '/driver/active-ride': (context) => const ActiveRideScreen(),
               '/driver/wallet': (context) => const DriverWalletScreen(),
+              '/shipper/home': (context) => const ShipperHomeScreen(),
+              '/carrier/home': (context) => const CarrierHomeScreen(),
+              '/dispatcher/home': (context) => const DispatcherHomeScreen(),
             },
           );
         },

@@ -112,11 +112,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
         return;
       }
-      if (authProvider.isDriver) {
-        Navigator.pushReplacementNamed(context, '/driver/home');
-      } else {
-        Navigator.pushReplacementNamed(context, '/client/home');
-      }
+      Navigator.pushReplacementNamed(context, authProvider.homeRoute);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

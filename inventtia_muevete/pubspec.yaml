@@ -60,6 +60,10 @@ dependencies:
   google_fonts: ^6.2.1
   intl: ^0.19.0
 
+  # Searchable dropdowns + country flags (used in location pickers)
+  dropdown_search: ^5.0.5
+  country_flags: ^2.0.2
+
   # Notifications (sound & vibration)
   audioplayers: ^6.1.0
   vibration: ^2.0.0
