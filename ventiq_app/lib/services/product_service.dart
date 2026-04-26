@@ -175,6 +175,10 @@ class ProductService {
           (data['metadata'] != null && data['metadata']['es_servicio'] != null)
               ? data['metadata']['es_servicio'] as bool
               : data['es_servicio'] as bool? ?? false,
+      esPaquete:
+          (data['metadata'] != null && data['metadata']['es_paquete'] != null)
+              ? data['metadata']['es_paquete'] as bool
+              : data['es_paquete'] as bool? ?? false,
       categoria: data['categoria_nombre'] as String? ?? 'Sin categoría',
       variantes: [], // Empty variants for now
       reservadoCarnaval:

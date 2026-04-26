@@ -15,6 +15,7 @@ class Product {
   final bool esPorLotes;
   final bool esElaborado;
   final bool esServicio;
+  final bool esPaquete;
   final String categoria;
   final List<ProductVariant> variantes;
   final Map<String, dynamic>?
@@ -41,6 +42,7 @@ class Product {
     required this.esPorLotes,
     required this.esElaborado,
     required this.esServicio,
+    this.esPaquete = false,
     required this.categoria,
     this.variantes = const [],
     this.inventoryMetadata,
@@ -65,6 +67,7 @@ class Product {
       esPorLotes: json['es_por_lotes'] ?? false,
       esElaborado: json['es_elaborado'] ?? false,
       esServicio: json['es_servicio'] ?? false,
+      esPaquete: json['es_paquete'] ?? false,
       categoria: json['categoria'] ?? '',
       variantes:
           (json['variantes'] as List<dynamic>?)
@@ -94,6 +97,7 @@ class Product {
       'es_por_lotes': esPorLotes,
       'es_elaborado': esElaborado,
       'es_servicio': esServicio,
+      'es_paquete': esPaquete,
       'categoria': categoria,
       'variantes': variantes.map((v) => v.toJson()).toList(),
       'inventoryMetadata': inventoryMetadata,

@@ -127,7 +127,7 @@ CREATE TABLE carnavalapp.Provincias (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   nombre text,
   CONSTRAINT Provincias_pkey PRIMARY KEY (id)
-);
+);total
 CREATE TABLE carnavalapp.Reviews (
   id bigint NOT NULL DEFAULT nextval('carnavalapp."Reviews_id_seq"'::regclass),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
