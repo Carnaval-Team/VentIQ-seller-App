@@ -326,30 +326,13 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
 
     if (isWide) {
       return SingleChildScrollView(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        padding: const EdgeInsets.all(24),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(flex: 4, child: _buildLeftColumnWeb(product)),
-                  const SizedBox(width: 14),
-                  Expanded(flex: 5, child: _buildCenterColumnWeb(product)),
-                  const SizedBox(width: 14),
-                  Expanded(flex: 5, child: _buildRightColumnWeb()),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-            Align(
-              alignment: Alignment.centerRight,
-              child: SizedBox(
-                width: 260,
-                child: _buildSiguienteButton(),
-              ),
-            ),
+            Expanded(flex: 5, child: _buildLeftColumnWeb(product)),
+            const SizedBox(width: 24),
+            Expanded(flex: 6, child: _buildRightColumnWeb(product)),
           ],
         ),
       );
@@ -369,74 +352,75 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   }
 
   Widget _buildLeftColumnWeb(Product product) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildImage(product),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _chip('Paquete', Icons.card_giftcard_outlined, _primary),
+              if (product.categoria.isNotEmpty)
+                _chip(product.categoria, Icons.category_outlined,
+                    Colors.blueGrey),
+              if (product.sku != null && product.sku!.isNotEmpty)
+                _chip('SKU: ${product.sku}', Icons.qr_code_2, Colors.grey),
+            ],
+          ),
+          if (product.descripcion != null &&
+              product.descripcion!.trim().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              product.descripcion!,
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRightColumnWeb(Product product) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildImage(product),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            _chip('Paquete', Icons.card_giftcard_outlined, _primary),
-            if (product.categoria.isNotEmpty)
-              _chip(product.categoria, Icons.category_outlined,
-                  Colors.blueGrey),
-            if (product.sku != null && product.sku!.isNotEmpty)
-              _chip('SKU: ${product.sku}', Icons.qr_code_2, Colors.grey),
-          ],
-        ),
-        const SizedBox(height: 10),
         Text(
           product.denominacion,
           style: const TextStyle(
-            fontSize: 18,
+            fontSize: 24,
             fontWeight: FontWeight.bold,
             height: 1.2,
           ),
         ),
-        if (product.descripcion != null &&
-            product.descripcion!.trim().isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Text(
-            product.descripcion!,
-            style: TextStyle(
-              color: Colors.grey.shade700,
-              fontSize: 12.5,
-              height: 1.35,
-            ),
-            maxLines: 5,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildCenterColumnWeb(Product product) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+        const SizedBox(height: 14),
         if (_hasActivePromo) ...[
           _buildPromotionCard(),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
         ],
         _buildPriceCard(),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         _buildQuantityCard(),
-        const SizedBox(height: 10),
-        _buildTotalCard(),
-      ],
-    );
-  }
-
-  Widget _buildRightColumnWeb() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+        const SizedBox(height: 12),
         _buildPackageInfoCard(),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         _buildPaymentMethodCard(),
+        const SizedBox(height: 12),
+        _buildTotalCard(),
+        const SizedBox(height: 16),
+        _buildSiguienteButton(),
       ],
     );
   }
