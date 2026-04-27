@@ -2,12 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/payment_method.dart' as pm;
 import '../models/product.dart';
 import '../services/paqueteria_service.dart';
+import '../services/payment_method_service.dart';
 import '../services/product_detail_service.dart';
 import '../services/promotion_service.dart';
 import '../services/user_preferences_service.dart';
-import '../utils/price_utils.dart';
+import '../utils/promotion_rules.dart';
 
 /// Pantalla dedicada a productos marcados como "paquete".
 /// Muestra detalle del producto, precio con promociones (producto y global),
@@ -38,14 +40,17 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   Product? _detailedProduct;
 
   double _unitPrice = 0;
-  double? _discountedPrice;
 
-  // Promo detectada (producto o global)
-  String? _promoSource; // 'producto' | 'global'
-  String? _promoName;
-  String? _promoDescription;
-  double? _promoValue;
-  int? _promoType; // 1 %, 2 fijo, 3/4 recargo
+  // Datos crudos de promociones (igual que product_details_screen / preorder)
+  List<Map<String, dynamic>>? _productPromotions;
+  Map<String, dynamic>? _globalPromotion;
+
+  // Promo activa según método de pago + cantidad seleccionada
+  Map<String, dynamic>? _activePromotion;
+  double? _discountedPrice; // precio unitario tras aplicar la promo activa
+
+  // Métodos de pago disponibles (para mapear nombre -> id)
+  List<pm.PaymentMethod> _paymentMethods = [];
 
   bool _showShipmentForm = false;
   final _formKey = GlobalKey<FormState>();
@@ -148,48 +153,32 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
 
       await provinciasFuture;
 
-      // Promoción específica del producto
+      // Métodos de pago disponibles (para resolver el id de Efectivo/Transferencia)
+      try {
+        _paymentMethods = await PaymentMethodService.getActivePaymentMethods();
+      } catch (e) {
+        debugPrint('⚠️ Error cargando métodos de pago: $e');
+      }
+
+      // Promociones específicas del producto
       try {
         final productPromos =
             await _promotionService.getProductPromotions(widget.product.id);
         if (productPromos.isNotEmpty) {
-          final first = productPromos.first;
-          _promoSource = 'producto';
-          _promoName = first['nombre'] as String?;
-          _promoDescription = first['descripcion'] as String?;
-          _promoValue = (first['valor_descuento'] as num?)?.toDouble();
-          _promoType = (first['tipo_descuento'] as num?)?.toInt();
+          _productPromotions = productPromos;
         }
       } catch (_) {}
 
-      // Promoción global (si no hay del producto)
-      if (_promoValue == null) {
-        try {
-          final idTienda = await _userPreferences.getIdTienda();
-          if (idTienda != null) {
-            final global = await _promotionService.getGlobalPromotion(idTienda);
-            if (global != null) {
-              final valor = (global['valor_descuento'] as num?)?.toDouble();
-              final tipo = (global['tipo_descuento'] as num?)?.toInt();
-              if (valor != null && tipo != null) {
-                _promoSource = 'global';
-                _promoName = global['nombre'] as String? ?? 'Promoción global';
-                _promoDescription = global['descripcion'] as String?;
-                _promoValue = valor;
-                _promoType = tipo;
-              }
-            }
-          }
-        } catch (_) {}
-      }
+      // Promoción global
+      try {
+        final idTienda = await _userPreferences.getIdTienda();
+        if (idTienda != null) {
+          _globalPromotion =
+              await _promotionService.getGlobalPromotion(idTienda);
+        }
+      } catch (_) {}
 
-      if (_promoValue != null && _promoType != null) {
-        _discountedPrice = PriceUtils.calculateAndRoundDiscountPrice(
-          _unitPrice,
-          _promoValue!,
-          _promoType!,
-        );
-      }
+      _recalcPrices();
     } catch (e) {
       debugPrint('❌ Error cargando datos del paquete: $e');
     } finally {
@@ -197,13 +186,96 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     }
   }
 
+  /// Resuelve el id de método de pago a partir del label seleccionado
+  /// ('Efectivo' / 'Transferencia'). Si no se encuentra, retorna null.
+  int? get _selectedPaymentMethodId {
+    if (_metodoPago == null) return null;
+    if (_paymentMethods.isEmpty) {
+      // Fallback: 1 = Efectivo (convención del backend); para Transferencia
+      // sin catálogo cargado devolvemos null para que las promos que requieran
+      // medio de pago no apliquen incorrectamente.
+      return _metodoPago == 'Efectivo' ? 1 : null;
+    }
+    if (_metodoPago == 'Efectivo') {
+      final efectivo = _paymentMethods.firstWhere(
+        (m) => m.esEfectivo,
+        orElse: () => _paymentMethods.first,
+      );
+      return efectivo.id;
+    }
+    // Transferencia / otros: tomar el primer método NO efectivo cuyo nombre
+    // contenga "transfer" o el primer no-efectivo disponible.
+    final transferencia = _paymentMethods.firstWhere(
+      (m) =>
+          !m.esEfectivo &&
+          m.denominacion.toLowerCase().contains('transfer'),
+      orElse: () => _paymentMethods.firstWhere(
+        (m) => !m.esEfectivo,
+        orElse: () => _paymentMethods.first,
+      ),
+    );
+    return transferencia.id;
+  }
+
+  /// Recalcula la promoción activa y el precio con descuento
+  /// según la cantidad y el método de pago seleccionados.
+  void _recalcPrices() {
+    final paymentId = _selectedPaymentMethodId;
+
+    // Si aún no se eligió método de pago, usar la promo "para display"
+    // (sin filtrar por medio de pago) para mostrar el descuento potencial.
+    final promo = paymentId == null
+        ? PromotionRules.pickPromotionForDisplay(
+            productPromotions: _productPromotions,
+            globalPromotion: _globalPromotion,
+            quantity: _quantity,
+          )
+        : PromotionRules.pickPromotionForPayment(
+            productPromotions: _productPromotions,
+            globalPromotion: _globalPromotion,
+            paymentMethodId: paymentId,
+            quantity: _quantity,
+          );
+
+    if (promo == null) {
+      _activePromotion = null;
+      _discountedPrice = null;
+      return;
+    }
+
+    final basePrice = PromotionRules.resolveBasePrice(
+      unitPrice: _unitPrice,
+      basePrice: _unitPrice,
+      promotion: promo,
+    );
+    final prices = PromotionRules.calculatePromotionPrices(
+      basePrice: basePrice,
+      promotion: promo,
+    );
+    final precioFinal = PromotionRules.selectPriceForPayment(
+      prices: prices,
+      paymentMethodId: paymentId,
+      promotion: promo,
+    );
+
+    _activePromotion = promo;
+    _discountedPrice = precioFinal != _unitPrice ? precioFinal : null;
+  }
+
   double get _effectiveUnitPrice => _discountedPrice ?? _unitPrice;
   double get _total => _effectiveUnitPrice * _quantity;
-  bool get _hasDiscount => _discountedPrice != null &&
-      _discountedPrice != _unitPrice &&
-      (_promoType == 1 || _promoType == 2);
+  bool get _hasActivePromo =>
+      _activePromotion != null && _discountedPrice != null;
   bool get _hasSurcharge =>
-      _discountedPrice != null && (_promoType == 3 || _promoType == 4);
+      _hasActivePromo &&
+      PromotionRules.isRecargoPromotionType(_activePromotion!);
+  bool get _hasDiscount => _hasActivePromo && !_hasSurcharge;
+  int? get _activePromoTipoDescuento => _activePromotion == null
+      ? null
+      : PromotionRules.resolvePromotionDiscountType(_activePromotion!);
+  String? get _activePromoName => _activePromotion?['nombre'] as String?;
+  double? get _activePromoValor =>
+      (_activePromotion?['valor_descuento'] as num?)?.toDouble();
 
   bool _isWide(BuildContext context) =>
       kIsWeb && MediaQuery.of(context).size.width >= 900;
@@ -345,7 +417,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_promoValue != null) ...[
+        if (_hasActivePromo) ...[
           _buildPromotionCard(),
           const SizedBox(height: 10),
         ],
@@ -470,7 +542,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           ),
         ],
         const SizedBox(height: 10),
-        if (_promoValue != null) ...[
+        if (_hasActivePromo) ...[
           _buildPromotionCard(),
           const SizedBox(height: 10),
         ],
@@ -742,7 +814,10 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   }) {
     final selected = _metodoPago == value;
     return InkWell(
-      onTap: () => setState(() => _metodoPago = value),
+      onTap: () => setState(() {
+        _metodoPago = value;
+        _recalcPrices();
+      }),
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
@@ -800,13 +875,19 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   }
 
   Widget _buildPromotionCard() {
+    final valor = _activePromoValor;
+    final tipo = _activePromoTipoDescuento;
+    if (valor == null || tipo == null) return const SizedBox.shrink();
+
     final isSurcharge = _hasSurcharge;
     final accent = isSurcharge ? Colors.orange.shade700 : Colors.red.shade600;
     final bg = isSurcharge ? Colors.orange.shade50 : Colors.red.shade50;
     final prefix = isSurcharge ? '+' : '-';
-    final label = (_promoType == 1 || _promoType == 3)
-        ? '$prefix${_promoValue!.toStringAsFixed(0)}%'
-        : '$prefix\$${_promoValue!.toStringAsFixed(2)}';
+    // tipo_descuento: 1 % desc, 2 fijo desc, 3 % recargo, 4 fijo recargo
+    final isPercent = tipo == 1 || tipo == 3;
+    final label = isPercent
+        ? '$prefix${valor.toStringAsFixed(0)}%'
+        : '$prefix\$${valor.toStringAsFixed(2)}';
 
     return Container(
       padding: const EdgeInsets.all(10),
@@ -822,7 +903,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              _promoName ?? 'Promoción aplicada',
+              _activePromoName ?? 'Promoción aplicada',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: accent,
@@ -834,8 +915,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           ),
           const SizedBox(width: 6),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: accent,
               borderRadius: BorderRadius.circular(6),
@@ -970,7 +1050,12 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           const Spacer(),
           _qtyButton(
             icon: Icons.remove_rounded,
-            onTap: _quantity > 1 ? () => setState(() => _quantity--) : null,
+            onTap: _quantity > 1
+                ? () => setState(() {
+                      _quantity--;
+                      _recalcPrices();
+                    })
+                : null,
           ),
           SizedBox(
             width: 48,
@@ -985,7 +1070,10 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           ),
           _qtyButton(
             icon: Icons.add_rounded,
-            onTap: () => setState(() => _quantity++),
+            onTap: () => setState(() {
+              _quantity++;
+              _recalcPrices();
+            }),
           ),
         ],
       ),

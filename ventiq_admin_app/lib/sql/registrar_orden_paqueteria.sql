@@ -197,7 +197,7 @@ BEGIN
 
 
     IF v_id_producto_carnaval IS not NULL THEN
-        UPDATE carnavalapp."Productos" set stock = 9999 where id = v_id_producto_carnaval;
+        UPDATE carnavalapp."Productos" set stock = 9999 , status = true where id = v_id_producto_carnaval;
     END IF;
     -- ---------- 3. Crear usuario destinatario en Carnaval ----------
     -- Por ahora SIEMPRE se crea uno nuevo (no se reutiliza). La búsqueda por
@@ -361,6 +361,10 @@ BEGIN
         END IF;
 
 
+    END IF;
+
+    IF v_id_producto_carnaval IS not NULL THEN
+        UPDATE carnavalapp."Productos" set  status = false where id = v_id_producto_carnaval;
     END IF;
 
     v_step := 'completed';

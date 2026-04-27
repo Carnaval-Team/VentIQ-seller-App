@@ -425,11 +425,10 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      color: isPaqueteria ? Colors.deepPurple.withValues(alpha: 0.04) : null,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: isPaqueteria
-            ? BorderSide(color: Colors.deepPurple.shade200, width: 1.2)
+            ? const BorderSide(color: Colors.blue, width: 2)
             : BorderSide.none,
       ),
       child: InkWell(
@@ -443,8 +442,8 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
               Row(
                 children: [
                   if (isPaqueteria) ...[
-                    Icon(Icons.local_shipping_outlined,
-                        size: 18, color: Colors.deepPurple.shade400),
+                    const Icon(Icons.local_shipping_outlined,
+                        size: 18, color: Colors.blue),
                     const SizedBox(width: 6),
                   ],
                   Text(
@@ -460,21 +459,21 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.deepPurple.withValues(alpha: 0.12),
+                        color: Colors.blue.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
-                        children: [
+                        children: const [
                           Icon(Icons.inventory_2_outlined,
-                              size: 12, color: Colors.deepPurple.shade400),
-                          const SizedBox(width: 3),
+                              size: 12, color: Colors.blue),
+                          SizedBox(width: 3),
                           Text(
                             'Paquete',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: Colors.deepPurple.shade400,
+                              color: Colors.blue,
                             ),
                           ),
                         ],
@@ -506,10 +505,10 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.deepPurple.withValues(alpha: 0.07),
+                    color: Colors.blue.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                        color: Colors.deepPurple.withValues(alpha: 0.15)),
+                        color: Colors.blue.withValues(alpha: 0.2)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -517,16 +516,15 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                       if (numeroPaquete != null && numeroPaquete.isNotEmpty)
                         Row(
                           children: [
-                            Icon(Icons.confirmation_number_outlined,
-                                size: 13,
-                                color: Colors.deepPurple.shade400),
+                            const Icon(Icons.confirmation_number_outlined,
+                                size: 13, color: Colors.blue),
                             const SizedBox(width: 4),
                             Text(
                               'Paquete #$numeroPaquete',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.deepPurple.shade700,
+                                color: Colors.blue.shade700,
                               ),
                             ),
                           ],
