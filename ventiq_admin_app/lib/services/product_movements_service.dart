@@ -48,9 +48,20 @@ class ProductMovementsService {
           );
         }
 
-        final movements = List<Map<String, dynamic>>.from(response);
-        final totalCount = movements.isNotEmpty ? (movements[0]['total_count'] as int?) ?? 0 : 0;
-        
+        final rawMovements = List<Map<String, dynamic>>.from(response);
+        final totalCount = rawMovements.isNotEmpty ? (rawMovements[0]['total_count'] as int?) ?? 0 : 0;
+
+        // Normalizar keys del RPC para que coincidan con las del fallback
+        final movements = rawMovements.map((m) {
+          return {
+            ...m,
+            'almacen': m['almacen_nombre'] ?? m['almacen'],
+            'ubicacion': m['ubicacion_nombre'] ?? m['ubicacion'],
+            'zona': m['ubicacion_nombre'] ?? m['zona'],
+            'proveedor': m['proveedor_nombre'] ?? m['proveedor'],
+          };
+        }).toList();
+
         print('✅ Movimientos obtenidos desde RPC: ${movements.length} de $totalCount total');
         return {
           'movements': movements,
@@ -206,7 +217,7 @@ class ProductMovementsService {
         final dateA = DateTime.tryParse(a['fecha'] as String? ?? '');
         final dateB = DateTime.tryParse(b['fecha'] as String? ?? '');
         if (dateA == null || dateB == null) return 0;
-        return dateB.compareTo(dateA);
+        return dateA.compareTo(dateB);
       });
 
       final totalCount = movements.length;

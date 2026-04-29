@@ -7,37 +7,54 @@ class LiquidacionService {
   static final SupabaseClient _supabase = Supabase.instance.client;
 
   /// Crear nueva liquidación (solo consignatario)
-  /// Convierte monto de CUP a USD usando tasa vigente
+  /// Recibe monto en CUP, tasa USD→CUP de CurrencyService, y calcula monto USD
   static Future<Map<String, dynamic>> crearLiquidacion({
     required int contratoId,
     required double montoCup,
+    required double tasaUsdCup,
     String? observaciones,
   }) async {
     try {
       debugPrint('💰 Creando liquidación para contrato $contratoId...');
       debugPrint('   Monto CUP: \$${montoCup.toStringAsFixed(2)}');
-      
+      debugPrint('   Tasa USD→CUP: $tasaUsdCup');
+
       final userId = _supabase.auth.currentUser?.id;
       if (userId == null) {
         throw Exception('Usuario no autenticado');
       }
 
-      final response = await _supabase.rpc(
-        'crear_liquidacion_consignacion2',
-        params: {
-          'p_id_contrato': contratoId,
-          'p_monto_cup': montoCup,
-          'p_observaciones': observaciones,
-          'p_created_by': userId,
-        },
-      );
+      if (tasaUsdCup <= 0) {
+        throw Exception('Tasa de cambio inválida');
+      }
+
+      final montoUsd = montoCup / tasaUsdCup;
+      // tasa_cambio en la tabla se almacena como CUP→USD (inversa)
+      final tasaCupUsd = 1.0 / tasaUsdCup;
+
+      debugPrint('   Monto USD calculado: \$${montoUsd.toStringAsFixed(2)}');
+      debugPrint('   Tasa CUP→USD: $tasaCupUsd');
+
+      final response = await _supabase
+          .from('app_dat_liquidacion_consignacion')
+          .insert({
+            'id_contrato': contratoId,
+            'monto_cup': montoCup,
+            'monto_usd': montoUsd,
+            'tasa_cambio': tasaCupUsd,
+            'estado': 0,
+            'observaciones': observaciones,
+            'created_by': userId,
+          })
+          .select()
+          .single();
 
       debugPrint('✅ Liquidación creada exitosamente');
-      debugPrint('   ID: ${response['liquidacion_id']}');
+      debugPrint('   ID: ${response['id']}');
       debugPrint('   Monto USD: \$${response['monto_usd']}');
       debugPrint('   Tasa cambio: ${response['tasa_cambio']}');
 
-      return Map<String, dynamic>.from(response as Map);
+      return response;
     } catch (e) {
       debugPrint('❌ Error creando liquidación: $e');
       rethrow;

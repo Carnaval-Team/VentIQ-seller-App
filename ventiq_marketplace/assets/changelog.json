@@ -1,8 +1,57 @@
 {
-  "current_version": "1.4.0",
-  "build": 11,
+  "current_version": "1.6.0",
+  "build": 14,
   "app_name": "ventiq_marketplace",
   "changelogs": [
+    {
+      "version": "1.6.0",
+      "date": "2026-03-26",
+      "title": "\u2728 Experiencia m\u00e1s fluida y c\u00f3moda",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Todo cabe en tu pantalla",
+          "description": "Reorganizamos el inicio para que veas m\u00e1s productos y tiendas sin necesidad de hacer scroll."
+        },
+        {
+          "type": "improvement",
+          "title": "Animaciones m\u00e1s elegantes",
+          "description": "Las secciones aparecen con transiciones suaves y la carga muestra un efecto shimmer en lugar de un simple spinner."
+        },
+        {
+          "type": "improvement",
+          "title": "Mejor lectura en modo oscuro",
+          "description": "Corregimos colores y contrastes para que todo se lea perfectamente con el modo oscuro activado."
+        },
+        {
+          "type": "improvement",
+          "title": "Navegaci\u00f3n con efecto rebote",
+          "description": "La barra inferior tiene un peque\u00f1o efecto al cambiar de pesta\u00f1a para una experiencia m\u00e1s din\u00e1mica."
+        }
+      ]
+    },
+    {
+      "version": "1.5.1",
+      "date": "2026-02-16",
+      "title": "\ud83d\udef5 Ve por dónde van tus repartidores",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Rastreo de repartidores en tiempo real",
+          "description": "Ahora puedes ver la ubicación de tus repartidores directamente en el mapa. Activa el botón de repartidores y sigue sus movimientos en tiempo real."
+        },
+        {
+          "type": "feature",
+          "title": "Actualización automática cada 30 segundos",
+          "description": "Las posiciones se actualizan automáticamente para que siempre sepas dónde están tus repartidores sin necesidad de refrescar."
+        },
+        {
+          "type": "feature",
+          "title": "Disponible en todos los mapas",
+          "description": "El rastreo funciona en el mapa general, la ruta de compra y el selector de ubicación. Un solo toque para activarlo."
+        }
+      ]
+    },
     {
       "version": "1.4.0",
       "date": "2026-02-12",

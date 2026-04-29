@@ -7,6 +7,7 @@ import '../services/user_preferences_service.dart';
 import '../services/currency_display_service.dart';
 import 'confirmar_recepcion_consignacion_screen.dart';
 import '../utils/navigation_guard.dart';
+import '../services/inventory_service.dart';
 
 class ConsignacionEnvioDetallesScreen extends StatefulWidget {
   final int idEnvio;
@@ -33,6 +34,12 @@ class _ConsignacionEnvioDetallesScreenState
   bool _isAccepting = false;
 
   bool _canManageConsignacion = false;
+
+  // Operaciones vinculadas al envío
+  int? _idOperacionExtraccion;
+  int? _idOperacionRecepcion;
+  int _estadoOperacionExtraccion = 0; // 0=no cargado, 1=pendiente, 2=completada, 3=cancelada
+  int _estadoOperacionRecepcion = 0;
 
   @override
   void initState() {
@@ -96,6 +103,58 @@ class _ConsignacionEnvioDetallesScreenState
         widget.idEnvio,
       );
     });
+    _cargarOperacionesEnvio();
+  }
+
+  Future<void> _cargarOperacionesEnvio() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final envio = await supabase
+          .from('app_dat_consignacion_envio')
+          .select('id_operacion_extraccion, id_operacion_recepcion')
+          .eq('id', widget.idEnvio)
+          .maybeSingle();
+
+      if (envio == null || !mounted) return;
+
+      final idExt = envio['id_operacion_extraccion'] as int?;
+      final idRec = envio['id_operacion_recepcion'] as int?;
+
+      int estadoExt = 0;
+      int estadoRec = 0;
+
+      if (idExt != null) {
+        final eoExt = await supabase
+            .from('app_dat_estado_operacion')
+            .select('estado')
+            .eq('id_operacion', idExt)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        estadoExt = (eoExt?['estado'] as num?)?.toInt() ?? 1;
+      }
+
+      if (idRec != null) {
+        final eoRec = await supabase
+            .from('app_dat_estado_operacion')
+            .select('estado')
+            .eq('id_operacion', idRec)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        estadoRec = (eoRec?['estado'] as num?)?.toInt() ?? 1;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _idOperacionExtraccion = idExt;
+        _idOperacionRecepcion = idRec;
+        _estadoOperacionExtraccion = estadoExt;
+        _estadoOperacionRecepcion = estadoRec;
+      });
+    } catch (e) {
+      debugPrint('❌ Error cargando operaciones del envío: $e');
+    }
   }
 
   @override
@@ -178,6 +237,38 @@ class _ConsignacionEnvioDetallesScreenState
                           widget.rol == 'consignatario' &&
                           estadoEnvio == 1)));
 
+          // Quién puede completar la extracción:
+          // - Envío normal (tipo 1): consignador cuando CONFIGURADO y extracción PENDIENTE
+          // - Devolución  (tipo 2): consignatario cuando PROPUESTO/CONFIGURADO y extracción PENDIENTE
+          final bool puedeCompletarExtraccion =
+              _canManageConsignacion &&
+              _idOperacionExtraccion != null &&
+              _estadoOperacionExtraccion == 1 &&
+              (
+                (tipoEnvio == 1 &&
+                    widget.rol == 'consignador' &&
+                    estadoEnvio == ConsignacionEnvioListadoService.ESTADO_CONFIGURADO) ||
+                (tipoEnvio == 2 &&
+                    widget.rol == 'consignatario' &&
+                    (estadoEnvio == 1 || estadoEnvio == ConsignacionEnvioListadoService.ESTADO_CONFIGURADO))
+              );
+
+          // Quién puede completar la recepción:
+          // - Envío normal (tipo 1): consignatario cuando extracción COMPLETADA y recepción PENDIENTE
+          // - Devolución  (tipo 2): consignador cuando extracción COMPLETADA y recepción PENDIENTE
+          final bool puedeCompletarRecepcion =
+              _canManageConsignacion &&
+              _idOperacionExtraccion != null &&
+              _estadoOperacionExtraccion == 2 &&
+              _idOperacionRecepcion != null &&
+              _estadoOperacionRecepcion == 1 &&
+              (
+                (tipoEnvio == 1 &&
+                    widget.rol == 'consignatario' &&
+                    estadoEnvio == ConsignacionEnvioListadoService.ESTADO_CONFIGURADO) ||
+                (tipoEnvio == 2 && widget.rol == 'consignador')
+              );
+
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -186,6 +277,15 @@ class _ConsignacionEnvioDetallesScreenState
                 _buildSeccionDetalles(detalles),
                 const SizedBox(height: 24),
                 _buildSeccionProductos(puedeEditar: puedeEditar),
+
+                if (_idOperacionExtraccion != null || _idOperacionRecepcion != null) ...[
+                  const SizedBox(height: 24),
+                  _buildSeccionOperaciones(
+                    puedeCompletarExtraccion: puedeCompletarExtraccion,
+                    puedeCompletarRecepcion: puedeCompletarRecepcion,
+                    tipoEnvio: tipoEnvio,
+                  ),
+                ],
 
                 if (puedeVerificarEnvio) ...[
                   const SizedBox(height: 24),
@@ -976,14 +1076,14 @@ class _ConsignacionEnvioDetallesScreenState
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 12),
-            Text('• Se creará una operación de extracción PENDIENTE en la tienda consignataria'),
+            Text('• Se descontará el stock del consignatario inmediatamente (extracción completada)'),
             SizedBox(height: 8),
             Text('• Se creará una operación de recepción PENDIENTE en tu tienda'),
             SizedBox(height: 8),
-            Text('• Los productos se recibirán en el almacén de origen'),
+            Text('• Deberás completar la recepción para registrar los productos en tu inventario'),
             SizedBox(height: 12),
             Text(
-              'Ambas operaciones deberán completarse manualmente para actualizar el inventario.',
+              'Una vez aprobada, completa la recepción desde esta misma pantalla.',
               style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12),
             ),
           ],
@@ -1041,6 +1141,324 @@ class _ConsignacionEnvioDetallesScreenState
           ),
         );
       }
+    }
+  }
+
+  Widget _buildSeccionOperaciones({
+    required bool puedeCompletarExtraccion,
+    required bool puedeCompletarRecepcion,
+    required int tipoEnvio,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Operaciones de Inventario',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        if (_idOperacionExtraccion != null)
+          _buildOperacionCard(
+            idOperacion: _idOperacionExtraccion!,
+            tipo: 'Extracción',
+            estado: _estadoOperacionExtraccion,
+            icono: Icons.arrow_upward,
+            colorBase: Colors.orange,
+            descripcion: tipoEnvio == 2
+                ? 'Productos retirados del inventario del consignatario para su devolución.'
+                : 'Productos retirados del inventario del consignador para el envío.',
+            puedeCompletar: puedeCompletarExtraccion,
+            onCompletar: _completarExtraccion,
+          ),
+        if (_idOperacionExtraccion != null && _idOperacionRecepcion != null)
+          const SizedBox(height: 12),
+        if (_idOperacionRecepcion != null)
+          _buildOperacionCard(
+            idOperacion: _idOperacionRecepcion!,
+            tipo: 'Recepción',
+            estado: _estadoOperacionRecepcion,
+            icono: Icons.arrow_downward,
+            colorBase: Colors.green,
+            descripcion: tipoEnvio == 2
+                ? 'Productos recibidos en el inventario del consignador tras la devolución.'
+                : 'Productos recibidos en el inventario del consignatario.',
+            puedeCompletar: puedeCompletarRecepcion,
+            onCompletar: _completarRecepcion,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildOperacionCard({
+    required int idOperacion,
+    required String tipo,
+    required int estado,
+    required IconData icono,
+    required Color colorBase,
+    required String descripcion,
+    required bool puedeCompletar,
+    required VoidCallback onCompletar,
+  }) {
+    final estadoTexto = _textoEstadoOperacion(estado);
+    final estadoColor = _colorEstadoOperacion(estado);
+    final completada = estado == 2;
+
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: colorBase.withOpacity(0.3)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: colorBase.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icono, color: colorBase, size: 20),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Operación de $tipo',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: colorBase,
+                        ),
+                      ),
+                      Text(
+                        '#$idOperacion',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: estadoColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: estadoColor.withOpacity(0.5)),
+                  ),
+                  child: Text(
+                    estadoTexto,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: estadoColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              descripcion,
+              style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+            ),
+            if (puedeCompletar) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _isAccepting ? null : onCompletar,
+                  icon: const Icon(Icons.check_circle_outline, size: 18),
+                  label: Text(
+                    'Completar $tipo',
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: completada ? Colors.grey : colorBase,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _textoEstadoOperacion(int estado) {
+    switch (estado) {
+      case 1: return 'Pendiente';
+      case 2: return 'Completada';
+      case 3: return 'Cancelada';
+      default: return 'Sin estado';
+    }
+  }
+
+  Color _colorEstadoOperacion(int estado) {
+    switch (estado) {
+      case 1: return Colors.orange;
+      case 2: return Colors.green;
+      case 3: return Colors.red;
+      default: return Colors.grey;
+    }
+  }
+
+  Future<void> _completarExtraccion() async {
+    if (!_canManageConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Completar extracción');
+      return;
+    }
+    final idOp = _idOperacionExtraccion;
+    if (idOp == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Completar Extracción'),
+        content: const Text(
+          '¿Confirmas que los productos han sido retirados físicamente del inventario?\n\n'
+          'Esta acción registrará la salida de stock en la operación de extracción.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange[700],
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isAccepting = true);
+    try {
+      final userUuid = await UserPreferencesService().getUserId();
+      if (userUuid == null) throw Exception('Usuario no identificado');
+
+      final result = await InventoryService.completeOperation(
+        idOperacion: idOp,
+        comentario: 'Extracción completada desde detalles del envío #${widget.idEnvio}',
+        uuid: userUuid,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true || result['status'] == 'success') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Extracción completada correctamente.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _refrescar();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ ${result['message'] ?? 'Error al completar extracción'}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAccepting = false);
+    }
+  }
+
+  Future<void> _completarRecepcion() async {
+    if (!_canManageConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Completar recepción');
+      return;
+    }
+    final idOp = _idOperacionRecepcion;
+    if (idOp == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Completar Recepción'),
+        content: const Text(
+          '¿Confirmas que los productos han sido recibidos físicamente?\n\n'
+          'Esta acción registrará la entrada de stock en la operación de recepción.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green[700],
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isAccepting = true);
+    try {
+      final userUuid = await UserPreferencesService().getUserId();
+      if (userUuid == null) throw Exception('Usuario no identificado');
+
+      final result = await InventoryService.completeOperation(
+        idOperacion: idOp,
+        comentario: 'Recepción completada desde detalles del envío #${widget.idEnvio}',
+        uuid: userUuid,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true || result['status'] == 'success') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Recepción completada. Productos registrados en inventario.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _refrescar();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ ${result['message'] ?? 'Error al completar recepción'}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAccepting = false);
     }
   }
 

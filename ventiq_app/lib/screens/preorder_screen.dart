@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
 import '../models/payment_method.dart' as pm;
 import '../services/order_service.dart';
@@ -14,6 +15,7 @@ import '../widgets/scrolling_text.dart';
 import '../widgets/notification_widget.dart';
 import '../utils/app_snackbar.dart';
 import 'checkout_screen.dart';
+import 'orders_screen.dart';
 
 class PreorderScreen extends StatefulWidget {
   const PreorderScreen({Key? key}) : super(key: key);
@@ -34,6 +36,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
   bool _elaboratingProducts = false;
   pm.PaymentMethod? _globalPaymentMethod;
   double _fractionStep = 0.5;
+  bool _isShowSkuEnabled = false;
+  bool _isCheckingInventory = false;
 
   @override
   void initState() {
@@ -545,7 +549,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               Expanded(
                 flex: 2,
                 child: ElevatedButton(
-                  onPressed: _elaboratingProducts ? null : _finalizeOrder,
+                  onPressed: (_elaboratingProducts || _isCheckingInventory) ? null : _finalizeOrder,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF4A90E2),
                     foregroundColor: Colors.white,
@@ -554,10 +558,29 @@ class _PreorderScreenState extends State<PreorderScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: const Text(
-                    'Enviar Orden',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
+                  child: _isCheckingInventory
+                      ? Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Verificando inventario...',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        )
+                      : const Text(
+                          'Enviar Orden',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
                 ),
               ),
             ],
@@ -868,27 +891,70 @@ class _PreorderScreenState extends State<PreorderScreen> {
     final isOfflineModeEnabled =
         await _userPreferencesService.isOfflineModeEnabled();
 
+    // Deshabilitar botón y mostrar indicador de carga mientras se verifica inventario
+    setState(() {
+      _isCheckingInventory = true;
+    });
+
+    try {
+      // Verificar disponibilidad en inventario (en modo online y offline)
+      final stockProblems = await _checkInventoryAvailability(currentOrder.items);
+      if (!mounted) return;
+      
+      if (stockProblems.isNotEmpty) {
+        _showStockProblemsDialog(stockProblems);
+        return;
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCheckingInventory = false;
+        });
+      }
+    }
+
+    // Verificar configuración de tienda: si no se solicita datos del cliente
+    bool noSolicitarCliente = false;
+    try {
+      final userPrefs = UserPreferencesService();
+      final storeId = await userPrefs.getIdTienda();
+      if (storeId != null) {
+        noSolicitarCliente = await StoreConfigService.getNoSolicitarCliente(storeId);
+      }
+    } catch (e) {
+      print('⚠️ Error leyendo config de tienda: $e');
+    }
+
     if (isOfflineModeEnabled) {
-      // MODO OFFLINE: No elaborar productos, pero SÍ ir al checkout para capturar datos del cliente
-      print(
-        '🔌 Modo offline - Saltando elaboración pero continuando al checkout para datos del cliente',
-      );
-
-      // Marcar la orden como offline para que el checkout la maneje apropiadamente
-      currentOrder.isOfflineOrder = true;
-
-      // Navigate to checkout screen (CRÍTICO: No saltarse el checkout en modo offline)
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => CheckoutScreen(order: currentOrder),
-        ),
-      ).then((_) {
-        // Refresh the screen when returning from checkout
-        setState(() {});
-      });
+      // MODO OFFLINE: Respetar configuración no_solicitar_cliente
+      if (noSolicitarCliente) {
+        // No solicitar cliente en modo offline tampoco
+        print('🔌 Modo offline + no_solicitar_cliente - Creando orden directamente');
+        currentOrder.isOfflineOrder = true;
+        await _processElaboratedProducts(currentOrder);
+        await _submitOrderDirect(currentOrder);
+      } else {
+        // Ir al checkout para capturar datos del cliente
+        print(
+          '🔌 Modo offline - Saltando elaboración pero continuando al checkout para datos del cliente',
+        );
+        currentOrder.isOfflineOrder = true;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CheckoutScreen(order: currentOrder),
+          ),
+        ).then((_) {
+          setState(() {});
+        });
+      }
+    } else if (noSolicitarCliente) {
+      // MODO DIRECTO: No se requieren datos del cliente, crear orden inmediatamente
+      print('⚡ No se solicita cliente - Creando orden directamente');
+      await _processElaboratedProducts(currentOrder);
+      await _submitOrderDirect(currentOrder);
     } else {
-      // MODO ONLINE: Elaborar productos y continuar al checkout
+      // MODO NORMAL: Elaborar productos y continuar al checkout
       print(
         '🌐 Modo online - Procesando elaboración y continuando al checkout',
       );
@@ -901,9 +967,329 @@ class _PreorderScreenState extends State<PreorderScreen> {
           builder: (context) => CheckoutScreen(order: currentOrder),
         ),
       ).then((_) {
-        // Refresh the screen when returning from checkout
         setState(() {});
       });
+    }
+  }
+
+  /// Verifica disponibilidad de inventario para todos los items de la orden.
+  /// Para productos elaborados/servicios, verifica el stock de sus ingredientes.
+  /// Para productos normales, verifica directamente en inventario.
+  /// Retorna lista de problemas: [{nombre, cantidad_pedida, stock_disponible, diferencia, presentacion}]
+  Future<List<Map<String, dynamic>>> _checkInventoryAvailability(
+    List<OrderItem> items,
+  ) async {
+    final supabase = Supabase.instance.client;
+    final problems = <Map<String, dynamic>>[];
+    final isOfflineMode = await _userPreferencesService.isOfflineModeEnabled();
+
+    for (final item in items) {
+      try {
+        final isElaboradoOrServicio = item.producto.esElaborado || item.producto.esServicio;
+
+        if (isElaboradoOrServicio && !isOfflineMode) {
+          // Para elaborados/servicios: verificar stock de cada ingrediente
+          print('🍽️ Verificando ingredientes para producto elaborado/servicio: ${item.nombre}');
+          final ingredientes = await _productDetailService.getProductIngredients(item.producto.id);
+
+          if (ingredientes.isEmpty) {
+            print('⚠️ Producto elaborado/servicio ${item.nombre} sin ingredientes definidos, se permite continuar');
+            continue;
+          }
+
+          for (final ingrediente in ingredientes) {
+            final idIngrediente = ingrediente['producto_id'] as int?;
+            final cantidadNecesaria = ((ingrediente['cantidad_necesaria'] as num?)?.toDouble() ?? 0.0) * item.cantidad;
+            final cantidadDisponible = (ingrediente['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+            final nombreIngrediente = ingrediente['producto_nombre'] as String? ?? 'Ingrediente desconocido';
+
+            if (idIngrediente == null) continue;
+
+            if (cantidadDisponible < cantidadNecesaria) {
+              problems.add({
+                'nombre': '${item.nombre} → $nombreIngrediente',
+                'cantidad_pedida': cantidadNecesaria,
+                'stock_disponible': cantidadDisponible,
+                'diferencia': cantidadNecesaria - cantidadDisponible,
+                'ubicacion': item.ubicacionAlmacen,
+                'presentacion': ' (ingrediente)',
+              });
+            }
+          }
+        } else {
+          // Para productos normales: verificar directamente en inventario
+          final idProducto = item.producto.id;
+          final idUbicacion = item.inventoryData?['id_ubicacion'];
+          final idVariante = item.inventoryData?['id_variante'];
+          final idPresentacion = item.inventoryData?['id_presentacion'];
+
+          double stockActual = 0.0;
+
+          if (isOfflineMode) {
+            print('🔌 Verificando stock en modo offline para ${item.nombre}');
+            stockActual = item.cantidadInicial ?? 0.0;
+          } else {
+            var query = supabase
+                .from('app_dat_inventario_productos')
+                .select('cantidad_final')
+                .eq('id_producto', idProducto);
+
+            if (idUbicacion != null) {
+              query = query.eq('id_ubicacion', idUbicacion);
+            }
+
+            if (idVariante != null) {
+              query = query.eq('id_variante', idVariante);
+            }
+
+            if (idPresentacion != null) {
+              query = query.eq('id_presentacion', idPresentacion);
+            }
+
+            final response = await query.order('created_at', ascending: false).limit(1);
+
+            if (response.isNotEmpty) {
+              stockActual = (response.first['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+            }
+          }
+
+          if (stockActual < item.cantidad) {
+            final presentacionInfo = idPresentacion != null ? ' (Presentación ID: $idPresentacion)' : '';
+            problems.add({
+              'nombre': item.nombre,
+              'cantidad_pedida': item.cantidad,
+              'stock_disponible': stockActual,
+              'diferencia': item.cantidad - stockActual,
+              'ubicacion': item.ubicacionAlmacen,
+              'presentacion': presentacionInfo,
+            });
+          }
+        }
+      } catch (e) {
+        print('⚠️ Error verificando stock para ${item.nombre}: $e');
+      }
+    }
+
+    return problems;
+  }
+
+  /// Muestra diálogo con los problemas de stock encontrados
+  void _showStockProblemsDialog(List<Map<String, dynamic>> problems) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.inventory_2_outlined, color: Colors.orange[700], size: 26),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Problema de Inventario',
+                style: TextStyle(fontSize: 17),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Los siguientes productos no tienen suficiente existencia:',
+                style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 12),
+              ...problems.map((p) {
+                final cantPedida = (p['cantidad_pedida'] as double);
+                final stock = (p['stock_disponible'] as double);
+                final diff = (p['diferencia'] as double);
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red[200]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        p['nombre'] as String,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildStockChip(
+                              'Pedido',
+                              cantPedida,
+                              Colors.blue[700]!,
+                              Colors.blue[50]!,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: _buildStockChip(
+                              'En stock',
+                              stock,
+                              Colors.green[700]!,
+                              Colors.green[50]!,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: _buildStockChip(
+                              'Faltante',
+                              diff,
+                              Colors.red[700]!,
+                              Colors.red[100]!,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Revisar Orden'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange[700],
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStockChip(String label, double value, Color textColor, Color bgColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        children: [
+          Text(
+            label,
+            style: TextStyle(fontSize: 11, color: textColor, fontWeight: FontWeight.w500),
+          ),
+          Text(
+            value % 1 == 0 ? value.toInt().toString() : value.toStringAsFixed(2),
+            style: TextStyle(fontSize: 13, color: textColor, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Crea la orden directamente sin pasar por CheckoutScreen (cuando no_solicitar_cliente=true)
+  Future<void> _submitOrderDirect(Order order) async {
+    setState(() {
+      _elaboratingProducts = true;
+    });
+
+    try {
+      // Calcular breakdown de pagos por producto
+      final Map<String, double> paymentBreakdown = {};
+      for (final item in order.items) {
+        if (item.paymentMethod != null) {
+          final methodName = item.paymentMethod!.denominacion;
+          paymentBreakdown[methodName] =
+              (paymentBreakdown[methodName] ?? 0.0) + item.subtotal;
+        }
+      }
+
+      final orderData = {
+        'buyerName': 'Cliente',
+        'buyerPhone': '',
+        'extraContacts': '',
+        'paymentMethod': 'Múltiples métodos',
+        'promoCode': null,
+        'promoDiscount': 0.0,
+        'finalTotal': order.total,
+        'originalTotal': order.total,
+        'idCliente': null,
+        'paymentBreakdown': paymentBreakdown,
+      };
+
+      final updatedOrder = order.copyWith(
+        total: order.total,
+        buyerName: 'Cliente',
+        buyerPhone: '',
+        paymentMethod: 'Múltiples métodos',
+      );
+
+      final result = await _orderService.finalizeOrderWithDetails(
+        updatedOrder,
+        orderData,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        final operationId = result['operationId'];
+        final createdOrderId = operationId != null ? 'ORD-$operationId' : null;
+        
+        // Update the order ID in the cache with the operationId from Supabase
+        if (createdOrderId != null) {
+          _orderService.updateOrderIdInCache(updatedOrder.id, createdOrderId);
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('¡Orden registrada exitosamente!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (context) => OrdersScreen(autoOpenOrderId: createdOrderId),
+          ),
+          (route) => false,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al registrar la venta: ${result['error']}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al crear la orden: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _elaboratingProducts = false;
+        });
+      }
     }
   }
 

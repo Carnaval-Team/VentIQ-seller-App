@@ -17,7 +17,7 @@ class AppTheme {
   static const Color darkCardBackground = Color(0xFF2D2D30);
   static const Color darkSurfaceColor = Color(0xFF252528);
   static const Color darkTextPrimary = Color(0xFFF5F5F5);
-  static const Color darkTextSecondary = Color(0xFFB0B0B0);
+  static const Color darkTextSecondary = Color(0xFFC0C0C0);
   static const Color darkTextHint = Color(0xFF707070);
 
   // Colores de acento para modo oscuro (naranjas AIMP3)
@@ -489,5 +489,11 @@ class AppTheme {
     return Theme.of(context).brightness == Brightness.dark
         ? darkPriceColor
         : priceColor;
+  }
+
+  static Color getSurfaceColor(BuildContext context) {
+    return Theme.of(context).brightness == Brightness.dark
+        ? darkSurfaceColor
+        : surfaceColor;
   }
 }

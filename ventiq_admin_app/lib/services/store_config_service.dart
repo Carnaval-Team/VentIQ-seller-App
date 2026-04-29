@@ -64,6 +64,8 @@ class StoreConfigService {
     bool? permitirImprimirPendientes,
     String? metodoRedondeoPrecioVenta,
     Map<String, dynamic>? tpvTrabajadorEncargadoCarnaval,
+    bool? allowSellerMakeOrderModifications,
+    bool? precioVentaRegidoPorUsd,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
@@ -133,6 +135,19 @@ class StoreConfigService {
         print(
           '  - tpv_trabajador_encargado_carnaval: $tpvTrabajadorEncargadoCarnaval',
         );
+      }
+
+      if (allowSellerMakeOrderModifications != null) {
+        updateData['allow_seller_make_order_modifications'] =
+            allowSellerMakeOrderModifications;
+        print(
+          '  - allow_seller_make_order_modifications: $allowSellerMakeOrderModifications',
+        );
+      }
+
+      if (precioVentaRegidoPorUsd != null) {
+        updateData['precio_venta_regido_por_usd'] = precioVentaRegidoPorUsd;
+        print('  - precio_venta_regido_por_usd: $precioVentaRegidoPorUsd');
       }
 
       if (updateData.isEmpty) {
@@ -304,6 +319,28 @@ class StoreConfigService {
     await updateStoreConfig(storeId, permitirImprimirPendientes: value);
   }
 
+  /// Obtiene solo el valor de allow_seller_make_order_modifications
+  static Future<bool> getAllowSellerMakeOrderModifications(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['allow_seller_make_order_modifications'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener allow_seller_make_order_modifications: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza allow_seller_make_order_modifications
+  static Future<void> updateAllowSellerMakeOrderModifications(
+    int storeId,
+    bool value,
+  ) async {
+    await updateStoreConfig(
+      storeId,
+      allowSellerMakeOrderModifications: value,
+    );
+  }
+
   /// Obtiene el método de redondeo configurado
   static Future<String> getMetodoRedondeoPrecioVenta(int storeId) async {
     try {
@@ -345,5 +382,24 @@ class StoreConfigService {
     Map<String, dynamic>? value,
   ) async {
     await updateStoreConfig(storeId, tpvTrabajadorEncargadoCarnaval: value);
+  }
+
+  /// Obtiene el valor de precio_venta_regido_por_usd
+  static Future<bool> getPrecioVentaRegidoPorUsd(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['precio_venta_regido_por_usd'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener precio_venta_regido_por_usd: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza precio_venta_regido_por_usd
+  static Future<void> updatePrecioVentaRegidoPorUsd(
+    int storeId,
+    bool value,
+  ) async {
+    await updateStoreConfig(storeId, precioVentaRegidoPorUsd: value);
   }
 }

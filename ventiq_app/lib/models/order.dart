@@ -18,6 +18,7 @@ class Order {
   final Map<String, dynamic>? descuento; // Descuento aplicado (si existe)
   final String? sellerName;
   final String? tpvName;
+  final Map<String, dynamic>? paqueteria; // Datos del paquete (si la orden es de paquetería)
   bool isOfflineOrder; // Campo para marcar órdenes offline
 
   Order({
@@ -36,6 +37,7 @@ class Order {
     this.descuento,
     this.sellerName,
     this.tpvName,
+    this.paqueteria,
     this.isOfflineOrder = false, // Por defecto false
   });
 
@@ -65,6 +67,7 @@ class Order {
     Map<String, dynamic>? descuento,
     String? sellerName,
     String? tpvName,
+    Map<String, dynamic>? paqueteria,
     bool? isOfflineOrder,
   }) {
     return Order(
@@ -83,6 +86,7 @@ class Order {
       descuento: descuento ?? this.descuento,
       sellerName: sellerName ?? this.sellerName,
       tpvName: tpvName ?? this.tpvName,
+      paqueteria: paqueteria ?? this.paqueteria,
       isOfflineOrder: isOfflineOrder ?? this.isOfflineOrder,
     );
   }
@@ -105,6 +109,7 @@ class Order {
       'descuento': descuento,
       'sellerName': sellerName,
       'tpvName': tpvName,
+      'paqueteria': paqueteria,
       'isOfflineOrder': isOfflineOrder,
     };
   }
@@ -133,6 +138,7 @@ class Order {
       descuento: json['descuento'] as Map<String, dynamic>?,
       sellerName: json['sellerName'] as String?,
       tpvName: json['tpvName'] as String?,
+      paqueteria: json['paqueteria'] as Map<String, dynamic>?,
       isOfflineOrder: json['isOfflineOrder'] as bool? ?? false,
     );
   }

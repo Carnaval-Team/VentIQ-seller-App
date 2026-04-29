@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../config/app_colors.dart';
 import '../widgets/app_drawer.dart';
 import '../utils/platform_utils.dart';
+import '../services/agente_service.dart';
 
 class LicenciasScreen extends StatefulWidget {
   const LicenciasScreen({super.key});
@@ -27,6 +28,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
   String _selectedEstado = 'todos';
   String _selectedUrgencia = 'todas';
   int _diasFiltro = 365; // Mostrar todas por defecto
+  bool _soloLicenciasPagas = false;
 
   @override
   void initState() {
@@ -51,6 +53,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
             id,
             id_tienda,
             id_plan,
+            id_agente,
             fecha_inicio,
             fecha_fin,
             estado,
@@ -66,6 +69,11 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
             app_suscripciones_plan!inner(
               denominacion,
               precio_mensual
+            ),
+            app_dat_agente(
+              id,
+              nombre,
+              apellidos
             )
           ''')
           .order('fecha_fin', ascending: true);
@@ -95,13 +103,18 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
         String urgencia = 'baja';
         if (diasRestantes < 0) {
           urgencia = 'vencida';
-        } else if (diasRestantes <= 7) {
+        } else if (diasRestantes <= 5) {
           urgencia = 'critica';
         } else if (diasRestantes <= 15) {
           urgencia = 'alta';
         } else if (diasRestantes <= 30) {
           urgencia = 'media';
         }
+
+        final agente = suscripcion['app_dat_agente'];
+        final agenteNombre = agente != null
+            ? '${agente['nombre']} ${agente['apellidos']}'
+            : null;
 
         suscripciones.add({
           ...suscripcion,
@@ -117,6 +130,8 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
           'estado': estado,
           'estado_id': suscripcion['estado'],
           'urgencia': urgencia,
+          'agente_nombre': agenteNombre,
+          'id_agente': suscripcion['id_agente'],
         });
       }
 
@@ -173,11 +188,21 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
 
             final matchesDias = suscripcion['dias_restantes'] <= _diasFiltro;
 
+            // No mostrar licencias vencidas hace más de 60 días
+            final diasRestantes = suscripcion['dias_restantes'] as int;
+            final noExpiradaMasDe60Dias = diasRestantes >= -60;
+
+            // Filtro de licencias pagas (excluir gratis)
+            final matchesPagas = !_soloLicenciasPagas ||
+                ((suscripcion['precio'] as num?) ?? 0) > 0;
+
             return matchesSearch &&
                 matchesPlan &&
                 matchesEstado &&
                 matchesUrgencia &&
-                matchesDias;
+                matchesDias &&
+                noExpiradaMasDe60Dias &&
+                matchesPagas;
           }).toList();
     });
   }
@@ -261,7 +286,8 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                     (_selectedPlan != 'todos' ||
                             _selectedEstado != 'todos' ||
                             _selectedUrgencia != 'todas' ||
-                            _diasFiltro != 365)
+                            _diasFiltro != 365 ||
+                            _soloLicenciasPagas)
                         ? AppColors.primary
                         : null,
               ),
@@ -410,6 +436,17 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                           setDialogState(() => _diasFiltro = value!);
                         },
                       ),
+                      CheckboxListTile(
+                        title: const Text('Solo Licencias Pagas'),
+                        subtitle: const Text('Excluir licencias gratuitas'),
+                        value: _soloLicenciasPagas,
+                        onChanged: (value) {
+                          setDialogState(
+                            () => _soloLicenciasPagas = value ?? false,
+                          );
+                        },
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
                     ],
                   ),
                 ),
@@ -421,6 +458,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                         _selectedEstado = 'todos';
                         _selectedUrgencia = 'todas';
                         _diasFiltro = 365;
+                        _soloLicenciasPagas = false;
                       });
                       _filterSuscripciones();
                       Navigator.pop(context);
@@ -451,14 +489,30 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
     final vencidas =
         _suscripciones.where((s) => s['estado'] == 'vencida').length;
 
+    // Total de licencias no gratuitas (precio > 0)
+    final totalNoGratis = _suscripciones
+        .where((s) => ((s['precio'] ?? 0) as num).toDouble() > 0)
+        .length;
+
+    // Ingresos del mes: licencias activas no gratuitas que se vencen después del mes en curso
+    final now = DateTime.now();
+    final finMes = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
     final ingresosMensuales = _suscripciones
-        .where((s) => s['activa'] == true)
-        .fold<double>(0, (sum, s) => sum + (s['precio'] ?? 0).toDouble());
+        .where((s) {
+          final precio = ((s['precio'] ?? 0) as num).toDouble();
+          if (precio <= 0) return false;
+          if (s['activa'] != true) return false;
+          final fechaFin = s['fecha_vencimiento'] != null
+              ? DateTime.parse(s['fecha_vencimiento'])
+              : DateTime.now().add(const Duration(days: 365));
+          return fechaFin.isAfter(finMes);
+        })
+        .fold<double>(0, (sum, s) => sum + ((s['precio'] ?? 0) as num).toDouble());
 
     final stats = [
       (
-        'Total Licencias',
-        _suscripciones.length.toString(),
+        'Licencias Pagas',
+        totalNoGratis.toString(),
         Icons.card_membership,
         AppColors.primary,
       ),
@@ -560,6 +614,29 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
     Color color, {
     bool isMobile = false,
   }) {
+    final isIngresos = title == 'Ingresos/Mes';
+    final cardWidget = _buildCardContent(title, value, icon, color, isMobile);
+
+    if (isIngresos) {
+      return GestureDetector(
+        onTap: () => Navigator.of(context).pushNamed('/ingresos-distribucion'),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: cardWidget,
+        ),
+      );
+    }
+
+    return cardWidget;
+  }
+
+  Widget _buildCardContent(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+    bool isMobile,
+  ) {
     if (isMobile) {
       return Card(
         margin: EdgeInsets.zero,
@@ -644,6 +721,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                       DataColumn(label: Text('Tienda')),
                       DataColumn(label: Text('Plan')),
                       DataColumn(label: Text('Estado')),
+                      DataColumn(label: Text('Agente')),
                       DataColumn(label: Text('Fecha Inicio')),
                       DataColumn(label: Text('Fecha Vencimiento')),
                       DataColumn(label: Text('Días Restantes')),
@@ -681,6 +759,36 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                               DataCell(_buildPlanChip(suscripcion['plan'])),
                               DataCell(_buildEstadoChip(suscripcion['estado'])),
                               DataCell(
+                                InkWell(
+                                  onTap: () => _showAsignarAgenteDialog(suscripcion),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.support_agent,
+                                        size: 16,
+                                        color: suscripcion['agente_nombre'] != null
+                                            ? AppColors.primary
+                                            : Colors.grey,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        suscripcion['agente_nombre'] ?? 'Sin asignar',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: suscripcion['agente_nombre'] != null
+                                              ? AppColors.textPrimary
+                                              : Colors.grey,
+                                          fontStyle: suscripcion['agente_nombre'] == null
+                                              ? FontStyle.italic
+                                              : FontStyle.normal,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              DataCell(
                                 Text(_formatDate(suscripcion['fecha_inicio'])),
                               ),
                               DataCell(
@@ -711,14 +819,6 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                                           () =>
                                               _showLicenciaDetails(suscripcion),
                                       tooltip: 'Ver Detalles',
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.edit),
-                                      onPressed:
-                                          () => _showEditLicenciaDialog(
-                                            suscripcion,
-                                          ),
-                                      tooltip: 'Editar',
                                     ),
                                     if (suscripcion['estado'] == 'por_vencer' ||
                                         suscripcion['estado'] == 'vencida')
@@ -836,6 +936,14 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                       'Precio',
                       '\$${suscripcion['precio'] ?? 0}',
                     ),
+                    InkWell(
+                      onTap: () => _showAsignarAgenteDialog(suscripcion),
+                      child: _buildInfoRow(
+                        Icons.support_agent,
+                        'Agente',
+                        suscripcion['agente_nombre'] ?? 'Sin asignar',
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     Wrap(
                       spacing: 8,
@@ -844,14 +952,14 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         TextButton.icon(
-                          icon: const Icon(Icons.history, size: 18),
-                          label: const Text('Historial'),
-                          onPressed: () => _showHistorialDialog(suscripcion),
-                        ),
-                        TextButton.icon(
                           icon: const Icon(Icons.edit, size: 18),
                           label: const Text('Editar'),
                           onPressed: () => _showEditLicenciaDialog(suscripcion),
+                        ),
+                        TextButton.icon(
+                          icon: const Icon(Icons.history, size: 18),
+                          label: const Text('Historial'),
+                          onPressed: () => _showHistorialDialog(suscripcion),
                         ),
                         TextButton.icon(
                           icon: const Icon(
@@ -1073,65 +1181,42 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
   void _showCreateLicenciaDialog() {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Nueva Licencia'),
-            content: const Text(
-              'Funcionalidad de creación de licencia en desarrollo.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cerrar'),
-              ),
-            ],
-          ),
-    );
-  }
-
-  void _showLicenciaDetails(Map<String, dynamic> suscripcion) {
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text(suscripcion['tienda_nombre']),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('ID: ${suscripcion['id']}'),
-                Text('Plan: ${suscripcion['plan']}'),
-                Text('Estado: ${suscripcion['estado']}'),
-                Text(
-                  'Fecha Inicio: ${_formatDate(suscripcion['fecha_inicio'])}',
-                ),
-                Text(
-                  'Fecha Vencimiento: ${_formatDate(suscripcion['fecha_vencimiento'])}',
-                ),
-                Text('Días Restantes: ${suscripcion['dias_restantes']}'),
-                Text('Precio: \$${suscripcion['precio'] ?? 0}'),
-                Text('Activa: ${suscripcion['activa'] ? 'Sí' : 'No'}'),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cerrar'),
-              ),
-            ],
-          ),
+      builder: (context) => _CreateLicenciaDialogContent(
+        supabase: _supabase,
+        tiendas: _tiendas,
+        onCreateComplete: _loadData,
+      ),
     );
   }
 
   void _showEditLicenciaDialog(Map<String, dynamic> suscripcion) {
     showDialog(
       context: context,
-      builder:
-          (context) => _EditLicenciaDialogContent(
-            suscripcion: suscripcion,
-            supabase: _supabase,
-            onEditComplete: _loadData,
-          ),
+      builder: (context) => _EditLicenciaDialogContent(
+        suscripcion: suscripcion,
+        supabase: _supabase,
+        onEditComplete: _loadData,
+      ),
+    );
+  }
+
+  void _showAsignarAgenteDialog(Map<String, dynamic> suscripcion) {
+    showDialog(
+      context: context,
+      builder: (context) => _AsignarAgenteDialogContent(
+        suscripcion: suscripcion,
+        onAsignacionCompleta: _loadData,
+      ),
+    );
+  }
+
+  void _showLicenciaDetails(Map<String, dynamic> suscripcion) {
+    showDialog(
+      context: context,
+      builder: (context) => _LicenciaDetailsDialog(
+        suscripcion: suscripcion,
+        supabase: _supabase,
+      ),
     );
   }
 
@@ -1819,13 +1904,188 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
   }
 }
 
+// =====================================================
+// Dialog para asignar agente a una suscripción
+// =====================================================
+
+class _AsignarAgenteDialogContent extends StatefulWidget {
+  final Map<String, dynamic> suscripcion;
+  final VoidCallback onAsignacionCompleta;
+
+  const _AsignarAgenteDialogContent({
+    required this.suscripcion,
+    required this.onAsignacionCompleta,
+  });
+
+  @override
+  State<_AsignarAgenteDialogContent> createState() =>
+      _AsignarAgenteDialogContentState();
+}
+
+class _AsignarAgenteDialogContentState
+    extends State<_AsignarAgenteDialogContent> {
+  List<Map<String, dynamic>> _agentes = [];
+  int? _selectedAgenteId;
+  bool _isLoading = true;
+  bool _isProcessing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedAgenteId = widget.suscripcion['id_agente'] as int?;
+    _loadAgentes();
+  }
+
+  Future<void> _loadAgentes() async {
+    try {
+      final agentes = await AgenteService.getAgentes(soloActivos: true);
+      if (mounted) {
+        setState(() {
+          _agentes = agentes;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error cargando agentes: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _asignar() async {
+    setState(() => _isProcessing = true);
+    try {
+      await AgenteService.asignarAgenteASuscripcion(
+        idSuscripcion: widget.suscripcion['id'],
+        idAgente: _selectedAgenteId,
+      );
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _selectedAgenteId != null
+                  ? 'Agente asignado correctamente'
+                  : 'Agente desvinculado correctamente',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        widget.onAsignacionCompleta();
+      }
+    } catch (e) {
+      debugPrint('Error asignando agente: $e');
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: [
+          const Icon(Icons.support_agent, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Asignar Agente - ${widget.suscripcion['tienda_nombre']}',
+              style: const TextStyle(fontSize: 16),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 400,
+        child: _isLoading
+            ? const SizedBox(
+                height: 80,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Plan: ${widget.suscripcion['plan']}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<int?>(
+                    value: _selectedAgenteId,
+                    decoration: const InputDecoration(
+                      labelText: 'Agente',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    isExpanded: true,
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text(
+                          'Sin asignar',
+                          style: TextStyle(
+                            fontStyle: FontStyle.italic,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                      ..._agentes.map((agente) {
+                        return DropdownMenuItem<int?>(
+                          value: agente['id'] as int,
+                          child: Text(
+                            '${agente['nombre']} ${agente['apellidos']}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }),
+                    ],
+                    onChanged: (value) {
+                      setState(() => _selectedAgenteId = value);
+                    },
+                  ),
+                ],
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isProcessing ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed: _isProcessing ? null : _asignar,
+          child: _isProcessing
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Guardar'),
+        ),
+      ],
+    );
+  }
+}
+
+// =====================================================
+// Dialog para editar licencia (con agente)
+// =====================================================
+
 class _EditLicenciaDialogContent extends StatefulWidget {
   final Map<String, dynamic> suscripcion;
   final SupabaseClient supabase;
   final VoidCallback onEditComplete;
 
   const _EditLicenciaDialogContent({
-    super.key,
     required this.suscripcion,
     required this.supabase,
     required this.onEditComplete,
@@ -1841,21 +2101,22 @@ class _EditLicenciaDialogContentState
   final _formKey = GlobalKey<FormState>();
 
   List<Map<String, dynamic>> _planesDisponibles = [];
+  List<Map<String, dynamic>> _agentesDisponibles = [];
   bool _isLoading = true;
   bool _isProcessing = false;
 
-  // Form fields
   late DateTime _fechaInicio;
   late DateTime _fechaFin;
   late int _estado;
   late int _idPlan;
+  int? _idAgente;
   late TextEditingController _observacionesController;
 
   @override
   void initState() {
     super.initState();
     _initFields();
-    _cargarPlanes();
+    _loadData();
   }
 
   @override
@@ -1865,7 +2126,6 @@ class _EditLicenciaDialogContentState
   }
 
   void _initFields() {
-    // Initialize dates
     try {
       _fechaInicio = DateTime.parse(widget.suscripcion['fecha_inicio']);
     } catch (e) {
@@ -1882,33 +2142,34 @@ class _EditLicenciaDialogContentState
       _fechaFin = DateTime.now().add(const Duration(days: 30));
     }
 
-    // Initialize other fields
     _estado = int.tryParse(widget.suscripcion['estado_id'].toString()) ?? 1;
     _idPlan = int.tryParse(widget.suscripcion['id_plan'].toString()) ?? 1;
+    _idAgente = widget.suscripcion['id_agente'] as int?;
     _observacionesController = TextEditingController(
       text: widget.suscripcion['observaciones'] ?? '',
     );
   }
 
-  Future<void> _cargarPlanes() async {
+  Future<void> _loadData() async {
     try {
-      final planesResponse = await widget.supabase
+      final planes = await widget.supabase
           .from('app_suscripciones_plan')
           .select('*')
           .eq('es_activo', true)
           .order('id', ascending: true);
 
+      final agentes = await AgenteService.getAgentes(soloActivos: true);
+
       if (mounted) {
         setState(() {
-          _planesDisponibles = List<Map<String, dynamic>>.from(planesResponse);
+          _planesDisponibles = List<Map<String, dynamic>>.from(planes);
+          _agentesDisponibles = agentes;
           _isLoading = false;
         });
       }
     } catch (e) {
-      debugPrint('Error cargando planes: $e');
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      debugPrint('Error cargando datos para edición: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -1939,11 +2200,9 @@ class _EditLicenciaDialogContentState
       final idSuscripcion = widget.suscripcion['id'];
       final currentUser = widget.supabase.auth.currentUser;
 
-      // 1. Guardar historial antes de actualizar
       final planAnterior = widget.suscripcion['id_plan'];
       final estadoAnterior = widget.suscripcion['estado_id'];
 
-      // Detectar cambios
       final fechaFinString = _fechaFin.toIso8601String();
       final fechaInicioString = _fechaInicio.toIso8601String();
 
@@ -1964,7 +2223,6 @@ class _EditLicenciaDialogContentState
         });
       }
 
-      // 2. Actualizar suscripción
       await widget.supabase
           .from('app_suscripciones')
           .update({
@@ -1972,6 +2230,7 @@ class _EditLicenciaDialogContentState
             'fecha_inicio': fechaInicioString,
             'fecha_fin': fechaFinString,
             'estado': _estado,
+            'id_agente': _idAgente,
             'observaciones': _observacionesController.text,
             'updated_at': DateTime.now().toIso8601String(),
           })
@@ -1998,9 +2257,7 @@ class _EditLicenciaDialogContentState
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isProcessing = false);
-      }
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
@@ -2024,7 +2281,6 @@ class _EditLicenciaDialogContentState
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Plan Selector
               DropdownButtonFormField<int>(
                 value: _idPlan,
                 decoration: const InputDecoration(
@@ -2032,20 +2288,18 @@ class _EditLicenciaDialogContentState
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),
-                items:
-                    _planesDisponibles.map((plan) {
-                      return DropdownMenuItem<int>(
-                        value: plan['id'],
-                        child: Text(plan['denominacion']),
-                      );
-                    }).toList(),
+                items: _planesDisponibles.map((plan) {
+                  return DropdownMenuItem<int>(
+                    value: plan['id'],
+                    child: Text(plan['denominacion']),
+                  );
+                }).toList(),
                 onChanged: (value) {
                   if (value != null) setState(() => _idPlan = value);
                 },
               ),
               const SizedBox(height: 16),
 
-              // Estado Selector
               DropdownButtonFormField<int>(
                 value: _estado,
                 decoration: const InputDecoration(
@@ -2063,7 +2317,41 @@ class _EditLicenciaDialogContentState
               ),
               const SizedBox(height: 16),
 
-              // Fechas
+              DropdownButtonFormField<int?>(
+                value: _idAgente,
+                decoration: const InputDecoration(
+                  labelText: 'Agente',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                isExpanded: true,
+                items: [
+                  const DropdownMenuItem<int?>(
+                    value: null,
+                    child: Text(
+                      'Sin asignar',
+                      style: TextStyle(
+                        fontStyle: FontStyle.italic,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ),
+                  ..._agentesDisponibles.map((agente) {
+                    return DropdownMenuItem<int?>(
+                      value: agente['id'] as int,
+                      child: Text(
+                        '${agente['nombre']} ${agente['apellidos']}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }),
+                ],
+                onChanged: (value) {
+                  setState(() => _idAgente = value);
+                },
+              ),
+              const SizedBox(height: 16),
+
               Row(
                 children: [
                   Expanded(
@@ -2113,7 +2401,6 @@ class _EditLicenciaDialogContentState
               ),
               const SizedBox(height: 16),
 
-              // Observaciones
               TextFormField(
                 controller: _observacionesController,
                 decoration: const InputDecoration(
@@ -2133,14 +2420,660 @@ class _EditLicenciaDialogContentState
         ),
         ElevatedButton(
           onPressed: _isProcessing ? null : _guardarCambios,
-          child:
-              _isProcessing
-                  ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                  : const Text('Guardar'),
+          child: _isProcessing
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Guardar'),
+        ),
+      ],
+    );
+  }
+}
+
+class _LicenciaDetailsDialog extends StatefulWidget {
+  final Map<String, dynamic> suscripcion;
+  final SupabaseClient supabase;
+
+  const _LicenciaDetailsDialog({
+    required this.suscripcion,
+    required this.supabase,
+  });
+
+  @override
+  State<_LicenciaDetailsDialog> createState() => _LicenciaDetailsDialogState();
+}
+
+class _LicenciaDetailsDialogState extends State<_LicenciaDetailsDialog> {
+  late Future<Map<String, dynamic>> _tiendaDetailsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _tiendaDetailsFuture = _fetchTiendaDetails();
+  }
+
+  Future<Map<String, dynamic>> _fetchTiendaDetails() async {
+    try {
+      final idTienda = widget.suscripcion['id_tienda'];
+      final tiendaResp = await widget.supabase
+          .from('app_dat_tienda')
+          .select()
+          .eq('id', idTienda)
+          .single();
+      return tiendaResp;
+    } catch (e) {
+      debugPrint('Error fetching tienda details: $e');
+      return {};
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      child: FutureBuilder<Map<String, dynamic>>(
+        future: _tiendaDetailsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(),
+              ),
+            );
+          }
+
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return AlertDialog(
+              title: const Text('Error'),
+              content: const Text('No se pudieron cargar los detalles de la tienda'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cerrar'),
+                ),
+              ],
+            );
+          }
+
+          final tienda = snapshot.data!;
+          final suscripcion = widget.suscripcion;
+
+          return SingleChildScrollView(
+            child: AlertDialog(
+              title: Text(tienda['denominacion'] ?? 'Tienda'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSection('Información de Suscripción', [
+                      _buildDetailRow('Plan', suscripcion['plan'] ?? 'N/A'),
+                      _buildDetailRow('Estado', suscripcion['estado'] ?? 'N/A'),
+                      _buildDetailRow(
+                        'Fecha Inicio',
+                        _formatDate(suscripcion['fecha_inicio']),
+                      ),
+                      _buildDetailRow(
+                        'Fecha Vencimiento',
+                        _formatDate(suscripcion['fecha_vencimiento']),
+                      ),
+                      _buildDetailRow(
+                        'Días Restantes',
+                        '${suscripcion['dias_restantes'] ?? 0}',
+                      ),
+                      _buildDetailRow('Precio', '\$${suscripcion['precio'] ?? 0}'),
+                      _buildDetailRow(
+                        'Agente',
+                        suscripcion['agente_nombre'] ?? 'Sin asignar',
+                      ),
+                      _buildDetailRow(
+                        'Activa',
+                        suscripcion['activa'] == true ? 'Sí' : 'No',
+                      ),
+                    ]),
+                    const SizedBox(height: 16),
+                    _buildSection('Información de Tienda', [
+                      _buildDetailRow('ID', '${tienda['id']}'),
+                      _buildDetailRow(
+                        'Nombre',
+                        tienda['denominacion'] ?? 'N/A',
+                      ),
+                      _buildDetailRow(
+                        'Dirección',
+                        tienda['direccion'] ?? 'No especificada',
+                      ),
+                      _buildDetailRow(
+                        'Ubicación',
+                        tienda['ubicacion'] ?? 'No especificada',
+                      ),
+                      _buildDetailRow(
+                        'País',
+                        tienda['nombre_pais'] ?? tienda['pais'] ?? 'N/A',
+                      ),
+                      _buildDetailRow(
+                        'Estado/Provincia',
+                        tienda['nombre_estado'] ??
+                            tienda['estado'] ??
+                            tienda['provincia'] ??
+                            'N/A',
+                      ),
+                      _buildDetailRow(
+                        'Teléfono',
+                        tienda['phone'] ?? 'No especificado',
+                      ),
+                      _buildDetailRow(
+                        'Creada',
+                        _formatDate(tienda['created_at']),
+                      ),
+                    ]),
+                    const SizedBox(height: 16),
+                    if (tienda['latitude'] != null && tienda['longitude'] != null)
+                      _buildSection('Ubicación Geográfica', [
+                        _buildDetailRow(
+                          'Latitud',
+                          '${tienda['latitude']}',
+                        ),
+                        _buildDetailRow(
+                          'Longitud',
+                          '${tienda['longitude']}',
+                        ),
+                      ]),
+                    if (tienda['latitude'] != null && tienda['longitude'] != null)
+                      const SizedBox(height: 16),
+                    _buildSection('Horarios de Operación', [
+                      _buildDetailRow(
+                        'Hora Apertura',
+                        tienda['hora_apertura'] ?? '09:00',
+                      ),
+                      _buildDetailRow(
+                        'Hora Cierre',
+                        tienda['hora_cierre'] ?? '18:00',
+                      ),
+                      if (tienda['dias_trabajo'] != null)
+                        _buildDetailRow(
+                          'Días de Trabajo',
+                          _formatDiasTrabajo(tienda['dias_trabajo']),
+                        ),
+                    ]),
+                    const SizedBox(height: 16),
+                    _buildSection('Configuración', [
+                      _buildDetailRow(
+                        'Mostrar en Catálogo',
+                        tienda['mostrar_en_catalogo'] == true ? 'Sí' : 'No',
+                      ),
+                      _buildDetailRow(
+                        'Solo Catálogo',
+                        tienda['only_catalogo'] == true ? 'Sí' : 'No',
+                      ),
+                      _buildDetailRow(
+                        'Validada',
+                        tienda['validada'] == true ? 'Sí' : 'No',
+                      ),
+                      _buildDetailRow(
+                        'Admin Carnaval',
+                        tienda['admin_carnaval'] == true ? 'Sí' : 'No',
+                      ),
+                    ]),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cerrar'),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSection(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1F2937),
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...children,
+      ],
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF6B7280),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 12,
+                color: Color(0xFF1F2937),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(dynamic date) {
+    if (date == null) return 'N/A';
+    try {
+      final dt = date is String ? DateTime.parse(date) : date as DateTime;
+      return '${dt.day}/${dt.month}/${dt.year}';
+    } catch (e) {
+      return 'N/A';
+    }
+  }
+
+  String _formatDiasTrabajo(dynamic dias) {
+    if (dias == null) return 'N/A';
+    try {
+      if (dias is String) {
+        dias = dias.replaceAll('"', '').replaceAll('[', '').replaceAll(']', '');
+      }
+      if (dias is List) {
+        return dias.join(', ');
+      }
+      return dias.toString();
+    } catch (e) {
+      return 'N/A';
+    }
+  }
+}
+
+class _CreateLicenciaDialogContent extends StatefulWidget {
+  final SupabaseClient supabase;
+  final List<Map<String, dynamic>> tiendas;
+  final VoidCallback onCreateComplete;
+
+  const _CreateLicenciaDialogContent({
+    required this.supabase,
+    required this.tiendas,
+    required this.onCreateComplete,
+  });
+
+  @override
+  State<_CreateLicenciaDialogContent> createState() =>
+      _CreateLicenciaDialogContentState();
+}
+
+class _CreateLicenciaDialogContentState
+    extends State<_CreateLicenciaDialogContent> {
+  List<Map<String, dynamic>> _planesDisponibles = [];
+  Map<String, dynamic>? _planSeleccionado;
+  int? _selectedTiendaId;
+  DateTime? _fechaVencimiento;
+  final ImagePicker _imagePicker = ImagePicker();
+  Uint8List? _selectedImageBytes;
+  String? _selectedImageName;
+  bool _isLoading = true;
+  bool _isProcessing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarPlanes();
+  }
+
+  Future<void> _cargarPlanes() async {
+    try {
+      final planesResponse = await widget.supabase
+          .from('app_suscripciones_plan')
+          .select('*')
+          .eq('es_activo', true)
+          .order('id', ascending: true);
+
+      if (mounted) {
+        setState(() {
+          _planesDisponibles = List<Map<String, dynamic>>.from(planesResponse);
+          if (_planesDisponibles.isNotEmpty) {
+            _planSeleccionado = _planesDisponibles.first;
+          }
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error cargando planes: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cargar planes: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final ImageSource? source = await showModalBottomSheet<ImageSource>(
+        context: context,
+        builder: (BuildContext context) {
+          return SafeArea(
+            child: Wrap(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_camera),
+                  title: const Text('Tomar foto'),
+                  onTap: () => Navigator.of(context).pop(ImageSource.camera),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library),
+                  title: const Text('Seleccionar de galería'),
+                  onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.cancel),
+                  title: const Text('Cancelar'),
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (source != null) {
+        final XFile? image = await _imagePicker.pickImage(
+          source: source,
+          maxWidth: 800,
+          maxHeight: 800,
+          imageQuality: 80,
+        );
+
+        if (image != null) {
+          final bytes = await image.readAsBytes();
+          if (mounted) {
+            setState(() {
+              _selectedImageBytes = bytes;
+              _selectedImageName =
+                  'licencia_${DateTime.now().millisecondsSinceEpoch}.jpg';
+            });
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error picking image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al seleccionar imagen: $e')),
+        );
+      }
+    }
+  }
+
+  Future<String?> _uploadEvidenceImage() async {
+    if (_selectedImageBytes == null || _selectedImageName == null) return null;
+
+    try {
+      final fileName = _selectedImageName!;
+      final fileBytes = _selectedImageBytes!;
+
+      await widget.supabase.storage
+          .from('suscripciones_evidencias')
+          .uploadBinary(
+            fileName,
+            fileBytes,
+            fileOptions: const FileOptions(contentType: 'image/jpeg'),
+          );
+
+      final String publicUrl = widget.supabase.storage
+          .from('suscripciones_evidencias')
+          .getPublicUrl(fileName);
+
+      return publicUrl;
+    } catch (e) {
+      debugPrint('Error uploading image: $e');
+      return null;
+    }
+  }
+
+  Future<void> _createLicencia() async {
+    if (_selectedTiendaId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona una tienda'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (_planSeleccionado == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona un plan'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (_fechaVencimiento == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona una fecha de vencimiento'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isProcessing = true);
+
+    try {
+      String? evidenciaUrl;
+
+      // Upload photo if provided
+      if (_selectedImageBytes != null) {
+        evidenciaUrl = await _uploadEvidenceImage();
+        if (evidenciaUrl == null) {
+          throw Exception('No se pudo subir la imagen');
+        }
+      }
+
+      // Create subscription
+      await widget.supabase.from('app_suscripciones').insert({
+        'id_tienda': _selectedTiendaId,
+        'id_plan': _planSeleccionado!['id'],
+        'fecha_inicio': DateTime.now().toIso8601String(),
+        'fecha_fin': _fechaVencimiento!.toIso8601String(),
+        'estado': 1,
+        'metodo_pago': 'manual',
+        'renovacion_automatica': false,
+        'foto_url': evidenciaUrl,
+      });
+
+      if (!mounted) return;
+
+      Navigator.pop(context);
+      widget.onCreateComplete();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Licencia creada exitosamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      debugPrint('Error creating license: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al crear licencia: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Nueva Licencia'),
+      content: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 16,
+                children: [
+                  // Tienda dropdown
+                  DropdownButtonFormField<int>(
+                    value: _selectedTiendaId,
+                    decoration: const InputDecoration(
+                      labelText: 'Tienda',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: widget.tiendas
+                        .map((tienda) => DropdownMenuItem(
+                              value: tienda['id'] as int,
+                              child: Text(tienda['denominacion'] ?? 'Sin nombre'),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      setState(() => _selectedTiendaId = value);
+                    },
+                  ),
+
+                  // Plan dropdown
+                  DropdownButtonFormField<Map<String, dynamic>>(
+                    value: _planSeleccionado,
+                    decoration: const InputDecoration(
+                      labelText: 'Plan',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _planesDisponibles
+                        .map((plan) => DropdownMenuItem(
+                              value: plan,
+                              child: Text(plan['denominacion'] ?? 'Sin nombre'),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      setState(() => _planSeleccionado = value);
+                    },
+                  ),
+
+                  // Expiration date picker
+                  GestureDetector(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate:
+                            DateTime.now().add(const Duration(days: 30)),
+                        firstDate: DateTime.now(),
+                        lastDate:
+                            DateTime.now().add(const Duration(days: 3650)),
+                      );
+                      if (picked != null) {
+                        setState(() => _fechaVencimiento = picked);
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 16),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _fechaVencimiento == null
+                                ? 'Fecha de vencimiento'
+                                : '${_fechaVencimiento!.day}/${_fechaVencimiento!.month}/${_fechaVencimiento!.year}',
+                            style: TextStyle(
+                              color: _fechaVencimiento == null
+                                  ? Colors.grey[600]
+                                  : Colors.black,
+                            ),
+                          ),
+                          const Icon(Icons.calendar_today, size: 20),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Photo upload
+                  if (_selectedImageBytes != null)
+                    Column(
+                      children: [
+                        Container(
+                          width: 200,
+                          height: 200,
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Image.memory(_selectedImageBytes!,
+                              fit: BoxFit.cover),
+                        ),
+                        const SizedBox(height: 8),
+                        ElevatedButton.icon(
+                          onPressed: _pickImage,
+                          icon: const Icon(Icons.image),
+                          label: const Text('Cambiar foto'),
+                        ),
+                      ],
+                    )
+                  else
+                    ElevatedButton.icon(
+                      onPressed: _pickImage,
+                      icon: const Icon(Icons.image),
+                      label: const Text('Seleccionar foto (opcional)'),
+                    ),
+                ],
+              ),
+            ),
+      actions: [
+        TextButton(
+          onPressed: _isProcessing ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed: _isProcessing ? null : _createLicencia,
+          child: _isProcessing
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Crear'),
         ),
       ],
     );

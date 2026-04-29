@@ -238,6 +238,64 @@ class _ProductSalesDialogState extends State<ProductSalesDialog> {
     }
   }
 
+  Future<void> _changeCategory() async {
+    final carnavalProductId = widget.product['id'] as int;
+    final currentCategoryId = widget.product['category_id'];
+
+    final selected = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => _CategorySelectionDialog(
+        currentCategoryId: currentCategoryId is int ? currentCategoryId : null,
+      ),
+    );
+
+    if (selected == null || !mounted) return;
+
+    // Mostrar indicador de carga
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final success = await CarnavalService.updateProductCategory(
+        carnavalProductId: carnavalProductId,
+        newCategoryId: selected['id'] as int,
+      );
+
+      if (mounted) {
+        Navigator.pop(context); // cerrar loading
+
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Categoría cambiada a "${selected['name']}"',
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context, true); // cerrar dialog y refrescar
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Error al cambiar la categoría'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        try { Navigator.pop(context); } catch (_) {}
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -491,6 +549,26 @@ class _ProductSalesDialogState extends State<ProductSalesDialog> {
 
                     const SizedBox(height: 8),
 
+                    // Botón cambiar categoría
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _changeCategory,
+                        icon: const Icon(Icons.category, size: 18),
+                        label: const Text('Cambiar Categoría'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
                     // Botón cerrar
                     SizedBox(
                       width: double.infinity,
@@ -679,6 +757,125 @@ class __LocationSelectionDialogState extends State<_LocationSelectionDialog> {
                     );
                   },
                 ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+      ],
+    );
+  }
+}
+
+// Dialog for selecting a category
+class _CategorySelectionDialog extends StatefulWidget {
+  final int? currentCategoryId;
+
+  const _CategorySelectionDialog({this.currentCategoryId});
+
+  @override
+  State<_CategorySelectionDialog> createState() =>
+      __CategorySelectionDialogState();
+}
+
+class __CategorySelectionDialogState extends State<_CategorySelectionDialog> {
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _categories = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final categories = await CarnavalService.getCarnavalCategories();
+      if (mounted) {
+        setState(() {
+          _categories = categories;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Seleccionar Categoría'),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 400,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _categories.isEmpty
+                ? const Center(child: Text('No hay categorías disponibles'))
+                : ListView.separated(
+                    itemCount: _categories.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final category = _categories[index];
+                      final isSelected =
+                          category['id'] == widget.currentCategoryId;
+                      return ListTile(
+                        selected: isSelected,
+                        selectedTileColor: AppColors.primary.withValues(alpha: 0.08),
+                        leading: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: category['icon'] != null
+                              ? Image.network(
+                                  category['icon'],
+                                  width: 44,
+                                  height: 44,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 44,
+                                    height: 44,
+                                    color: Colors.grey.shade200,
+                                    child: const Icon(Icons.category,
+                                        color: Colors.grey),
+                                  ),
+                                )
+                              : Container(
+                                  width: 44,
+                                  height: 44,
+                                  color: Colors.grey.shade200,
+                                  child: const Icon(Icons.category,
+                                      color: Colors.grey),
+                                ),
+                        ),
+                        title: Text(
+                          category['name'] ?? 'Sin nombre',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: isSelected ? AppColors.primary : null,
+                          ),
+                        ),
+                        subtitle: category['descripcion'] != null &&
+                                category['descripcion'].toString().isNotEmpty
+                            ? Text(
+                                category['descripcion'],
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12),
+                              )
+                            : null,
+                        trailing: isSelected
+                            ? const Icon(Icons.check_circle,
+                                color: AppColors.primary)
+                            : null,
+                        onTap: () => Navigator.of(context).pop(category),
+                      );
+                    },
+                  ),
       ),
       actions: [
         TextButton(

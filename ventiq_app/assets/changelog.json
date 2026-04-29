@@ -1,9 +1,178 @@
 {
-  "current_version": "2.0.8",
-  "build": 818,
+  "current_version": "2.2.3",
+  "build": 825,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.2.3",
+      "date": "2026-04-27",
+      "title": "📦 Vende paquetes con envío de forma más fácil y rápida",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Soporte completo para productos tipo Paquete",
+          "description": "La app reconoce los productos marcados como paquete con envío y abre automáticamente el flujo correcto al venderlos, distinto del de un producto normal."
+        },
+        {
+          "type": "feature",
+          "title": "Nueva pantalla de venta de paquetes",
+          "description": "Cuentas con una pantalla dedicada para vender paquetes con envío: registra el número de paquete, una descripción opcional, toma o adjunta una foto y elige el método de pago, todo desde un mismo lugar."
+        },
+        {
+          "type": "feature",
+          "title": "Promociones y descuentos aplicados al instante",
+          "description": "Si el paquete tiene promoción activa, verás el descuento o recargo claramente reflejado en el precio antes de cobrar, sin tener que hacer cálculos."
+        },
+        {
+          "type": "feature",
+          "title": "Tus órdenes de paquetería bien identificadas",
+          "description": "En el listado de órdenes, las ventas con envío aparecen marcadas con un sello azul de paquetería y muestran los datos del envío y del cliente para que tengas todo a mano."
+        },
+        {
+          "type": "improvement",
+          "title": "Vista optimizada para usar desde la web",
+          "description": "Si trabajas desde una pantalla grande, la pantalla de paquete se reorganiza en dos columnas tipo tienda online: imagen y descripción a un lado, precio, promoción, datos y pago al otro. Más cómoda y profesional."
+        }
+      ]
+    },
+    {
+      "version": "2.2.2",
+      "date": "2026-04-13",
+      "title": "Soporte completo para servicios y mejor control de inventario",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Vende servicios sin restricciones",
+          "description": "Ahora puedes vender productos de tipo servicio libremente, sin que el inventario te limite. Funcionan igual que los productos elaborados."
+        },
+        {
+          "type": "improvement",
+          "title": "Control inteligente de disponibilidad",
+          "description": "Al confirmar una orden con productos elaborados o servicios, la app verifica automáticamente que tengas suficientes ingredientes disponibles antes de procesar la venta."
+        },
+        {
+          "type": "improvement",
+          "title": "Identificación rápida de servicios",
+          "description": "Los servicios ahora se distinguen con una etiqueta azul SERV junto al producto, para que los identifiques de un vistazo."
+        }
+      ]
+    },
+    {
+      "version": "2.2.1",
+      "date": "2026-04-01",
+      "title": "Mayor control sobre órdenes de Carnaval y recepción inteligente",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Protección de órdenes de Carnaval",
+          "description": "Las órdenes que llegan desde Carnaval App ahora están protegidas: no se pueden cancelar, devolver, editar ni completar manualmente. Solo puedes imprimir la factura o exportarla en PDF. Esto evita modificaciones accidentales en ventas que se gestionan desde la plataforma de Carnaval."
+        },
+        {
+          "type": "feature",
+          "title": "Recepción inteligente de órdenes pendientes",
+          "description": "Al recibir órdenes de turnos anteriores, ya sea desde las notificaciones o al abrir un nuevo turno, la app ahora verifica automáticamente el estado real de cada orden. Solo te permite recibir órdenes que aún están pendientes, evitando que aceptes ventas que ya fueron procesadas, canceladas o completadas por otro medio."
+        }
+      ]
+    },
+    {
+      "version": "2.2.0",
+      "date": "2026-03-27",
+      "title": "Reservas de Carnaval App visibles en tiempo real",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Stock real descontando reservas de Carnaval",
+          "description": "Ahora cuando ves un producto, el stock que se muestra ya descuenta automáticamente las unidades que los clientes tienen reservadas en Carnaval App. Así sabes exactamente cuánto tienes disponible para vender en tienda."
+        },
+        {
+          "type": "feature",
+          "title": "Indicador de productos reservados",
+          "description": "Verás un nuevo indicador en naranja que te dice cuántas unidades de cada producto están reservadas en Carnaval App. Aparece en el listado de productos, en la búsqueda global y en los detalles por ubicación."
+        },
+        {
+          "type": "improvement",
+          "title": "Apertura y cierre de turno con stock ajustado",
+          "description": "Al hacer el conteo de inventario en la apertura o cierre de turno, las cantidades del sistema ya reflejan el stock real descontando las reservas. Esto evita diferencias falsas entre lo que dice el sistema y lo que tienes físicamente."
+        },
+        {
+          "type": "improvement",
+          "title": "Protección al agregar al carrito",
+          "description": "Si un producto tiene todo su stock reservado en Carnaval App, la app no te permite agregarlo al carrito y te avisa que no hay disponibilidad. Así evitas vender unidades que ya están comprometidas."
+        }
+      ]
+    },
+    {
+      "version": "2.1.1",
+      "date": "2026-03-16",
+      "title": "Mejoras de usabilidad y mayor estabilidad",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Interfaz más clara y fácil de usar",
+          "description": "Hemos reestructurado la navegación visual y ajustado los detalles de la aplicación. Ahora te resultará mucho más rápido acceder a las funciones diarias, haciendo tu experiencia de usuario más intuitiva y ágil."
+        },
+        {
+          "type": "improvement",
+          "title": "Mensajes y alertas más comprensibles",
+          "description": "Actualizamos los avisos informativos y textos de la interfaz. De esta forma, cada acción, desde un error hasta una confirmación, está explicada de manera más amigable y directa, sin términos confusos."
+        },
+        {
+          "type": "fix",
+          "title": "Corrección de fallos menores de sistema",
+          "description": "Resolvimos varios errores (bugs) internos reportados recientemente que causaban comportamientos inesperados de forma aislada. Con estos ajustes, aseguramos una aplicación más sólida, estable y segura para tu negocio."
+        }
+      ]
+    },
+    {
+      "version": "2.1.0",
+      "date": "2026-03-14",
+      "title": "Productos sin stock ahora están protegidos",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "No puedes abrir un producto sin stock",
+          "description": "Si buscas un producto en el buscador y no tiene stock disponible, la app te avisa con un mensaje claro y no te deja entrar a los detalles. Así evitas confusiones al armar una venta."
+        },
+        {
+          "type": "improvement",
+          "title": "Protección extra en la vista de producto",
+          "description": "Si por algún motivo llegas a la pantalla de un producto que ya no tiene stock, la app te muestra un aviso y te devuelve automáticamente a las categorías. No más errores al intentar vender algo agotado."
+        }
+      ]
+    },
+    {
+      "version": "2.0.9",
+      "date": "2026-02-23",
+      "title": "Edita tus órdenes pendientes sin perder nada",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Modifica una orden antes de cobrarla",
+          "description": "¿Tu cliente cambió de opinión? Ahora puedes abrir cualquier orden pendiente y añadir productos, quitar los que ya no quiere o cambiar las cantidades, todo sin cancelar ni crear una nueva orden."
+        },
+        {
+          "type": "feature",
+          "title": "Vista previa antes de guardar",
+          "description": "Todos los cambios se muestran al instante en pantalla —con etiquetas 'NUEVO' y 'EDITADO'— pero no se aplican hasta que presionas 'Guardar cambios'. Si te arrepientes, cancela y la orden queda exactamente como estaba."
+        },
+        {
+          "type": "feature",
+          "title": "Elige cómo paga cada producto nuevo",
+          "description": "Al añadir un producto a una orden existente, seleccionas el método de pago (efectivo, transferencia, etc.). El precio se ajusta automáticamente con el descuento o recargo que corresponda, igual que al crear una venta nueva."
+        },
+        {
+          "type": "feature",
+          "title": "Descuentos aplicados correctamente al editar",
+          "description": "Las promociones de tu tienda se respetan al modificar la orden: efectivo recibe el precio con descuento, otros métodos el precio regular. También puedes elegir 'Efectivo (sin descuento)' para cobrar el precio base en cash."
+        },
+        {
+          "type": "improvement",
+          "title": "Totales y cobros siempre cuadrados",
+          "description": "Cada vez que sumas, quitas o cambias la cantidad de un producto, el total de la orden y el desglose de pagos se actualizan de forma proporcional. Nada queda descuadrado al final del día."
+        }
+      ]
+    },
     {
       "version": "2.0.8",
       "date": "2026-02-16",

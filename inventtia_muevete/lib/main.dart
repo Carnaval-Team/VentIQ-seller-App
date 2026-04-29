@@ -1,0 +1,155 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart' as fmtc;
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'config/supabase_config.dart';
+import 'config/app_theme.dart';
+import 'services/background_service.dart';
+import 'services/local_notification_service.dart';
+import 'services/completion_sync_service.dart';
+import 'services/mbtiles_service.dart';
+import 'services/pushy_service.dart';
+import 'providers/auth_provider.dart';
+import 'providers/carga_provider.dart';
+import 'providers/theme_provider.dart';
+import 'providers/location_provider.dart';
+import 'providers/transport_provider.dart';
+import 'providers/wallet_provider.dart';
+import 'providers/address_provider.dart';
+import 'screens/splash_screen.dart';
+import 'screens/landing_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/register_screen.dart';
+import 'screens/client/home_map_screen.dart';
+import 'screens/client/route_preview_screen.dart';
+import 'screens/client/driver_offers_screen.dart';
+import 'screens/client/ride_confirmed_screen.dart';
+import 'screens/client/wallet_screen.dart';
+import 'screens/client/profile_screen.dart';
+import 'screens/client/saved_addresses_screen.dart';
+import 'screens/client/request_history_screen.dart';
+import 'screens/driver/driver_home_screen.dart';
+import 'screens/driver/incoming_requests_screen.dart';
+import 'screens/driver/active_ride_screen.dart';
+import 'screens/driver/driver_wallet_screen.dart';
+import 'screens/shipper/shipper_home_screen.dart';
+import 'screens/shipper/carrier_directory_screen.dart';
+import 'screens/carrier/carrier_home_screen.dart';
+import 'screens/dispatcher/dispatcher_home_screen.dart';
+import 'widgets/notification_overlay.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize tile caching (not supported on web)
+  if (!kIsWeb) {
+    await fmtc.FMTCObjectBoxBackend().initialise();
+    await fmtc.FMTCStore('mapTiles').manage.create();
+  }
+
+  await Supabase.initialize(
+    url: SupabaseConfig.supabaseUrl,
+    anonKey: SupabaseConfig.supabaseAnonKey,
+  );
+
+  // Initialize offline MBTiles map
+  if (!kIsWeb) {
+    await MbTilesService.instance.init();
+  }
+
+  // Initialize background service & local notifications
+  await BackgroundService.init();
+  await LocalNotificationService().init();
+
+  // Initialize Pushy.me push notifications
+  await PushyService.init();
+
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+    ),
+  );
+
+  // Sync any pending offline completions from previous sessions
+  CompletionSyncService.syncPendingCompletions();
+
+  runApp(const MueveteApp());
+}
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+class MueveteApp extends StatelessWidget {
+  const MueveteApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // Wire up the navigator key for notification tap navigation.
+    LocalNotificationService.navigatorKey = navigatorKey;
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => LocationProvider()),
+        ChangeNotifierProvider(create: (_) => TransportProvider()),
+        ChangeNotifierProvider(create: (_) => WalletProvider()),
+        ChangeNotifierProvider(create: (_) => AddressProvider()),
+        ChangeNotifierProvider(create: (_) => CargaProvider()),
+        ChangeNotifierProvider.value(value: MbTilesService.instance),
+      ],
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) {
+          return MaterialApp(
+            navigatorKey: navigatorKey,
+            title: 'Muevete',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.darkTheme,
+            themeMode: themeProvider.themeMode,
+            initialRoute: '/',
+            builder: (context, child) {
+              return NotificationOverlay(
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
+            routes: {
+              '/': (context) =>
+                  kIsWeb ? const LandingScreen() : const SplashScreen(),
+              '/landing': (context) => const LandingScreen(),
+              '/login': (context) => const LoginScreen(),
+              '/register': (context) => const RegisterScreen(),
+              '/client/home': (context) => const HomeMapScreen(),
+              '/client/route-preview': (context) => const RoutePreviewScreen(),
+              '/client/driver-offers': (context) => const DriverOffersScreen(),
+              '/client/ride-confirmed': (context) =>
+                  const RideConfirmedScreen(),
+              '/client/wallet': (context) => const WalletScreen(),
+              '/client/profile': (context) => const ProfileScreen(),
+              '/client/saved-addresses': (context) =>
+                  const SavedAddressesScreen(),
+              '/client/request-history': (context) =>
+                  const RequestHistoryScreen(),
+              '/driver/home': (context) => const DriverHomeScreen(),
+              '/driver/requests': (context) =>
+                  const IncomingRequestsScreen(),
+              '/driver/active-ride': (context) => const ActiveRideScreen(),
+              '/driver/wallet': (context) => const DriverWalletScreen(),
+              '/shipper/home': (context) => const ShipperHomeScreen(),
+              '/carrier-directory': (context) => const CarrierDirectoryScreen(),
+              '/carrier/home': (context) => const CarrierHomeScreen(),
+              '/dispatcher/home': (context) => const DispatcherHomeScreen(),
+            },
+          );
+        },
+      ),
+    );
+  }
+}

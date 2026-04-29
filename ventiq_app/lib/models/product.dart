@@ -2,6 +2,7 @@ class Product {
   final int id;
   final String denominacion;
   final String? descripcion;
+  final String? sku;
   final String? foto;
   final double precio;
   final num cantidad;
@@ -14,15 +15,21 @@ class Product {
   final bool esPorLotes;
   final bool esElaborado;
   final bool esServicio;
+  final bool esPaquete;
   final String categoria;
   final List<ProductVariant> variantes;
   final Map<String, dynamic>?
   inventoryMetadata; // Store inventory data for products without variants
+  final num reservadoCarnaval;
+
+  /// Stock real descontando reservas de Carnaval
+  num get cantidadReal => (cantidad - reservadoCarnaval).clamp(0, double.infinity);
 
   Product({
     required this.id,
     required this.denominacion,
     this.descripcion,
+    this.sku,
     this.foto,
     required this.precio,
     required this.cantidad,
@@ -35,9 +42,11 @@ class Product {
     required this.esPorLotes,
     required this.esElaborado,
     required this.esServicio,
+    this.esPaquete = false,
     required this.categoria,
     this.variantes = const [],
     this.inventoryMetadata,
+    this.reservadoCarnaval = 0,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -45,6 +54,7 @@ class Product {
       id: json['id'],
       denominacion: json['denominacion'],
       descripcion: json['descripcion'],
+      sku: json['sku'],
       foto: json['foto'],
       precio: json['precio']?.toDouble() ?? 0.0,
       cantidad: json['cantidad'] ?? 0,
@@ -57,12 +67,14 @@ class Product {
       esPorLotes: json['es_por_lotes'] ?? false,
       esElaborado: json['es_elaborado'] ?? false,
       esServicio: json['es_servicio'] ?? false,
+      esPaquete: json['es_paquete'] ?? false,
       categoria: json['categoria'] ?? '',
       variantes:
           (json['variantes'] as List<dynamic>?)
               ?.map((v) => ProductVariant.fromJson(v))
               .toList() ??
           [],
+      reservadoCarnaval: json['reservado_carnaval'] ?? 0,
     );
   }
 
@@ -72,6 +84,7 @@ class Product {
       'id': id,
       'denominacion': denominacion,
       'descripcion': descripcion,
+      'sku': sku,
       'foto': foto,
       'precio': precio,
       'cantidad': cantidad,
@@ -84,9 +97,11 @@ class Product {
       'es_por_lotes': esPorLotes,
       'es_elaborado': esElaborado,
       'es_servicio': esServicio,
+      'es_paquete': esPaquete,
       'categoria': categoria,
       'variantes': variantes.map((v) => v.toJson()).toList(),
       'inventoryMetadata': inventoryMetadata,
+      'reservado_carnaval': reservadoCarnaval,
     };
   }
 }
@@ -99,6 +114,10 @@ class ProductVariant {
   final String? descripcion;
   final Map<String, dynamic>?
   inventoryMetadata; // Store inventory data for this specific variant
+  final num reservadoCarnaval;
+
+  /// Stock real descontando reservas de Carnaval
+  num get cantidadReal => (cantidad - reservadoCarnaval).clamp(0, double.infinity);
 
   ProductVariant({
     required this.id,
@@ -107,6 +126,7 @@ class ProductVariant {
     required this.cantidad,
     this.descripcion,
     this.inventoryMetadata,
+    this.reservadoCarnaval = 0,
   });
 
   factory ProductVariant.fromJson(Map<String, dynamic> json) {
@@ -116,6 +136,7 @@ class ProductVariant {
       precio: json['precio']?.toDouble() ?? 0.0,
       cantidad: json['cantidad'] ?? 0,
       descripcion: json['descripcion'],
+      reservadoCarnaval: json['reservado_carnaval'] ?? 0,
     );
   }
 
@@ -128,6 +149,7 @@ class ProductVariant {
       'cantidad': cantidad,
       'descripcion': descripcion,
       'inventoryMetadata': inventoryMetadata,
+      'reservado_carnaval': reservadoCarnaval,
     };
   }
 }

@@ -15,10 +15,12 @@ import 'add_product_screen.dart';
 import 'product_detail_screen.dart';
 import 'excel_import_screen.dart';
 import '../models/ai_product_models.dart';
+import '../services/barcode_service.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../widgets/ai_product_generator_sheet.dart';
 import '../utils/navigation_guard.dart';
+import 'barcode_scanner_screen.dart';
 
 class ProductsScreen extends StatefulWidget {
   const ProductsScreen({super.key});
@@ -78,6 +80,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   bool _hasAdvancedPlan = false;
   bool _isLoadingAdvancedPlan = true;
   bool _isAlmacenero = false;
+  double _usdRate = 0.0;
 
   @override
   void initState() {
@@ -137,6 +140,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
       // Fetch and update exchange rates first
       print('💱 Fetching exchange rates...');
       await CurrencyService.fetchAndUpdateExchangeRates();
+      final rate = await CurrencyService.getEffectiveUsdToCupRate();
 
       final productos = await ProductService.getProductsByTienda(
         categoryId: _selectedCategoryId,
@@ -145,6 +149,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
       setState(() {
         _products = productos;
+        _usdRate = rate;
         _isLoading = false;
       });
     } catch (e) {
@@ -253,6 +258,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.price_change_outlined, color: Colors.white),
+            onPressed: () => Navigator.pushNamed(context, '/precios-productos'),
+            tooltip: 'Gestión de Precios',
+          ),
           if (_canCreateProduct)
             IconButton(
               icon: const Icon(Icons.auto_awesome, color: Colors.white),
@@ -634,11 +644,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
     filteredProducts.sort((a, b) {
       switch (_sortBy) {
         case 'name':
-          return a.name.compareTo(b.name);
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
         case 'price':
           return a.basePrice.compareTo(b.basePrice);
         case 'category':
-          return a.categoryName.compareTo(b.categoryName);
+          return a.categoryName.toLowerCase().compareTo(b.categoryName.toLowerCase());
         default:
           return 0;
       }
@@ -846,14 +856,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text(
-                        '\$${product.basePrice.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
-                        ),
-                      ),
+                      _buildPriceBadge(product),
                       const SizedBox(height: 4),
                       Column(
                         children: [
@@ -974,6 +977,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         ),
                       if (_canEditProduct)
                         IconButton(
+                          icon: Icon(
+                            Icons.qr_code,
+                            size: 20,
+                            color: (product.barcode.isNotEmpty || (product.codigoBarras ?? '').isNotEmpty)
+                                ? AppColors.primary
+                                : Colors.grey,
+                          ),
+                          onPressed: () => _showBarcodeDialog(product),
+                          tooltip: 'Código de barras',
+                        ),
+                      if (_canEditProduct)
+                        IconButton(
                           icon: const Icon(Icons.add_a_photo, size: 20),
                           onPressed: () => _showAddImageDialog(product),
                           color: Colors.orange,
@@ -995,6 +1010,61 @@ class _ProductsScreenState extends State<ProductsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildPriceBadge(Product product) {
+    final cup = product.basePrice;
+    final usd = product.precioVentaUsd;
+    final hasBoth = cup > 0 && usd != null && usd > 0;
+    final mismatch = hasBoth && _usdRate > 0
+        ? ((cup - usd * _usdRate).abs() / (usd * _usdRate)) > 0.02
+        : false;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (mismatch)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: Tooltip(
+                  message:
+                      'Los precios no coinciden con la tasa de conversión\n'
+                      '(Tasa: $_usdRate CUP/USD)',
+                  child: const Icon(
+                    Icons.warning_amber_rounded,
+                    size: 16,
+                    color: Colors.orange,
+                  ),
+                ),
+              ),
+            Text(
+              cup > 0
+                  ? '₱${cup.toStringAsFixed(2)} CUP'
+                  : 'Sin precio',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: cup > 0 ? AppColors.primary : AppColors.error,
+              ),
+            ),
+          ],
+        ),
+        if (usd != null && usd > 0) ...[
+          const SizedBox(height: 2),
+          Text(
+            '\$${usd.toStringAsFixed(2)} USD',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: mismatch ? Colors.orange : const Color(0xFF4A90E2),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -1990,6 +2060,272 @@ class _ProductsScreenState extends State<ProductsScreen> {
           ),
     );
   }
+
+  // ─── GESTIÓN DE CÓDIGO DE BARRAS ────────────────────────────
+
+  void _showBarcodeDialog(Product product) {
+    final productId = int.tryParse(product.id);
+    if (productId == null) return;
+
+    final codigoActual = product.codigoBarras ?? product.barcode;
+    final barcodeController = TextEditingController(text: codigoActual);
+    bool isLoading = true;
+    Map<String, String?>? desglose;
+    List<Map<String, dynamic>> codigosExtra = [];
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            // Cargar datos al abrir
+            if (isLoading) {
+              isLoading = false;
+              _loadBarcodeData(productId, codigoActual).then((data) {
+                setDialogState(() {
+                  desglose = data['desglose'] as Map<String, String?>?;
+                  codigosExtra = data['codigos'] as List<Map<String, dynamic>>? ?? [];
+                });
+              });
+            }
+
+            return AlertDialog(
+              title: Row(
+                children: [
+                  const Icon(Icons.qr_code, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Código de Barras',
+                      style: const TextStyle(fontSize: 18),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Producto
+                    Text(
+                      product.name.isNotEmpty ? product.name : product.denominacion,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Campo editable
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: barcodeController,
+                            decoration: const InputDecoration(
+                              labelText: 'Código de barras',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.qr_code_scanner, color: AppColors.primary),
+                          tooltip: 'Escanear',
+                          onPressed: () async {
+                            final result = await Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
+                            );
+                            if (result != null && result is Map<String, dynamic>) {
+                              final barcode = result['barcode'] as String? ?? '';
+                              final format = result['format'] as String? ?? 'unknown';
+                              barcodeController.text = barcode;
+                              // Recalcular desglose
+                              if (barcode.isNotEmpty) {
+                                final tipo = BarcodeService.formatToHumanReadable(format);
+                                final parsed = BarcodeService.parseBarcode(barcode, tipo);
+                                setDialogState(() {
+                                  desglose = parsed;
+                                });
+                              }
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+
+                    // Desglose del código
+                    if (desglose != null && desglose!['prefijo_pais'] != null) ...[
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      const Text(
+                        'Desglose del código',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildDesgloseRow('País', '${desglose!['prefijo_pais'] ?? '—'}${desglose!['pais_origen'] != null ? ' (${desglose!['pais_origen']})' : ''}'),
+                      _buildDesgloseRow('Fabricante', desglose!['codigo_fabricante'] ?? '—'),
+                      _buildDesgloseRow('Producto', desglose!['codigo_producto'] ?? '—'),
+                      _buildDesgloseRow('Dígito control', desglose!['digito_control'] ?? '—'),
+                      if (desglose!['numero_sistema'] != null)
+                        _buildDesgloseRow('Sistema', desglose!['numero_sistema']!),
+                    ],
+
+                    // Códigos extra de la tabla codigo_producto
+                    if (codigosExtra.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      Text(
+                        'Registros en BD (${codigosExtra.length})',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(height: 4),
+                      ...codigosExtra.map((c) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.label_outline, size: 14, color: Colors.grey),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                '${c['codigo_barras']} (${c['tipo_codigo'] ?? '—'})',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cerrar'),
+                ),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.save, size: 18),
+                  label: const Text('Guardar'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    final newBarcode = barcodeController.text.trim();
+                    if (newBarcode.isEmpty) {
+                      Navigator.pop(context);
+                      return;
+                    }
+                    try {
+                      // Actualizar en app_dat_producto
+                      await Supabase.instance.client
+                          .from('app_dat_producto')
+                          .update({'codigo_barras': newBarcode})
+                          .eq('id', productId);
+
+                      // Guardar en tablas de código de barras
+                      final tipo = desglose != null ? 'EAN-13' : 'unknown';
+                      await BarcodeService.saveBarcodeData(
+                        idProducto: productId,
+                        codigoBarras: newBarcode,
+                        tipoCodigoBarras: tipo,
+                        fabricante: product.brand.isNotEmpty ? product.brand : null,
+                      );
+
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Código de barras actualizado'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                      _loadProducts();
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDesgloseRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ),
+          Expanded(
+            child: Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>> _loadBarcodeData(int productId, String codigoActual) async {
+    Map<String, String?>? desglose;
+    List<Map<String, dynamic>> codigos = [];
+
+    // Parsear desglose del código actual
+    if (codigoActual.isNotEmpty) {
+      final digits = codigoActual.replaceAll(RegExp(r'[^0-9]'), '');
+      String tipo;
+      if (digits.length == 13) {
+        tipo = 'EAN-13';
+      } else if (digits.length == 12) {
+        tipo = 'UPC-A';
+      } else if (digits.length == 8) {
+        tipo = 'EAN-8';
+      } else {
+        tipo = 'unknown';
+      }
+      desglose = BarcodeService.parseBarcode(codigoActual, tipo);
+    }
+
+    // Cargar registros existentes de codigo_producto
+    try {
+      final response = await Supabase.instance.client
+          .from('codigo_producto')
+          .select('codigo_barras, tipo_codigo, codigo_fabricante, prefijo_pais, pais_origen')
+          .eq('id_producto', productId);
+
+      if (response != null && response is List) {
+        codigos = response.map((r) => Map<String, dynamic>.from(r as Map)).toList();
+
+        // Si hay desglose guardado en BD, usarlo (más completo)
+        if (codigos.isNotEmpty && desglose?['prefijo_pais'] == null) {
+          final first = codigos.first;
+          desglose = {
+            'prefijo_pais': first['prefijo_pais']?.toString(),
+            'codigo_fabricante': first['codigo_fabricante']?.toString(),
+            'pais_origen': first['pais_origen']?.toString(),
+            'codigo_producto': null,
+            'digito_control': null,
+            'numero_sistema': null,
+          };
+        }
+      }
+    } catch (e) {
+      print('Error cargando datos de código de barras: $e');
+    }
+
+    return {'desglose': desglose, 'codigos': codigos};
+  }
 }
 
 /// Diálogo para seleccionar y subir imagen del producto
@@ -2359,4 +2695,5 @@ class _AddImageDialogState extends State<_AddImageDialog> {
       ),
     );
   }
+
 }

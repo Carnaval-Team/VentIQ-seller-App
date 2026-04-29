@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Ride Confirmed</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+            extend: {
+                colors: {
+                    "primary": "#195de6",
+                    "background-light": "#f6f6f8",
+                    "background-dark": "#111621",
+                },
+                fontFamily: {
+                    "display": ["Plus Jakarta Sans", "sans-serif"]
+                },
+            },
+            },
+        }
+    </script>
+<style>
+        /* Custom scrollbar hide for clean mobile look */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* Ensure map container takes available height */
+        body, html {
+            height: 100%;
+            overflow: hidden; 
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display h-full w-full flex flex-col relative overflow-hidden">
+<!-- Top Navigation / Header Overlay -->
+<div class="absolute top-0 left-0 right-0 z-20 pt-12 px-4 pb-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
+<div class="flex items-center justify-between pointer-events-auto">
+<button class="flex items-center justify-center w-10 h-10 rounded-full bg-background-dark/80 backdrop-blur-md text-white shadow-lg hover:bg-background-dark transition-colors">
+<span class="material-symbols-outlined text-xl">arrow_back</span>
+</button>
+<div class="flex items-center gap-2 bg-background-dark/80 backdrop-blur-md px-4 py-2 rounded-full shadow-lg border border-slate-700/50">
+<span class="relative flex h-3 w-3">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+<span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+</span>
+<span class="text-sm font-semibold text-white">Arriving in 4 mins</span>
+</div>
+<button class="flex items-center justify-center w-10 h-10 rounded-full bg-background-dark/80 backdrop-blur-md text-white shadow-lg hover:bg-background-dark transition-colors group">
+<span class="material-symbols-outlined text-xl group-hover:text-red-400 transition-colors">shield</span>
+</button>
+</div>
+</div>
+<!-- Map Container (Background) -->
+<div class="absolute inset-0 z-0 bg-slate-800 w-full h-full">
+<!-- Abstract Map Representation -->
+<div class="w-full h-full relative overflow-hidden bg-[#1a202c]" data-alt="Dark mode map showing streets and navigation route" data-location="Los Angeles" style="">
+<!-- Map Base Color -->
+<div class="absolute inset-0 bg-[#111621]"></div>
+<!-- Map Roads (Abstract CSS drawing) -->
+<div class="absolute top-0 left-1/4 w-8 h-full bg-[#1e293b] skew-x-12 transform -translate-x-1/2"></div>
+<div class="absolute top-1/3 left-0 w-full h-6 bg-[#1e293b] rotate-12 origin-left"></div>
+<div class="absolute bottom-0 right-1/3 w-12 h-full bg-[#1e293b] -skew-x-6"></div>
+<!-- Route Line -->
+<svg class="absolute inset-0 w-full h-full pointer-events-none z-10" style="filter: drop-shadow(0 0 4px rgba(25, 93, 230, 0.5));">
+<path class="animate-[dash_20s_linear_infinite]" d="M100,150 Q180,200 220,400" fill="none" stroke="#195de6" stroke-dasharray="10, 5" stroke-linecap="round" stroke-width="6"></path>
+<defs>
+<style>
+                        @keyframes dash {
+                            to {
+                                stroke-dashoffset: -1000;
+                            }
+                        }
+                    </style>
+</defs>
+</svg>
+<!-- Driver Pin -->
+<div class="absolute top-[35%] left-[45%] transform -translate-x-1/2 -translate-y-1/2 z-20">
+<div class="relative flex items-center justify-center w-12 h-12 bg-background-dark rounded-full border-4 border-primary shadow-xl">
+<span class="material-symbols-outlined text-primary">directions_car</span>
+</div>
+<div class="absolute -bottom-2 left-1/2 transform -translate-x-1/2 bg-background-dark text-[10px] font-bold px-2 py-0.5 rounded-full text-white whitespace-nowrap shadow-md border border-slate-700">Ricardo</div>
+</div>
+<!-- Pickup Pin -->
+<div class="absolute bottom-[20%] right-[30%] transform -translate-x-1/2 -translate-y-1/2 z-20">
+<div class="w-4 h-4 bg-white rounded-full border-4 border-black shadow-[0_0_0_4px_rgba(255,255,255,0.3)]"></div>
+</div>
+</div>
+</div>
+<!-- Bottom Sheet / Action Area -->
+<div class="absolute bottom-0 left-0 right-0 z-30 flex flex-col justify-end pointer-events-none h-full">
+<!-- Floating Location Button -->
+<div class="w-full flex justify-end px-4 pb-4 pointer-events-auto">
+<button class="flex items-center justify-center w-12 h-12 rounded-full bg-background-dark text-primary shadow-lg hover:bg-slate-800 transition-colors border border-slate-700/50">
+<span class="material-symbols-outlined">my_location</span>
+</button>
+</div>
+<!-- Main Card -->
+<div class="w-full bg-background-dark rounded-t-3xl shadow-[0_-4px_20px_rgba(0,0,0,0.4)] pointer-events-auto border-t border-slate-700/50 pb-8 relative overflow-hidden">
+<!-- Pull Indicator -->
+<div class="w-full flex justify-center pt-3 pb-1">
+<div class="w-12 h-1.5 bg-slate-600 rounded-full"></div>
+</div>
+<div class="px-5 pt-2 pb-6">
+<!-- Driver Info Header -->
+<div class="flex items-start gap-4 mb-6">
+<!-- Avatar -->
+<div class="relative shrink-0">
+<div class="w-16 h-16 rounded-full bg-slate-700 p-0.5 ring-2 ring-primary/50 shadow-lg">
+<img alt="Portrait of driver Ricardo smiling" class="w-full h-full object-cover rounded-full" data-alt="Close up portrait of a male driver smiling" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCXNItUk9n67e7A5q38jJ1R9DWO6l2xvZYGHS2k0ClrS744ZVB4-CzrXCAhirY_XLo1tT2KRxYgqrIzPnL9hxYIajeTi-o1eSf9Ke7eDlSD6wZyhi1r935doxF9AjnlVM_Ux6BQxDwnkAcvOJg87tfy8jJzAD6TIOJHi86jQpgRkSaHknmH61IdmH33bii0gZDF755y1BFhN-0PM_jcVm1dynBJ7JjA4ayGatk7Xp11MPwhMZol4XWR_GH30Lm7cU3xab7X45_AZw"/>
+</div>
+<div class="absolute -bottom-1 -right-1 bg-white dark:bg-slate-800 rounded-full p-1 shadow-md border border-slate-200 dark:border-slate-700 flex items-center justify-center">
+<span class="material-symbols-outlined text-yellow-400 text-[16px] leading-none">star</span>
+<span class="text-[10px] font-bold ml-0.5 leading-none">4.9</span>
+</div>
+</div>
+<!-- Details -->
+<div class="flex-1 min-w-0 pt-1">
+<div class="flex justify-between items-start">
+<div>
+<h2 class="text-xl font-bold text-white leading-tight">Ricardo M.</h2>
+<p class="text-slate-400 text-sm mt-0.5">Toyota Yaris • White</p>
+</div>
+<div class="bg-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-700">
+<p class="text-lg font-mono font-bold text-white tracking-wider leading-none">ABC-1234</p>
+</div>
+</div>
+<div class="flex items-center gap-3 mt-3">
+<span class="flex items-center text-xs font-medium text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[14px] mr-1">verified_user</span> Verified
+                            </span>
+<span class="flex items-center text-xs font-medium text-slate-400">
+                                1,240 rides
+                            </span>
+</div>
+</div>
+</div>
+<!-- Chat Preview Bubble -->
+<div class="mb-6 relative group cursor-pointer">
+<div class="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-8 bg-primary rounded-full"></div>
+<div class="bg-slate-800/50 hover:bg-slate-800 transition-colors rounded-xl p-3 pl-4 flex items-center justify-between border border-slate-700/50">
+<div class="flex items-center gap-3 overflow-hidden">
+<div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-slate-400 text-sm">chat_bubble</span>
+</div>
+<div class="flex flex-col min-w-0">
+<p class="text-xs text-slate-400 font-medium">Last message</p>
+<p class="text-sm text-white truncate">I'm at the corner near the store.</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-slate-500 text-lg">chevron_right</span>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="grid grid-cols-2 gap-3">
+<button class="flex items-center justify-center gap-2 h-14 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-lg shadow-lg shadow-primary/25 transition-all active:scale-[0.98]">
+<span class="material-symbols-outlined">call</span>
+                        Call Driver
+                    </button>
+<button class="flex items-center justify-center gap-2 h-14 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold text-lg shadow-lg shadow-green-500/20 transition-all active:scale-[0.98]">
+<!-- WhatsApp Icon (SVG for brand accuracy) -->
+<svg class="w-6 h-6" fill="currentColor" height="24" viewbox="0 0 24 24" width="24">
+<path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.711 2.598 2.669-.7c.987.545 1.743.832 2.791.832 3.19 0 5.775-2.587 5.775-5.767s-2.585-5.766-5.775-5.766zm0-1.875c4.221 0 7.65 3.429 7.65 7.641 0 4.222-3.429 7.65-7.65 7.65-1.29 0-2.532-.347-3.622-.96l-4.409 1.157 1.173-4.296c-.691-1.129-1.092-2.316-1.092-3.551 0-4.212 3.429-7.641 7.65-7.641zm4.187 9.873c-.167-.092-.991-.491-1.146-.549-.155-.056-.266-.092-.379.092-.112.185-.436.549-.527.657-.101.111-.202.129-.368.046-.167-.083-.705-.26-1.343-.828-.496-.442-.832-.988-1.018-1.303s-.009-.462.066-.554c.083-.102.185-.26.278-.388.093-.129.121-.213.186-.342.065-.129.028-.241-.018-.342-.047-.102-.418-1.008-.574-1.379-.148-.362-.308-.306-.418-.306-.112-.009-.241-.009-.371-.009-.129 0-.342.046-.518.241-.176.195-.675.657-.675 1.601 0 .944.685 1.86.777 1.99.093.129 1.352 2.064 3.275 2.894 1.923.83 1.923.554 2.275.518.352-.037 1.129-.462 1.286-.907.158-.444.158-.824.112-.907-.046-.083-.167-.139-.334-.222z"></path>
+</svg>
+                        WhatsApp
+                    </button>
+</div>
+<!-- Bottom Safe Area Spacer for iOS Home Indicator -->
+<div class="h-6 w-full"></div>
+</div>
+</div>
+</div>
+</body></html>

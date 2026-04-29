@@ -301,6 +301,8 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
         return Colors.orange;
       case UserRole.vendedor:
         return Colors.purple;
+      case UserRole.recursosHumanos:
+        return Colors.teal;
       case UserRole.none:
         return Colors.grey;
     }

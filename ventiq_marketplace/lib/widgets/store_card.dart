@@ -10,6 +10,7 @@ class StoreCard extends StatelessWidget {
   final int salesCount;
   final double rating;
   final String? logoUrl;
+  final String? heroTag;
   final VoidCallback onTap;
 
   const StoreCard({
@@ -19,6 +20,7 @@ class StoreCard extends StatelessWidget {
     required this.salesCount,
     required this.rating,
     this.logoUrl,
+    this.heroTag,
     required this.onTap,
   });
 
@@ -57,7 +59,7 @@ class StoreCard extends StatelessWidget {
           children: [
             // Header con gradiente
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
@@ -81,8 +83,8 @@ class StoreCard extends StatelessWidget {
                 children: [
                   // Logo de la tienda mejorado
                   Container(
-                    width: 50,
-                    height: 50,
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topLeft,
@@ -100,25 +102,48 @@ class StoreCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: logoUrl != null
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(
-                              AppTheme.radiusM,
-                            ),
-                            child: SupabaseImage(
-                              imageUrl: logoUrl!,
-                              fit: BoxFit.cover,
-                              borderRadius: AppTheme.radiusM,
-                              width: 50,
-                              height: 50,
-                              placeholderAsset: null, // Default
-                            ),
+                    child: heroTag != null
+                        ? Hero(
+                            tag: heroTag!,
+                            child: logoUrl != null
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(
+                                      AppTheme.radiusM,
+                                    ),
+                                    child: SupabaseImage(
+                                      imageUrl: logoUrl!,
+                                      fit: BoxFit.cover,
+                                      borderRadius: AppTheme.radiusM,
+                                      width: 44,
+                                      height: 44,
+                                      placeholderAsset: null,
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.store_rounded,
+                                    size: 30,
+                                    color: accentColor,
+                                  ),
                           )
-                        : Icon(
-                            Icons.store_rounded,
-                            size: 35,
-                            color: accentColor,
-                          ),
+                        : logoUrl != null
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.radiusM,
+                                ),
+                                child: SupabaseImage(
+                                  imageUrl: logoUrl!,
+                                  fit: BoxFit.cover,
+                                  borderRadius: AppTheme.radiusM,
+                                  width: 44,
+                                  height: 44,
+                                  placeholderAsset: null,
+                                ),
+                              )
+                            : Icon(
+                                Icons.store_rounded,
+                                size: 30,
+                                color: accentColor,
+                              ),
                   ),
                   const SizedBox(width: 12),
 
@@ -178,34 +203,28 @@ class StoreCard extends StatelessWidget {
 
             // Contenido principal
             Padding(
-              padding: const EdgeInsets.all(10),
-              child: Column(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              child: Row(
                 children: [
-                  // Estadísticas mejoradas
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildModernStatCard(
-                          context: context,
-                          icon: Icons.inventory_2_rounded,
-                          label: 'Productos',
-                          value: _formatNumber(productCount),
-                          color: accentColor,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _buildModernStatCard(
-                          context: context,
-                          icon: Icons.shopping_cart_rounded,
-                          label: 'Ventas',
-                          value: _formatNumber(salesCount),
-                          color: AppTheme.getPriceColor(context),
-                        ),
-                      ),
-                    ],
+                  Expanded(
+                    child: _buildModernStatCard(
+                      context: context,
+                      icon: Icons.inventory_2_rounded,
+                      label: 'Productos',
+                      value: _formatNumber(productCount),
+                      color: accentColor,
+                    ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildModernStatCard(
+                      context: context,
+                      icon: Icons.shopping_cart_rounded,
+                      label: 'Ventas',
+                      value: _formatNumber(salesCount),
+                      color: AppTheme.getPriceColor(context),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -226,7 +245,7 @@ class StoreCard extends StatelessWidget {
     final textSecondary = AppTheme.getTextSecondaryColor(context);
 
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -250,13 +269,13 @@ class StoreCard extends StatelessWidget {
               color: color.withOpacity(isDark ? 0.2 : 0.15),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, size: 20, color: color),
+            child: Icon(icon, size: 18, color: color),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             value,
             style: TextStyle(
-              fontSize: 16,
+              fontSize: 14,
               fontWeight: FontWeight.bold,
               color: color,
             ),

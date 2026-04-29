@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../services/currency_display_service.dart';
+import '../services/currency_service.dart';
 import '../services/liquidacion_service.dart';
 import '../services/consignacion_movimientos_service.dart';
 
@@ -27,18 +27,22 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
   final _montoCupController = TextEditingController();
   final _observacionesController = TextEditingController();
 
-  double _tasaCambio = 1.0;
+  double _tasaUsdCup = 0.0;
   double _montoUsd = 0.0;
   bool _isLoading = false;
   bool _isCreating = false;
-  double _totalMontoVentas = 0.0;
+  double _totalMontoVentasUsd = 0.0;
 
   @override
   void initState() {
     super.initState();
-    _loadTasaCambio();
-    _cargarTotalVentas();
+    _loadInitialData();
     _montoCupController.addListener(_calcularConversion);
+  }
+
+  Future<void> _loadInitialData() async {
+    await _loadTasaCambio();
+    await _cargarTotalVentas();
   }
 
   @override
@@ -51,13 +55,13 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
   Future<void> _loadTasaCambio() async {
     setState(() => _isLoading = true);
     try {
-      // Obtener tasa CUP -> USD (ej: 1 CUP = 0.025 USD)
-      final rate = await CurrencyDisplayService.getExchangeRateForDisplay('CUP', 'USD');
+      // Obtener tasa USD → CUP de CurrencyService (ej: 1 USD = 300 CUP)
+      final rate = await CurrencyService.getEffectiveUsdToCupRate();
       if (mounted) {
         setState(() {
-          _tasaCambio = rate;
+          _tasaUsdCup = rate;
         });
-        debugPrint('💱 Tasa de cambio cargada: 1 CUP = $_tasaCambio USD');
+        debugPrint('💱 Tasa de cambio cargada (CurrencyService): 1 USD = $_tasaUsdCup CUP');
       }
     } catch (e) {
       debugPrint('⚠️ Error cargando tasa de cambio: $e');
@@ -66,19 +70,21 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
 
   Future<void> _cargarTotalVentas() async {
     try {
-      debugPrint('� Cargando total de ventas para contrato: ${widget.contratoId}');
+      debugPrint('📊 Cargando total de ventas para contrato: ${widget.contratoId}');
       final estadisticas = await ConsignacionMovimientosService.getEstadisticasVentas(
         idContrato: widget.contratoId,
         fechaDesde: null,
         fechaHasta: null,
       );
       
-      final totalVentas = (estadisticas['totalMontoVentas'] as num?)?.toDouble() ?? 0.0;
-      debugPrint('✅ Total de ventas cargado: \$${totalVentas.toStringAsFixed(2)} USD');
+      final totalVentasCup = (estadisticas['totalMontoVentas'] as num?)?.toDouble() ?? 0.0;
+      // Convertir CUP a USD usando la tasa de CurrencyService
+      final totalVentasUsd = _tasaUsdCup > 0 ? totalVentasCup / _tasaUsdCup : 0.0;
+      debugPrint('✅ Total de ventas: \$${totalVentasCup.toStringAsFixed(2)} CUP = \$${totalVentasUsd.toStringAsFixed(2)} USD');
       
       if (mounted) {
         setState(() {
-          _totalMontoVentas = totalVentas;
+          _totalMontoVentasUsd = totalVentasUsd;
           _isLoading = false;
         });
       }
@@ -93,8 +99,8 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
   void _calcularConversion() {
     final montoCup = double.tryParse(_montoCupController.text) ?? 0.0;
     setState(() {
-      // Convertir CUP a USD: multiplicar por la tasa (1 CUP = X USD)
-      _montoUsd = montoCup * _tasaCambio;
+      // Convertir CUP a USD: dividir por tasa USD→CUP
+      _montoUsd = _tasaUsdCup > 0 ? montoCup / _tasaUsdCup : 0.0;
     });
   }
 
@@ -102,11 +108,11 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
     if (!_formKey.currentState!.validate()) return;
 
     final montoCup = double.parse(_montoCupController.text);
-    final montoUsd = montoCup * _tasaCambio;
+    final montoUsd = _tasaUsdCup > 0 ? montoCup / _tasaUsdCup : 0.0;
     final totalLiquidadoNuevo = widget.totalLiquidaciones + montoUsd;
 
     // Verificar si es pago por adelantado
-    if (totalLiquidadoNuevo > _totalMontoVentas) {
+    if (totalLiquidadoNuevo > _totalMontoVentasUsd) {
       // Mostrar diálogo de confirmación
       final confirmar = await showDialog<bool>(
         context: context,
@@ -151,7 +157,7 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _buildInfoRow('Total vendido:', '\$${_totalMontoVentas.toStringAsFixed(2)} USD'),
+                _buildInfoRow('Total vendido:', '\$${_totalMontoVentasUsd.toStringAsFixed(2)} USD'),
                 const SizedBox(height: 8),
                 _buildInfoRow('Total liquidado actualmente:', '\$${widget.totalLiquidaciones.toStringAsFixed(2)} USD'),
                 const SizedBox(height: 8),
@@ -186,7 +192,7 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Exceso: \$${(totalLiquidadoNuevo - _totalMontoVentas).toStringAsFixed(2)} USD',
+                              'Exceso: \$${(totalLiquidadoNuevo - _totalMontoVentasUsd).toStringAsFixed(2)} USD',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -233,6 +239,7 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
       final result = await LiquidacionService.crearLiquidacion(
         contratoId: widget.contratoId,
         montoCup: montoCup,
+        tasaUsdCup: _tasaUsdCup,
         observaciones: _observacionesController.text.trim().isEmpty 
             ? null 
             : _observacionesController.text.trim(),
@@ -382,8 +389,8 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        _tasaCambio > 0 
-                                            ? '\$${(saldoPendiente / _tasaCambio).toStringAsFixed(2)}'
+                                        _tasaUsdCup > 0 
+                                            ? '\$${(saldoPendiente * _tasaUsdCup).toStringAsFixed(2)}'
                                             : '---',
                                         style: TextStyle(
                                           fontSize: 16,
@@ -439,7 +446,7 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
                         
                         // Validar que no supere el saldo pendiente
                         final saldoPendiente = widget.montoTotalContrato - widget.totalLiquidaciones;
-                        final montoUsd = monto * _tasaCambio;
+                        final montoUsd = _tasaUsdCup > 0 ? monto / _tasaUsdCup : 0.0;
                         
                         if (montoUsd > saldoPendiente) {
                           return 'El monto no puede superar el saldo pendiente (\$${saldoPendiente.toStringAsFixed(2)} USD)';
@@ -477,7 +484,7 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Tasa: 1 CUP = ${_tasaCambio.toStringAsFixed(4)} USD',
+                            'Tasa: 1 USD = ${_tasaUsdCup.toStringAsFixed(2)} CUP',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey[700],

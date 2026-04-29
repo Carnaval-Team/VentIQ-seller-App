@@ -151,6 +151,7 @@ class ProductService {
       id: data['id_producto'] as int? ?? 0,
       denominacion: data['denominacion'] as String? ?? 'Sin nombre',
       descripcion: data['descripcion'] as String?,
+      sku: data['sku'] as String?,
       foto:
           data['imagen'] ??
           _generateProductImage(data['denominacion'] as String? ?? 'producto'),
@@ -174,8 +175,16 @@ class ProductService {
           (data['metadata'] != null && data['metadata']['es_servicio'] != null)
               ? data['metadata']['es_servicio'] as bool
               : data['es_servicio'] as bool? ?? false,
+      esPaquete:
+          (data['metadata'] != null && data['metadata']['es_paquete'] != null)
+              ? data['metadata']['es_paquete'] as bool
+              : data['es_paquete'] as bool? ?? false,
       categoria: data['categoria_nombre'] as String? ?? 'Sin categoría',
       variantes: [], // Empty variants for now
+      reservadoCarnaval:
+          (data['metadata'] != null && data['metadata']['reservado_carnaval'] != null)
+              ? data['metadata']['reservado_carnaval'] as num
+              : 0,
     );
   }
 

@@ -395,6 +395,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         return Colors.orange;
       case UserRole.vendedor:
         return Colors.purple;
+      case UserRole.recursosHumanos:
+        return Colors.teal;
       case UserRole.none:
         return Colors.grey;
     }

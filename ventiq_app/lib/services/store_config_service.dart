@@ -239,6 +239,19 @@ class StoreConfigService {
     }
   }
 
+  /// Obtiene el valor de allow_seller_make_order_modifications
+  static Future<bool> getAllowSellerMakeOrderModifications(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final value = config?['allow_seller_make_order_modifications'] ?? false;
+      print('✅ allow_seller_make_order_modifications: $value para tienda $storeId');
+      return value;
+    } catch (e) {
+      print('❌ Error al obtener allow_seller_make_order_modifications: $e');
+      return false;
+    }
+  }
+
   /// Verifica si hay configuración de tienda en cache
   static Future<bool> hasStoreConfigInCache() async {
     try {

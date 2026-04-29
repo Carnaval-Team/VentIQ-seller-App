@@ -265,6 +265,52 @@ class SupplierPaymentService {
     }
   }
 
+  /// Obtener los porcentajes globales de comisión desde la tabla
+  static Future<Map<String, double>> getGlobalPercentages() async {
+    try {
+      final response = await _supabase
+          .from('precio_global_productos_carnaval')
+          .select('porciento_efectivo, porciento_transferencia')
+          .limit(1)
+          .maybeSingle();
+
+      if (response == null) {
+        return {'efectivo': 5.0, 'transferencia': 15.0};
+      }
+
+      return {
+        'efectivo': (response['porciento_efectivo'] as num?)?.toDouble() ?? 5.0,
+        'transferencia':
+            (response['porciento_transferencia'] as num?)?.toDouble() ?? 15.0,
+      };
+    } catch (e) {
+      debugPrint('❌ Error obteniendo porcentajes globales: $e');
+      return {'efectivo': 5.0, 'transferencia': 15.0};
+    }
+  }
+
+  /// Actualizar los porcentajes globales de comisión
+  static Future<bool> updateGlobalPercentages({
+    required double efectivo,
+    required double transferencia,
+  }) async {
+    try {
+      // Update the single row (id=1)
+      await _supabase
+          .from('precio_global_productos_carnaval')
+          .update({
+            'porciento_efectivo': efectivo,
+            'porciento_transferencia': transferencia,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', 1);
+      return true;
+    } catch (e) {
+      debugPrint('❌ Error actualizando porcentajes: $e');
+      return false;
+    }
+  }
+
   /// Obtener estadísticas generales de pagos
   static Future<PaymentStats> getPaymentStats(
     DateTime fechaInicio,

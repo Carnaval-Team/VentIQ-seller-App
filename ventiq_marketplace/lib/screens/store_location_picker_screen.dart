@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 
 import '../config/app_theme.dart';
+import '../mixins/repartidor_map_mixin.dart';
 
 class StoreLocationPickerScreen extends StatefulWidget {
   final LatLng? initialLocation;
@@ -15,7 +16,7 @@ class StoreLocationPickerScreen extends StatefulWidget {
       _StoreLocationPickerScreenState();
 }
 
-class _StoreLocationPickerScreenState extends State<StoreLocationPickerScreen> {
+class _StoreLocationPickerScreenState extends State<StoreLocationPickerScreen> with RepartidorMapMixin {
   final MapController _mapController = MapController();
 
   LatLng? _selected;
@@ -26,6 +27,7 @@ class _StoreLocationPickerScreenState extends State<StoreLocationPickerScreen> {
     super.initState();
     _selected = widget.initialLocation;
     _getCurrentLocation();
+    initRepartidorTracking();
   }
 
   Future<void> _getCurrentLocation() async {
@@ -65,6 +67,7 @@ class _StoreLocationPickerScreenState extends State<StoreLocationPickerScreen> {
 
   @override
   void dispose() {
+    disposeRepartidorTracking();
     _mapController.dispose();
     super.dispose();
   }
@@ -126,6 +129,7 @@ class _StoreLocationPickerScreenState extends State<StoreLocationPickerScreen> {
                         ),
                       ),
                     ),
+                  ...buildRepartidorMarkers(),
                 ],
               ),
             ],
@@ -135,6 +139,8 @@ class _StoreLocationPickerScreenState extends State<StoreLocationPickerScreen> {
             bottom: 16,
             child: Column(
               children: [
+                buildRepartidorToggleButton(),
+                const SizedBox(height: 8),
                 FloatingActionButton.small(
                   heroTag: 'store_location_my_location',
                   backgroundColor: Colors.white,

@@ -10,6 +10,8 @@ class SupplierPdfGenerator {
     required DateTime fechaInicio,
     required DateTime fechaFin,
     required List<OrderPaymentDetail> orders,
+    double pctEfectivo = 5,
+    double pctTransferencia = 15,
   }) async {
     final pdf = pw.Document();
 
@@ -22,9 +24,9 @@ class SupplierPdfGenerator {
     final numberFormat = NumberFormat('#,##0.00', 'es');
 
     // Calculations
-    final cashDiscount = supplier.totalCash * 0.05;
+    final cashDiscount = supplier.totalCash * (pctEfectivo / 100);
     final netCash = supplier.totalCash - cashDiscount;
-    final transferDiscount = supplier.totalTransfer * 0.15;
+    final transferDiscount = supplier.totalTransfer * (pctTransferencia / 100);
     final netTransfer = supplier.totalTransfer - transferDiscount;
     final totalToPay = netCash + netTransfer;
 
@@ -44,6 +46,8 @@ class SupplierPdfGenerator {
               netTransfer,
               totalToPay,
               numberFormat,
+              pctEfectivo: pctEfectivo,
+              pctTransferencia: pctTransferencia,
             ),
             pw.SizedBox(height: 20),
             pw.Text(
@@ -114,8 +118,10 @@ class SupplierPdfGenerator {
     double transferDiscount,
     double netTransfer,
     double totalToPay,
-    NumberFormat numberFormat,
-  ) {
+    NumberFormat numberFormat, {
+    double pctEfectivo = 5,
+    double pctTransferencia = 15,
+  }) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(10),
       decoration: pw.BoxDecoration(
@@ -128,7 +134,7 @@ class SupplierPdfGenerator {
           _buildSummaryRow(
             'Efectivo',
             supplier.totalCash,
-            '5%',
+            '${pctEfectivo.toStringAsFixed(0)}%',
             cashDiscount,
             netCash,
             numberFormat,
@@ -140,7 +146,7 @@ class SupplierPdfGenerator {
           _buildSummaryRow(
             'Transferencia',
             supplier.totalTransfer,
-            '15%',
+            '${pctTransferencia.toStringAsFixed(0)}%',
             transferDiscount,
             netTransfer,
             numberFormat,

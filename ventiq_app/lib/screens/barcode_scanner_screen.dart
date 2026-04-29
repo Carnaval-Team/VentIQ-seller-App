@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../services/barcode_service.dart';
+import 'product_details_screen.dart';
 
 class BarcodeScannerScreen extends StatefulWidget {
   const BarcodeScannerScreen({Key? key}) : super(key: key);
@@ -207,37 +208,42 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   }
 
   void _searchProduct(String barcode) async {
-    if (isSearching) return; // Evitar búsquedas múltiples simultáneas
-    
+    if (isSearching) return;
+
     setState(() {
       isSearching = true;
       lastScannedCode = barcode;
     });
 
-    // Debug print del código escaneado
     print('Código de barras escaneado: $barcode');
 
     try {
-      final product = await _barcodeService.searchProductByBarcode(barcode);
-      
+      final result = await _barcodeService.searchProductByBarcode(barcode);
+
       setState(() {
         isSearching = false;
       });
 
-      if (product != null) {
-        // Producto encontrado - navegar a detalles
-        print('Producto encontrado: ${product.denominacion}');
-        Navigator.pushNamed(
+      if (result == null) {
+        _showProductNotFoundDialog(barcode, [], null);
+        return;
+      }
+
+      if (result.encontrado && result.producto != null) {
+        // Match exacto → ir a detalles
+        print('Producto encontrado: ${result.producto!.denominacion}');
+        Navigator.push(
           context,
-          '/product-details',
-          arguments: {
-            'product': product,
-            'categoryColor': const Color(0xFF4A90E2),
-          },
+          MaterialPageRoute(
+            builder: (context) => ProductDetailsScreen(
+              product: result.producto!,
+              categoryColor: const Color(0xFF4A90E2),
+            ),
+          ),
         );
       } else {
-        // Producto no encontrado - mostrar mensaje
-        _showProductNotFoundDialog(barcode);
+        // No encontrado → mostrar diálogo con similares si hay
+        _showProductNotFoundDialog(barcode, result.similares, result.desglose);
       }
     } catch (e) {
       setState(() {
@@ -248,16 +254,77 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
     }
   }
 
-  void _showProductNotFoundDialog(String barcode) {
+  void _showProductNotFoundDialog(
+    String barcode,
+    List<Map<String, dynamic>> similares,
+    Map<String, String?>? desglose,
+  ) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Producto no encontrado'),
-        content: Text('No se encontró ningún producto con el código de barras:\n$barcode'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Código: $barcode'),
+              // Mostrar desglose si existe
+              if (desglose != null && desglose['prefijo_pais'] != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Fabricante: ${desglose['codigo_fabricante'] ?? '—'}',
+                  style: const TextStyle(fontSize: 13, color: Colors.grey),
+                ),
+              ],
+              // Mostrar productos similares
+              if (similares.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Divider(),
+                Text(
+                  'Productos del mismo fabricante (${similares.length}):',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                ...similares.take(5).map((s) => _buildSimilarProductTile(s)),
+              ] else ...[
+                const SizedBox(height: 8),
+                const Text('No se encontraron productos similares.'),
+              ],
+            ],
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSimilarProductTile(Map<String, dynamic> similar) {
+    final nombre = similar['denominacion'] ?? '';
+    final precio = similar['precio_venta'] ?? 0;
+    final stock = similar['stock_disponible'] ?? 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          const Icon(Icons.inventory_2_outlined, size: 18, color: Color(0xFF4A90E2)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(nombre, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                Text(
+                  'Precio: \$$precio  |  Stock: $stock',
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+              ],
+            ),
           ),
         ],
       ),

@@ -1020,6 +1020,23 @@ class _SalesScreenState extends State<SalesScreen>
         style: pw.TextStyle(fontSize: 10, color: PdfColor.fromHex('#6B7280')),
       );
     }
+
+    final sorted = [...reports]
+      ..sort(
+        (a, b) => a.nombreProducto.toLowerCase().compareTo(
+          b.nombreProducto.toLowerCase(),
+        ),
+      );
+
+    final totalGanancia = sorted.fold<double>(
+      0.0,
+      (sum, p) => sum + p.gananciaTotal,
+    );
+    final totalGananciaColor =
+        totalGanancia < 0
+            ? PdfColor.fromHex('#DC2626')
+            : PdfColor.fromHex('#15803D');
+
     return pw.Table(
       border: pw.TableBorder(
         horizontalInside: pw.BorderSide(color: PdfColors.grey300, width: 0.3),
@@ -1027,38 +1044,64 @@ class _SalesScreenState extends State<SalesScreen>
       ),
       columnWidths: {
         0: const pw.FlexColumnWidth(4),
-        1: const pw.FlexColumnWidth(1.5),
+        1: const pw.FlexColumnWidth(1.2),
         2: const pw.FlexColumnWidth(1.5),
         3: const pw.FlexColumnWidth(1.5),
+        4: const pw.FlexColumnWidth(1.8),
       },
       children: [
         pw.TableRow(
           children: [
             _pdfHeaderCell('Producto'),
+            _pdfHeaderCell('Cant.'),
             _pdfHeaderCell('Precio'),
             _pdfHeaderCell('Costo'),
-            _pdfHeaderCell('Ganancia'),
+            _pdfHeaderCell('Ganancia total'),
           ],
         ),
-        ...reports.map((p) {
+        ...sorted.map((p) {
           final gananciaColor =
-              p.gananciaUnitaria < 0
+              p.gananciaTotal < 0
                   ? PdfColor.fromHex('#DC2626')
-                  : p.gananciaUnitaria > 0
+                  : p.gananciaTotal > 0
                   ? PdfColor.fromHex('#15803D')
                   : PdfColor.fromHex('#334155');
           return pw.TableRow(
             children: [
               _pdfBodyCell(p.nombreProducto),
+              _pdfBodyCell(p.totalVendido.toStringAsFixed(0)),
               _pdfBodyCell('\$${p.precioVentaCup.toStringAsFixed(2)}'),
               _pdfBodyCell('\$${p.precioCostoCup.toStringAsFixed(2)}'),
               _pdfBodyCell(
-                '\$${p.gananciaUnitaria.toStringAsFixed(2)}',
+                '\$${p.gananciaTotal.toStringAsFixed(2)}',
+                isBold: true,
                 color: gananciaColor,
               ),
             ],
           );
         }),
+        // Totals row
+        pw.TableRow(
+          decoration: pw.BoxDecoration(
+            color: PdfColor.fromHex('#EEF2FF'),
+          ),
+          children: [
+            _pdfBodyCell('TOTAL', isBold: true),
+            _pdfBodyCell(
+              sorted
+                  .fold<double>(0, (s, p) => s + p.totalVendido)
+                  .toStringAsFixed(0),
+              isBold: true,
+            ),
+            _pdfBodyCell(''),
+            _pdfBodyCell(''),
+            _pdfBodyCell(
+              '\$${totalGanancia.toStringAsFixed(2)}',
+              isBold: true,
+              color: totalGananciaColor,
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -3216,7 +3259,12 @@ class _SalesScreenState extends State<SalesScreen>
                 ],
                 rows: [
                   // Product rows
-                  ..._productSalesReports.map((report) {
+                  ...([..._productSalesReports]
+                    ..sort(
+                      (a, b) => a.nombreProducto.toLowerCase().compareTo(
+                        b.nombreProducto.toLowerCase(),
+                      ),
+                    )).map((report) {
                     // Calculate total cost CUP and profit
                     final totalCostoCup =
                         report.precioCostoCup * report.totalVendido;
@@ -4359,12 +4407,24 @@ class _SalesScreenState extends State<SalesScreen>
                                           title: Row(
                                             children: [
                                               Expanded(
-                                                child: Text(
-                                                  'Orden #${order.idOperacion}',
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w600,
-                                                    fontSize: 16,
-                                                  ),
+                                                child: Row(
+                                                  children: [
+                                                    Flexible(
+                                                      child: Text(
+                                                        'Orden #${order.idOperacion}',
+                                                        style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          fontSize: 16,
+                                                        ),
+                                                        overflow:
+                                                            TextOverflow.ellipsis,
+                                                      ),
+                                                    ),
+                                                    _buildVendorPackageBadge(
+                                                      order,
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
                                               Container(
@@ -4482,9 +4542,16 @@ class _SalesScreenState extends State<SalesScreen>
                                             const Divider(),
                                             const SizedBox(height: 8),
 
-                                            // Cliente
+                                            // Paquete (si hay paqueteria)
+                                            _buildVendorPackageSection(order),
+
+                                            // Cliente (oculto si hay paqueteria)
                                             if (order.detalles['cliente'] !=
-                                                null) ...[
+                                                    null &&
+                                                _getPackageInfoFromOrder(
+                                                      order,
+                                                    ) ==
+                                                    null) ...[
                                               Row(
                                                 crossAxisAlignment:
                                                     CrossAxisAlignment.start,
@@ -5676,12 +5743,29 @@ class _SalesScreenState extends State<SalesScreen>
                                                   MainAxisAlignment
                                                       .spaceBetween,
                                               children: [
-                                                Text(
-                                                  'Orden #${order.idOperacion}',
-                                                  style: const TextStyle(
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Color(0xFF1F2937),
+                                                Expanded(
+                                                  child: Row(
+                                                    children: [
+                                                      Flexible(
+                                                        child: Text(
+                                                          'Orden #${order.idOperacion}',
+                                                          style: const TextStyle(
+                                                            fontSize: 16,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            color: Color(
+                                                              0xFF1F2937,
+                                                            ),
+                                                          ),
+                                                          overflow:
+                                                              TextOverflow
+                                                                  .ellipsis,
+                                                        ),
+                                                      ),
+                                                      _buildVendorPackageBadge(
+                                                        order,
+                                                      ),
+                                                    ],
                                                   ),
                                                 ),
                                                 Container(
@@ -5714,6 +5798,7 @@ class _SalesScreenState extends State<SalesScreen>
                                                 ),
                                               ],
                                             ),
+                                            _buildVendorPackageSection(order),
                                             const SizedBox(height: 8),
                                             Row(
                                               children: [
@@ -6568,12 +6653,24 @@ class _SalesScreenState extends State<SalesScreen>
                                           title: Row(
                                             children: [
                                               Expanded(
-                                                child: Text(
-                                                  'Orden #${order.idOperacion}',
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w600,
-                                                    fontSize: 16,
-                                                  ),
+                                                child: Row(
+                                                  children: [
+                                                    Flexible(
+                                                      child: Text(
+                                                        'Orden #${order.idOperacion}',
+                                                        style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          fontSize: 16,
+                                                        ),
+                                                        overflow:
+                                                            TextOverflow.ellipsis,
+                                                      ),
+                                                    ),
+                                                    _buildVendorPackageBadge(
+                                                      order,
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
                                               Container(
@@ -6692,6 +6789,7 @@ class _SalesScreenState extends State<SalesScreen>
                                             ),
                                           ),
                                           children: [
+                                            _buildVendorPackageSection(order),
                                             // Aquí se puede agregar más detalle de la orden si es necesario
                                             Container(
                                               width: double.infinity,
@@ -6804,6 +6902,266 @@ class _SalesScreenState extends State<SalesScreen>
         ),
       );
     }).toList();
+  }
+
+  // ───────────────── Helpers de paquetería (órdenes con paquete) ─────────────────
+
+  /// Devuelve el número de paquete si la orden trae datos de paquetería.
+  String? _getPackageNumberFromOrder(VendorOrder order) {
+    final paq = order.detalles['paqueteria'];
+    if (paq is! Map) return null;
+    final numero = paq['numero_paquete']?.toString() ??
+        (paq['paqueteria'] is Map
+            ? (paq['paqueteria']['paquete'] is Map
+                ? paq['paqueteria']['paquete']['numero']?.toString()
+                : null)
+            : null);
+    if (numero == null || numero.trim().isEmpty) return null;
+    return numero.trim();
+  }
+
+  /// Devuelve el sub-objeto interno con remitente/destinatario/paquete.
+  Map<String, dynamic>? _getPackageInfoFromOrder(VendorOrder order) {
+    final paq = order.detalles['paqueteria'];
+    if (paq is! Map) return null;
+    final inner = paq['paqueteria'];
+    if (inner is Map<String, dynamic>) return inner;
+    if (inner is Map) return Map<String, dynamic>.from(inner);
+    return null;
+  }
+
+  /// Badge azul con icono de paquete y `#NUMERO` para mostrar al lado del título.
+  Widget _buildVendorPackageBadge(VendorOrder order) {
+    final numero = _getPackageNumberFromOrder(order);
+    if (numero == null) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(left: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.blue.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.blue.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.local_shipping_outlined,
+            size: 11,
+            color: Colors.blue,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            '#$numero',
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: Colors.blue,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Bloque con foto, número y descripción del paquete + remitente/destinatario.
+  Widget _buildVendorPackageSection(VendorOrder order) {
+    final info = _getPackageInfoFromOrder(order);
+    if (info == null) return const SizedBox.shrink();
+
+    final paquete = info['paquete'];
+    final paqueteMap = paquete is Map ? paquete : const {};
+    final numero = paqueteMap['numero']?.toString() ??
+        order.detalles['paqueteria']?['numero_paquete']?.toString();
+    final descripcion = paqueteMap['descripcion']?.toString() ??
+        order.detalles['paqueteria']?['descripcion']?.toString();
+    final fotoUrl = paqueteMap['foto_url']?.toString();
+    final remitente = info['remitente'] is Map
+        ? Map<String, dynamic>.from(info['remitente'] as Map)
+        : null;
+    final destinatario = info['destinatario'] is Map
+        ? Map<String, dynamic>.from(info['destinatario'] as Map)
+        : null;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.blue.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.local_shipping_outlined,
+                  size: 16, color: Colors.blue),
+              const SizedBox(width: 6),
+              const Text(
+                'Paquete',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue,
+                ),
+              ),
+              if (numero != null && numero.trim().isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Text(
+                  '#${numero.trim()}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blue,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (fotoUrl != null && fotoUrl.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                fotoUrl,
+                width: double.infinity,
+                height: 160,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 100,
+                  color: Colors.grey[100],
+                  alignment: Alignment.center,
+                  child: Icon(Icons.broken_image_outlined,
+                      color: Colors.grey[400], size: 36),
+                ),
+                loadingBuilder: (_, child, progress) {
+                  if (progress == null) return child;
+                  return Container(
+                    height: 100,
+                    color: Colors.grey[100],
+                    alignment: Alignment.center,
+                    child: const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+          if (descripcion != null && descripcion.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              descripcion.trim(),
+              style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+            ),
+          ],
+          if (remitente != null) ...[
+            const SizedBox(height: 10),
+            _buildVendorPartyBlock(
+              title: 'Remitente',
+              icon: Icons.outbox_outlined,
+              color: AppColors.primary,
+              data: remitente,
+            ),
+          ],
+          if (destinatario != null) ...[
+            const SizedBox(height: 8),
+            _buildVendorPartyBlock(
+              title: 'Destinatario',
+              icon: Icons.move_to_inbox_outlined,
+              color: AppColors.success,
+              data: destinatario,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVendorPartyBlock({
+    required String title,
+    required IconData icon,
+    required Color color,
+    required Map<String, dynamic> data,
+  }) {
+    final nombre = data['nombre']?.toString();
+    final telefono = data['telefono']?.toString();
+    final direccion = data['direccion']?.toString();
+    final municipio = data['municipio_nombre']?.toString();
+    final provincia = data['provincia_nombre']?.toString();
+    final ubicacion = [
+      if (municipio != null && municipio.trim().isNotEmpty) municipio,
+      if (provincia != null && provincia.trim().isNotEmpty) provincia,
+    ].join(', ');
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 6),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          if (nombre != null && nombre.trim().isNotEmpty)
+            _buildVendorPartyRow('Nombre', nombre),
+          if (telefono != null && telefono.trim().isNotEmpty)
+            _buildVendorPartyRow('Teléfono', telefono),
+          if (direccion != null && direccion.trim().isNotEmpty)
+            _buildVendorPartyRow('Dirección', direccion),
+          if (ubicacion.isNotEmpty)
+            _buildVendorPartyRow('Ubicación', ubicacion),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVendorPartyRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1F2937),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showExportMenu() {

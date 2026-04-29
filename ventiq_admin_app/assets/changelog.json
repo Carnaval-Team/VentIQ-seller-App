@@ -1,12 +1,223 @@
 {
-  "current_version": "1.9.5",
-  "build": 195,
+  "current_version": "2.1.4",
+  "build": 214,
 
   "app_name": "ventiq_admin",
   "changelogs": [
     {
-      "version": "1.9.5",
-      "date": "2026-02-16",
+      "version": "2.1.4",
+      "date": "2026-04-27",
+      "title": "📦 Nuevo módulo de Paquetería de punta a punta",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Crea productos tipo Paquete",
+          "description": "Al dar de alta un producto ya puedes marcarlo como paquete con envío. Estos productos quedan listos para venderse con coordinación de entrega tanto desde la app de venta como desde Carnaval App."
+        },
+        {
+          "type": "feature",
+          "title": "Recibe órdenes de paquetería desde Carnaval App",
+          "description": "Las órdenes de tus clientes en Carnaval App con productos tipo paquete entran automáticamente al sistema con todos los datos necesarios para gestionar el envío."
+        },
+        {
+          "type": "feature",
+          "title": "Identifica al instante las ventas con paquetería",
+          "description": "En el panel de Ventas, las órdenes que incluyen envío con paquetería ahora se distinguen con un sello azul muy visible. Así sabes de un vistazo cuáles necesitan coordinación de entrega."
+        },
+        {
+          "type": "feature",
+          "title": "Toda la información de envío en un solo lugar",
+          "description": "Al abrir el detalle de cualquier orden con paquetería, en Pendientes, Transferencias u Órdenes, verás una nueva sección con el número de paquete, la descripción y los datos del cliente listos para coordinar la entrega sin tener que buscarlos por separado."
+        },
+        {
+          "type": "improvement",
+          "title": "Detalle más limpio y ordenado",
+          "description": "Cuando una orden ya trae los datos del cliente dentro del bloque de paquetería, evitamos repetirlos arriba para que la vista quede más clara y ordenada."
+        }
+      ]
+    },
+    {
+      "version": "2.1.2",
+      "date": "2026-04-22",
+      "title": "💰 Cuánto vale tu inventario, de un vistazo",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Resumen del valor total de tu inventario",
+          "description": "Al entrar a la pestaña de Almacenes verás arriba un resumen con el valor de todo lo que tienes en stock: cuánto invertiste, cuánto recibirías si se vendiera todo y cuánta ganancia te dejaría. Todo en USD y en CUP usando la tasa de cambio que tienes configurada en tu tienda."
+        },
+        {
+          "type": "feature",
+          "title": "Valor por cada almacén",
+          "description": "Debajo de cada almacén aparecen tres etiquetas: lo invertido en costo, lo que vale si se vende y la ganancia potencial. Así comparas de un vistazo qué almacén concentra más valor."
+        },
+        {
+          "type": "feature",
+          "title": "Detalle por zona del almacén",
+          "description": "Al abrir un almacén verás la misma información para cada zona interna (estantes, áreas, pasillos). Identifica rápido dónde está el dinero dentro de cada local."
+        },
+        {
+          "type": "feature",
+          "title": "Detalle producto por producto",
+          "description": "Al ver los productos de una zona, cada uno muestra su costo acumulado, el valor de venta y la ganancia que aportaría. Perfecto para decidir qué productos priorizar."
+        },
+        {
+          "type": "fix",
+          "title": "Corrección en alertas de stock bajo",
+          "description": "Arreglamos un error que impedía cargar correctamente la lista de productos con stock bajo en el panel principal."
+        }
+      ]
+    },
+    {
+      "version": "2.1.1",
+      "date": "2026-04-20",
+      "title": "👀 Visibilidad en tiempo real de tu equipo",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Mira quién está trabajando ahora mismo",
+          "description": "Agregamos al Dashboard de Recursos Humanos una nueva sección con los trabajadores que tienen la entrada abierta en este momento. Así sabes de un vistazo quiénes están en la tienda sin salir del panel principal."
+        },
+        {
+          "type": "feature",
+          "title": "Cuánto llevan ganado y cuánto van a ganar",
+          "description": "Para cada trabajador activo verás su hora de entrada, el tiempo que lleva, su tarifa por hora, lo que ha ganado hasta ahora y la proyección de su pago al cierre del turno (incluyendo el pago por resultado si aplica)."
+        },
+        {
+          "type": "feature",
+          "title": "Totales del momento a la vista",
+          "description": "Un resumen rápido te muestra las horas acumuladas del equipo, el dinero ganado hasta este instante y el costo proyectado del día, para que tomes decisiones informadas en tiempo real."
+        }
+      ]
+    },
+    {
+      "version": "2.1.0",
+      "date": "2026-04-06",
+      "title": "👥 Nuevo módulo de Recursos Humanos",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Módulo completo de Recursos Humanos",
+          "description": "Gestiona la asistencia, turnos y salarios de tu equipo desde un solo lugar. Registra entradas y salidas, configura tarifas por hora para cada trabajador y genera reportes de nómina automáticos."
+        },
+        {
+          "type": "feature",
+          "title": "Dashboard HR con indicadores clave",
+          "description": "Visualiza de un vistazo las horas trabajadas, costos de nómina, asistencia del equipo y los trabajadores con más horas. Todo en un panel claro con gráficas por mes."
+        },
+        {
+          "type": "feature",
+          "title": "Reportes de salario y exportación a PDF",
+          "description": "Consulta el detalle de horas y pagos de cada trabajador por período. Exporta reportes profesionales en PDF listos para compartir o archivar."
+        },
+        {
+          "type": "feature",
+          "title": "Rol de Recursos Humanos",
+          "description": "Nuevo rol dedicado para que asignes a un miembro de tu equipo la gestión de asistencia y nómina, sin darle acceso a ventas ni inventario."
+        },
+        {
+          "type": "improvement",
+          "title": "Acceso exclusivo con plan Pro y Avanzado",
+          "description": "El módulo de Recursos Humanos está disponible para tiendas con plan Pro o Avanzado, asegurando herramientas premium para quienes más las necesitan."
+        }
+      ]
+    },
+    {
+      "version": "2.0.1",
+      "date": "2026-03-26",
+      "title": "🚚 Asignación de repartidores mejorada",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Nuevo selector de repartidores más completo",
+          "description": "Reemplazamos el diálogo básico por un panel visual con nombre, teléfono y correo de cada repartidor, para que tomes mejores decisiones al asignar envíos."
+        },
+        {
+          "type": "feature",
+          "title": "Reasignar repartidor en órdenes asignadas",
+          "description": "Ahora puedes cambiar el repartidor de una orden que ya está en estado Asignado sin tener que cancelarla. El estado de la orden se mantiene intacto."
+        },
+        {
+          "type": "fix",
+          "title": "Corrección en la asignación de repartidor",
+          "description": "Se corrigió un error que impedía guardar correctamente el repartidor asignado a una orden."
+        }
+      ]
+    },
+    {
+      "version": "1.9.9",
+      "date": "2026-03-24",
+      "title": "✅ Consignaciones sin errores y alertas de inventario",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Consignaciones más confiables al ajustar cantidades",
+          "description": "Mejoramos la asignación de productos en consignación para evitar errores al confirmar cantidades y prevenir acciones duplicadas. Ahora los cambios se aplican de forma más estable y predecible."
+        },
+        {
+          "type": "improvement",
+          "title": "Si pones cantidad en 0, se limpia automáticamente",
+          "description": "Cuando dejas una cantidad en cero, el sistema revierte/retira la selección y mantiene el inventario coherente, para que tu operación quede limpia sin pasos extra."
+        },
+        {
+          "type": "feature",
+          "title": "Alertas y reporte de desajustes de inventario",
+          "description": "Añadimos herramientas para detectar y reportar diferencias de inventario, ayudándote a encontrar inconsistencias más rápido y mantener el control de tus existencias."
+        },
+        {
+          "type": "improvement",
+          "title": "Órdenes Carnaval con flujo más claro",
+          "description": "Ajustamos el flujo de estados y el detalle de órdenes para que el seguimiento sea más fácil, con una lectura más clara de lo que está pasando en cada paso."
+        }
+      ]
+    },
+    {
+      "version": "1.9.8",
+      "date": "2026-03-22",
+      "title": "📊 Órdenes Carnaval: más visibilidad, más control",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Nuevo Dashboard de Órdenes Carnaval",
+          "description": "Estrenamos un panel dedicado para monitorear las órdenes de Carnaval con una vista más clara y orientada a resultados. Ideal para supervisar el día a día y tomar decisiones más rápido."
+        },
+        {
+          "type": "feature",
+          "title": "Detalle de orden más cómodo y rápido",
+          "description": "Ahora puedes abrir un detalle completo de cada orden en una vista optimizada para revisar productos, importes y estado sin perder el ritmo de trabajo."
+        },
+        {
+          "type": "improvement",
+          "title": "Búsqueda y listados más ágiles",
+          "description": "Mejoramos la búsqueda y el ordenamiento en pantallas clave (productos y ventas) para que encuentres lo que necesitas en menos pasos, incluso con catálogos grandes."
+        },
+        {
+          "type": "improvement",
+          "title": "Operaciones e inventario con mejor flujo",
+          "description": "Ajustamos el flujo de operaciones de inventario y movimientos para que el proceso sea más consistente y fácil de ejecutar en el día a día."
+        },
+        {
+          "type": "fix",
+          "title": "Correcciones de estabilidad y consistencia",
+          "description": "Pequeños ajustes internos para reducir errores en listados y operaciones, mejorando la confiabilidad general de la app."
+        }
+      ]
+    },
+    {
+      "version": "1.9.7",
+      "date": "2026-02-23",
+      "title": "Más control sobre tus órdenes",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Permite que tus vendedores editen órdenes abiertas",
+          "description": "Nueva opción en Configuración Global: activa 'Permitir Modificar Orden Abierta' para que tus vendedores puedan agregar, quitar o cambiar productos de una orden mientras esté en curso."
+        }
+      ]
+    },
+    {
+      "version": "1.9.6",
+      "date": "2026-02-18",
       "title": "Márgenes y precios que se ajustan solos",
       "changes": [
         {

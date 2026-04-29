@@ -51,6 +51,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   bool _showRetryWidget = false; // Para mostrar el widget de reconexión
   bool _isSearchOpen = false; // Estado del buscador global
   bool _isSearchingProducts = false;
+  bool _isShowSkuEnabled = false;
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
   List<Product> _searchResults = [];
@@ -69,6 +70,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     _loadDataUsageSettings();
     _loadFluidModeSettings();
     _loadOfflineModeSettings();
+    _loadShowSkuSetting();
     _searchController.addListener(() {
       _onSearchChanged(_searchController.text);
     });
@@ -108,6 +110,16 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       });
     }
   }
+
+  Future<void> _loadShowSkuSetting() async {
+    final isEnabled = await _preferencesService.isShowSkuEnabled();
+    if (mounted) {
+      setState(() {
+        _isShowSkuEnabled = isEnabled;
+      });
+    }
+  }
+
 
   /// Configurar listener para eventos del SmartOfflineManager
   void _setupSmartOfflineListener() {
@@ -727,14 +739,31 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                                   color: Color(0xFF2C3E50),
                                 ),
                               ),
-                              subtitle: Text(
-                                product.descripcion ?? 'Sin descripción',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if ((_isShowSkuEnabled || _preferencesService.isShowSkuEnabledSync) && product.sku != null && product.sku!.isNotEmpty)
+                                    Text(
+                                      'SKU: ${product.sku}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF4A90E2),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  Text(
+                                    product.descripcion ?? 'Sin descripción',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ],
                               ),
                               trailing: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -755,36 +784,76 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                                     ),
                                     decoration: BoxDecoration(
                                       color:
-                                          (product.cantidad > 0
+                                          (product.cantidadReal > 0
                                               ? Colors.green[50]
                                               : Colors.red[50]) ??
                                           Colors.grey[100],
                                       borderRadius: BorderRadius.circular(10),
                                       border: Border.all(
                                         color:
-                                            (product.cantidad > 0
+                                            (product.cantidadReal > 0
                                                 ? Colors.green[300]
                                                 : Colors.red[300]) ??
                                             Colors.grey,
                                       ),
                                     ),
                                     child: Text(
-                                      product.cantidad > 0
-                                          ? 'Stock: ${product.cantidad}'
+                                      product.cantidadReal > 0
+                                          ? 'Stock: ${product.cantidadReal}'
                                           : 'Sin stock',
                                       style: TextStyle(
                                         fontSize: 11,
                                         color:
-                                            product.cantidad > 0
+                                            product.cantidadReal > 0
                                                 ? Colors.green[700]
                                                 : Colors.red[700],
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),
+                                  if (product.reservadoCarnaval > 0) ...[
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange[50],
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: Colors.orange[300]!,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'Reservado: ${product.reservadoCarnaval}',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.orange[800],
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                               onTap: () {
+                                if (product.cantidadReal <= 0) {
+                                  showDialog(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('Sin stock'),
+                                      content: const Text('Este producto no tiene stock disponible.'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.of(ctx).pop(),
+                                          child: const Text('Aceptar'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  return;
+                                }
                                 _toggleSearch();
                                 Navigator.pushNamed(
                                   context,
@@ -936,26 +1005,40 @@ class _CategoriesScreenState extends State<CategoriesScreen>
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          _buildBody(),
-          if (_isSearchOpen) _buildSearchResultsOverlay(),
-          // USD Rate Chip positioned at bottom left
-          Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
-          // Sync Status Chip positioned at bottom left, above USD chip
-          const Positioned(
-            bottom: 80, // Encima del USD chip
-            left: 16,
-            child: SyncStatusChip(),
-          ),
-        ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool showOverlays =
+              constraints.maxWidth >= 300 && constraints.maxHeight >= 400;
+          return Stack(
+            children: [
+              _buildBody(),
+              if (_isSearchOpen) _buildSearchResultsOverlay(),
+              if (showOverlays) ...[  
+                // USD Rate Chip positioned at bottom left
+                Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
+                // Sync Status Chip positioned at bottom left, above USD chip
+                const Positioned(
+                  bottom: 80, // Encima del USD chip
+                  left: 16,
+                  child: SyncStatusChip(),
+                ),
+              ],
+            ],
+          );
+        },
       ),
       endDrawer: const AppDrawer(),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: 0, // Categorías tab
         onTap: _onBottomNavTap,
       ),
-      floatingActionButton: const SalesMonitorFAB(),
+      floatingActionButton: Builder(
+        builder: (context) {
+          final size = MediaQuery.of(context).size;
+          if (size.width < 300 || size.height < 400) return const SizedBox.shrink();
+          return const SalesMonitorFAB();
+        },
+      ),
     );
   }
 

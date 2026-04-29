@@ -1136,7 +1136,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
         // Verificar si el producto está agotado (solo para productos no elaborados ni servicios)
         if (!widget.product.esElaborado &&
             !widget.product.esServicio &&
-            widget.product.cantidad <= 0) {
+            widget.product.cantidadReal <= 0) {
           _showOutOfStockDialog(context);
           return;
         }
@@ -1325,8 +1325,8 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                                 ? '(elaborado)'
                                 : widget.product.esServicio
                                 ? '(servicio)'
-                                : widget.product.cantidad > 0
-                                ? 'Stock: ${widget.product.cantidad}'
+                                : widget.product.cantidadReal > 0
+                                ? 'Stock: ${widget.product.cantidadReal}'
                                 : 'Agotado',
                             style: TextStyle(
                               fontSize: 13,
@@ -1335,7 +1335,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                                       ? Colors.orange[600]
                                       : widget.product.esServicio
                                       ? Colors.blue[600]
-                                      : widget.product.cantidad > 0
+                                      : widget.product.cantidadReal > 0
                                       ? Colors.green[600]
                                       : Colors.red[600],
                               height: 1.2,
@@ -1343,6 +1343,25 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (widget.product.reservadoCarnaval > 0) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.orange[50],
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.orange[300]!),
+                            ),
+                            child: Text(
+                              'Reservado: ${widget.product.reservadoCarnaval}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.orange[800],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1581,7 +1600,7 @@ class _ProductCardState extends State<_ProductCard>
                                       ? '(elaborado)'
                                       : widget.product.esServicio
                                       ? '(servicio)'
-                                      : 'Stock: ${widget.product.cantidad}',
+                                      : 'Stock: ${widget.product.cantidadReal}',
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -1589,6 +1608,25 @@ class _ProductCardState extends State<_ProductCard>
                                   ),
                                 ),
                               ),
+                              if (widget.product.reservadoCarnaval > 0) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange[50],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.orange[300]!),
+                                  ),
+                                  child: Text(
+                                    'Res: ${widget.product.reservadoCarnaval}',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.orange[800],
+                                    ),
+                                  ),
+                                ),
+                              ],
                               const SizedBox(width: 12),
                               Text(
                                 '\$${widget.product.precio.toStringAsFixed(2)}',

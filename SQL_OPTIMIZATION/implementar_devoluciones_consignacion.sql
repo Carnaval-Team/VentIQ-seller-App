@@ -116,12 +116,13 @@ CREATE INDEX IF NOT EXISTS idx_envio_producto_inventario_original
 -- PASO 5: Crear RPC para crear devolución
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION crear_devolucion_consignacion(
+CREATE OR REPLACE FUNCTION crear_devolucion_consignacion_v2(
   p_id_contrato BIGINT,
   p_id_almacen_origen BIGINT,
   p_id_usuario UUID,
   p_productos JSONB,
-  p_descripcion TEXT DEFAULT NULL
+  p_descripcion TEXT DEFAULT NULL,
+  p_id_operacion_extraccion BIGINT DEFAULT NULL  -- Extracción ya construida desde Dart (reserva en tiempo real)
 ) RETURNS TABLE (
   id_envio BIGINT,
   numero_envio VARCHAR,
@@ -137,6 +138,14 @@ DECLARE
   v_id_almacen_destino BIGINT;
   v_id_producto BIGINT;
   v_cantidad NUMERIC;
+  -- Campos del envío original (pueden venir del JSONB directamente o del lookup)
+  v_id_presentacion_orig BIGINT;
+  v_id_variante_orig BIGINT;
+  v_id_ubicacion_orig BIGINT;
+  v_id_inventario_orig BIGINT;
+  v_precio_costo_usd NUMERIC;
+  v_precio_costo_cup NUMERIC;
+  v_tasa_cambio NUMERIC;
 BEGIN
   -- 1. Obtener tiendas del contrato
   SELECT id_tienda_consignadora, id_tienda_consignataria
@@ -148,7 +157,7 @@ BEGIN
     RAISE EXCEPTION 'Contrato no encontrado: %', p_id_contrato;
   END IF;
 
-  -- 2. Obtener almacén destino (primer almacén del consignador)
+  -- 2. Obtener almacén destino del contrato (primer almacén del consignador como fallback)
   SELECT id INTO v_id_almacen_destino
   FROM app_dat_almacen
   WHERE id_tienda = v_id_tienda_consignadora
@@ -171,7 +180,8 @@ BEGIN
     id_almacen_origen,
     id_almacen_destino,
     descripcion,
-    fecha_propuesta
+    fecha_propuesta,
+    id_usuario_creador
   ) VALUES (
     p_id_contrato,
     v_numero_envio,
@@ -180,23 +190,35 @@ BEGIN
     p_id_almacen_origen,
     v_id_almacen_destino,
     COALESCE(p_descripcion, 'Devolución de productos en consignación'),
-    NOW()
+    NOW(),
+    p_id_usuario
   ) RETURNING id INTO v_id_envio;
 
-  -- 5. Crear operación de extracción (PENDIENTE) en tienda consignataria
-  INSERT INTO app_dat_operaciones (
-    id_tienda,
-    id_tipo_operacion,
-    observaciones
-  ) VALUES (
-    v_id_tienda_consignataria,
-    7,  -- Tipo: Extracción de consignación
-    'Extracción por devolución - ' || v_numero_envio
-  ) RETURNING id INTO v_id_operacion_extraccion;
+  -- 5. Usar extracción pre-construida si fue enviada desde Dart; si no, crear una nueva
+  IF p_id_operacion_extraccion IS NOT NULL THEN
+    -- Reutilizar la operación de extracción ya creada en tiempo real por fn_crear_extraccion_con_movimiento
+    v_id_operacion_extraccion := p_id_operacion_extraccion;
+  ELSE
+    -- Crear operación de extracción nueva (PENDIENTE) en tienda consignataria
+    INSERT INTO app_dat_operaciones (
+      id_tienda,
+      id_tipo_operacion,
+      observaciones
+    ) VALUES (
+      v_id_tienda_consignataria,
+      7,  -- Tipo: Extracción de consignación
+      'Extracción por devolución - ' || v_numero_envio
+    ) RETURNING id INTO v_id_operacion_extraccion;
 
-  -- Registrar estado inicial de la operación
-  INSERT INTO app_dat_estado_operacion (id_operacion, estado, comentario)
-  VALUES (v_id_operacion_extraccion, 1, 'Operación de extracción creada para devolución');
+    -- Registrar estado inicial de la operación
+    INSERT INTO app_dat_estado_operacion (id_operacion, estado, comentario)
+    VALUES (v_id_operacion_extraccion, 1, 'Operación de extracción creada para devolución');
+  END IF;
+
+  -- Vincular la extracción al envío
+  UPDATE app_dat_consignacion_envio
+  SET id_operacion_extraccion = v_id_operacion_extraccion
+  WHERE id = v_id_envio;
 
   -- 6. Insertar productos en el envío
   FOR v_producto IN SELECT * FROM jsonb_array_elements(p_productos)
@@ -204,8 +226,61 @@ BEGIN
     v_id_producto := (v_producto->>'id_producto')::BIGINT;
     v_cantidad := (v_producto->>'cantidad')::NUMERIC;
 
-    -- CLAVE: Obtener información del producto ORIGINAL desde el envío inicial
-    -- y copiarla a la devolución
+    -- Intentar obtener datos originales desde el envío inicial del contrato
+    -- Caso 1: id_producto coincide directamente
+    -- Caso 2: id_producto es el duplicado en consignataria → resolver al original
+    SELECT
+      cep.id_presentacion_original,
+      cep.id_variante_original,
+      cep.id_ubicacion_original,
+      cep.id_inventario_original,
+      cep.precio_costo_usd,
+      cep.precio_costo_cup,
+      cep.tasa_cambio
+    INTO
+      v_id_presentacion_orig,
+      v_id_variante_orig,
+      v_id_ubicacion_orig,
+      v_id_inventario_orig,
+      v_precio_costo_usd,
+      v_precio_costo_cup,
+      v_tasa_cambio
+    FROM app_dat_consignacion_envio_producto cep
+    INNER JOIN app_dat_consignacion_envio ce ON ce.id = cep.id_envio
+    WHERE ce.id_contrato_consignacion = p_id_contrato
+      AND ce.tipo_envio = 1  -- Solo del envío original
+      AND (
+        cep.id_producto = v_id_producto
+        OR
+        cep.id_producto = (
+          SELECT pcd.id_producto_original
+          FROM app_dat_producto_consignacion_duplicado pcd
+          WHERE pcd.id_producto_duplicado = v_id_producto
+            AND pcd.id_tienda_destino = v_id_tienda_consignataria
+          ORDER BY pcd.fecha_duplicacion DESC
+          LIMIT 1
+        )
+      )
+      AND cep.estado_producto = 3  -- Solo productos aceptados
+    ORDER BY cep.created_at DESC
+    LIMIT 1;
+
+    -- Si no se encontró en el envío original, usar los valores del JSONB enviados desde Dart
+    IF NOT FOUND THEN
+      v_id_presentacion_orig := NULLIF((v_producto->>'id_presentacion'), '')::BIGINT;
+      v_id_variante_orig     := NULLIF((v_producto->>'id_variante'), '')::BIGINT;
+      v_id_ubicacion_orig    := NULLIF((v_producto->>'id_ubicacion'), '')::BIGINT;
+      v_id_inventario_orig   := NULLIF((v_producto->>'id_inventario'), '')::BIGINT;
+      v_precio_costo_usd     := COALESCE(NULLIF((v_producto->>'precio_costo_usd'), '')::NUMERIC, 0);
+      v_precio_costo_cup     := COALESCE(NULLIF((v_producto->>'precio_costo_cup'), '')::NUMERIC, 0);
+      v_tasa_cambio          := COALESCE(NULLIF((v_producto->>'tasa_cambio'), '')::NUMERIC, 440);
+    END IF;
+
+    -- id_inventario es NOT NULL en el esquema; validar antes de insertar
+    IF (v_producto->>'id_inventario') IS NULL OR (v_producto->>'id_inventario') = '' THEN
+      RAISE EXCEPTION 'id_inventario es requerido para el producto %', v_id_producto;
+    END IF;
+
     INSERT INTO app_dat_consignacion_envio_producto (
       id_envio,
       id_producto,
@@ -218,33 +293,19 @@ BEGIN
       id_variante_original,
       id_ubicacion_original,
       id_inventario_original
-    )
-    SELECT
+    ) VALUES (
       v_id_envio,
-      cep.id_producto,
+      v_id_producto,
       (v_producto->>'id_inventario')::BIGINT,
       v_cantidad,
-      cep.precio_costo_usd,
-      cep.precio_costo_cup,
-      cep.tasa_cambio,
-      -- ⭐ COPIAR datos originales del envío inicial
-      cep.id_presentacion_original,
-      cep.id_variante_original,
-      cep.id_ubicacion_original,
-      cep.id_inventario_original
-    FROM app_dat_consignacion_envio_producto cep
-    INNER JOIN app_dat_consignacion_envio ce ON ce.id = cep.id_envio
-    WHERE ce.id_contrato_consignacion = p_id_contrato
-      AND ce.tipo_envio = 1  -- Solo del envío original (no de otras devoluciones)
-      AND cep.id_producto = v_id_producto
-      AND cep.estado_producto = 3  -- Solo productos aceptados
-    ORDER BY cep.created_at DESC
-    LIMIT 1;
-
-    -- Verificar que se insertó el producto
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'No se encontró información del producto % en el envío original', v_id_producto;
-    END IF;
+      v_precio_costo_usd,
+      v_precio_costo_cup,
+      v_tasa_cambio,
+      v_id_presentacion_orig,
+      v_id_variante_orig,
+      v_id_ubicacion_orig,
+      v_id_inventario_orig
+    );
   END LOOP;
 
   -- 7. Registrar movimiento
@@ -252,11 +313,13 @@ BEGIN
     id_envio,
     tipo_movimiento,
     id_usuario,
+    estado_nuevo,
     descripcion
   ) VALUES (
     v_id_envio,
     1,  -- MOVIMIENTO_CREACION
     p_id_usuario,
+    1,  -- ESTADO_PROPUESTO
     'Devolución creada por consignatario'
   );
 
@@ -264,14 +327,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION crear_devolucion_consignacion IS 
-  'Crea una solicitud de devolución de productos en consignación, copiando los datos originales del envío inicial';
+COMMENT ON FUNCTION crear_devolucion_consignacion_v2 IS 
+  'v2: Acepta extracción pre-construida desde Dart, fallback a JSONB si no hay envío original. Crea una solicitud de devolución de productos en consignación.';
 
 -- ============================================================================
 -- PASO 6: Crear RPC para aprobar devolución
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION aprobar_devolucion_consignacion(
+CREATE OR REPLACE FUNCTION aprobar_devolucion_consignacion_v2(
   p_id_envio BIGINT,
   p_id_almacen_recepcion BIGINT,
   p_id_usuario UUID
@@ -288,6 +351,15 @@ DECLARE
   v_numero_envio VARCHAR;
   v_producto RECORD;
   v_id_zona_consignacion BIGINT;
+  v_id_producto_duplicado BIGINT;
+  v_productos_extraccion JSONB := '[]'::JSONB;
+  v_producto_json JSONB;
+  v_extraccion_result JSONB;
+  v_id_presentacion_inv BIGINT;
+  v_id_variante_inv BIGINT;
+  v_id_ubicacion_inv BIGINT;
+  v_id_ubicacion_recepcion BIGINT;  -- Ubicación de fallback en almacén del consignador
+  v_id_producto_original BIGINT;   -- Producto original del consignador (no el duplicado)
 BEGIN
   -- 1. Validar que el envío es de tipo devolución y está en estado PROPUESTO
   IF NOT EXISTS (
@@ -311,80 +383,129 @@ BEGIN
   INNER JOIN app_dat_contrato_consignacion cc ON cc.id = ce.id_contrato_consignacion
   WHERE ce.id = p_id_envio;
 
-  -- 3. Crear operación de EXTRACCIÓN en tienda consignataria (completarla)
-  -- Obtener la operación de extracción creada al solicitar la devolución
+  -- 3. Verificar si ya existe una extracción pre-construida por Flutter
   SELECT id_operacion_extraccion INTO v_id_operacion_extraccion
   FROM app_dat_consignacion_envio
   WHERE id = p_id_envio;
 
-  -- Completar la operación de extracción
   IF v_id_operacion_extraccion IS NOT NULL THEN
-    -- Para cada producto, registrar la extracción
-    FOR v_producto IN 
-      SELECT 
+    -- ✅ CASO NORMAL: Flutter ya creó la extracción en tiempo real con fn_crear_extraccion_con_movimiento.
+    -- El inventario del consignatario ya fue deducido al seleccionar los productos.
+    -- Solo hay que marcarla como COMPLETADA (estado = 2).
+    INSERT INTO app_dat_estado_operacion (id_operacion, estado, comentario)
+    VALUES (v_id_operacion_extraccion, 2, 'Extracción completada — devolución aprobada por consignador');
+
+  ELSE
+    -- ⚠️ CASO FALLBACK: No hay extracción pre-construida (flujo manual/edge).
+    -- Construir y completar la extracción ahora vía fn_crear_extraccion_con_movimiento.
+    FOR v_producto IN
+      SELECT
         cep.id_producto,
         cep.cantidad_propuesta,
-        cep.id_presentacion_original,
-        cep.id_variante_original,
-        cep.id_ubicacion_original,
         cep.precio_costo_usd
       FROM app_dat_consignacion_envio_producto cep
       WHERE cep.id_envio = p_id_envio
     LOOP
-      -- Buscar la zona de consignación en la tienda consignataria
-      SELECT id INTO v_id_zona_consignacion
-      FROM app_dat_consignacion_zona
-      WHERE id_tienda = v_id_tienda_consignataria
+      v_id_producto_duplicado := NULL;
+
+      SELECT pcd.id_producto_duplicado
+      INTO v_id_producto_duplicado
+      FROM app_dat_producto_consignacion_duplicado pcd
+      INNER JOIN app_dat_consignacion_envio ce ON ce.id_contrato_consignacion = pcd.id_contrato_consignacion
+      WHERE pcd.id_producto_original = v_producto.id_producto
+        AND ce.id = p_id_envio
       LIMIT 1;
 
-      -- Registrar extracción del producto
-      INSERT INTO app_dat_extraccion_productos (
-        id_operacion,
-        id_producto,
-        id_presentacion,
-        id_variante,
-        id_ubicacion,
-        cantidad,
-        precio_unitario
-      ) VALUES (
-        v_id_operacion_extraccion,
-        v_producto.id_producto,
-        v_producto.id_presentacion_original,
-        v_producto.id_variante_original,
-        COALESCE(v_id_zona_consignacion, v_producto.id_ubicacion_original),
-        v_producto.cantidad_propuesta,
-        v_producto.precio_costo_usd
-      );
+      v_id_producto_duplicado := COALESCE(v_id_producto_duplicado, v_producto.id_producto);
 
-      -- Reducir inventario en la tienda consignataria
-      UPDATE app_dat_inventario_productos
-      SET cantidad_final = GREATEST(0, cantidad_final - v_producto.cantidad_propuesta)
-      WHERE id_producto = v_producto.id_producto
-        AND id_presentacion = v_producto.id_presentacion_original
-        AND id_tienda = v_id_tienda_consignataria
-        AND COALESCE(id_variante, 0) = COALESCE(v_producto.id_variante_original, 0);
+      SELECT id_zona INTO v_id_zona_consignacion
+      FROM app_dat_consignacion_zona
+      WHERE id_tienda_consignataria = v_id_tienda_consignataria
+      LIMIT 1;
+
+      SELECT ip.id_presentacion, ip.id_variante, ip.id_ubicacion
+      INTO v_id_presentacion_inv, v_id_variante_inv, v_id_ubicacion_inv
+      FROM app_dat_inventario_productos ip
+      WHERE ip.id_producto = v_id_producto_duplicado
+        AND (v_id_zona_consignacion IS NULL OR ip.id_ubicacion = v_id_zona_consignacion)
+      ORDER BY ip.created_at DESC
+      LIMIT 1;
+
+      IF v_id_ubicacion_inv IS NULL THEN
+        SELECT ip.id_presentacion, ip.id_variante, ip.id_ubicacion
+        INTO v_id_presentacion_inv, v_id_variante_inv, v_id_ubicacion_inv
+        FROM app_dat_inventario_productos ip
+        INNER JOIN app_dat_layout_almacen la ON la.id = ip.id_ubicacion
+        INNER JOIN app_dat_almacen a ON a.id = la.id_almacen
+        WHERE ip.id_producto = v_id_producto_duplicado
+          AND a.id_tienda = v_id_tienda_consignataria
+        ORDER BY ip.created_at DESC
+        LIMIT 1;
+      END IF;
+
+      v_producto_json := jsonb_build_object(
+        'id_producto',     v_id_producto_duplicado,
+        'cantidad',        v_producto.cantidad_propuesta,
+        'id_presentacion', v_id_presentacion_inv,
+        'id_ubicacion',    v_id_ubicacion_inv,
+        'id_variante',     v_id_variante_inv,
+        'precio_unitario', v_producto.precio_costo_usd
+      );
+      v_productos_extraccion := v_productos_extraccion || v_producto_json;
     END LOOP;
 
-    -- Completar operación de extracción
-    UPDATE app_dat_estado_operacion
-    SET estado = 2, comentario = 'Extracción completada para devolución'
-    WHERE id_operacion = v_id_operacion_extraccion;
+    SELECT fn_crear_extraccion_con_movimiento(
+      'Sistema'::TEXT,
+      1::SMALLINT,
+      21::BIGINT,
+      v_id_tienda_consignataria,
+      ('Extracción para devolución - ' || v_numero_envio)::TEXT,
+      v_productos_extraccion,
+      p_id_usuario
+    ) INTO v_extraccion_result;
+
+    IF (v_extraccion_result->>'status')::TEXT != 'success' THEN
+      RAISE EXCEPTION 'Error creando extracción: %', v_extraccion_result->>'message';
+    END IF;
+
+    v_id_operacion_extraccion := (v_extraccion_result->>'id_operacion')::BIGINT;
+
+    -- Vincular al envío
+    UPDATE app_dat_consignacion_envio
+    SET id_operacion_extraccion = v_id_operacion_extraccion
+    WHERE id = p_id_envio;
   END IF;
 
-  -- 4. Crear operación de RECEPCIÓN en tienda consignadora
-  -- ⭐ IMPORTANTE: La función de precio promedio verificará si es devolución
-  --    consultando app_dat_consignacion_envio.tipo_envio = 2
+  -- 5. Crear operación de RECEPCIÓN en tienda consignadora — estado PENDIENTE
+  -- El inventario del consignador se actualizará cuando complete la recepción
+  -- mediante fn_contabilizar_operacion (llamado desde la pantalla de detalles del envío).
   INSERT INTO app_dat_operaciones (
     id_tienda,
     id_tipo_operacion,
-    observaciones
+    uuid,
+    observaciones,
+    created_at
   ) VALUES (
     v_id_tienda_consignadora,
     1,  -- Tipo: Recepción
-    'Recepción de devolución - ' || v_numero_envio
+    p_id_usuario,
+    'Recepción de devolución - ' || v_numero_envio,
+    CURRENT_TIMESTAMP
   ) RETURNING id INTO v_id_operacion_recepcion;
 
-  -- 5. Para cada producto, restaurar al inventario ORIGINAL
+  -- Estado PENDIENTE de la recepción
+  INSERT INTO app_dat_estado_operacion (id_operacion, estado, comentario)
+  VALUES (v_id_operacion_recepcion, 1, 'Recepción creada — pendiente de completar por el consignador');
+
+  -- 6. Registrar productos de recepción (con datos originales del consignador)
+  -- Resolver ubicación de fallback: primer layout del almacén de recepción del consignador.
+  -- Necesario cuando id_ubicacion_original es NULL (fn_contabilizar_operacion rechaza NULL).
+  SELECT la.id INTO v_id_ubicacion_recepcion
+  FROM app_dat_layout_almacen la
+  WHERE la.id_almacen = p_id_almacen_recepcion
+  ORDER BY la.id
+  LIMIT 1;
+
   FOR v_producto IN 
     SELECT 
       cep.id_producto,
@@ -392,12 +513,22 @@ BEGIN
       cep.id_presentacion_original,
       cep.id_variante_original,
       cep.id_ubicacion_original,
-      cep.id_inventario_original,
       cep.precio_costo_usd
     FROM app_dat_consignacion_envio_producto cep
     WHERE cep.id_envio = p_id_envio
   LOOP
-    -- ⭐ CLAVE: Restaurar al inventario ORIGINAL con presentación ORIGINAL
+    -- Resolver el producto ORIGINAL del consignador.
+    -- cep.id_producto puede ser el duplicado en el consignatario; necesitamos el original.
+    SELECT pcd.id_producto_original INTO v_id_producto_original
+    FROM app_dat_producto_consignacion_duplicado pcd
+    WHERE pcd.id_producto_duplicado = v_producto.id_producto
+      AND pcd.id_tienda_destino = v_id_tienda_consignataria
+    ORDER BY pcd.fecha_duplicacion DESC
+    LIMIT 1;
+
+    -- Si no hay duplicado registrado, el producto ya es el original
+    v_id_producto_original := COALESCE(v_id_producto_original, v_producto.id_producto);
+
     INSERT INTO app_dat_recepcion_productos (
       id_operacion,
       id_producto,
@@ -408,70 +539,46 @@ BEGIN
       precio_unitario
     ) VALUES (
       v_id_operacion_recepcion,
-      v_producto.id_producto,
-      v_producto.id_presentacion_original,  -- ⭐ USAR ORIGINAL
-      v_producto.id_variante_original,      -- ⭐ USAR ORIGINAL
-      v_producto.id_ubicacion_original,     -- ⭐ USAR ORIGINAL
+      v_id_producto_original,
+      v_producto.id_presentacion_original,
+      v_producto.id_variante_original,
+      COALESCE(v_producto.id_ubicacion_original, v_id_ubicacion_recepcion),
       v_producto.cantidad_propuesta,
       v_producto.precio_costo_usd
     );
-
-    -- Actualizar inventario en la ubicación ORIGINAL
-    -- Si el registro existe, incrementar; si no, crear
-    INSERT INTO app_dat_inventario_productos (
-      id_producto,
-      id_presentacion,
-      id_variante,
-      id_ubicacion,
-      id_tienda,
-      cantidad_final,
-      created_at
-    ) VALUES (
-      v_producto.id_producto,
-      v_producto.id_presentacion_original,
-      v_producto.id_variante_original,
-      v_producto.id_ubicacion_original,
-      v_id_tienda_consignadora,
-      v_producto.cantidad_propuesta,
-      NOW()
-    )
-    ON CONFLICT (id_producto, id_presentacion, id_ubicacion, id_tienda, COALESCE(id_variante, 0))
-    DO UPDATE SET 
-      cantidad_final = app_dat_inventario_productos.cantidad_final + EXCLUDED.cantidad_final;
   END LOOP;
 
-  -- 6. Actualizar estado del envío
+  -- 7. Actualizar estado del envío a CONFIGURADO y vincular recepción
   UPDATE app_dat_consignacion_envio
   SET 
-    estado_envio = 4,  -- ESTADO_ACEPTADO
-    fecha_aceptacion = NOW(),
+    id_operacion_recepcion = v_id_operacion_recepcion,
+    estado_envio = 2,  -- CONFIGURADO (extracción completada, recepción pendiente)
+    fecha_configuracion = NOW(),
     id_almacen_destino = p_id_almacen_recepcion
   WHERE id = p_id_envio;
 
-  -- 7. Completar operación de recepción
-  INSERT INTO app_dat_estado_operacion (id_operacion, estado, comentario)
-  VALUES (v_id_operacion_recepcion, 2, 'Devolución recibida y productos restaurados');
-
-  -- 8. Registrar movimiento
+  -- 8. Registrar movimiento del envío
   INSERT INTO app_dat_consignacion_envio_movimiento (
     id_envio,
     tipo_movimiento,
     id_usuario,
+    estado_nuevo,
     descripcion
   ) VALUES (
     p_id_envio,
     4,  -- MOVIMIENTO_ACEPTACION
     p_id_usuario,
-    'Devolución aprobada y recibida por consignador'
+    2,  -- ESTADO_CONFIGURADO
+    'Devolución aprobada — extracción completada, recepción pendiente de confirmar'
   );
 
   RETURN QUERY SELECT TRUE, v_id_operacion_recepcion, 
-    'Devolución aprobada exitosamente. Productos restaurados a ubicación original.'::TEXT;
+    'Devolución aprobada. Extracción completada (inventario consignatario reducido). Complete la recepción para registrar los productos en su inventario.'::TEXT;
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION aprobar_devolucion_consignacion IS 
-  'Aprueba una devolución, completa la extracción en consignatario y crea recepción en consignador restaurando productos a su ubicación original';
+COMMENT ON FUNCTION aprobar_devolucion_consignacion_v2 IS 
+  'v2: Aprueba una devolución — completa la extracción en consignatario (inventario reducido inmediatamente vía fn_crear_extraccion_con_movimiento) y crea recepción PENDIENTE en consignador. El consignador debe completar la recepción manualmente para restaurar el stock.';
 
 -- ============================================================================
 -- PASO 7: Crear vista para consultar devoluciones con datos originales

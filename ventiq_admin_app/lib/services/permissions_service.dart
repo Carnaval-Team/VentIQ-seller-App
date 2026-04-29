@@ -164,6 +164,22 @@ class PermissionsService {
         return UserRole.vendedor;
       }
 
+      // 6. Recursos Humanos
+      final rrhhData =
+          await _supabase
+              .from('app_dat_recursos_humanos')
+              .select('id')
+              .eq('uuid', user.id)
+              .maybeSingle();
+
+      print('  • Recursos Humanos: ${rrhhData != null ? "✅ Sí" : "❌ No"}');
+      if (rrhhData != null) {
+        print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: RECURSOS HUMANOS');
+        _cachedRole = UserRole.recursosHumanos;
+        _cachedRoleStoreId = currentStoreId;
+        return UserRole.recursosHumanos;
+      }
+
       // Sin rol
       print('❌ No se encontró ningún rol para este usuario');
       _cachedRole = UserRole.none;
@@ -188,6 +204,8 @@ class PermissionsService {
         return UserRole.almacenero;
       case 'vendedor':
         return UserRole.vendedor;
+      case 'recursos humanos':
+        return UserRole.recursosHumanos;
       default:
         return UserRole.none;
     }
@@ -277,8 +295,24 @@ class PermissionsService {
         }
       }
 
+      // 5. Recursos Humanos - puede serlo en múltiples tiendas
+      final rrhhData = await _supabase
+          .from('app_dat_recursos_humanos')
+          .select('id_tienda')
+          .eq('uuid', user.id);
+
+      if (rrhhData.isNotEmpty) {
+        for (final record in rrhhData) {
+          final idTienda = (record['id_tienda'] as num).toInt();
+          // Si ya tiene un rol de mayor jerarquía, mantenerlo
+          if (!rolesByStore.containsKey(idTienda)) {
+            rolesByStore[idTienda] = UserRole.recursosHumanos;
+            print('  ✅ Recursos Humanos en tienda: $idTienda');
+          }
+        }
+      }
+
       // Nota: Los vendedores no se incluyen aquí porque no tienen acceso a la administración
-      // Solo se retornan roles de admin: gerente, supervisor, almacenero
 
       _cachedRolesByStore = rolesByStore;
       print('✅ Roles por tienda detectados: ${rolesByStore.length} tiendas');
@@ -464,6 +498,8 @@ class PermissionsService {
         return 'Almacenero';
       case UserRole.vendedor:
         return 'Vendedor';
+      case UserRole.recursosHumanos:
+        return 'Recursos Humanos';
       case UserRole.none:
         return 'Sin Rol';
     }
@@ -584,6 +620,13 @@ class PermissionsService {
       UserRole.supervisor,
       UserRole.auditor,
     ],
+
+    // Recursos Humanos (Gerente y Recursos Humanos tienen acceso)
+    '/hr-dashboard': [UserRole.gerente, UserRole.recursosHumanos],
+    '/hr-checkin': [UserRole.gerente, UserRole.recursosHumanos],
+    '/hr-checkout': [UserRole.gerente, UserRole.recursosHumanos],
+    '/hr-salary-report': [UserRole.gerente, UserRole.recursosHumanos],
+    '/hr-worker-config': [UserRole.gerente, UserRole.recursosHumanos],
 
     // Configuración (Solo Gerente)
     '/settings': [UserRole.gerente],
@@ -707,8 +750,15 @@ class PermissionsService {
 
     // Impresoras / dispositivos
     'printers.edit': [UserRole.gerente],
+
+    // Recursos Humanos
+    'hr.checkin': [UserRole.gerente, UserRole.recursosHumanos],
+    'hr.checkout': [UserRole.gerente, UserRole.recursosHumanos],
+    'hr.salary_report': [UserRole.gerente, UserRole.recursosHumanos],
+    'hr.worker_config': [UserRole.gerente, UserRole.recursosHumanos],
+    'hr.dashboard': [UserRole.gerente, UserRole.recursosHumanos],
   };
 }
 
 /// Enum de roles de usuario
-enum UserRole { gerente, supervisor, auditor, almacenero, vendedor, none }
+enum UserRole { gerente, supervisor, auditor, almacenero, vendedor, recursosHumanos, none }

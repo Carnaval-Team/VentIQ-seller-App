@@ -635,6 +635,24 @@ class _NotificationItemState extends State<NotificationItem> {
         operacionResponse['created_at'] as String,
       );
 
+      // 2.5 Verificar que el último estado de la operación sea 1 (pendiente)
+      final estadoResponse = await supabase
+          .from('app_dat_estado_operacion')
+          .select('estado')
+          .eq('id_operacion', operacionId)
+          .order('id', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      final ultimoEstado = estadoResponse?['estado'] as int?;
+      if (ultimoEstado != null && ultimoEstado != 1) {
+        if (mounted) Navigator.pop(context); // Cerrar loading
+        _showErrorMessage(
+          'Esta orden ya fue procesada (estado: $ultimoEstado) y no se puede recibir',
+        );
+        return;
+      }
+
       // 3. Validar que la fecha de creación de la operación sea menor que la del turno
       if (!fechaOperacion.isBefore(fechaTurno)) {
         // if (mounted) Navigator.pop(context); // Cerrar loading

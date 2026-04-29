@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../providers/theme_provider.dart';
 
@@ -28,6 +29,10 @@ class SettingsScreen extends StatelessWidget {
           _buildSectionTitle(context, 'Notificaciones'),
           const SizedBox(height: AppTheme.paddingS),
           _buildNotificationsCard(context, isDark),
+          const SizedBox(height: AppTheme.paddingL),
+          _buildSectionTitle(context, 'Legal'),
+          const SizedBox(height: AppTheme.paddingS),
+          _buildPrivacyPolicyCard(context, isDark),
         ],
       ),
     );
@@ -232,6 +237,69 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPrivacyPolicyCard(BuildContext context, bool isDark) {
+    final accentColor = AppTheme.getAccentColor(context);
+    final textPrimary = AppTheme.getTextPrimaryColor(context);
+    final textSecondary = AppTheme.getTextSecondaryColor(context);
+    final cardColor = AppTheme.getCardColor(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(AppTheme.radiusM),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.paddingM,
+          vertical: AppTheme.paddingXS,
+        ),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: accentColor.withOpacity(isDark ? 0.2 : 0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(
+            Icons.privacy_tip_outlined,
+            color: accentColor,
+            size: 24,
+          ),
+        ),
+        title: Text(
+          'Política de privacidad',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: textPrimary,
+          ),
+        ),
+        subtitle: Text(
+          'Conoce cómo protegemos tus datos',
+          style: TextStyle(
+            fontSize: 13,
+            color: textSecondary,
+          ),
+        ),
+        trailing: Icon(
+          Icons.open_in_new,
+          color: textSecondary,
+          size: 20,
+        ),
+        onTap: () => launchUrl(
+          Uri.parse('https://inventtia-catalogo-policies.pages.dev/privacy-policy'),
+          mode: LaunchMode.externalApplication,
         ),
       ),
     );

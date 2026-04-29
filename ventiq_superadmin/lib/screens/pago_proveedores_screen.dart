@@ -24,6 +24,9 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
+  double _pctEfectivo = 5.0;
+  double _pctTransferencia = 15.0;
+
   final Map<int, bool> _expandedSuppliers = {};
   final Map<int, List<OrderPaymentDetail>> _supplierOrders = {};
   final Map<int, bool> _loadingOrders = {};
@@ -31,7 +34,84 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
   @override
   void initState() {
     super.initState();
+    _loadPercentages();
     _loadReport();
+  }
+
+  Future<void> _loadPercentages() async {
+    final pcts = await SupplierPaymentService.getGlobalPercentages();
+    if (mounted) {
+      setState(() {
+        _pctEfectivo = pcts['efectivo']!;
+        _pctTransferencia = pcts['transferencia']!;
+      });
+    }
+  }
+
+  Future<void> _showConfigDialog() async {
+    final efCtl = TextEditingController(text: _pctEfectivo.toString());
+    final trCtl = TextEditingController(text: _pctTransferencia.toString());
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Configurar Comisiones'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: efCtl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: '% Efectivo',
+                suffixText: '%',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: trCtl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: '% Transferencia',
+                suffixText: '%',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      final newEf = double.tryParse(efCtl.text) ?? _pctEfectivo;
+      final newTr = double.tryParse(trCtl.text) ?? _pctTransferencia;
+      final ok = await SupplierPaymentService.updateGlobalPercentages(
+        efectivo: newEf,
+        transferencia: newTr,
+      );
+      if (ok && mounted) {
+        setState(() {
+          _pctEfectivo = newEf;
+          _pctTransferencia = newTr;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Porcentajes actualizados')),
+        );
+      }
+    }
+    efCtl.dispose();
+    trCtl.dispose();
   }
 
   Future<void> _loadReport() async {
@@ -133,6 +213,28 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
           isDesktop ? 'Reporte de Pago a Proveedores' : 'Pago a Proveedores',
         ),
         actions: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            margin: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Ef: ${_pctEfectivo.toStringAsFixed(0)}%  |  Tr: ${_pctTransferencia.toStringAsFixed(0)}%',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: _showConfigDialog,
+            tooltip: 'Configurar comisiones',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadReport,
@@ -693,10 +795,10 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
     final numberFormat = NumberFormat('#,##0.00', 'es');
 
     // Calculate discounts and net amounts
-    final cashDiscount = supplier.totalCash * 0.05;
+    final cashDiscount = supplier.totalCash * (_pctEfectivo / 100);
     final netCash = supplier.totalCash - cashDiscount;
 
-    final transferDiscount = supplier.totalTransfer * 0.15;
+    final transferDiscount = supplier.totalTransfer * (_pctTransferencia / 100);
     final netTransfer = supplier.totalTransfer - transferDiscount;
 
     final totalToPay = netCash + netTransfer;
@@ -789,7 +891,7 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
                   _buildPaymentRow(
                     'Efectivo',
                     supplier.totalCash,
-                    '5%',
+                    '${_pctEfectivo.toStringAsFixed(0)}%',
                     cashDiscount,
                     netCash,
                   ),
@@ -797,7 +899,7 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
                   _buildPaymentRow(
                     'Transferencia',
                     supplier.totalTransfer,
-                    '15%',
+                    '${_pctTransferencia.toStringAsFixed(0)}%',
                     transferDiscount,
                     netTransfer,
                   ),
@@ -1084,6 +1186,8 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
         fechaInicio: _fechaInicio,
         fechaFin: _fechaFin,
         orders: orders,
+        pctEfectivo: _pctEfectivo,
+        pctTransferencia: _pctTransferencia,
       );
     } catch (e) {
       if (mounted) {

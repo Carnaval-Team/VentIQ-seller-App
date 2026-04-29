@@ -133,6 +133,7 @@ class ExportService {
     required BuildContext context,
     required Map<String, dynamic> operation,
     required List<Map<String, dynamic>> items,
+    String almacenNombre = 'N/A',
   }) async {
     try {
       final operationId = operation['id']?.toString() ?? 'N/A';
@@ -141,6 +142,7 @@ class ExportService {
       final fileBytes = await _generateInventoryOperationPdf(
         operation: operation,
         items: items,
+        almacenNombre: almacenNombre,
       );
 
       const mimeType = 'application/pdf';
@@ -1675,6 +1677,7 @@ class ExportService {
     return inventoryData.map((item) {
       return InventoryProduct(
         id: int.tryParse(item['id']?.toString() ?? '0') ?? 0,
+        idProducto: int.tryParse(item['id_producto']?.toString() ?? '0') ?? 0,
         skuProducto: item['sku_producto']?.toString() ?? '',
         nombreProducto: item['nombre_producto']?.toString() ?? 'Sin nombre',
         denominacionCorta: item['denominacion_corta']?.toString(),
@@ -2288,6 +2291,7 @@ class ExportService {
   Future<Uint8List> _generateInventoryOperationPdf({
     required Map<String, dynamic> operation,
     required List<Map<String, dynamic>> items,
+    String almacenNombre = 'N/A',
   }) async {
     final pdf = pw.Document();
     final regularFont = await _getRegularFont();
@@ -2295,134 +2299,147 @@ class ExportService {
     final now = DateTime.now();
     final dateFormatter = DateFormat('dd/MM/yyyy HH:mm');
 
+    // Construir filas de la tabla (sin encabezado)
+    final tableRows = items.map((item) {
+      final cantidad = item['cantidad_contada'] ?? item['cantidad'] ?? 0;
+      final productName = item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto';
+      return pw.TableRow(
+        children: [
+          _buildTableCell(productName, font: regularFont),
+          _buildTableCell(cantidad.toString(), font: regularFont),
+        ],
+      );
+    }).toList();
+
     pdf.addPage(
-      pw.Page(
+      pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
-        build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              // Encabezado
-              pw.Center(
-                child: pw.Text(
-                  'INVENTTIA',
-                  style: pw.TextStyle(fontSize: 24, font: boldFont),
+        header: (pw.Context context) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Center(
+              child: pw.Text(
+                'INVENTTIA',
+                style: pw.TextStyle(fontSize: 24, font: boldFont),
+              ),
+            ),
+            pw.Center(
+              child: pw.Text(
+                'OPERACIÓN DE INVENTARIO',
+                style: pw.TextStyle(fontSize: 18, font: boldFont),
+              ),
+            ),
+            pw.SizedBox(height: 12),
+            pw.Divider(),
+            pw.SizedBox(height: 8),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    _buildPdfInfoRow('ID Operación:', '#${operation['id']}', boldFont, regularFont),
+                    _buildPdfInfoRow('Tipo:', '${operation['tipo_operacion_nombre'] ?? 'N/A'}', boldFont, regularFont),
+                    _buildPdfInfoRow('Estado:', '${operation['estado_nombre'] ?? 'N/A'}', boldFont, regularFont),
+                    if (almacenNombre != 'N/A')
+                      _buildPdfInfoRow('Almacén:', almacenNombre, boldFont, regularFont),
+                  ],
                 ),
-              ),
-              pw.Center(
-                child: pw.Text(
-                  'OPERACIÓN DE INVENTARIO',
-                  style: pw.TextStyle(fontSize: 18, font: boldFont),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    _buildPdfInfoRow('Fecha:', dateFormatter.format(DateTime.parse(operation['created_at'])), boldFont, regularFont),
+                    if (operation['usuario_nombre'] != null)
+                      _buildPdfInfoRow('Usuario:', '${operation['usuario_nombre']}', boldFont, regularFont),
+                    if (operation['usuario_email'] != null)
+                      _buildPdfInfoRow('Email:', '${operation['usuario_email']}', boldFont, regularFont),
+                  ],
                 ),
-              ),
-              pw.SizedBox(height: 20),
-              pw.Divider(),
-              pw.SizedBox(height: 20),
-
-              // Información General
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      _buildPdfInfoRow('ID Operación:', '#${operation['id']}', boldFont, regularFont),
-                      _buildPdfInfoRow('Tipo:', '${operation['tipo_operacion_nombre'] ?? 'N/A'}', boldFont, regularFont),
-                      _buildPdfInfoRow('Estado:', '${operation['estado_nombre'] ?? 'N/A'}', boldFont, regularFont),
-                    ],
-                  ),
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      _buildPdfInfoRow('Fecha:', '${dateFormatter.format(DateTime.parse(operation['created_at']))}', boldFont, regularFont),
-                      if (operation['usuario_email'] != null)
-                        _buildPdfInfoRow('Usuario:', '${operation['usuario_email']}', boldFont, regularFont),
-                    ],
-                  ),
-                ],
-              ),
-
-              if (operation['observaciones']?.isNotEmpty == true) ...[
-                pw.SizedBox(height: 10),
-                pw.Text('Observaciones:', style: pw.TextStyle(font: boldFont, fontSize: 10)),
-                pw.Text('${operation['observaciones']}', style: pw.TextStyle(font: regularFont, fontSize: 10)),
               ],
-
-              pw.SizedBox(height: 30),
-              pw.Text('DETALLE DE PRODUCTOS', style: pw.TextStyle(fontSize: 14, font: boldFont)),
-              pw.SizedBox(height: 10),
-
-              // Tabla de productos
-              pw.Table(
-                border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
-                columnWidths: {
-                  0: const pw.FlexColumnWidth(3), // Producto
-                  1: const pw.FlexColumnWidth(1), // Cantidad
-                  2: const pw.FlexColumnWidth(1.5), // Ubicación
-                },
-                children: [
-                   pw.TableRow(
-                    decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-                    children: [
-                      _buildTableHeader('Producto', font: boldFont),
-                      _buildTableHeader('Cant.', font: boldFont),
-                      _buildTableHeader('Ubicación', font: boldFont),
-                    ],
-                  ),
-                  ...items.map((item) {
-                     final cantidad = item['cantidad_contada'] ?? item['cantidad'] ?? 0;
-                     final productName = item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto';
-                     final ubicacion = item['ubicacion_nombre'] ?? item['ubicacion'] ?? 'N/A';
-                     return pw.TableRow(
-                       children: [
-                         _buildTableCell(productName, font: regularFont),
-                         _buildTableCell(cantidad.toString(), font: regularFont),
-                         _buildTableCell(ubicacion.toString(), font: regularFont),
-                       ],
-                     );
-                  }),
-                ],
-              ),
-
-              pw.SizedBox(height: 30),
-              pw.Divider(),
-              pw.SizedBox(height: 10),
-              
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.end,
-                children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: [
-                      pw.Row(
-                        children: [
-                          pw.Text('Total Items: ', style: pw.TextStyle(font: boldFont, fontSize: 10)),
-                          pw.Text('${items.length}', style: pw.TextStyle(font: regularFont, fontSize: 10)),
-                        ],
-                      ),
-                      pw.SizedBox(height: 4),
-                      pw.Row(
-                        children: [
-                          pw.Text('Total: ', style: pw.TextStyle(fontSize: 14, font: boldFont)),
-                          pw.Text('\$${(operation['total']?.toDouble() ?? 0.0).toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 14, font: boldFont)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-
-              pw.Spacer(),
-              pw.Center(
-                child: pw.Text(
+            ),
+            if (operation['observaciones']?.isNotEmpty == true) ...[
+              pw.SizedBox(height: 8),
+              pw.Text('Observaciones:', style: pw.TextStyle(font: boldFont, fontSize: 10)),
+              pw.Text('${operation['observaciones']}', style: pw.TextStyle(font: regularFont, fontSize: 10)),
+            ],
+            pw.SizedBox(height: 12),
+            pw.Text('DETALLE DE PRODUCTOS', style: pw.TextStyle(fontSize: 14, font: boldFont)),
+            pw.SizedBox(height: 6),
+            // Encabezado de la tabla (se repite en cada página)
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(4),
+                1: const pw.FlexColumnWidth(1),
+              },
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                  children: [
+                    _buildTableHeader('Producto', font: boldFont),
+                    _buildTableHeader('Cant.', font: boldFont),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+        footer: (pw.Context context) => pw.Column(
+          children: [
+            pw.Divider(),
+            pw.SizedBox(height: 4),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
                   'Comprobante generado por Inventtia - ${dateFormatter.format(now)}',
                   style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600, font: regularFont),
                 ),
+                pw.Text(
+                  'Página ${context.pageNumber} de ${context.pagesCount}',
+                  style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600, font: regularFont),
+                ),
+              ],
+            ),
+          ],
+        ),
+        build: (pw.Context context) => [
+          // Tabla de productos (paginada automáticamente)
+          pw.Table(
+            border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+            columnWidths: {
+              0: const pw.FlexColumnWidth(4),
+              1: const pw.FlexColumnWidth(1),
+            },
+            children: tableRows,
+          ),
+          pw.SizedBox(height: 16),
+          // Totales al final
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.end,
+            children: [
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  pw.Row(
+                    children: [
+                      pw.Text('Total Items: ', style: pw.TextStyle(font: boldFont, fontSize: 10)),
+                      pw.Text('${items.length}', style: pw.TextStyle(font: regularFont, fontSize: 10)),
+                    ],
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Row(
+                    children: [
+                      pw.Text('Total: ', style: pw.TextStyle(fontSize: 14, font: boldFont)),
+                      pw.Text('\$${(operation['total']?.toDouble() ?? 0.0).toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 14, font: boldFont)),
+                    ],
+                  ),
+                ],
               ),
             ],
-          );
-        },
+          ),
+        ],
       ),
     );
 

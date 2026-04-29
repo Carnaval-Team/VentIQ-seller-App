@@ -30,6 +30,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _noSolicitarCliente = false;
   bool _allowDiscountOnVendedor = false;
   bool _allowPrintPending = false;
+  bool _allowSellerMakeOrderModifications = false;
+  bool _precioVentaRegidoPorUsd = false;
   String _metodoRedondeoPrecioVenta = 'NO_REDONDEAR';
   bool _hasMasterPassword = false;
   bool _showMasterPasswordField = false;
@@ -180,6 +182,103 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
     }
   }
 
+  Future<void> _updatePrecioVentaRegidoPorUsdSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      print('🔧 Actualizando configuración precio_venta_regido_por_usd: $value');
+
+      await StoreConfigService.updatePrecioVentaRegidoPorUsd(_storeId!, value);
+
+      setState(() {
+        _precioVentaRegidoPorUsd = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? '✅ Los precios CUP se actualizarán automáticamente según la tasa USD'
+                  : '🔒 Los precios CUP ya no se rigen por la tasa USD',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+
+      print('✅ precio_venta_regido_por_usd actualizado');
+    } catch (e) {
+      print('❌ Error al actualizar precio_venta_regido_por_usd: $e');
+
+      setState(() {
+        _precioVentaRegidoPorUsd = !value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateAllowSellerMakeOrderModificationsSetting(
+    bool value,
+  ) async {
+    if (_storeId == null) return;
+
+    try {
+      print(
+        '🔧 Actualizando configuración allow_seller_make_order_modifications: $value',
+      );
+
+      await StoreConfigService.updateAllowSellerMakeOrderModifications(
+        _storeId!,
+        value,
+      );
+
+      setState(() {
+        _allowSellerMakeOrderModifications = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? '✅ Los vendedores pueden modificar los productos de una orden abierta'
+                  : '🔒 Los vendedores no pueden modificar los productos de una orden abierta',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+
+      print('✅ allow_seller_make_order_modifications actualizado');
+    } catch (e) {
+      print(
+        '❌ Error al actualizar allow_seller_make_order_modifications: $e',
+      );
+
+      setState(() {
+        _allowSellerMakeOrderModifications = !value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _loadStoreConfig() async {
     try {
       setState(() {
@@ -225,6 +324,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _allowDiscountOnVendedor =
             config['allow_discount_on_vendedor'] ?? false;
         _allowPrintPending = config['permitir_imprimir_pendientes'] ?? false;
+        _allowSellerMakeOrderModifications =
+            config['allow_seller_make_order_modifications'] ?? false;
+        _precioVentaRegidoPorUsd =
+            config['precio_venta_regido_por_usd'] ?? false;
         _metodoRedondeoPrecioVenta =
             config['metodo_redondeo_precio_venta'] ?? 'NO_REDONDEAR';
         _hasMasterPassword = hasMasterPassword;
@@ -1007,6 +1110,25 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             onChanged: _updateAllowPrintPendingSetting,
           ),
 
+          const SizedBox(height: 16),
+
+          _buildConfigCard(
+            icon: Icons.edit_note_outlined,
+            iconColor: Colors.cyan,
+            title: 'Permitir Modificar Orden Abierta',
+            subtitle:
+                _allowSellerMakeOrderModifications
+                    ? '✅ Los vendedores pueden editar los productos de una orden mientras esté abierta'
+                    : '🔒 Los vendedores no pueden modificar los productos de una orden abierta',
+            value: _allowSellerMakeOrderModifications,
+            onChanged: _updateAllowSellerMakeOrderModificationsSetting,
+          ),
+
+          const SizedBox(height: 16),
+
+          // Configuración de Precio Regido por USD
+          _buildPrecioRegidoPorUsdCard(),
+
           const SizedBox(height: 24),
 
           // Sección de Impresoras WiFi
@@ -1493,6 +1615,88 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                     child: Text(
                       'Contraseña maestra configurada correctamente',
                       style: TextStyle(color: Colors.green, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPrecioRegidoPorUsdCard() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _precioVentaRegidoPorUsd
+              ? Colors.green.withOpacity(0.4)
+              : Colors.grey.withOpacity(0.2),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile(
+            secondary: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.attach_money,
+                color: Colors.green,
+                size: 22,
+              ),
+            ),
+            title: const Text(
+              'Precio de Venta Regido por USD',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+            ),
+            subtitle: Text(
+              _precioVentaRegidoPorUsd
+                  ? '✅ Los precios CUP se recalculan automáticamente al cambiar la tasa USD'
+                  : '🔒 Los precios CUP no se modifican al cambiar la tasa USD',
+              style: const TextStyle(fontSize: 13),
+            ),
+            value: _precioVentaRegidoPorUsd,
+            activeColor: Colors.green,
+            onChanged: _updatePrecioVentaRegidoPorUsdSetting,
+          ),
+          if (_precioVentaRegidoPorUsd) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: Colors.green[700],
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Cuando la tasa de cambio extraoficial se actualice, todos los precios CUP de los productos con precio USD configurado se recalcularán automáticamente usando la nueva tasa.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green[800],
+                        height: 1.4,
+                      ),
                     ),
                   ),
                 ],

@@ -137,12 +137,15 @@ class ConsignacionEnvioService {
     required int idAlmacenOrigen,
     required String idUsuario,
     required List<Map<String, dynamic>> productos,
+    int? idOperacionExtraccion,
     String? descripcion,
   }) async {
     try {
       debugPrint('🔄 Creando solicitud de devolución...');
+      debugPrint('   Operación extracción pre-construida: $idOperacionExtraccion');
       
-      // Preparar productos en formato JSONB
+      // Preparar productos en formato JSONB incluyendo presentación/variante/ubicación
+      // para que el RPC pueda almacenarlos y obtener_productos_envio2 los pueda consultar
       final productosJson = productos.map((p) => {
         'id_inventario': p['id_inventario'],
         'id_producto': p['id_producto'],
@@ -150,16 +153,20 @@ class ConsignacionEnvioService {
         'precio_costo_usd': p['precio_costo_usd'] ?? 0.0,
         'precio_costo_cup': p['precio_costo_cup'] ?? 0.0,
         'tasa_cambio': p['tasa_cambio'] ?? 440.0,
+        'id_presentacion': p['id_presentacion'],
+        'id_variante': p['id_variante'],
+        'id_ubicacion': p['id_ubicacion'],
       }).toList();
 
       final response = await _supabase.rpc(
-        'crear_devolucion_consignacion',
+        'crear_devolucion_consignacion_v2',
         params: {
           'p_id_contrato': idContrato,
           'p_id_almacen_origen': idAlmacenOrigen,
           'p_id_usuario': idUsuario,
           'p_productos': productosJson,
           'p_descripcion': descripcion,
+          'p_id_operacion_extraccion': idOperacionExtraccion,
         },
       );
 
@@ -187,7 +194,7 @@ class ConsignacionEnvioService {
       debugPrint('✅ Aprobando devolución $idEnvio...');
 
       final response = await _supabase.rpc(
-        'aprobar_devolucion_consignacion',
+        'aprobar_devolucion_consignacion_v2',
         params: {
           'p_id_envio': idEnvio,
           'p_id_almacen_recepcion': idAlmacenRecepcion,

@@ -1,0 +1,636 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-04-01",
+  "description": "Base de conocimientos del Marketplace VentIQ. Úsala para saber qué función RPC o tabla de Supabase llamar según lo que el usuario necesite.",
+  "supabase": {
+    "url": "https://vsieeihstajlrdvpuooh.supabase.co",
+    "rest_base": "https://vsieeihstajlrdvpuooh.supabase.co/rest/v1",
+    "rpc_base": "https://vsieeihstajlrdvpuooh.supabase.co/rest/v1/rpc",
+    "headers": {
+      "apikey": "SUPABASE_ANON_KEY",
+      "Authorization": "Bearer SUPABASE_ANON_KEY",
+      "Content-Type": "application/json"
+    }
+  },
+
+  "funciones": [
+    {
+      "id": "buscar_productos",
+      "nombre": "get_productos_marketplace",
+      "tipo": "rpc",
+      "endpoint": "POST /rest/v1/rpc/get_productos_marketplace",
+      "descripcion_corta": "Buscar y listar productos del marketplace con filtros",
+      "descripcion": "Función principal para buscar productos. Soporta búsqueda por texto (fonética, sin acentos), filtro por tienda, por categoría, solo con stock, y paginación. Es la función más versátil para responder preguntas como '¿dónde hay aceite?', '¿qué venden en tal tienda?', '¿qué productos hay de tal categoría?'.",
+      "cuando_usar": [
+        "El usuario busca un producto por nombre (ej: '¿dónde hay aceite?', 'busca cerveza')",
+        "El usuario quiere ver productos de una tienda específica",
+        "El usuario quiere ver productos de una categoría",
+        "El usuario quiere saber qué productos tienen stock",
+        "El usuario quiere una lista general de productos",
+        "El usuario pregunta por precios de un producto"
+      ],
+      "parametros": {
+        "id_tienda_param": {
+          "tipo": "bigint | null",
+          "requerido": false,
+          "default": null,
+          "descripcion": "ID numérico de la tienda. Si es null, busca en TODAS las tiendas."
+        },
+        "id_categoria_param": {
+          "tipo": "bigint | null",
+          "requerido": false,
+          "default": null,
+          "descripcion": "ID de la categoría para filtrar. Si es null, busca en todas las categorías."
+        },
+        "solo_disponibles_param": {
+          "tipo": "boolean",
+          "requerido": false,
+          "default": false,
+          "descripcion": "Si es true, solo retorna productos con stock > 0. Usar true cuando el usuario quiere saber qué hay disponible para comprar."
+        },
+        "search_query_param": {
+          "tipo": "text | null",
+          "requerido": false,
+          "default": null,
+          "descripcion": "Texto de búsqueda. Busca en: nombre del producto, descripción, SKU, código de barras, nombre de categoría, subcategoría y nombre de tienda. Soporta búsqueda sin acentos (buscar 'pina' encuentra 'Piña')."
+        },
+        "limit_param": {
+          "tipo": "integer",
+          "requerido": false,
+          "default": 50,
+          "descripcion": "Cantidad máxima de resultados. Subir a 500 si se necesitan muchos resultados."
+        },
+        "offset_param": {
+          "tipo": "integer",
+          "requerido": false,
+          "default": 0,
+          "descripcion": "Para paginación. Saltar los primeros N resultados."
+        }
+      },
+      "respuesta": {
+        "tipo": "array de objetos",
+        "campos": {
+          "id_producto": "ID único del producto",
+          "sku": "Código SKU del producto",
+          "denominacion": "Nombre del producto",
+          "descripcion": "Descripción del producto",
+          "um": "Unidad de medida",
+          "es_refrigerado": "Si requiere refrigeración",
+          "es_fragil": "Si es frágil",
+          "es_vendible": "Si está a la venta",
+          "codigo_barras": "Código de barras",
+          "id_subcategoria": "ID de subcategoría",
+          "subcategoria_nombre": "Nombre de la subcategoría",
+          "id_categoria": "ID de categoría",
+          "categoria_nombre": "Nombre de la categoría",
+          "precio_venta": "Precio de venta en CUP",
+          "imagen": "URL de la imagen del producto",
+          "stock_disponible": "Cantidad total disponible en todos los almacenes",
+          "tiene_stock": "true si hay stock disponible",
+          "metadata": {
+            "es_elaborado": "Si es producto elaborado",
+            "es_servicio": "Si es un servicio",
+            "denominacion_tienda": "Nombre de la tienda que lo vende",
+            "id_tienda": "ID de la tienda",
+            "ubicacion": "Coordenadas de la tienda",
+            "direccion": "Dirección de la tienda",
+            "provincia": "Provincia de la tienda",
+            "municipio": "Municipio de la tienda",
+            "rating_promedio": "Calificación promedio del producto (0-5)",
+            "total_ratings": "Cantidad de calificaciones recibidas",
+            "presentaciones": "Array con las presentaciones/variantes del producto (id, denominacion, cantidad, es_base, sku_codigo)"
+          }
+        }
+      },
+      "ejemplos": [
+        {
+          "pregunta_usuario": "¿Dónde hay aceite?",
+          "parametros": { "search_query_param": "aceite", "solo_disponibles_param": true, "limit_param": 50 },
+          "como_interpretar": "Mostrar los resultados indicando nombre del producto, tienda (metadata.denominacion_tienda), precio y stock disponible."
+        },
+        {
+          "pregunta_usuario": "¿Qué productos tiene la tienda 177?",
+          "parametros": { "id_tienda_param": 177, "limit_param": 100 },
+          "como_interpretar": "Listar todos los productos de esa tienda con nombre, precio y stock."
+        },
+        {
+          "pregunta_usuario": "¿Hay cerveza disponible?",
+          "parametros": { "search_query_param": "cerveza", "solo_disponibles_param": true },
+          "como_interpretar": "Mostrar cervezas con stock > 0, indicar tienda y precio."
+        },
+        {
+          "pregunta_usuario": "Productos de la categoría 5 que tengan stock",
+          "parametros": { "id_categoria_param": 5, "solo_disponibles_param": true },
+          "como_interpretar": "Listar productos de esa categoría que estén disponibles."
+        },
+        {
+          "pregunta_usuario": "¿Cuánto cuesta el ron?",
+          "parametros": { "search_query_param": "ron", "solo_disponibles_param": true },
+          "como_interpretar": "Mostrar cada producto que contenga 'ron', con su precio_venta y tienda."
+        },
+        {
+          "pregunta_usuario": "Busca piña",
+          "parametros": { "search_query_param": "pina", "solo_disponibles_param": true },
+          "como_interpretar": "La búsqueda fonética encontrará 'Piña' aunque se busque sin tilde."
+        }
+      ]
+    },
+
+    {
+      "id": "detalle_producto",
+      "nombre": "get_detalle_producto_marketplace",
+      "tipo": "rpc",
+      "endpoint": "POST /rest/v1/rpc/get_detalle_producto_marketplace",
+      "descripcion_corta": "Ver detalles completos de un producto específico",
+      "descripcion": "Obtiene toda la información de un producto: datos generales, inventario por ubicación/almacén, variantes, presentaciones con cantidades y precios, e imágenes multimedia. Úsala cuando ya tienes el ID del producto y quieres ver todo sobre él.",
+      "cuando_usar": [
+        "El usuario quiere ver los detalles de un producto específico",
+        "Necesitas saber el inventario desglosado por almacén/ubicación",
+        "Quieres ver las variantes o presentaciones de un producto",
+        "Necesitas las imágenes adicionales de un producto"
+      ],
+      "parametros": {
+        "id_producto_param": {
+          "tipo": "bigint",
+          "requerido": true,
+          "descripcion": "ID del producto a consultar"
+        }
+      },
+      "respuesta": {
+        "tipo": "jsonb (objeto)",
+        "estructura": {
+          "producto": {
+            "id": "ID del producto",
+            "denominacion": "Nombre",
+            "descripcion": "Descripción completa",
+            "foto": "URL de imagen principal",
+            "precio_actual": "Precio de venta vigente",
+            "es_refrigerado": "bool",
+            "es_fragil": "bool",
+            "es_peligroso": "bool",
+            "es_elaborado": "bool",
+            "es_servicio": "bool",
+            "categoria": { "id": "ID categoría", "denominacion": "Nombre categoría" },
+            "multimedias": "Array de { id, url, tipo } con imágenes adicionales"
+          },
+          "inventario": {
+            "descripcion": "Array con el stock desglosado",
+            "items": {
+              "id_inventario": "ID del registro de inventario",
+              "sku_producto": "SKU",
+              "cantidad_disponible": "Stock en esta ubicación",
+              "precio": "Precio asociado",
+              "variante": "Datos de variante (id, precio, atributo, opcion) o null",
+              "presentacion": "Datos de presentación (id, denominacion, cantidad, es_base, precio)",
+              "ubicacion": "Datos de ubicación (id, denominacion, almacen: { id, denominacion })"
+            }
+          }
+        }
+      },
+      "ejemplos": [
+        {
+          "pregunta_usuario": "Dame los detalles del producto 42",
+          "parametros": { "id_producto_param": 42 },
+          "como_interpretar": "Mostrar nombre, descripción, precio, stock total (sumar cantidades del inventario), presentaciones disponibles."
+        }
+      ]
+    },
+
+    {
+      "id": "estado_tpvs",
+      "nombre": "get_tienda_estado_tpvs",
+      "tipo": "rpc",
+      "endpoint": "POST /rest/v1/rpc/get_tienda_estado_tpvs",
+      "descripcion_corta": "Ver qué cajas (TPVs) están abiertas o cerradas en una tienda",
+      "descripcion": "Consulta el estado de los terminales de punto de venta (cajas) de una tienda. Indica si cada caja está abierta o cerrada, y las fechas de apertura/cierre del último turno.",
+      "cuando_usar": [
+        "El usuario pregunta si una tienda está abierta",
+        "Quieres saber qué cajas están operativas",
+        "Necesitas verificar el estado de operación de una tienda"
+      ],
+      "parametros": {
+        "id_tienda_param": {
+          "tipo": "bigint",
+          "requerido": true,
+          "descripcion": "ID de la tienda a consultar"
+        }
+      },
+      "respuesta": {
+        "tipo": "array de objetos",
+        "campos": {
+          "id_tpv": "ID del terminal de punto de venta",
+          "denominacion_tpv": "Nombre de la caja (ej: 'Caja 1')",
+          "esta_abierto": "true si la caja está abierta (turno activo)",
+          "fecha_apertura": "Fecha/hora de apertura del último turno",
+          "fecha_cierre": "Fecha/hora de cierre (null si está abierta)"
+        }
+      },
+      "ejemplos": [
+        {
+          "pregunta_usuario": "¿La tienda 177 está abierta?",
+          "parametros": { "id_tienda_param": 177 },
+          "como_interpretar": "Si algún TPV tiene esta_abierto=true, la tienda tiene al menos una caja operativa."
+        }
+      ]
+    },
+
+    {
+      "id": "productos_recomendados",
+      "nombre": "fn_get_productos_recomendados_v2",
+      "tipo": "rpc",
+      "endpoint": "POST /rest/v1/rpc/fn_get_productos_recomendados_v2",
+      "descripcion_corta": "Productos recomendados personalizados para un usuario",
+      "descripcion": "Retorna productos recomendados para un usuario basándose en sus suscripciones a productos y tiendas, rating del producto, cantidad de reseñas y disponibilidad de stock. Requiere autenticación.",
+      "cuando_usar": [
+        "El usuario quiere ver recomendaciones personalizadas",
+        "Quieres mostrar productos destacados para un usuario específico",
+        "Sección 'Para ti' o 'Recomendados'"
+      ],
+      "parametros": {
+        "id_usuario_param": {
+          "tipo": "uuid",
+          "requerido": true,
+          "descripcion": "UUID del usuario autenticado"
+        },
+        "limit_param": {
+          "tipo": "integer",
+          "requerido": false,
+          "default": 50,
+          "descripcion": "Máximo de productos a retornar"
+        },
+        "offset_param": {
+          "tipo": "integer",
+          "requerido": false,
+          "default": 0,
+          "descripcion": "Para paginación"
+        }
+      },
+      "respuesta": {
+        "tipo": "array de objetos",
+        "campos": "Misma estructura que get_productos_marketplace"
+      },
+      "notas": "Requiere que el usuario esté autenticado. Prioriza: 1) Productos suscritos, 2) Tiendas suscritas, 3) Score = rating * ln(reviews + 1) + bonus_stock"
+    }
+  ],
+
+  "tablas_consulta_directa": [
+    {
+      "id": "listar_tiendas",
+      "tabla": "app_dat_tienda",
+      "endpoint": "GET /rest/v1/app_dat_tienda",
+      "descripcion_corta": "Ver todas las tiendas del marketplace",
+      "descripcion": "Tabla principal de tiendas. Contiene nombre, dirección, ubicación GPS, teléfono, imagen, horarios y si está visible en catálogo.",
+      "cuando_usar": [
+        "El usuario quiere ver las tiendas disponibles",
+        "Buscar una tienda por nombre",
+        "Ver tiendas en el mapa",
+        "Saber la dirección o teléfono de una tienda"
+      ],
+      "campos_principales": {
+        "id": "ID de la tienda",
+        "denominacion": "Nombre de la tienda",
+        "direccion": "Dirección física",
+        "ubicacion": "Coordenadas GPS (formato texto)",
+        "imagen_url": "URL de la imagen/logo de la tienda",
+        "phone": "Teléfono de contacto",
+        "provincia": "Provincia",
+        "municipio": "Municipio",
+        "pais": "País",
+        "hora_apertura": "Hora de apertura",
+        "hora_cierre": "Hora de cierre",
+        "mostrar_en_catalogo": "Si está visible en el marketplace (filtrar por true)"
+      },
+      "filtros_comunes": {
+        "solo_visibles": "?mostrar_en_catalogo=eq.true",
+        "con_ubicacion": "?ubicacion=not.is.null",
+        "por_nombre": "?denominacion=ilike.*TEXTO*",
+        "por_provincia": "?provincia=eq.NOMBRE"
+      },
+      "ejemplos": [
+        {
+          "pregunta_usuario": "¿Qué tiendas hay?",
+          "query": "GET /rest/v1/app_dat_tienda?select=id,denominacion,direccion,phone,imagen_url,provincia,municipio&mostrar_en_catalogo=eq.true",
+          "como_interpretar": "Listar nombre, dirección y teléfono de cada tienda."
+        },
+        {
+          "pregunta_usuario": "¿Hay alguna tienda en La Habana?",
+          "query": "GET /rest/v1/app_dat_tienda?select=id,denominacion,direccion,phone&mostrar_en_catalogo=eq.true&provincia=ilike.*habana*",
+          "como_interpretar": "Filtrar tiendas cuya provincia contenga 'habana'."
+        },
+        {
+          "pregunta_usuario": "Dame el teléfono de la bodega X",
+          "query": "GET /rest/v1/app_dat_tienda?select=denominacion,phone,direccion&denominacion=ilike.*bodega*",
+          "como_interpretar": "Buscar tiendas que contengan 'bodega' en el nombre."
+        }
+      ]
+    },
+
+    {
+      "id": "listar_categorias",
+      "tabla": "app_dat_categoria",
+      "endpoint": "GET /rest/v1/app_dat_categoria",
+      "descripcion_corta": "Ver las categorías de productos disponibles",
+      "descripcion": "Categorías principales de productos (ej: Bebidas, Alimentos, Higiene). Útil para obtener el ID de categoría y usarlo como filtro en búsquedas de productos.",
+      "cuando_usar": [
+        "El usuario pregunta qué categorías hay",
+        "Necesitas el ID de una categoría para filtrar productos",
+        "El usuario quiere explorar por tipo de producto"
+      ],
+      "campos_principales": {
+        "id": "ID de la categoría",
+        "denominacion": "Nombre de la categoría",
+        "descripcion": "Descripción",
+        "image": "URL de imagen de la categoría"
+      },
+      "filtros_comunes": {
+        "para_catalogo": "?para_catalogo=eq.true"
+      },
+      "ejemplos": [
+        {
+          "pregunta_usuario": "¿Qué categorías de productos hay?",
+          "query": "GET /rest/v1/app_dat_categoria?select=id,denominacion,descripcion&para_catalogo=eq.true&order=denominacion",
+          "como_interpretar": "Listar las categorías con su nombre. El usuario puede elegir una para ver productos."
+        }
+      ]
+    },
+
+    {
+      "id": "rating_producto",
+      "tabla": "app_dat_producto_rating",
+      "endpoint": "GET /rest/v1/app_dat_producto_rating",
+      "descripcion_corta": "Ver las calificaciones de un producto",
+      "descripcion": "Contiene las calificaciones individuales que los usuarios han dado a un producto. Se puede calcular el promedio y la cantidad de reseñas.",
+      "cuando_usar": [
+        "El usuario quiere saber la calificación de un producto",
+        "Ver reseñas o comentarios de un producto"
+      ],
+      "campos_principales": {
+        "id": "ID del rating",
+        "id_producto": "ID del producto calificado",
+        "rating": "Calificación numérica (1-5)",
+        "comentario": "Comentario del usuario",
+        "uuid": "UUID del usuario que calificó",
+        "created_at": "Fecha de la calificación"
+      },
+      "ejemplos": [
+        {
+          "pregunta_usuario": "¿Qué calificación tiene el producto 42?",
+          "query": "GET /rest/v1/app_dat_producto_rating?select=rating,comentario&id_producto=eq.42",
+          "como_interpretar": "Calcular promedio de 'rating' y contar registros para total de reseñas."
+        }
+      ]
+    },
+
+    {
+      "id": "rating_tienda",
+      "tabla": "app_dat_tienda_rating",
+      "endpoint": "GET /rest/v1/app_dat_tienda_rating",
+      "descripcion_corta": "Ver las calificaciones de una tienda",
+      "descripcion": "Calificaciones que los usuarios han dado a una tienda.",
+      "cuando_usar": [
+        "El usuario pregunta qué tan buena es una tienda",
+        "Quieres comparar tiendas por rating"
+      ],
+      "campos_principales": {
+        "id": "ID del rating",
+        "id_tienda": "ID de la tienda calificada",
+        "rating": "Calificación (1-5)",
+        "comentario": "Comentario",
+        "uuid": "UUID del usuario"
+      },
+      "ejemplos": [
+        {
+          "pregunta_usuario": "¿Qué calificación tiene la tienda 177?",
+          "query": "GET /rest/v1/app_dat_tienda_rating?select=rating,comentario&id_tienda=eq.177",
+          "como_interpretar": "Promediar ratings y contar total."
+        }
+      ]
+    },
+
+    {
+      "id": "inventario_producto",
+      "tabla": "app_dat_inventario_productos",
+      "endpoint": "GET /rest/v1/app_dat_inventario_productos",
+      "descripcion_corta": "Ver stock detallado de un producto",
+      "descripcion": "Registros de inventario por producto, variante, presentación y ubicación. Para obtener el stock actual, tomar el registro más reciente (mayor ID) por cada combinación única de producto+variante+presentación+ubicación.",
+      "cuando_usar": [
+        "Necesitas el stock exacto desglosado por ubicación",
+        "Quieres verificar disponibilidad en un almacén específico"
+      ],
+      "campos_principales": {
+        "id": "ID del registro",
+        "id_producto": "ID del producto",
+        "cantidad_final": "Cantidad disponible",
+        "id_variante": "ID de variante (null si no aplica)",
+        "id_presentacion": "ID de presentación",
+        "id_ubicacion": "ID de ubicación/estante",
+        "created_at": "Fecha del registro"
+      },
+      "notas": "Para stock actual: tomar MAX(id) por combinación producto+variante+presentación+ubicación donde cantidad_final > 0. La función get_productos_marketplace ya hace este cálculo automáticamente."
+    },
+
+    {
+      "id": "precios",
+      "tabla": "app_dat_precio_venta",
+      "endpoint": "GET /rest/v1/app_dat_precio_venta",
+      "descripcion_corta": "Ver precios de venta de productos",
+      "descripcion": "Histórico de precios de venta. Para obtener el precio actual, tomar el más reciente (ORDER BY created_at DESC LIMIT 1).",
+      "cuando_usar": [
+        "Consultar precio actual de un producto",
+        "Ver historial de precios",
+        "Comparar precios entre productos"
+      ],
+      "campos_principales": {
+        "id": "ID del precio",
+        "id_producto": "ID del producto",
+        "precio_venta": "Precio de venta general",
+        "precio_venta_cup": "Precio en CUP",
+        "precio_oferta": "Precio de oferta (si aplica)",
+        "tiene_oferta": "Si el producto está en oferta",
+        "fecha_desde": "Desde cuándo aplica",
+        "fecha_hasta": "Hasta cuándo aplica (null = vigente)",
+        "created_at": "Fecha de creación"
+      },
+      "ejemplos": [
+        {
+          "pregunta_usuario": "¿Cuánto cuesta el producto 42?",
+          "query": "GET /rest/v1/app_dat_precio_venta?select=precio_venta_cup,tiene_oferta,precio_oferta&id_producto=eq.42&order=created_at.desc&limit=1",
+          "como_interpretar": "Usar precio_venta_cup como precio. Si tiene_oferta=true, indicar el precio_oferta también."
+        }
+      ]
+    }
+  ],
+
+  "flujos_conversacionales": {
+    "descripcion": "Guía para que el agente IA sepa qué función usar según la intención del usuario",
+    "flujos": [
+      {
+        "intencion": "buscar_producto_por_nombre",
+        "ejemplos_usuario": [
+          "¿Dónde hay aceite?",
+          "Busca cerveza",
+          "¿Tienen arroz?",
+          "Quiero comprar jabón",
+          "¿Hay pollo disponible?"
+        ],
+        "funcion": "get_productos_marketplace",
+        "parametros_sugeridos": {
+          "search_query_param": "[lo que busca el usuario]",
+          "solo_disponibles_param": true
+        },
+        "respuesta_sugerida": "Para cada resultado: '{denominacion}' en {metadata.denominacion_tienda} ({metadata.direccion}) - ${precio_venta} CUP - Stock: {stock_disponible} unidades"
+      },
+      {
+        "intencion": "ver_productos_de_tienda",
+        "ejemplos_usuario": [
+          "¿Qué venden en la tienda X?",
+          "Muéstrame los productos de la bodega",
+          "¿Qué tiene la tienda 177?"
+        ],
+        "pasos": [
+          "1. Si el usuario da el nombre y no el ID, buscar primero en app_dat_tienda con ilike",
+          "2. Luego llamar get_productos_marketplace con id_tienda_param"
+        ],
+        "funcion": "get_productos_marketplace",
+        "parametros_sugeridos": {
+          "id_tienda_param": "[ID de la tienda]",
+          "solo_disponibles_param": true,
+          "limit_param": 100
+        }
+      },
+      {
+        "intencion": "ver_tiendas",
+        "ejemplos_usuario": [
+          "¿Qué tiendas hay?",
+          "¿Dónde puedo comprar?",
+          "¿Hay tiendas cerca de mí?",
+          "¿Qué tiendas hay en La Habana?"
+        ],
+        "tabla": "app_dat_tienda",
+        "query": "SELECT id, denominacion, direccion, phone, provincia, municipio FROM app_dat_tienda WHERE mostrar_en_catalogo = true"
+      },
+      {
+        "intencion": "consultar_precio",
+        "ejemplos_usuario": [
+          "¿Cuánto cuesta el ron?",
+          "¿Qué precio tiene la cerveza?",
+          "¿A cómo está el aceite?"
+        ],
+        "funcion": "get_productos_marketplace",
+        "parametros_sugeridos": {
+          "search_query_param": "[producto]",
+          "solo_disponibles_param": true
+        },
+        "respuesta_sugerida": "'{denominacion}' - ${precio_venta} CUP en {metadata.denominacion_tienda}. El campo precio_venta ya viene incluido."
+      },
+      {
+        "intencion": "consultar_disponibilidad",
+        "ejemplos_usuario": [
+          "¿Hay stock de leche?",
+          "¿Tienen azúcar disponible?",
+          "¿Cuánto queda de harina?"
+        ],
+        "funcion": "get_productos_marketplace",
+        "parametros_sugeridos": {
+          "search_query_param": "[producto]",
+          "solo_disponibles_param": true
+        },
+        "respuesta_sugerida": "'{denominacion}' tiene {stock_disponible} unidades disponibles en {metadata.denominacion_tienda}"
+      },
+      {
+        "intencion": "ver_categorias",
+        "ejemplos_usuario": [
+          "¿Qué tipos de productos hay?",
+          "¿Qué categorías tienen?",
+          "¿Qué secciones hay?"
+        ],
+        "tabla": "app_dat_categoria",
+        "query": "SELECT id, denominacion FROM app_dat_categoria WHERE para_catalogo = true ORDER BY denominacion"
+      },
+      {
+        "intencion": "ver_productos_por_categoria",
+        "ejemplos_usuario": [
+          "¿Qué bebidas hay?",
+          "Muéstrame los productos de higiene",
+          "¿Qué alimentos tienen?"
+        ],
+        "pasos": [
+          "1. Buscar la categoría en app_dat_categoria por nombre",
+          "2. Llamar get_productos_marketplace con id_categoria_param"
+        ],
+        "funcion": "get_productos_marketplace",
+        "parametros_sugeridos": {
+          "id_categoria_param": "[ID de la categoría]",
+          "solo_disponibles_param": true
+        }
+      },
+      {
+        "intencion": "detalle_de_producto",
+        "ejemplos_usuario": [
+          "Dame más info del producto 42",
+          "¿Qué presentaciones tiene este producto?",
+          "¿En qué almacén está este producto?"
+        ],
+        "funcion": "get_detalle_producto_marketplace",
+        "parametros_sugeridos": {
+          "id_producto_param": "[ID del producto]"
+        }
+      },
+      {
+        "intencion": "tienda_abierta",
+        "ejemplos_usuario": [
+          "¿La tienda está abierta?",
+          "¿Qué cajas están funcionando?",
+          "¿Están vendiendo ahora?"
+        ],
+        "funcion": "get_tienda_estado_tpvs",
+        "parametros_sugeridos": {
+          "id_tienda_param": "[ID de la tienda]"
+        },
+        "respuesta_sugerida": "Si algún TPV tiene esta_abierto=true → 'La tienda tiene X cajas abiertas'. Si todos false → 'La tienda está cerrada'."
+      },
+      {
+        "intencion": "calificacion_producto",
+        "ejemplos_usuario": [
+          "¿Es bueno este producto?",
+          "¿Qué calificación tiene?",
+          "¿Lo recomiendan?"
+        ],
+        "nota": "El rating ya viene incluido en get_productos_marketplace (metadata.rating_promedio y metadata.total_ratings). Solo consultar app_dat_producto_rating directamente si necesitas los comentarios individuales."
+      },
+      {
+        "intencion": "comparar_precios",
+        "ejemplos_usuario": [
+          "¿Dónde es más barato el aceite?",
+          "Compara precios de cerveza",
+          "¿Quién vende más barato?"
+        ],
+        "funcion": "get_productos_marketplace",
+        "parametros_sugeridos": {
+          "search_query_param": "[producto]",
+          "solo_disponibles_param": true
+        },
+        "respuesta_sugerida": "Ordenar resultados por precio_venta ascendente y mostrar: '{denominacion}' - ${precio_venta} en {metadata.denominacion_tienda}"
+      },
+      {
+        "intencion": "productos_recomendados",
+        "ejemplos_usuario": [
+          "¿Qué me recomiendas?",
+          "¿Qué productos son populares?",
+          "Recomendaciones para mí"
+        ],
+        "funcion": "fn_get_productos_recomendados_v2",
+        "nota": "Requiere UUID del usuario autenticado. Si no hay usuario, usar get_productos_marketplace sin filtros y ordenar por metadata.rating_promedio."
+      }
+    ]
+  },
+
+  "notas_importantes": {
+    "busqueda_fonetica": "La búsqueda en get_productos_marketplace usa unaccent() + LOWER(), por lo que 'pina' encuentra 'Piña', 'cafe' encuentra 'Café', etc. No necesitas preocuparte por acentos.",
+    "stock": "El stock que devuelve get_productos_marketplace (campo stock_disponible) ya es la suma del inventario más reciente por cada combinación producto+variante+presentación+ubicación. No necesitas calcular nada adicional.",
+    "precios": "El campo precio_venta en get_productos_marketplace ya es el precio vigente. Solo consulta app_dat_precio_venta directamente si necesitas historial.",
+    "tiendas_visibles": "Solo las tiendas con mostrar_en_catalogo=true aparecen en el marketplace público. Siempre filtra por esto al listar tiendas.",
+    "paginacion": "Por defecto se devuelven 50 resultados. Para listas grandes usar limit_param hasta 500 y offset_param para paginar.",
+    "metadata": "El campo metadata de get_productos_marketplace es JSONB y contiene información valiosa: nombre de tienda, ubicación, rating y presentaciones. Siempre parsear este campo para dar respuestas completas."
+  }
+}

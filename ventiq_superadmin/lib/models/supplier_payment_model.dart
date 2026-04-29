@@ -94,8 +94,11 @@ class OrderPaymentDetail {
     required this.products,
   });
 
-  double get discountAmount => isTransfer ? total * 0.15 : total * 0.05;
-  double get totalToPay => total - discountAmount;
+  double discountAmount({double cashPct = 5, double transferPct = 15}) =>
+      isTransfer ? total * (transferPct / 100) : total * (cashPct / 100);
+
+  double totalToPay({double cashPct = 5, double transferPct = 15}) =>
+      total - discountAmount(cashPct: cashPct, transferPct: transferPct);
 }
 
 class ProductPaymentDetail {

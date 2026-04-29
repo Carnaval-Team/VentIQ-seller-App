@@ -1508,157 +1508,227 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     );
   }
 
+  /// Calcula el total de los ajustes basado en los detalles
+  double _calculateAdjustmentTotal(List<dynamic> details) {
+    double total = 0.0;
+    for (var detail in details) {
+      if (detail is Map<String, dynamic>) {
+        // Obtener precio unitario si está disponible
+        final precioUnitario = detail['precio_unitario'];
+        final diferencia = detail['diferencia'] ?? 0;
+        
+        if (precioUnitario != null) {
+          final precioNum = (precioUnitario is double)
+              ? precioUnitario
+              : double.tryParse(precioUnitario.toString()) ?? 0.0;
+          final diferenciaNum = (diferencia is double)
+              ? diferencia
+              : double.tryParse(diferencia.toString()) ?? 0.0;
+          
+          total += (diferenciaNum.abs() * precioNum);
+        }
+      }
+    }
+    return total;
+  }
+
   /// Build the list of adjustment details
   Widget _buildAdjustmentDetailsList(List<dynamic> details) {
+    // Ordenar detalles alfabéticamente por nombre de producto
+    final sortedDetails = List<dynamic>.from(details);
+    sortedDetails.sort((a, b) {
+      final nameA = (a['producto_nombre'] ?? 'Producto').toString().toLowerCase();
+      final nameB = (b['producto_nombre'] ?? 'Producto').toString().toLowerCase();
+      return nameA.compareTo(nameB);
+    });
+
+    // Calcular el total de los ajustes
+    final totalAjuste = _calculateAdjustmentTotal(sortedDetails);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: details.map((detail) {
-        final cantidadAnterior = detail['cantidad_anterior'] ?? 0;
-        final cantidadNueva = detail['cantidad_nueva'] ?? 0;
-        final diferencia = detail['diferencia'] ?? 0;
-        final productoNombre = detail['producto_nombre'] ?? 'Producto';
-        final ubicacion = detail['ubicacion'] ?? 'N/A';
-        final almacen = detail['almacen'] ?? 'N/A';
-
-        // Determinar color según si es aumento o disminución
-        final isIncrease = (diferencia as num) >= 0;
-        final differenceColor = isIncrease ? Colors.green : Colors.red;
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[300]!),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Nombre del producto
-              Text(
-                productoNombre,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1F2937),
+      children: [
+        // Mostrar total de ajustes si hay valor
+        if (totalAjuste > 0) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.05),
+              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Total de Ajuste:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1F2937),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              
-              // Almacén
-              Row(
-                children: [
-                  const Icon(Icons.warehouse, size: 16, color: Colors.orange),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      almacen,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                Text(
+                  '\$${totalAjuste.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
                   ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              
-              // Ubicación
-              Row(
-                children: [
-                  const Icon(Icons.location_on, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      ubicacion,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              // Cantidades
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Cantidad Anterior:',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        Text(
-                          cantidadAnterior.toString(),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Cantidad Nueva:',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        Text(
-                          cantidadNueva.toString(),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Diferencia:',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        Text(
-                          '${isIncrease ? '+' : ''}$diferencia',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: differenceColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
-        );
-      }).toList(),
+        ],
+        ...sortedDetails.map((detail) {
+          final cantidadAnterior = detail['cantidad_anterior'] ?? 0;
+          final cantidadNueva = detail['cantidad_nueva'] ?? 0;
+          final diferencia = detail['diferencia'] ?? 0;
+          final productoNombre = detail['producto_nombre'] ?? 'Producto';
+          final ubicacion = detail['ubicacion'] ?? 'N/A';
+          final almacen = detail['almacen'] ?? 'N/A';
+
+          // Determinar color según si es aumento o disminución
+          final isIncrease = (diferencia as num) >= 0;
+          final differenceColor = isIncrease ? Colors.green : Colors.red;
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Nombre del producto
+                Text(
+                  productoNombre,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1F2937),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                
+                // Almacén
+                Row(
+                  children: [
+                    const Icon(Icons.warehouse, size: 16, color: Colors.orange),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        almacen,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                
+                // Ubicación
+                Row(
+                  children: [
+                    const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        ubicacion,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                // Cantidades
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Cantidad Anterior:',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          Text(
+                            cantidadAnterior.toString(),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Cantidad Nueva:',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          Text(
+                            cantidadNueva.toString(),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Diferencia:',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          Text(
+                            '${isIncrease ? '+' : ''}$diferencia',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: differenceColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
     );
   }
 
@@ -1869,6 +1939,14 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   }
 
   Widget _buildProductsList(List<dynamic> items) {
+    // Ordenar productos alfabéticamente por nombre
+    final sortedItems = List<dynamic>.from(items);
+    sortedItems.sort((a, b) {
+      final nameA = _getProductName(a as Map<String, dynamic>).toLowerCase();
+      final nameB = _getProductName(b as Map<String, dynamic>).toLowerCase();
+      return nameA.compareTo(nameB);
+    });
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1894,7 +1972,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           ),
           child: Column(
             children:
-                items.asMap().entries.map((entry) {
+                sortedItems.asMap().entries.map((entry) {
                   int index = entry.key;
                   Map<String, dynamic> item = entry.value;
 
@@ -2079,6 +2157,44 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       if (operation['detalles'] != null &&
           operation['detalles'] is Map<String, dynamic>) {
         final detalles = operation['detalles'] as Map<String, dynamic>;
+        
+        // Para operaciones de ajuste, calcular el total basado en los items
+        if (detalles['items'] != null && detalles['items'] is List) {
+          final items = detalles['items'] as List<dynamic>;
+          double totalPrice = 0.0;
+          
+          for (var item in items) {
+            if (item is Map<String, dynamic>) {
+              // Intentar obtener el importe (precio total del item)
+              final importe = item['importe'];
+              if (importe != null) {
+                final importeNum = (importe is double)
+                    ? importe
+                    : double.tryParse(importe.toString()) ?? 0.0;
+                totalPrice += importeNum;
+              } else {
+                // Si no hay importe, intentar calcular cantidad * precio_unitario
+                final cantidad = item['cantidad'] ?? item['cantidad_fisica'] ?? 0;
+                final precioUnitario = item['precio_unitario'] ?? 0;
+                
+                final cantidadNum = (cantidad is double)
+                    ? cantidad
+                    : double.tryParse(cantidad.toString()) ?? 0.0;
+                final precioNum = (precioUnitario is double)
+                    ? precioUnitario
+                    : double.tryParse(precioUnitario.toString()) ?? 0.0;
+                
+                totalPrice += (cantidadNum * precioNum);
+              }
+            }
+          }
+          
+          if (totalPrice > 0) {
+            return totalPrice;
+          }
+        }
+        
+        // Fallback a detalles_especificos si existen
         if (detalles['detalles_especificos'] != null &&
             detalles['detalles_especificos'] is Map<String, dynamic>) {
           final especificos =
@@ -2324,11 +2440,17 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         
         // Verificar si es un error de consignación
         final errorCode = response['error'] ?? '';
+        final errorType = response['error_type'] ?? '';
         if (errorCode == 'CONSIGNMENT_EXTRACTION_NOT_COMPLETED') {
           // Mostrar diálogo informativo para error de consignación
           _showConsignmentErrorDialog(
             response['message'] ?? 'Error en consignación',
             response['id_operacion_extraccion'],
+          );
+        } else if (errorType == 'insufficient_stock') {
+          // Mostrar diálogo detallado de stock insuficiente
+          _showInsufficientStockDialog(
+            response['message'] ?? 'Stock insuficiente para completar la operación',
           );
         } else {
           // Mostrar SnackBar para otros errores
@@ -3312,6 +3434,20 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         }
       }
 
+      // Obtener nombre del almacén (igual que el bottom sheet)
+      String almacenNombre = 'N/A';
+      final tipoOp = operation['tipo_operacion_nombre'] ?? '';
+      final tipoLC = tipoOp.toLowerCase();
+      if (tipoLC.contains('recepción') || tipoLC.contains('recepcion') ||
+          tipoLC.contains('reception') || tipoLC.contains('extracción') ||
+          tipoLC.contains('extraccion') || tipoLC.contains('extraction') ||
+          tipoLC.contains('productos')) {
+        almacenNombre = await InventoryService.getWarehouseFromOperation(
+          operation['id'],
+          tipoOp,
+        );
+      }
+
       if (!mounted) return;
 
       // Mostrar diálogo de progreso
@@ -3334,6 +3470,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         context: context,
         operation: operation,
         items: items,
+        almacenNombre: almacenNombre,
       );
 
       if (mounted) {
@@ -3477,6 +3614,135 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Mostrar diálogo de stock insuficiente al intentar completar una extracción
+  void _showInsufficientStockDialog(String message) {
+    // Parsear la lista de productos del mensaje
+    // Formato esperado: "Stock insuficiente para: Prod A (disponible: X, solicitado: Y), Prod B ..."
+    final List<Map<String, String>> productos = [];
+    final bodyStart = message.indexOf(':');
+    if (bodyStart != -1) {
+      final body = message.substring(bodyStart + 1).trim();
+      // Split por patrón "), " para separar cada producto
+      final regex = RegExp(r'([^(]+)\(disponible:\s*([\d.]+),\s*solicitado:\s*([\d.]+)\)');
+      for (final match in regex.allMatches(body)) {
+        productos.add({
+          'nombre': match.group(1)?.trim() ?? '',
+          'disponible': match.group(2) ?? '0',
+          'solicitado': match.group(3) ?? '0',
+        });
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.inventory_2_outlined, color: Colors.red, size: 28),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Stock Insuficiente',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        border: Border.all(color: Colors.red.shade300, width: 2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'No hay suficiente stock para completar esta extracción. Revisa las cantidades disponibles antes de intentar de nuevo.',
+                        style: TextStyle(fontSize: 13, height: 1.5),
+                      ),
+                    ),
+                    if (productos.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Productos con stock insuficiente:',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      ...productos.map(
+                        (p) => Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.warning_amber_rounded,
+                                color: Colors.orange,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      p['nombre'] ?? '',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Disponible: ${p['disponible']}  •  Solicitado: ${p['solicitado']}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        message,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Entendido'),
+              ),
+            ],
+          ),
     );
   }
 

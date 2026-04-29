@@ -41,6 +41,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isPrintEnabled = true; // Valor por defecto
   bool _isPrintUsdEnabled = false; // Valor por defecto
   bool _isStaticTextEnabled = false; // Valor por defecto (marquee activo)
+  bool _isShowSkuEnabled = false; // Valor por defecto (SKU oculto)
   bool _isLimitDataUsageEnabled = false; // Valor por defecto
   bool _isFluidModeEnabled =
       false; // Deshabilitado - Disponible en próxima versión
@@ -191,6 +192,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     final printUsdEnabled = await _userPreferencesService.isPrintUsdEnabled();
     final staticTextEnabled =
         await _userPreferencesService.isStaticTextEnabled();
+    final showSkuEnabled =
+        await _userPreferencesService.isShowSkuEnabled();
     final limitDataEnabled =
         await _userPreferencesService.isLimitDataUsageEnabled();
     final offlineModeEnabled =
@@ -206,6 +209,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         _isPrintEnabled = printEnabled;
         _isPrintUsdEnabled = printUsdEnabled;
         _isStaticTextEnabled = staticTextEnabled;
+        _isShowSkuEnabled = showSkuEnabled;
         _isLimitDataUsageEnabled = limitDataEnabled;
         // _isFluidModeEnabled permanece false - deshabilitado
         _isOfflineModeEnabled = offlineModeEnabled;
@@ -408,6 +412,26 @@ class _SettingsScreenState extends State<SettingsScreen>
           value
               ? '💵 USD habilitado en impresiones'
               : '💵 USD deshabilitado en impresiones',
+        ),
+        backgroundColor: value ? Colors.green : Colors.orange,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _onShowSkuSettingChanged(bool value) async {
+    setState(() {
+      _isShowSkuEnabled = value;
+    });
+
+    await _userPreferencesService.setShowSkuEnabled(value);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          value
+              ? 'SKU de producto visible'
+              : 'SKU de producto oculto',
         ),
         backgroundColor: value ? Colors.green : Colors.orange,
         duration: const Duration(seconds: 2),
@@ -840,6 +864,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 _buildDivider(),
                 _buildStaticTextSettingsTile(),
                 _buildDivider(),
+                _buildShowSkuSettingsTile(),
+                _buildDivider(),
                 _buildFluidModeSettingsTile(),
                 _buildDivider(),
                 _buildSettingsTile(
@@ -1104,6 +1130,43 @@ class _SettingsScreenState extends State<SettingsScreen>
         value: _isPrintEnabled,
         onChanged: _onPrintSettingChanged,
         activeColor: const Color(0xFF4A90E2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    );
+  }
+
+  Widget _buildShowSkuSettingsTile() {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF4A90E2).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(
+          Icons.tag_outlined,
+          color: Color(0xFF4A90E2),
+          size: 20,
+        ),
+      ),
+      title: const Text(
+        'Mostrar SKU de Producto',
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFF1F2937),
+        ),
+      ),
+      subtitle: Text(
+        _isShowSkuEnabled
+            ? 'El código SKU será visible en los productos'
+            : 'El código SKU no se mostrará en los productos',
+        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+      ),
+      trailing: Switch(
+        value: _isShowSkuEnabled,
+        onChanged: _onShowSkuSettingChanged,
+        activeColor: const Color(0xFF6B7280),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );

@@ -6,7 +6,9 @@ import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/openfoodfacts_service.dart';
+import '../services/currency_service.dart';
 import '../services/supplier_service.dart';
+import '../services/barcode_service.dart';
 import 'barcode_scanner_screen.dart';
 
 final _supabase = Supabase.instance.client;
@@ -53,6 +55,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final _diasAlertController = TextEditingController();
   final _codigoBarrasController = TextEditingController();
   final _precioVentaController = TextEditingController();
+  final _precioVentaUsdController = TextEditingController();
+  double _usdRate = 0.0;
   final _cantidadPresentacionController = TextEditingController(
     text: '1',
   ); // Controller for presentation quantity
@@ -64,6 +68,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool _isLoading = false;
   bool _isLoadingData = true;
   bool _isLoadingOpenFoodFacts = false;
+  String? _scannedBarcodeFormat;
   bool _isLoadingSubcategorias = false; // Estado de carga de subcategorías
   bool _isLoadingProveedores = false; // Estado de carga de proveedores
   bool _showAdvancedConfig =
@@ -104,6 +109,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool _esServicio = false;
   List<Map<String, dynamic>> _ingredientes = [];
   double _costoProduccionCalculado = 0.0;
+
+  // Es paquete y datos recolectados en el diálogo post-creación
+  bool _esPaquete = false;
+  int? _paqueteUbicacionId;
+  double? _paquetePrecioCosto;
+  int? _paquetePresentacionId;
 
   // Listas dinámicas
   List<String> _etiquetas = [];
@@ -163,6 +174,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
         print('⚠️ Precio base es 0, se cargará desde la base de datos');
       }
 
+      // Cargar precio USD si existe
+      if (widget.product!.precioVentaUsd != null &&
+          widget.product!.precioVentaUsd! > 0) {
+        _precioVentaUsdController.text =
+            widget.product!.precioVentaUsd!.toStringAsFixed(2);
+      }
+
       // Cargar propiedades booleanas
       _esRefrigerado = widget.product!.esRefrigerado ?? false;
       _esFragil = widget.product!.esFragil ?? false;
@@ -173,6 +191,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       _esPorLotes = widget.product!.esPorLotes ?? false;
       _esElaborado = widget.product!.esElaborado ?? false;
       _esServicio = widget.product!.esServicio ?? false;
+      _esPaquete = widget.product!.esPaquete ?? false;
 
       // ✅ AGREGADO: Cargar categoría en modo edición
       final categoryId = int.tryParse(widget.product!.categoryId);
@@ -268,13 +287,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
     try {
       setState(() => _isLoadingData = true);
 
-      // Cargar datos iniciales en paralelo
+      // Cargar tasa USD y datos iniciales en paralelo
+      final usdRateFuture = CurrencyService.getEffectiveUsdToCupRate();
       final futures = await Future.wait([
         ProductService.getCategorias(),
         ProductService.getPresentaciones(),
         ProductService.getAtributos(),
         _loadProveedoresFromService(),
       ]);
+      _usdRate = await usdRateFuture;
 
       // ✅ NUEVO: En modo edición, cargar categoría y subcategorías ANTES del setState
       List<Map<String, dynamic>> subcategoriasParaEdicion = [];
@@ -796,6 +817,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     _esFragil = false;
     _esPeligroso = false;
     _esPorLotes = false;
+    _esPaquete = false;
 
     print('✅ Valores por defecto establecidos correctamente');
   }
@@ -996,6 +1018,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          IconButton(
+            onPressed: _isLoading || _isLoadingOpenFoodFacts ? null : _openBarcodeScanner,
+            icon: _isLoadingOpenFoodFacts
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.qr_code_scanner),
+            tooltip: 'Escanear código de barras',
+          ),
           TextButton(
             onPressed: _isLoading ? null : _saveProduct,
             child:
@@ -1581,23 +1617,66 @@ class _AddProductScreenState extends State<AddProductScreen> {
         TextFormField(
           controller: _precioVentaController,
           decoration: const InputDecoration(
-            labelText: 'Precio de Venta Base *',
+            labelText: 'Precio de Venta CUP *',
             hintText: '0.00',
-            prefixText: '\$ ',
+            prefixText: '₱ ',
             border: OutlineInputBorder(),
-            helperText:
-                'Este precio se usará como base para calcular precios de presentaciones adicionales',
+            helperText: 'Precio base en Pesos Cubanos',
           ),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (value) {
+            if (_usdRate > 0) {
+              final cup = double.tryParse(value);
+              if (cup != null && cup > 0) {
+                final usd = cup / _usdRate;
+                final usdText = usd.toStringAsFixed(2);
+                if (_precioVentaUsdController.text != usdText) {
+                  _precioVentaUsdController.text = usdText;
+                }
+              } else {
+                _precioVentaUsdController.clear();
+              }
+              setState(() {});
+            }
+          },
           validator: (value) {
             if (value == null || value.isEmpty) {
-              return 'El precio de venta es requerido';
+              return 'El precio de venta CUP es requerido';
             }
             final price = double.tryParse(value);
             if (price == null || price <= 0) {
               return 'Ingresa un precio válido';
             }
             return null;
+          },
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _precioVentaUsdController,
+          decoration: InputDecoration(
+            labelText: 'Precio de Venta USD',
+            hintText: '0.00',
+            prefixText: '\$ ',
+            border: const OutlineInputBorder(),
+            helperText: _usdRate > 0
+                ? 'Tasa actual: ${_usdRate.toStringAsFixed(0)} CUP/USD'
+                : 'Cargando tasa de cambio...',
+          ),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (value) {
+            if (_usdRate > 0) {
+              final usd = double.tryParse(value);
+              if (usd != null && usd > 0) {
+                final cup = usd * _usdRate;
+                final cupText = cup.toStringAsFixed(2);
+                if (_precioVentaController.text != cupText) {
+                  _precioVentaController.text = cupText;
+                }
+              } else {
+                _precioVentaController.clear();
+              }
+              setState(() {});
+            }
           },
         ),
       ],
@@ -2196,6 +2275,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   onChanged:
                       (value) => setState(() => _esPorLotes = value ?? false),
                 ),
+                CheckboxListTile(
+                  title: const Text('Es Paquete'),
+                  subtitle: const Text(
+                    'Al crear el producto se pedirá ubicación y costo del paquete',
+                  ),
+                  value: _esPaquete,
+                  onChanged:
+                      (value) => setState(() => _esPaquete = value ?? false),
+                ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _diasAlertController,
@@ -2265,63 +2353,30 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _codigoBarrasController,
-                        decoration: InputDecoration(
-                          labelText: 'Código de Barras',
-                          hintText: 'Código de barras del producto',
-                          border: const OutlineInputBorder(),
-                          suffixIcon:
-                              _isLoadingOpenFoodFacts
-                                  ? const Padding(
-                                    padding: EdgeInsets.all(12.0),
-                                    child: SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              AppColors.primary,
-                                            ),
+                TextFormField(
+                  controller: _codigoBarrasController,
+                  decoration: InputDecoration(
+                    labelText: 'Código de Barras',
+                    hintText: 'Código de barras del producto',
+                    border: const OutlineInputBorder(),
+                    suffixIcon:
+                        _isLoadingOpenFoodFacts
+                            ? const Padding(
+                              padding: EdgeInsets.all(12.0),
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor:
+                                      AlwaysStoppedAnimation<Color>(
+                                        AppColors.primary,
                                       ),
-                                    ),
-                                  )
-                                  : null,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed:
-                            _isLoadingOpenFoodFacts
-                                ? null
-                                : _openBarcodeScanner,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                        ),
-                        child:
-                            _isLoadingOpenFoodFacts
-                                ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white,
-                                    ),
-                                  ),
-                                )
-                                : const Icon(Icons.qr_code_scanner, size: 24),
-                      ),
-                    ),
-                  ],
+                                ),
+                              ),
+                            )
+                            : null,
+                  ),
                 ),
               ],
             ),
@@ -2443,6 +2498,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       'es_elaborado': _esElaborado,
       'es_servicio': _esServicio,
       'es_por_lotes': _esPorLotes,
+      'es_paquete': _esPaquete,
       'dias_alert_caducidad':
           _diasAlertController.text.isNotEmpty
               ? int.tryParse(_diasAlertController.text)
@@ -2514,9 +2570,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
 
     // Preparar precios
+    final precioUsd = double.tryParse(_precioVentaUsdController.text);
     final preciosData = [
       {
         'precio_venta_cup': double.parse(_precioVentaController.text),
+        if (precioUsd != null && precioUsd > 0) 'precio_venta_usd': precioUsd,
         'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
         'id_variante': null,
       },
@@ -2646,11 +2704,235 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
     }
 
+    // Guardar datos de código de barras
+    if (_codigoBarrasController.text.isNotEmpty) {
+      try {
+        await BarcodeService.saveBarcodeData(
+          idProducto: productId,
+          codigoBarras: _codigoBarrasController.text,
+          tipoCodigoBarras: _scannedBarcodeFormat ?? 'unknown',
+          fabricante: _nombreComercialController.text.isNotEmpty
+              ? _nombreComercialController.text
+              : null,
+        );
+        print('✅ Datos de código de barras guardados');
+      } catch (e) {
+        print('❌ Error guardando datos de código de barras: $e');
+      }
+    }
+
+    // Si es paquete: pedir ubicación y precio de costo, luego registrar inventario
+    if (_esPaquete) {
+      try {
+        // Extraer la presentación base insertada de la respuesta del RPC
+        int? idPresentacionBase;
+        final dataResp = result['data'];
+        if (dataResp is Map<String, dynamic>) {
+          final presentacionesInsertadas = dataResp['presentaciones_insertadas'];
+          if (presentacionesInsertadas is List &&
+              presentacionesInsertadas.isNotEmpty) {
+            Map<String, dynamic>? base;
+            for (final p in presentacionesInsertadas) {
+              if (p is Map<String, dynamic> && p['es_base'] == true) {
+                base = p;
+                break;
+              }
+            }
+            base ??= presentacionesInsertadas.first as Map<String, dynamic>?;
+            if (base != null) {
+              idPresentacionBase = (base['id'] as num?)?.toInt();
+            }
+          }
+        }
+        idPresentacionBase ??= _selectedBasePresentationId;
+
+        final packageInfo = await _showPackageLocationDialog(idTienda);
+        if (packageInfo != null) {
+          final idUbicacion = packageInfo['id_ubicacion'] as int;
+          final precioCosto = packageInfo['precio_costo'] as double?;
+
+          await _supabase.from('app_dat_inventario_productos').insert({
+            'id_producto': productId,
+            'id_ubicacion': idUbicacion,
+            if (idPresentacionBase != null) 'id_presentacion': idPresentacionBase,
+            'cantidad_inicial': 0,
+            'cantidad_final': 1,
+            'sku_producto': _skuController.text,
+            'origen_cambio': 2,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+
+          // Si se ingresó precio de costo, actualizarlo en la presentación
+          if (precioCosto != null && idPresentacionBase != null) {
+            try {
+              await _supabase
+                  .from('app_dat_producto_presentacion')
+                  .update({'precio_promedio': precioCosto})
+                  .eq('id', idPresentacionBase);
+              print('✅ Precio de costo del paquete actualizado: \$${precioCosto.toStringAsFixed(2)}');
+            } catch (e) {
+              print('⚠️ No se pudo actualizar precio_promedio: $e');
+            }
+          }
+          print('✅ Inventario de paquete registrado en ubicación $idUbicacion (presentación $idPresentacionBase)');
+        } else {
+          print('ℹ️ Diálogo de paquete cancelado');
+        }
+      } catch (e) {
+        print('❌ Error registrando inventario de paquete: $e');
+        _showErrorSnackBar('Producto creado, pero falló el registro del paquete: $e');
+      }
+    }
+
     _showSuccessSnackBar('Producto creado exitosamente');
     if (widget.onProductSaved != null) {
       widget.onProductSaved!();
     }
     Navigator.of(context).pop();
+  }
+
+  /// Muestra un diálogo para seleccionar ubicación y precio de costo del paquete.
+  /// Devuelve {'id_ubicacion': int, 'precio_costo': double?} o null si se cancela.
+  Future<Map<String, dynamic>?> _showPackageLocationDialog(int idTienda) async {
+    // Cargar ubicaciones (layouts) de todos los almacenes de la tienda
+    List<Map<String, dynamic>> ubicaciones = [];
+    try {
+      final almacenes = await _supabase
+          .from('app_dat_almacen')
+          .select('id, denominacion')
+          .eq('id_tienda', idTienda);
+
+      final ids = (almacenes as List)
+          .map((a) => a['id'] as int)
+          .toList();
+
+      if (ids.isNotEmpty) {
+        final layouts = await _supabase
+            .from('app_dat_layout_almacen')
+            .select('id, denominacion, sku_codigo, id_almacen')
+            .inFilter('id_almacen', ids)
+            .order('denominacion');
+
+        final almacenNombres = {
+          for (final a in almacenes) a['id'] as int: a['denominacion'] as String,
+        };
+
+        ubicaciones = (layouts as List).map((l) {
+          return {
+            'id': l['id'] as int,
+            'denominacion': l['denominacion'] as String? ?? '',
+            'sku_codigo': l['sku_codigo'] as String? ?? '',
+            'almacen': almacenNombres[l['id_almacen']] ?? '',
+          };
+        }).toList();
+      }
+    } catch (e) {
+      print('❌ Error cargando ubicaciones para paquete: $e');
+    }
+
+    if (!mounted) return null;
+
+    if (ubicaciones.isEmpty) {
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Sin ubicaciones'),
+          content: const Text(
+            'No hay ubicaciones (zonas de almacén) disponibles. Crea al menos una zona antes de registrar un paquete.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        ),
+      );
+      return null;
+    }
+
+    int? selectedId;
+    final precioController = TextEditingController();
+
+    return await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setStateDialog) {
+            return AlertDialog(
+              title: const Text('¿Dónde se almacenarán los paquetes?'),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Selecciona la ubicación disponible:',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<int>(
+                      value: selectedId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        labelText: 'Ubicación',
+                      ),
+                      items: ubicaciones.map((u) {
+                        final label = [
+                          u['almacen'],
+                          u['denominacion'],
+                          if ((u['sku_codigo'] as String).isNotEmpty)
+                            '(${u['sku_codigo']})',
+                        ].where((s) => s.toString().isNotEmpty).join(' · ');
+                        return DropdownMenuItem<int>(
+                          value: u['id'] as int,
+                          child: Text(label, overflow: TextOverflow.ellipsis),
+                        );
+                      }).toList(),
+                      onChanged: (v) => setStateDialog(() => selectedId = v),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: precioController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        labelText: 'Precio de costo del paquete (opcional)',
+                        prefixText: '\$ ',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, null),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: selectedId == null
+                      ? null
+                      : () {
+                          final precio = double.tryParse(
+                            precioController.text.replaceAll(',', '.'),
+                          );
+                          Navigator.pop(ctx, {
+                            'id_ubicacion': selectedId,
+                            'precio_costo': precio,
+                          });
+                        },
+                  child: const Text('Guardar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _updateProduct() async {
@@ -2701,6 +2983,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       'es_elaborado': _esElaborado,
       'es_servicio': _esServicio,
       'es_por_lotes': _esPorLotes,
+      'es_paquete': _esPaquete,
       'dias_alert_caducidad':
           _diasAlertController.text.isNotEmpty
               ? int.tryParse(_diasAlertController.text)
@@ -2827,6 +3110,23 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       throw Exception('Error actualizando producto: $e');
+    }
+
+    // Guardar datos de código de barras
+    if (_codigoBarrasController.text.isNotEmpty) {
+      try {
+        await BarcodeService.saveBarcodeData(
+          idProducto: productId,
+          codigoBarras: _codigoBarrasController.text,
+          tipoCodigoBarras: _scannedBarcodeFormat ?? 'unknown',
+          fabricante: _nombreComercialController.text.isNotEmpty
+              ? _nombreComercialController.text
+              : null,
+        );
+        print('✅ Datos de código de barras guardados');
+      } catch (e) {
+        print('❌ Error guardando datos de código de barras: $e');
+      }
     }
 
     _showSuccessSnackBar('Producto actualizado exitosamente');
@@ -3045,12 +3345,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
               .limit(1)
               .maybeSingle();
 
+      final precioUsd = double.tryParse(_precioVentaUsdController.text);
+      final usdMap = (precioUsd != null && precioUsd > 0)
+          ? {'precio_venta_usd': precioUsd}
+          : {};
+
       if (existingPrice != null) {
         // Actualizar precio existente
         await _supabase
             .from('app_dat_precio_venta')
             .update({
               'precio_venta_cup': precioVenta,
+              ...usdMap,
               'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
             })
             .eq('id', existingPrice['id']);
@@ -3061,6 +3367,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         await _supabase.from('app_dat_precio_venta').insert({
           'id_producto': productId,
           'precio_venta_cup': precioVenta,
+          ...usdMap,
           'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
           'id_variante': null,
         });
@@ -3512,13 +3819,28 @@ class _AddProductScreenState extends State<AddProductScreen> {
         MaterialPageRoute(builder: (context) => const BarcodeScannerScreen()),
       );
 
-      if (result != null && result is String) {
-        _codigoBarrasController.text = result;
+      if (result != null && result is Map<String, dynamic>) {
+        final barcode = result['barcode'] as String?;
+        final format = result['format'] as String? ?? 'unknown';
 
-        // Intentar obtener información del producto desde OpenFoodFacts
+        if (barcode == null || barcode.isEmpty) return;
+
+        _codigoBarrasController.text = barcode;
+        _scannedBarcodeFormat = format;
+
+        // 1. Buscar primero en BD local
+        final localResult = await BarcodeService.lookupBarcode(barcode);
+
+        if (localResult != null) {
+          // Encontrado en BD → mostrar diálogo
+          _showLocalProductFoundDialog(localResult);
+          return;
+        }
+
+        // 2. Si no existe en BD, buscar en OpenFoodFacts
         try {
           final response = await OpenFoodFactsService.getProductByBarcode(
-            result,
+            barcode,
           );
           if (response.isSuccess && response.product != null) {
             _showProductInfoDialog(response.product!.toJson());
@@ -3532,6 +3854,56 @@ class _AddProductScreenState extends State<AddProductScreen> {
     } finally {
       setState(() => _isLoadingOpenFoodFacts = false);
     }
+  }
+
+  void _showLocalProductFoundDialog(Map<String, dynamic> data) {
+    final denominacion = data['denominacion'] ?? 'Sin nombre';
+    final nombreComercial = data['nombre_comercial'] ?? '';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Producto Encontrado en BD'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Este código de barras ya está asociado a un producto existente:'),
+            const SizedBox(height: 12),
+            Text('Denominación: $denominacion',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            if (nombreComercial.isNotEmpty)
+              Text('Nombre Comercial: $nombreComercial'),
+            const SizedBox(height: 12),
+            const Text('¿Desea usar esta información para auto-completar?'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (data['denominacion'] != null) {
+                _denominacionController.text = data['denominacion'];
+              }
+              if (data['nombre_comercial'] != null && data['nombre_comercial'].toString().isNotEmpty) {
+                _nombreComercialController.text = data['nombre_comercial'];
+              }
+              Navigator.pop(context);
+              setState(() {});
+              _showSuccessSnackBar('Información auto-completada desde BD');
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Usar Información'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showProductInfoDialog(Map<String, dynamic> productInfo) {

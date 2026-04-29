@@ -21,6 +21,7 @@ class ElaboratedProductChip extends StatefulWidget {
 class _ElaboratedProductChipState extends State<ElaboratedProductChip> {
   final ProductDetailService _productDetailService = ProductDetailService();
   bool _isElaborated = false;
+  bool _isServicio = false;
   bool _loading = true;
   List<Map<String, dynamic>> _ingredients = [];
 
@@ -33,11 +34,13 @@ class _ElaboratedProductChipState extends State<ElaboratedProductChip> {
   Future<void> _checkIfElaborated() async {
     try {
       final isElaborated = await _productDetailService.isProductElaborated(widget.productId);
-      
+
       if (isElaborated) {
-        final ingredients = await _productDetailService.getProductIngredients(widget.productId);
+        final isServicio = await _productDetailService.isProductServicio(widget.productId);
+        final ingredients = isServicio ? <Map<String, dynamic>>[] : await _productDetailService.getProductIngredients(widget.productId);
         setState(() {
-          _isElaborated = isElaborated;
+          _isElaborated = true;
+          _isServicio = isServicio;
           _ingredients = ingredients;
           _loading = false;
         });
@@ -89,16 +92,20 @@ class _ElaboratedProductChipState extends State<ElaboratedProductChip> {
       return const SizedBox.shrink();
     }
 
+    final chipColor = _isServicio ? Colors.blue[600]! : Colors.orange[600]!;
+    final chipIcon = _isServicio ? Icons.miscellaneous_services : Icons.restaurant_menu;
+    final chipLabel = _isServicio ? 'SERV' : 'ELAB';
+
     return GestureDetector(
-      onTap: widget.onTap ?? _showIngredientsPreview,
+      onTap: _isServicio ? null : (widget.onTap ?? _showIngredientsPreview),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
-          color: Colors.orange[600],
+          color: chipColor,
           borderRadius: BorderRadius.circular(10),
           boxShadow: [
             BoxShadow(
-              color: Colors.orange.withOpacity(0.3),
+              color: chipColor.withOpacity(0.3),
               blurRadius: 2,
               offset: const Offset(0, 1),
             ),
@@ -108,14 +115,14 @@ class _ElaboratedProductChipState extends State<ElaboratedProductChip> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.restaurant_menu,
+              chipIcon,
               size: 12,
               color: Colors.white,
             ),
             const SizedBox(width: 2),
-            const Text(
-              'ELAB',
-              style: TextStyle(
+            Text(
+              chipLabel,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 10,
                 fontWeight: FontWeight.bold,

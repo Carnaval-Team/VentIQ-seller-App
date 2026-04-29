@@ -91,6 +91,11 @@ class AppDrawer extends StatelessWidget {
                       title: 'Planes',
                       route: '/configuracion',
                     ),
+                    _DrawerItem(
+                      icon: Icons.support_agent,
+                      title: 'Agentes',
+                      route: '/agentes',
+                    ),
                   ],
                 ),
 
@@ -112,6 +117,74 @@ class AppDrawer extends StatelessWidget {
                       icon: Icons.lock_reset,
                       title: 'Cambio de Contraseñas',
                       route: '/usuarios/passwords',
+                    ),
+                  ],
+                ),
+                _buildMenuSection(
+                  context,
+                  title: 'Operaciones',
+                  items: [
+                    _DrawerItem(
+                      icon: Icons.local_shipping,
+                      title: 'Control de Flota',
+                      route: '/control-flota',
+                    ),
+                  ],
+                ),
+                _buildMenuSection(
+                  context,
+                  title: 'Inventtia Muévete',
+                  items: [
+                    _DrawerItem(
+                      icon: Icons.dashboard_customize,
+                      title: 'Panel Muévete',
+                      route: '/muevete/dashboard',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.people,
+                      title: 'Conductores',
+                      route: '/muevete/conductores',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.directions_car,
+                      title: 'Viajes',
+                      route: '/muevete/viajes',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.local_taxi,
+                      title: 'Solicitudes y Ofertas',
+                      route: '/muevete/solicitudes',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.map,
+                      title: 'Mapa en Vivo',
+                      route: '/muevete/mapa',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.star,
+                      title: 'Valoraciones',
+                      route: '/muevete/valoraciones',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.account_balance_wallet,
+                      title: 'Billeteras',
+                      route: '/muevete/billeteras',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.verified_user,
+                      title: 'Verificación KYC',
+                      route: '/muevete/kyc',
+                    ),
+                  ],
+                ),
+                _buildMenuSection(
+                  context,
+                  title: 'Carnaval',
+                  items: [
+                    _DrawerItem(
+                      icon: Icons.festival,
+                      title: 'Info de Carnaval',
+                      route: '/carnaval-dashboard',
                     ),
                   ],
                 ),
@@ -268,7 +341,12 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/configuracion' ||
                 item.route == '/carnaval-tiendas' ||
                 item.route == '/productos-carnaval-inventtia' ||
-                item.route == '/pago-proveedores') {
+                item.route == '/pago-proveedores' ||
+                item.route == '/control-flota' ||
+                item.route.startsWith('/muevete/') ||
+                item.route == '/agentes' ||
+                item.route == '/ingresos-distribucion' ||
+                item.route == '/carnaval-dashboard') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas

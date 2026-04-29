@@ -94,7 +94,7 @@ const tutorialData = {
                 title: 'Seleccionar productos',
                 content: 'Navega por las categorías y selecciona los productos que el cliente desea comprar.',
                 instructions: [
-                    'Abre la aplicación VentIQ Seller',
+                    'Abre la aplicación Inventtia Vendedor',
                     'Selecciona una categoría de productos',
                     'Busca el producto deseado',
                     'Toca el producto para ver sus detalles',
@@ -232,7 +232,7 @@ const tutorialData = {
                 title: 'Apertura de turno',
                 content: 'Inicia tu turno registrando el efectivo inicial.',
                 instructions: [
-                    'Abre VentIQ Seller',
+                    'Abre Inventtia Vendedor',
                     'Selecciona "Apertura de Turno"',
                     'Registra el dinero inicial',
                     'Confirma la apertura'
@@ -683,7 +683,7 @@ const tutorialData = {
                 title: 'Acceder al dashboard ejecutivo',
                 content: 'Navega al panel principal de análisis de ventas.',
                 instructions: [
-                    'Inicia sesión en VentIQ Admin',
+                    'Inicia sesión en Inventtia Admin',
                     'Ve al menú principal',
                     'Selecciona "Dashboard Ejecutivo"',
                     'Observa las métricas generales del negocio'
@@ -717,6 +717,143 @@ const tutorialData = {
                     'Elige los filtros necesarios',
                     'Genera el reporte de ventas',
                     'Exporta los datos si es necesario'
+                ]
+            }
+        ]
+    },
+
+    // Catalogo App Tutorials
+    'catalogo-registro': {
+        title: 'Registrarse y explorar',
+        steps: [
+            {
+                title: 'Crear tu cuenta',
+                content: 'Regístrate en Inventtia Catálogo para empezar a comprar.',
+                instructions: [
+                    'Descarga la app o accede desde catalogo.inventtia.com',
+                    'Toca "Registrarse"',
+                    'Ingresa tu nombre, email y contraseña',
+                    'Confirma tu email para activar la cuenta'
+                ]
+            },
+            {
+                title: 'Explorar tiendas',
+                content: 'Descubre las tiendas disponibles y sus productos.',
+                instructions: [
+                    'En la pantalla principal verás las tiendas destacadas',
+                    'Toca cualquier tienda para ver su catálogo',
+                    'Explora las categorías de productos',
+                    'Usa la barra de búsqueda para encontrar algo específico'
+                ]
+            },
+            {
+                title: 'Configurar tu perfil y dirección',
+                content: 'Completa tu perfil para agilizar futuras compras.',
+                instructions: [
+                    'Ve a "Mi Cuenta" desde el menú',
+                    'Completa tus datos personales',
+                    'Agrega tu dirección de entrega',
+                    'Guarda la configuración'
+                ]
+            }
+        ]
+    },
+    'catalogo-compra': {
+        title: 'Buscar productos y comprar',
+        steps: [
+            {
+                title: 'Buscar productos',
+                content: 'Encuentra los productos que necesitas rápidamente.',
+                instructions: [
+                    'Usa la barra de búsqueda para escribir el nombre del producto',
+                    'Filtra por categoría si prefieres explorar',
+                    'Los resultados muestran precio, tienda y disponibilidad',
+                    'Toca un producto para ver sus detalles completos'
+                ]
+            },
+            {
+                title: 'Ver detalles del producto',
+                content: 'Revisa toda la información antes de comprar.',
+                instructions: [
+                    'Observa fotos, descripción y precio del producto',
+                    'Revisa si tiene descuento o precio especial',
+                    'Lee las reseñas de otros compradores',
+                    'Verifica el stock disponible'
+                ]
+            },
+            {
+                title: 'Agregar al carrito',
+                content: 'Añade productos a tu carrito de compras.',
+                instructions: [
+                    'Selecciona la cantidad deseada',
+                    'Toca "Agregar al carrito"',
+                    'Puedes seguir comprando y agregar más productos',
+                    'El carrito muestra cuántos productos llevas'
+                ]
+            },
+            {
+                title: 'Revisar el carrito',
+                content: 'Verifica tu selección antes de pagar.',
+                instructions: [
+                    'Toca el ícono del carrito',
+                    'Revisa cada producto y su cantidad',
+                    'Modifica cantidades o elimina productos si necesitas',
+                    'Verifica el total de la compra'
+                ]
+            },
+            {
+                title: 'Confirmar pedido',
+                content: 'Finaliza tu compra seleccionando dirección y método de pago.',
+                instructions: [
+                    'Selecciona tu dirección de entrega',
+                    'Revisa el subtotal y costo de envío',
+                    'Elige método de pago (transferencia o Tropipay)',
+                    'Confirma el pedido'
+                ]
+            }
+        ]
+    },
+    'catalogo-pedidos': {
+        title: 'Pago y seguimiento de pedidos',
+        steps: [
+            {
+                title: 'Realizar el pago',
+                content: 'Completa el pago de tu pedido de forma segura.',
+                instructions: [
+                    'Si elegiste transferencia: realiza la transferencia al número indicado',
+                    'Si elegiste Tropipay: completa el pago en línea',
+                    'Espera la confirmación del pago',
+                    'Recibirás una notificación cuando se verifique'
+                ]
+            },
+            {
+                title: 'Seguir el estado del pedido',
+                content: 'Monitorea tu pedido en cada etapa.',
+                instructions: [
+                    'Ve a "Mis Pedidos" desde el menú',
+                    'Observa el estado: creado, confirmado, en camino, entregado',
+                    'Recibes notificaciones automáticas en cada cambio',
+                    'Toca el pedido para ver detalles completos'
+                ]
+            },
+            {
+                title: 'Recibir la entrega',
+                content: 'Recibe tu pedido en la dirección indicada.',
+                instructions: [
+                    'Recibirás una notificación cuando el repartidor salga',
+                    'Verifica que los productos estén completos',
+                    'Confirma la recepción en la app',
+                    'Si hay algún problema, contacta soporte por WhatsApp'
+                ]
+            },
+            {
+                title: 'Calificar y opinar',
+                content: 'Deja tu reseña para ayudar a otros compradores.',
+                instructions: [
+                    'Después de recibir tu pedido, ve al producto',
+                    'Califica con estrellas (1 a 5)',
+                    'Escribe un comentario sobre tu experiencia',
+                    'Tu opinión ayuda a otros compradores a elegir mejor'
                 ]
             }
         ]

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../models/usuario.dart';
@@ -15,6 +16,7 @@ class UsuariosScreen extends StatefulWidget {
 class _UsuariosScreenState extends State<UsuariosScreen> {
   final UserService _userService = UserService();
   final ScrollController _scrollController = ScrollController();
+  Timer? _searchDebounce;
 
   List<Usuario> _usuarios = [];
   Map<String, dynamic> _counts = {
@@ -42,6 +44,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
@@ -103,7 +106,10 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
 
   void _onSearchChanged(String value) {
     _searchQuery = value;
-    _loadInitialData();
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(seconds: 3), () {
+      _loadInitialData();
+    });
   }
 
   void _onFilterChanged(String? value) {
@@ -895,21 +901,151 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   }
 
   void _showChangePasswordDialog(Usuario usuario) {
+    final emailController = TextEditingController(text: usuario.email);
+    final passwordController = TextEditingController();
+    final confirmController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool isLoading = false;
+    bool obscurePassword = true;
+    bool obscureConfirm = true;
+
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text('Cambiar Contraseña - ${usuario.nombreCompleto}'),
-            content: const Text(
-              'Funcionalidad de cambio de contraseña en desarrollo.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cerrar'),
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.lock_reset, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Cambiar Contraseña',
+                  style: const TextStyle(fontSize: 18),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
+          content: SizedBox(
+            width: 400,
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    usuario.nombreCompleto,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: emailController,
+                    decoration: const InputDecoration(
+                      labelText: 'Correo electrónico',
+                      prefixIcon: Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Ingresa el correo';
+                      if (!v.contains('@')) return 'Correo inválido';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: passwordController,
+                    obscureText: obscurePassword,
+                    decoration: InputDecoration(
+                      labelText: 'Nueva contraseña',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscurePassword ? Icons.visibility_off : Icons.visibility),
+                        onPressed: () => setDialogState(() => obscurePassword = !obscurePassword),
+                      ),
+                    ),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) return 'Ingresa la nueva contraseña';
+                      if (v.length < 6) return 'Mínimo 6 caracteres';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: confirmController,
+                    obscureText: obscureConfirm,
+                    decoration: InputDecoration(
+                      labelText: 'Confirmar contraseña',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscureConfirm ? Icons.visibility_off : Icons.visibility),
+                        onPressed: () => setDialogState(() => obscureConfirm = !obscureConfirm),
+                      ),
+                    ),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) return 'Confirma la contraseña';
+                      if (v != passwordController.text) return 'Las contraseñas no coinciden';
+                      return null;
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isLoading ? null : () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton.icon(
+              onPressed: isLoading
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+                      setDialogState(() => isLoading = true);
+
+                      final result = await _userService.changeUserPassword(
+                        email: emailController.text.trim(),
+                        newPassword: passwordController.text,
+                      );
+
+                      if (!dialogContext.mounted) return;
+                      Navigator.of(dialogContext).pop();
+
+                      final success = result['success'] == true;
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              success
+                                  ? '✅ Contraseña actualizada correctamente'
+                                  : '❌ Error: ${result['message'] ?? 'Error desconocido'}',
+                            ),
+                            backgroundColor: success ? AppColors.success : AppColors.error,
+                            duration: const Duration(seconds: 3),
+                          ),
+                        );
+                      }
+                    },
+              icon: isLoading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.save),
+              label: Text(isLoading ? 'Guardando...' : 'Guardar'),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
