@@ -502,44 +502,98 @@ class _BentoGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
     final isWide = MediaQuery.of(context).size.width >= 768;
-    const cards = [
-      _FeatureCardData(
-        icon: Icons.local_gas_station_rounded,
-        title: 'Combustible',
-        description:
-            'Sitios donde repostar combustible con los mejores precios en tu ruta.',
+
+    void goLogin() => Navigator.pushNamed(context, '/login');
+
+    void navigateCargo() {
+      if (!auth.isAuthenticated) { goLogin(); return; }
+      if (auth.isShipper || auth.isCarrierCarga) {
+        Navigator.pushNamed(context, auth.homeRoute);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+                'Esta función es solo para Shippers y Transportistas de carga'),
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    }
+
+    void navigateDirectorio() {
+      if (!auth.isAuthenticated) { goLogin(); return; }
+      Navigator.pushNamed(context, '/carrier-directory');
+    }
+
+    final items = [
+      (
+        const _FeatureCardData(
+          icon: Icons.local_gas_station_rounded,
+          title: 'Combustible',
+          description:
+              'Sitios donde repostar combustible con los mejores precios en tu ruta.',
+        ),
+        null as VoidCallback?,
       ),
-      _FeatureCardData(
-        icon: Icons.map_rounded,
-        title: 'Mapa',
-        description:
-            'Ver combustibles, cargas y transportistas en tiempo real.',
+      (
+        const _FeatureCardData(
+          icon: Icons.map_rounded,
+          title: 'Mapa',
+          description:
+              'Ver combustibles, cargas y transportistas en tiempo real.',
+        ),
+        null as VoidCallback?,
       ),
-      _FeatureCardData(
-        icon: Icons.inventory_2_rounded,
-        title: 'Cargas',
-        description:
-            'Listado de tus cargas (Cliente) o Cargas activas (Chofer).',
+      (
+        const _FeatureCardData(
+          icon: Icons.inventory_2_rounded,
+          title: 'Cargas',
+          description:
+              'Gestiona tus cargas como Shipper o revisa las cargas activas como Transportista.',
+          tappable: true,
+        ),
+        navigateCargo,
+      ),
+      (
+        const _FeatureCardData(
+          icon: Icons.people_alt_rounded,
+          title: 'Transportistas',
+          description:
+              'Directorio de transportistas verificados. Filtra por flota, ubicación y características.',
+          tappable: true,
+        ),
+        navigateDirectorio,
       ),
     ];
 
     if (isWide) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      return Wrap(
+        spacing: 24,
+        runSpacing: 24,
         children: [
-          for (var i = 0; i < cards.length; i++) ...[
-            Expanded(child: _FeatureCard(data: cards[i], isDark: isDark)),
-            if (i != cards.length - 1) const SizedBox(width: 24),
-          ],
+          for (final item in items)
+            SizedBox(
+              width: (MediaQuery.of(context).size.width > 1120
+                      ? 1120.0
+                      : MediaQuery.of(context).size.width - 48) /
+                  2 -
+                  12,
+              child: _FeatureCard(
+                  data: item.$1, isDark: isDark, onTap: item.$2),
+            ),
         ],
       );
     }
     return Column(
       children: [
-        for (var i = 0; i < cards.length; i++) ...[
-          _FeatureCard(data: cards[i], isDark: isDark),
-          if (i != cards.length - 1) const SizedBox(height: 16),
+        for (var i = 0; i < items.length; i++) ...[
+          _FeatureCard(
+              data: items[i].$1, isDark: isDark, onTap: items[i].$2),
+          if (i != items.length - 1) const SizedBox(height: 16),
         ],
       ],
     );
@@ -550,26 +604,34 @@ class _FeatureCardData {
   final IconData icon;
   final String title;
   final String description;
+  final bool tappable;
   const _FeatureCardData({
     required this.icon,
     required this.title,
     required this.description,
+    this.tappable = false,
   });
 }
 
 class _FeatureCard extends StatelessWidget {
   final _FeatureCardData data;
   final bool isDark;
-  const _FeatureCard({required this.data, required this.isDark});
+  final VoidCallback? onTap;
+  const _FeatureCard(
+      {required this.data, required this.isDark, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: AppTheme.card(isDark).withValues(alpha: isDark ? 0.88 : 0.94),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.border(isDark)),
+        border: Border.all(
+          color: data.tappable && onTap != null
+              ? AppTheme.primaryColor.withValues(alpha: 0.35)
+              : AppTheme.border(isDark),
+        ),
         boxShadow: [
           BoxShadow(
             color: isDark
@@ -583,18 +645,28 @@ class _FeatureCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: AppTheme.primaryColor.withValues(alpha: isDark ? 0.18 : 0.10),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              data.icon,
-              color: AppTheme.primaryColor,
-              size: 24,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor
+                      .withValues(alpha: isDark ? 0.18 : 0.10),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  data.icon,
+                  color: AppTheme.primaryColor,
+                  size: 24,
+                ),
+              ),
+              const Spacer(),
+              if (data.tappable && onTap != null)
+                Icon(Icons.arrow_forward_rounded,
+                    size: 18, color: AppTheme.primaryColor),
+            ],
           ),
           const SizedBox(height: 16),
           Text(
@@ -617,6 +689,13 @@ class _FeatureCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    if (onTap == null) return card;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: card,
     );
   }
 }

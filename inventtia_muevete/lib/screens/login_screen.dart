@@ -113,7 +113,6 @@ class _LoginScreenState extends State<LoginScreen> {
         );
         return;
       }
-      Navigator.pushReplacementNamed(context, authProvider.homeRoute);
       if (kIsWeb) {
         Navigator.pushNamedAndRemoveUntil(context, '/landing', (_) => false);
       } else {

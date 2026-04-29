@@ -13,6 +13,7 @@ import 'services/completion_sync_service.dart';
 import 'services/mbtiles_service.dart';
 import 'services/pushy_service.dart';
 import 'providers/auth_provider.dart';
+import 'providers/carga_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/location_provider.dart';
 import 'providers/transport_provider.dart';
@@ -35,6 +36,7 @@ import 'screens/driver/incoming_requests_screen.dart';
 import 'screens/driver/active_ride_screen.dart';
 import 'screens/driver/driver_wallet_screen.dart';
 import 'screens/shipper/shipper_home_screen.dart';
+import 'screens/shipper/carrier_directory_screen.dart';
 import 'screens/carrier/carrier_home_screen.dart';
 import 'screens/dispatcher/dispatcher_home_screen.dart';
 import 'widgets/notification_overlay.dart';
@@ -100,6 +102,7 @@ class MueveteApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TransportProvider()),
         ChangeNotifierProvider(create: (_) => WalletProvider()),
         ChangeNotifierProvider(create: (_) => AddressProvider()),
+        ChangeNotifierProvider(create: (_) => CargaProvider()),
         ChangeNotifierProvider.value(value: MbTilesService.instance),
       ],
       child: Consumer<ThemeProvider>(
@@ -140,6 +143,7 @@ class MueveteApp extends StatelessWidget {
               '/driver/active-ride': (context) => const ActiveRideScreen(),
               '/driver/wallet': (context) => const DriverWalletScreen(),
               '/shipper/home': (context) => const ShipperHomeScreen(),
+              '/carrier-directory': (context) => const CarrierDirectoryScreen(),
               '/carrier/home': (context) => const CarrierHomeScreen(),
               '/dispatcher/home': (context) => const DispatcherHomeScreen(),
             },
