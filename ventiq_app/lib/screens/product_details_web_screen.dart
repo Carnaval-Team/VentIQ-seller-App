@@ -46,8 +46,8 @@ class ProductDetailsWebScreen extends StatefulWidget {
 class _ProductDetailsWebScreenState extends State<ProductDetailsWebScreen>
     with SingleTickerProviderStateMixin {
   ProductVariant? selectedVariant;
-  int selectedQuantity = 1;
-  Map<ProductVariant, int> variantQuantities = {};
+  double selectedQuantity = 1;
+  Map<ProductVariant, double> variantQuantities = {};
   Map<String, List<ProductVariant>> locationGroups =
       {}; // Group variants by location
   final Map<String, bool> _locationExpanded = {};
@@ -1173,12 +1173,12 @@ class _ProductDetailsWebScreenState extends State<ProductDetailsWebScreen>
     return total;
   }
 
-  int get maxQuantityForProduct {
-    return currentProduct.cantidad.toInt();
+  double get maxQuantityForProduct {
+    return currentProduct.cantidad.toDouble();
   }
 
-  int maxQuantityForVariant(ProductVariant variant) {
-    return variant.cantidad.toInt();
+  double maxQuantityForVariant(ProductVariant variant) {
+    return variant.cantidad.toDouble();
   }
 
   @override
@@ -1810,7 +1810,7 @@ class _ProductDetailsWebScreenState extends State<ProductDetailsWebScreen>
     bool isSelected,
     Color locationColor,
   ) {
-    int currentQuantity = variantQuantities[variant] ?? 0;
+    double currentQuantity = variantQuantities[variant] ?? 0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1942,7 +1942,7 @@ class _ProductDetailsWebScreenState extends State<ProductDetailsWebScreen>
   // Método para construir items de productos seleccionados
   Widget _buildSelectedProductItem(
     String name,
-    int quantity,
+    double quantity,
     double price,
     String ubicacion, {
     bool isVariant = false,
@@ -2416,7 +2416,7 @@ class _ProductDetailsWebScreenState extends State<ProductDetailsWebScreen>
   /// Calcular el precio total considerando la presentación seleccionada
   double _calculateTotalPriceWithPresentation(
     double basePrice,
-    int quantity,
+    double quantity,
     Product product,
   ) {
     final conversionFactor = _getPresentationConversionFactor(product);
@@ -2435,8 +2435,8 @@ class _ProductDetailsWebScreenState extends State<ProductDetailsWebScreen>
 
   // Método para obtener el total de items (productos/presentaciones seleccionadas)
   // Mantenido para compatibilidad futura - cuenta las presentaciones, no las unidades
-  int _getTotalItems() {
-    int total = 0;
+  double _getTotalItems() {
+    double total = 0;
     if (currentProduct.variantes.isEmpty) {
       total = selectedQuantity;
     } else {
@@ -2448,12 +2448,12 @@ class _ProductDetailsWebScreenState extends State<ProductDetailsWebScreen>
   }
 
   // Método para obtener el total de unidades equivalentes considerando presentaciones
-  int _getTotalEquivalentUnits() {
-    int total = 0;
+  double _getTotalEquivalentUnits() {
+    double total = 0;
     if (currentProduct.variantes.isEmpty) {
       // Producto sin variantes
       final conversionFactor = _getPresentationConversionFactor(currentProduct);
-      total = (selectedQuantity * conversionFactor).round();
+      total = selectedQuantity * conversionFactor;
     } else {
       // Producto con variantes
       for (var entry in variantQuantities.entries) {
@@ -2463,7 +2463,7 @@ class _ProductDetailsWebScreenState extends State<ProductDetailsWebScreen>
         final conversionFactor = _getPresentationConversionFactor(
           currentProduct,
         );
-        total += (quantity * conversionFactor).round();
+        total += quantity * conversionFactor;
       }
     }
 
@@ -2471,7 +2471,7 @@ class _ProductDetailsWebScreenState extends State<ProductDetailsWebScreen>
     return total;
   }
 
-  TextEditingController _getQtyController(String key, int currentQty) {
+  TextEditingController _getQtyController(String key, double currentQty) {
     if (!_qtyControllers.containsKey(key)) {
       _qtyControllers[key] = TextEditingController(text: '$currentQty');
     } else if (_qtyControllers[key]!.text != '$currentQty') {
@@ -2482,7 +2482,7 @@ class _ProductDetailsWebScreenState extends State<ProductDetailsWebScreen>
     return _qtyControllers[key]!;
   }
 
-  void _showStockWarning(int maxQty, {String? variantName}) {
+  void _showStockWarning(double maxQty, {String? variantName}) {
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -2670,7 +2670,7 @@ class _ProductDetailsWebScreenState extends State<ProductDetailsWebScreen>
   }
 
   void _updateQuantityFromDialog(String productName, String quantityText) {
-    final int? newQuantity = int.tryParse(quantityText);
+    final double? newQuantity = double.tryParse(quantityText);
     if (newQuantity == null || newQuantity < 0) return;
 
     setState(() {
@@ -2923,7 +2923,7 @@ class _ProductDetailsWebScreenState extends State<ProductDetailsWebScreen>
       // Continuar con el flujo normal si hay error en la configuración
     }
 
-    int totalItemsAdded = 0;
+    double totalItemsAdded = 0;
     List<String> addedItems = [];
 
     try {

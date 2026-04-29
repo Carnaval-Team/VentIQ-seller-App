@@ -1154,8 +1154,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       });
       print('📦 Inventario actualizado en cache');
 
-      // Navegar a órdenes
-      Navigator.pushNamedAndRemoveUntil(context, '/orders', (route) => false);
+      // Navegar a órdenes con el ID para abrir detalle automáticamente
+      Navigator.pushNamedAndRemoveUntil(
+        context, '/orders', (route) => false,
+        arguments: {'openOrderId': offlineOrderId},
+      );
     } catch (e) {
       print('❌ Error creando orden offline: $e');
       _showErrorMessage('Error al crear la orden offline: $e');
@@ -1221,8 +1224,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           _showSuccessMessage('¡Orden registrada exitosamente!');
         }
 
-        // Navigate back to orders screen or home
-        Navigator.pushNamedAndRemoveUntil(context, '/orders', (route) => false);
+        // Navigate back to orders screen, auto-open the created order
+        final opId = result['operationId'];
+        final orderIdToOpen = opId != null ? 'ORD-$opId' : updatedOrder.id;
+        Navigator.pushNamedAndRemoveUntil(
+          context, '/orders', (route) => false,
+          arguments: {'openOrderId': orderIdToOpen},
+        );
       } else {
         _showErrorMessage('Error al registrar la venta: ${result['error']}');
       }

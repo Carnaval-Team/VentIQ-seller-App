@@ -18,6 +18,10 @@ class TpvPricesScreen extends StatefulWidget {
 }
 
 class _TpvPricesScreenState extends State<TpvPricesScreen> {
+  static const double _kMaxContentWidth = 1280;
+
+  final TextEditingController _searchController = TextEditingController();
+
   List<TpvPrice> _prices = [];
   List<TpvPrice> _filteredPrices = [];
   List<Map<String, dynamic>> _tpvs = [];
@@ -154,15 +158,34 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text(_getScreenTitle()),
+        title: Text(
+          _getScreenTitle(),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
+          ),
+        ),
+        centerTitle: true,
         backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
-            icon: Icon(_showDeleted ? Icons.visibility_off : Icons.visibility),
+            icon: Icon(
+              _showDeleted ? Icons.visibility_off : Icons.visibility,
+              color: Colors.white,
+            ),
             onPressed: () {
               setState(() => _showDeleted = !_showDeleted);
               _loadData();
@@ -170,30 +193,53 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
             tooltip: _showDeleted ? 'Ocultar eliminados' : 'Mostrar eliminados',
           ),
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _loadData,
             tooltip: 'Actualizar',
           ),
+          const SizedBox(width: 8),
         ],
       ),
-      body:
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : Column(
-                children: [
-                  _buildFilters(),
-                  _buildStats(),
-                  Expanded(child: _buildPricesList()),
-                ],
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                _buildFilters(),
+                Container(height: 1, color: AppColors.border),
+                Expanded(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: _kMaxContentWidth,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+                        child: Column(
+                          children: [
+                            _buildStats(),
+                            const SizedBox(height: 12),
+                            Expanded(child: _buildPricesList()),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+      floatingActionButton: _canCreatePrice
+          ? FloatingActionButton.extended(
+              onPressed: _showAddPriceDialog,
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              elevation: 2,
+              icon: const Icon(Icons.add, size: 20),
+              label: const Text(
+                'Nuevo Precio',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
               ),
-      floatingActionButton:
-          _canCreatePrice
-              ? FloatingActionButton(
-                onPressed: _showAddPriceDialog,
-                backgroundColor: AppColors.primary,
-                child: const Icon(Icons.add, color: Colors.white),
-              )
-              : null,
+            )
+          : null,
     );
   }
 
@@ -213,118 +259,298 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
 
   Widget _buildFilters() {
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface,
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 3,
-            offset: const Offset(0, 1),
+            color: Colors.black.withOpacity(0.025),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Column(
+      padding: const EdgeInsets.fromLTRB(24, 14, 24, 14),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: _kMaxContentWidth),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 760;
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildSearchField(),
+                    const SizedBox(height: 10),
+                    _buildTpvDropdown(),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(child: _buildShowDeletedChip()),
+                        if (_canImportPrices) ...[
+                          const SizedBox(width: 10),
+                          _buildImportButton(),
+                        ],
+                      ],
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(flex: 3, child: _buildSearchField()),
+                  const SizedBox(width: 12),
+                  Expanded(flex: 2, child: _buildTpvDropdown()),
+                  const SizedBox(width: 12),
+                  _buildShowDeletedChip(),
+                  if (_canImportPrices) ...[
+                    const SizedBox(width: 10),
+                    _buildImportButton(),
+                  ],
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchField() {
+    final hasQuery = _searchQuery.isNotEmpty;
+    return Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: hasQuery ? AppColors.primary : AppColors.border,
+          width: hasQuery ? 1.5 : 1,
+        ),
+        boxShadow: hasQuery
+            ? [
+                BoxShadow(
+                  color: AppColors.primary.withOpacity(0.10),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: 'Buscar por producto, TPV o SKU...',
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
+          const SizedBox(width: 14),
+          Icon(
+            Icons.search_rounded,
+            size: 18,
+            color: hasQuery ? AppColors.primary : AppColors.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textPrimary,
+              ),
+              decoration: const InputDecoration(
+                hintText: 'Buscar por producto, TPV o SKU...',
+                hintStyle: TextStyle(
+                  color: AppColors.textLight,
+                  fontSize: 13,
+                ),
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 12),
+              ),
+              onChanged: (value) {
+                setState(() => _searchQuery = value);
+                _applyFilters();
+              },
+            ),
+          ),
+          if (hasQuery)
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () {
+                  _searchController.clear();
+                  setState(() => _searchQuery = '');
+                  _applyFilters();
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(right: 6),
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.08),
+                    shape: BoxShape.circle,
                   ),
-                  onChanged: (value) {
-                    setState(() => _searchQuery = value);
-                    _applyFilters();
-                  },
+                  child: const Icon(
+                    Icons.close_rounded,
+                    size: 14,
+                    color: AppColors.primary,
+                  ),
                 ),
               ),
-              const SizedBox(width: 16),
-              Flexible(
-                child: DropdownButtonFormField<int>(
-                  decoration: InputDecoration(
-                    labelText: 'TPV',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+            )
+          else
+            const SizedBox(width: 14),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTpvDropdown() {
+    final disabled = widget.tpvId != null;
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: disabled ? AppColors.surfaceVariant : AppColors.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: _selectedTpv != null
+              ? AppColors.primary
+              : AppColors.border,
+          width: _selectedTpv != null ? 1.5 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.point_of_sale_outlined,
+            size: 18,
+            color: _selectedTpv != null
+                ? AppColors.primary
+                : AppColors.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                value: _selectedTpv,
+                isExpanded: true,
+                isDense: true,
+                hint: const Text(
+                  'Todos los TPVs',
+                  style: TextStyle(fontSize: 13, color: AppColors.textLight),
+                ),
+                icon: const Icon(
+                  Icons.expand_more_rounded,
+                  size: 20,
+                  color: AppColors.textSecondary,
+                ),
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textPrimary,
+                ),
+                borderRadius: BorderRadius.circular(10),
+                items: [
+                  const DropdownMenuItem<int>(
+                    value: null,
+                    child: Text(
+                      'Todos los TPVs',
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  value: _selectedTpv,
-                  isExpanded: true, // Importante para evitar overflow
-                  items: [
-                    const DropdownMenuItem<int>(
-                      value: null,
+                  ..._tpvs.map(
+                    (tpv) => DropdownMenuItem<int>(
+                      value: tpv['id'],
                       child: Text(
-                        'Todos los TPVs',
+                        tpv['denominacion'] ?? 'TPV',
                         overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                     ),
-                    ..._tpvs
-                        .map(
-                          (tpv) => DropdownMenuItem<int>(
-                            value: tpv['id'],
-                            child: Text(
-                              tpv['denominacion'] ?? 'TPV',
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ],
-                  onChanged:
-                      widget.tpvId == null
-                          ? (value) {
-                            setState(() => _selectedTpv = value);
-                            _applyFilters();
-                          }
-                          : null,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: CheckboxListTile(
-                  title: const Text('Mostrar eliminados'),
-                  value: _showDeleted,
-                  onChanged: (value) {
-                    setState(() => _showDeleted = value ?? false);
-                    _loadData();
-                  },
-                  controlAffinity: ListTileControlAffinity.leading,
-                  dense: true,
-                ),
-              ),
-              if (_canImportPrices)
-                ElevatedButton.icon(
-                  onPressed: _showImportDialog,
-                  icon: const Icon(Icons.upload_file),
-                  label: const Text('Importar'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.success,
-                    foregroundColor: Colors.white,
                   ),
-                ),
-            ],
+                ],
+                onChanged: disabled
+                    ? null
+                    : (value) {
+                        setState(() => _selectedTpv = value);
+                        _applyFilters();
+                      },
+              ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildShowDeletedChip() {
+    final active = _showDeleted;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: () {
+          setState(() => _showDeleted = !_showDeleted);
+          _loadData();
+        },
+        child: Container(
+          height: 42,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: active
+                ? AppColors.error.withOpacity(0.08)
+                : AppColors.surfaceVariant,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: active
+                  ? AppColors.error.withOpacity(0.45)
+                  : AppColors.border,
+              width: active ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                active
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                size: 16,
+                color: active ? AppColors.error : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Eliminados',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                  color: active ? AppColors.error : AppColors.textSecondary,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImportButton() {
+    return SizedBox(
+      height: 42,
+      child: ElevatedButton.icon(
+        onPressed: _showImportDialog,
+        icon: const Icon(Icons.upload_file_rounded, size: 16),
+        label: const Text(
+          'Importar',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.success,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+        ),
       ),
     );
   }
@@ -335,69 +561,149 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
         _filteredPrices.where((p) => p.esActivo && !p.isDeleted).length;
     final deletedPrices = _filteredPrices.where((p) => p.isDeleted).length;
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildStatCard(
-              'Total',
-              totalPrices.toString(),
-              Icons.list,
-              AppColors.primary,
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 600;
+        if (isNarrow) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildStatItem(
+                label: 'Total Precios',
+                value: totalPrices.toString(),
+                icon: Icons.attach_money_rounded,
+                color: AppColors.primary,
+              ),
+              const SizedBox(height: 10),
+              _buildStatItem(
+                label: 'Activos',
+                value: activePrices.toString(),
+                icon: Icons.check_circle_outline_rounded,
+                color: AppColors.success,
+              ),
+              const SizedBox(height: 10),
+              _buildStatItem(
+                label: 'Eliminados',
+                value: deletedPrices.toString(),
+                icon: Icons.delete_outline_rounded,
+                color: AppColors.error,
+              ),
+            ],
+          );
+        }
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _buildStatItem(
+                  label: 'Total Precios',
+                  value: totalPrices.toString(),
+                  icon: Icons.attach_money_rounded,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatItem(
+                  label: 'Activos',
+                  value: activePrices.toString(),
+                  icon: Icons.check_circle_outline_rounded,
+                  color: AppColors.success,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatItem(
+                  label: 'Eliminados',
+                  value: deletedPrices.toString(),
+                  icon: Icons.delete_outline_rounded,
+                  color: AppColors.error,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _buildStatCard(
-              'Activos',
-              activePrices.toString(),
-              Icons.check_circle,
-              AppColors.success,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _buildStatCard(
-              'Eliminados',
-              deletedPrices.toString(),
-              Icons.delete,
-              AppColors.error,
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildStatCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
+  Widget _buildStatItem({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.2)),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      child: Column(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: color,
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+              ),
+              Icon(icon, color: color, size: 18),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+                letterSpacing: 0.3,
+              ),
             ),
           ),
+          const SizedBox(width: 8),
           Text(
-            title,
-            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            value,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+              height: 1,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
           ),
         ],
       ),

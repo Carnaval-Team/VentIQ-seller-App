@@ -100,73 +100,165 @@ class _TpvListWidgetState extends State<TpvListWidget> {
 
   Widget _buildStatsCard() {
     final totalTpvs = _tpvs.length;
-    final tpvsConVendedor =
-        _tpvs.where((t) {
-          try {
-            final vendedores = t['vendedor'] as List<dynamic>?;
-            return vendedores != null && vendedores.isNotEmpty;
-          } catch (e) {
-            return false;
-          }
-        }).length;
+    final tpvsConVendedor = _tpvs.where((t) {
+      try {
+        final vendedores = t['vendedor'] as List<dynamic>?;
+        return vendedores != null && vendedores.isNotEmpty;
+      } catch (e) {
+        return false;
+      }
+    }).length;
+    final disponibles = totalTpvs - tpvsConVendedor;
 
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [AppColors.primary, AppColors.primary.withOpacity(0.8)],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildStatItem(
-            'Total TPVs',
-            totalTpvs.toString(),
-            Icons.point_of_sale,
-          ),
-          _buildStatItem(
-            'Con Vendedor',
-            tpvsConVendedor.toString(),
-            Icons.person,
-          ),
-          _buildStatItem(
-            'Disponibles',
-            (totalTpvs - tpvsConVendedor).toString(),
-            Icons.check_circle,
-          ),
-        ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 600;
+          if (isNarrow) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildStatItem(
+                  label: 'Total TPVs',
+                  value: totalTpvs.toString(),
+                  icon: Icons.point_of_sale_outlined,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(height: 10),
+                _buildStatItem(
+                  label: 'Con vendedor',
+                  value: tpvsConVendedor.toString(),
+                  icon: Icons.person_outline_rounded,
+                  color: AppColors.info,
+                ),
+                const SizedBox(height: 10),
+                _buildStatItem(
+                  label: 'Disponibles',
+                  value: disponibles.toString(),
+                  icon: Icons.check_circle_outline_rounded,
+                  color: AppColors.success,
+                ),
+              ],
+            );
+          }
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _buildStatItem(
+                    label: 'Total TPVs',
+                    value: totalTpvs.toString(),
+                    icon: Icons.point_of_sale_outlined,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatItem(
+                    label: 'Con vendedor',
+                    value: tpvsConVendedor.toString(),
+                    icon: Icons.person_outline_rounded,
+                    color: AppColors.info,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatItem(
+                    label: 'Disponibles',
+                    value: disponibles.toString(),
+                    icon: Icons.check_circle_outline_rounded,
+                    color: AppColors.success,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildStatItem(String label, String value, IconData icon) {
-    return Column(
-      children: [
-        Icon(icon, color: Colors.white, size: 32),
-        const SizedBox(height: 8),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
+  Widget _buildStatItem({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
-        ),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: Colors.white70),
-        ),
-      ],
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+              ),
+              Icon(icon, color: color, size: 18),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+              height: 1,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

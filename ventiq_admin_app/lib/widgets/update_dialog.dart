@@ -228,79 +228,291 @@ class UpdateDialog extends StatelessWidget {
   Future<void> _clearCacheWeb(BuildContext context) async {
     try {
       print('🧹 Limpiando cache del navegador...');
-      
-      // En web, mostrar instrucciones para limpiar cache
+
+      final screenWidth = MediaQuery.of(context).size.width;
+      final isWideScreen = screenWidth >= 720;
+
       showDialog(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.green),
-              SizedBox(width: 8),
-              Text('Cache Limpiado'),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'El cache ha sido limpiado. Ahora recarga la página para obtener la última versión.',
-                style: TextStyle(fontSize: 14, height: 1.4),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Instrucciones:',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      '1. Presiona Ctrl+Shift+Delete (Windows) o Cmd+Shift+Delete (Mac)',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      '2. Selecciona "Cookies y otros datos de sitios"',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      '3. Elige "Todo el tiempo" y haz clic en "Borrar datos"',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      '4. Recarga la página (F5 o Ctrl+R)',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Cerrar diálogo de instrucciones
-                Navigator.of(context).pop(); // Cerrar diálogo de actualización
-              },
-              child: const Text('Entendido'),
-            ),
-          ],
-        ),
+        builder: (context) => isWideScreen
+            ? _buildWebCacheClearedDialog(context)
+            : _buildMobileCacheClearedDialog(context),
       );
     } catch (e) {
       print('❌ Error limpiando cache: $e');
     }
+  }
+
+  /// Diálogo "Cache Limpiado" para vistas web/desktop (ancho contenido y layout de pasos)
+  Widget _buildWebCacheClearedDialog(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(28, 24, 28, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.check_circle_rounded,
+                        color: Colors.green, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Cache Limpiado',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            height: 1.2,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Recarga la página para obtener la última versión',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: Colors.black54,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Instrucciones',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                  color: Colors.black54,
+                ),
+              ),
+              const SizedBox(height: 10),
+              _buildCacheStepRow(
+                number: 1,
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    const Text('Abre el borrado de datos con',
+                        style: TextStyle(fontSize: 13, height: 1.3)),
+                    _buildShortcutChip('Ctrl'),
+                    const Text('+', style: TextStyle(fontSize: 13)),
+                    _buildShortcutChip('Shift'),
+                    const Text('+', style: TextStyle(fontSize: 13)),
+                    _buildShortcutChip('Delete'),
+                    const Text('(o', style: TextStyle(fontSize: 13)),
+                    _buildShortcutChip('⌘'),
+                    const Text('+', style: TextStyle(fontSize: 13)),
+                    _buildShortcutChip('Shift'),
+                    const Text('+', style: TextStyle(fontSize: 13)),
+                    _buildShortcutChip('Delete'),
+                    const Text('en Mac)', style: TextStyle(fontSize: 13)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildCacheStepRow(
+                number: 2,
+                child: const Text(
+                  'Selecciona "Cookies y otros datos de sitios".',
+                  style: TextStyle(fontSize: 13, height: 1.3),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildCacheStepRow(
+                number: 3,
+                child: const Text(
+                  'Elige "Todo el tiempo" y haz clic en "Borrar datos".',
+                  style: TextStyle(fontSize: 13, height: 1.3),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildCacheStepRow(
+                number: 4,
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    const Text('Recarga la página con',
+                        style: TextStyle(fontSize: 13, height: 1.3)),
+                    _buildShortcutChip('F5'),
+                    const Text('o', style: TextStyle(fontSize: 13)),
+                    _buildShortcutChip('Ctrl'),
+                    const Text('+', style: TextStyle(fontSize: 13)),
+                    _buildShortcutChip('R'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              Align(
+                alignment: Alignment.centerRight,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).pop();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  child: const Text('Entendido'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCacheStepRow({required int number, required Widget child}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          margin: const EdgeInsets.only(top: 1),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            '$number',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primary,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: child),
+      ],
+    );
+  }
+
+  Widget _buildShortcutChip(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w600,
+          fontFamily: 'monospace',
+          color: Colors.black87,
+        ),
+      ),
+    );
+  }
+
+  /// Diálogo original compacto para móvil
+  Widget _buildMobileCacheClearedDialog(BuildContext context) {
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.check_circle, color: Colors.green),
+          SizedBox(width: 8),
+          Text('Cache Limpiado'),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'El cache ha sido limpiado. Ahora recarga la página para obtener la última versión.',
+            style: TextStyle(fontSize: 14, height: 1.4),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Instrucciones:',
+                  style:
+                      TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  '1. Presiona Ctrl+Shift+Delete (Windows) o Cmd+Shift+Delete (Mac)',
+                  style: TextStyle(fontSize: 12),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  '2. Selecciona "Cookies y otros datos de sitios"',
+                  style: TextStyle(fontSize: 12),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  '3. Elige "Todo el tiempo" y haz clic en "Borrar datos"',
+                  style: TextStyle(fontSize: 12),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  '4. Recarga la página (F5 o Ctrl+R)',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+            Navigator.of(context).pop();
+          },
+          child: const Text('Entendido'),
+        ),
+      ],
+    );
   }
 
   /// Descargar actualización

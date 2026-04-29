@@ -54,6 +54,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
       final currentStoreInfo =
           await _userPreferencesService.getCurrentStoreInfo();
 
+      if (!mounted) return;
       setState(() {
         _userStores = stores;
         _currentStoreName =
@@ -61,6 +62,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
       });
     } catch (e) {
       print('❌ Error loading store info: $e');
+      if (!mounted) return;
       setState(() {
         _currentStoreName = 'Tienda Principal';
       });
@@ -93,6 +95,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
 
       if (realData != null) {
         print('✅ Real data loaded successfully');
+        if (!mounted) return;
         setState(() {
           _dashboardData = realData;
           _isLoading = false;
@@ -116,6 +119,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
       print('💱 Loading effective USD→CUP rate...');
       final usdRate = await CurrencyService.getEffectiveUsdToCupRate();
 
+      if (!mounted) return;
       setState(() {
         _usdRate = usdRate;
         _isLoadingUsdRate = false;
@@ -124,6 +128,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
       print('✅ Effective USD rate loaded: $_usdRate');
     } catch (e) {
       print('❌ Error loading USD rate: $e');
+      if (!mounted) return;
       setState(() {
         _usdRate = 440.0;
         _isLoadingUsdRate = false;
@@ -133,6 +138,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
 
   void _loadMockData() {
     Future.delayed(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
       setState(() {
         _dashboardData = {
           'totalProducts': 0,

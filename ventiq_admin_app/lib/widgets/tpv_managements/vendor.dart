@@ -113,60 +113,157 @@ class _VendorListWidgetState extends State<VendorListWidget> {
     final totalVendedores = _vendedores.length;
     final vendedoresConTpv =
         _vendedores.where((v) => v['id_tpv'] != null).length;
+    final sinTpv = totalVendedores - vendedoresConTpv;
 
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [AppColors.success, AppColors.success.withOpacity(0.8)],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.success.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildStatItem('Total', totalVendedores.toString(), Icons.people),
-          _buildStatItem(
-            'Con TPV',
-            vendedoresConTpv.toString(),
-            Icons.point_of_sale,
-          ),
-          _buildStatItem(
-            'Sin TPV',
-            (totalVendedores - vendedoresConTpv).toString(),
-            Icons.person_off,
-          ),
-        ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 600;
+          if (isNarrow) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildStatItem(
+                  label: 'Total Vendedores',
+                  value: totalVendedores.toString(),
+                  icon: Icons.people_alt_outlined,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(height: 10),
+                _buildStatItem(
+                  label: 'Con TPV',
+                  value: vendedoresConTpv.toString(),
+                  icon: Icons.point_of_sale_outlined,
+                  color: AppColors.success,
+                ),
+                const SizedBox(height: 10),
+                _buildStatItem(
+                  label: 'Sin TPV',
+                  value: sinTpv.toString(),
+                  icon: Icons.person_off_outlined,
+                  color: Colors.orange,
+                ),
+              ],
+            );
+          }
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _buildStatItem(
+                    label: 'Total Vendedores',
+                    value: totalVendedores.toString(),
+                    icon: Icons.people_alt_outlined,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatItem(
+                    label: 'Con TPV',
+                    value: vendedoresConTpv.toString(),
+                    icon: Icons.point_of_sale_outlined,
+                    color: AppColors.success,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatItem(
+                    label: 'Sin TPV',
+                    value: sinTpv.toString(),
+                    icon: Icons.person_off_outlined,
+                    color: Colors.orange,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildStatItem(String label, String value, IconData icon) {
-    return Column(
-      children: [
-        Icon(icon, color: Colors.white, size: 32),
-        const SizedBox(height: 8),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
+  Widget _buildStatItem({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
-        ),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: Colors.white70),
-        ),
-      ],
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+              ),
+              Icon(icon, color: color, size: 18),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+              height: 1,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -348,58 +445,162 @@ class _VendorListWidgetState extends State<VendorListWidget> {
 
     final canCustomize = vendedor['permitir_customizar_precio_venta'] == true;
     final isUpdating = _updatingPricePermission.contains(vendedorId);
-    final statusLabel =
-        canCustomize ? 'Permitido para este vendedor' : 'No permitido';
+    final accent = canCustomize ? AppColors.success : AppColors.textSecondary;
+    final canEdit = _canEditPricePermission && !isUpdating;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceVariant,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.price_change,
-            size: 18,
-            color: canCustomize ? AppColors.success : AppColors.textSecondary,
+        onTap: canEdit
+            ? () =>
+                _togglePriceCustomizationPermission(vendedor, !canCustomize)
+            : null,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: canCustomize
+                ? AppColors.success.withOpacity(0.06)
+                : AppColors.surfaceVariant,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: canCustomize
+                  ? AppColors.success.withOpacity(0.25)
+                  : AppColors.border,
+            ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Cambio de precio',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: accent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                Text(
-                  statusLabel,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
+                child: Icon(
+                  Icons.price_change_outlined,
+                  size: 18,
+                  color: accent,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Cambio de precio',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      canCustomize ? 'Habilitado' : 'Deshabilitado',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: accent,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (isUpdating)
+                SizedBox(
+                  width: 36,
+                  height: 20,
+                  child: Center(
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: accent,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                _buildPillSwitch(
+                  value: canCustomize,
+                  onChanged: _canEditPricePermission
+                      ? (value) =>
+                          _togglePriceCustomizationPermission(vendedor, value)
+                      : null,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPillSwitch({
+    required bool value,
+    ValueChanged<bool>? onChanged,
+  }) {
+    final activeColor = AppColors.success;
+    final disabled = onChanged == null;
+    return Opacity(
+      opacity: disabled ? 0.5 : 1,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: disabled ? null : () => onChanged(!value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            width: 42,
+            height: 22,
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: value
+                  ? activeColor
+                  : AppColors.textSecondary.withOpacity(0.35),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Stack(
+              children: [
+                AnimatedAlign(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  alignment:
+                      value ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.12),
+                          blurRadius: 3,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      value ? Icons.check_rounded : Icons.close_rounded,
+                      size: 12,
+                      color: value
+                          ? activeColor
+                          : AppColors.textSecondary.withOpacity(0.7),
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          if (isUpdating)
-            const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          else
-            Switch.adaptive(
-              value: canCustomize,
-              activeColor: AppColors.success,
-              onChanged:
-                  _canEditPricePermission
-                      ? (value) =>
-                          _togglePriceCustomizationPermission(vendedor, value)
-                      : null,
-            ),
-        ],
+        ),
       ),
     );
   }

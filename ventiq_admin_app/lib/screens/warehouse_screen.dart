@@ -6,7 +6,10 @@ import '../models/warehouse.dart';
 import '../services/user_preferences_service.dart';
 import '../services/warehouse_service.dart';
 import 'add_warehouse_screen.dart';
+import 'add_warehouse_web_screen.dart';
+import '../utils/platform_utils.dart';
 import 'warehouse_detail_screen.dart';
+import 'warehouse_detail_web_screen.dart';
 import '../utils/navigation_guard.dart';
 
 class WarehouseScreen extends StatefulWidget {
@@ -402,10 +405,14 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   }
 
   Future<void> _openEditWarehouse(Warehouse w) async {
+    final isWeb = PlatformUtils.isWeb &&
+        MediaQuery.of(context).size.width >= 900;
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => AddWarehouseScreen(initialWarehouse: w),
+        builder: (_) => isWeb
+            ? AddWarehouseWebScreen(initialWarehouse: w)
+            : AddWarehouseScreen(initialWarehouse: w),
       ),
     );
 
@@ -415,10 +422,14 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   }
 
   Future<void> _onViewWarehouse(Warehouse w) async {
+    final isWeb = PlatformUtils.isWeb &&
+        MediaQuery.of(context).size.width >= 900;
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => WarehouseDetailScreen(warehouseId: w.id),
+        builder: (_) => isWeb
+            ? WarehouseDetailWebScreen(warehouseId: w.id)
+            : WarehouseDetailScreen(warehouseId: w.id),
       ),
     );
     _loadData();

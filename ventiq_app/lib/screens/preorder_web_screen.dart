@@ -31,6 +31,7 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
   bool _checkingShift = true;
   bool _hasOpenShift = false;
   bool _elaboratingProducts = false;
+  bool _noSolicitarCliente = false;
   pm.PaymentMethod? _globalPaymentMethod;
   final Map<String, TextEditingController> _qtyControllers = {};
   Timer? _qtyDebounceTimer;
@@ -40,6 +41,18 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
     super.initState();
     _loadPersistentPreorder();
     _checkOpenShift();
+    _loadNoSolicitarCliente();
+  }
+
+  Future<void> _loadNoSolicitarCliente() async {
+    final idTienda = await _userPreferencesService.getIdTienda();
+    if (idTienda == null) return;
+    final value = await StoreConfigService.getNoSolicitarCliente(idTienda);
+    if (mounted && value != _noSolicitarCliente) {
+      setState(() {
+        _noSolicitarCliente = value;
+      });
+    }
   }
 
   @override
@@ -562,9 +575,9 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
                                     valueColor: AlwaysStoppedAnimation(Colors.white),
                                   ),
                                 )
-                              : const Text(
-                                  'ENVIAR ORDEN',
-                                  style: TextStyle(
+                              : Text(
+                                  _noSolicitarCliente ? 'CREAR ORDEN' : 'ENVIAR ORDEN',
+                                  style: const TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w900,
                                     letterSpacing: 0.5,
@@ -761,13 +774,13 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
                         )
                       : Row(
                           mainAxisSize: MainAxisSize.min,
-                          children: const [
+                          children: [
                             Text(
-                              'ENVIAR ORDEN',
-                              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 0.8),
+                              _noSolicitarCliente ? 'CREAR ORDEN' : 'ENVIAR ORDEN',
+                              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 0.8),
                             ),
-                            SizedBox(width: 10),
-                            Icon(Icons.arrow_forward_rounded, size: 18),
+                            const SizedBox(width: 10),
+                            const Icon(Icons.arrow_forward_rounded, size: 18),
                           ],
                         ),
                 ),
@@ -1094,7 +1107,7 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
     );
   }
 
-  TextEditingController _getQtyController(String itemId, int currentQty) {
+  TextEditingController _getQtyController(String itemId, double currentQty) {
     if (!_qtyControllers.containsKey(itemId)) {
       _qtyControllers[itemId] = TextEditingController(text: '$currentQty');
     } else if (_qtyControllers[itemId]!.text != '$currentQty') {
@@ -1145,15 +1158,15 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
 
   /// Obtiene el stock máximo disponible para un item de la orden.
   /// Retorna null si no aplica límite (elaborado o servicio).
-  int? _getMaxStockForItem(OrderItem item) {
+  double? _getMaxStockForItem(OrderItem item) {
     if (item.producto.esElaborado || item.producto.esServicio) return null;
     if (item.variante != null) {
-      return item.variante!.cantidad.toInt();
+      return item.variante!.cantidad.toDouble();
     }
-    return item.producto.cantidad.toInt();
+    return item.producto.cantidad.toDouble();
   }
 
-  void _showStockWarning(int maxQty, {String? variantName}) {
+  void _showStockWarning(double maxQty, {String? variantName}) {
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1215,7 +1228,7 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
   }
 
   void _applyManualQty(String itemId, String value) {
-    final newQty = int.tryParse(value);
+    final newQty = double.tryParse(value);
     if (newQty != null && newQty > 0) {
       // Validar stock
       final currentOrder = _orderService.currentOrder;
@@ -1286,7 +1299,7 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
     });
   }
 
-  void _updateItemQuantity(String itemId, int newQuantity) {
+  void _updateItemQuantity(String itemId, double newQuantity) {
     if (newQuantity < 0) return;
     // Validar stock antes de actualizar
     final currentOrder = _orderService.currentOrder;
@@ -1398,14 +1411,20 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
 
     // Verificar si el modo offline está activado
     final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
-    
+
+    // Si no se solicitan datos del cliente, crear orden directamente
+    if (_noSolicitarCliente) {
+      await _createOrderDirectly(currentOrder, isOfflineModeEnabled);
+      return;
+    }
+
     if (isOfflineModeEnabled) {
       // MODO OFFLINE: No elaborar productos, pero SÍ ir al checkout para capturar datos del cliente
       print('🔌 Modo offline - Saltando elaboración pero continuando al checkout para datos del cliente');
-      
+
       // Marcar la orden como offline para que el checkout la maneje apropiadamente
       currentOrder.isOfflineOrder = true;
-      
+
       // Navigate to checkout screen (CRÍTICO: No saltarse el checkout en modo offline)
       Navigator.push(
         context,
@@ -1420,7 +1439,7 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
       // MODO ONLINE: Elaborar productos y continuar al checkout
       print('🌐 Modo online - Procesando elaboración y continuando al checkout');
       await _processElaboratedProducts(currentOrder);
-      
+
       // Navigate to checkout screen
       Navigator.push(
         context,
@@ -1431,6 +1450,124 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
         // Refresh the screen when returning from checkout
         setState(() {});
       });
+    }
+  }
+
+  /// Crea la orden directamente sin pasar por checkout (cuando no_solicitar_cliente está activo)
+  Future<void> _createOrderDirectly(Order currentOrder, bool isOfflineMode) async {
+    setState(() {
+      _elaboratingProducts = true;
+    });
+
+    try {
+      // Construir el breakdown de pagos a partir de los items
+      final breakdown = <String, double>{};
+      for (final item in currentOrder.items) {
+        if (item.paymentMethod != null) {
+          final methodName = item.paymentMethod!.displayName;
+          final amount = item.precioUnitario * item.cantidad;
+          breakdown[methodName] = (breakdown[methodName] ?? 0) + amount;
+        }
+      }
+
+      if (isOfflineMode) {
+        // MODO OFFLINE
+        currentOrder.isOfflineOrder = true;
+        final offlineOrderId = '${DateTime.now().millisecondsSinceEpoch}';
+        final orderData = {
+          'id': offlineOrderId,
+          'items': currentOrder.items.map((item) => {
+            'nombre': item.nombre,
+            'cantidad': item.cantidad,
+            'precio': item.precioUnitario,
+            'paymentMethod': item.paymentMethod?.displayName,
+          }).toList(),
+          'buyerName': '',
+          'buyerPhone': '',
+          'total': currentOrder.total,
+          'paymentBreakdown': breakdown,
+          'timestamp': DateTime.now().toIso8601String(),
+          'isOf5788flineOrder': true,
+        };
+        await _userPreferencesService.savePendingOrder(orderData);
+        _orderService.clearAllOrders();
+
+        if (mounted) {
+          AppSnackBar.showPersistent(
+            context,
+            message: '¡Orden creada exitosamente!',
+            backgroundColor: Colors.green,
+          );
+          Navigator.pushNamedAndRemoveUntil(
+            context, '/orders', (route) => false,
+            arguments: {'openOrderId': offlineOrderId},
+          );
+        }
+      } else {
+        // MODO ONLINE: Elaborar productos primero
+        await _processElaboratedProducts(currentOrder);
+
+        final updatedOrder = currentOrder.copyWith(
+          buyerName: '',
+          buyerPhone: '',
+          paymentMethod: 'Múltiples métodos',
+        );
+
+        final orderData = {
+          'buyerName': '',
+          'buyerPhone': '',
+          'extraContacts': '',
+          'paymentMethod': 'Múltiples métodos',
+          'finalTotal': updatedOrder.total,
+          'originalTotal': updatedOrder.total,
+          'paymentBreakdown': breakdown,
+        };
+
+        final result = await _orderService.finalizeOrderWithDetails(
+          updatedOrder,
+          orderData,
+        );
+
+        if (result['success'] == true) {
+          _orderService.clearAllOrders();
+          if (mounted) {
+            AppSnackBar.showPersistent(
+              context,
+              message: '¡Orden creada exitosamente!',
+              backgroundColor: Colors.green,
+            );
+            final opId = result['operationId'];
+            final orderIdToOpen = opId != null ? 'ORD-$opId' : updatedOrder.id;
+            Navigator.pushNamedAndRemoveUntil(
+              context, '/orders', (route) => false,
+              arguments: {'openOrderId': orderIdToOpen},
+            );
+          }
+        } else {
+          if (mounted) {
+            AppSnackBar.showPersistent(
+              context,
+              message: 'Error al crear la orden: ${result['error']}',
+              backgroundColor: Colors.red,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Error creando orden directamente: $e');
+      if (mounted) {
+        AppSnackBar.showPersistent(
+          context,
+          message: 'Error al crear la orden: $e',
+          backgroundColor: Colors.red,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _elaboratingProducts = false;
+        });
+      }
     }
   }
 

@@ -12,6 +12,8 @@ import 'inventory_adjustment_screen.dart'; // Importar la pantalla de ajuste de 
 import 'elaborated_products_extraction_screen.dart'; // Nueva pantalla
 import 'inventory_extractionbysale_screen.dart'; // Venta por Acuerdo
 import 'inventory_dashboard.dart';
+import 'inventory_dashboard_web.dart';
+import '../utils/platform_utils.dart';
 import 'consignacion_screen.dart'; // Consignación
 import 'inventory_ipv_report_screen.dart'; // Reporte IPV
 import '../widgets/notification_widget.dart';
@@ -514,7 +516,7 @@ class _InventoryScreenState extends State<InventoryScreen>
               : TabBarView(
                 controller: _tabController,
                 children: [
-                  const InventoryDashboard(),
+                  const _PlatformAwareInventoryDashboard(),
                   InventoryStockScreen(
                     isAlmacenero: _isAlmacenero,
                     assignedWarehouseId: _assignedWarehouseId,
@@ -532,5 +534,20 @@ class _InventoryScreenState extends State<InventoryScreen>
         },
       ),
     );
+  }
+}
+
+/// Selecciona automáticamente la versión web o móvil del Inventory Dashboard
+/// según la plataforma y el ancho disponible (>= 900 px → web).
+class _PlatformAwareInventoryDashboard extends StatelessWidget {
+  const _PlatformAwareInventoryDashboard();
+
+  @override
+  Widget build(BuildContext context) {
+    final isWeb = PlatformUtils.isWeb &&
+        MediaQuery.of(context).size.width >= 900;
+    return isWeb
+        ? const InventoryDashboardWeb()
+        : const InventoryDashboard();
   }
 }

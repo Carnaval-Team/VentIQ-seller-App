@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(find:*)",
-      "Bash(flutter analyze:*)"
+      "Bash(flutter analyze:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(awk END{print NR}:*)",
+      "Bash(dart analyze:*)"
     ]
   },
   "prefersReducedMotion": false
