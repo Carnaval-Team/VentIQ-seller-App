@@ -753,238 +753,41 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   Widget _buildReceptionOperationsSection() {
     return _buildInfoCard(
-      title: 'Operaciones de Entrada',
+      title: 'Operaciones de Inventario',
       icon: Icons.input,
       children: [
-        // Botón para ver todos los movimientos
+        // Acceso a movimientos
         Padding(
           padding: const EdgeInsets.only(bottom: 16),
-          child: SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder:
-                        (context) => ProductMovementsScreen(product: _product),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.history),
-              label: const Text('Ver Todos los Movimientos'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-            ),
-          ),
-        ),
-        if (_isLoadingOperations)
-          const Center(child: CircularProgressIndicator())
-        else if (_receptionOperations.isEmpty)
-          Text(
-            'No hay operaciones de entrada registradas',
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontStyle: FontStyle.italic,
-            ),
-          )
-        else
-          Column(
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _operationFilterController,
-                      decoration: const InputDecoration(
-                        labelText: 'Filtro por ID',
-                        border: OutlineInputBorder(),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            ProductMovementsScreen(product: _product),
                       ),
-                      onChanged: (value) {
-                        if (mounted) {
-                          setState(() {
-                            _operationIdFilter = value.isEmpty ? null : value;
-                            _currentPage = 1;
-                          });
-                        }
-                        _loadReceptionOperations();
-                      },
-                    ),
+                    );
+                  },
+                  icon: const Icon(Icons.table_chart, size: 18),
+                  label: const Text(
+                    'Tarjeta de Estiba',
+                    style: TextStyle(fontSize: 13),
                   ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () {
-                      if (mounted) {
-                        setState(() {
-                          _operationIdFilter = null;
-                          _currentPage = 1;
-                        });
-                      }
-                      _loadReceptionOperations();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.error,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('Limpiar filtro'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Column(
-                children:
-                    _receptionOperations
-                        .map(
-                          (operation) => Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[50],
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.grey[200]!),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      operation['documento'],
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.primary.withOpacity(
-                                          0.1,
-                                        ),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        '+${operation['cantidad']}',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: AppColors.primary,
-                                        ),
-                                      ),
-                                    ),
-                                    if (_canEditProduct)
-                                      IconButton(
-                                        icon: const Icon(Icons.edit),
-                                        onPressed: () {
-                                          // Validate operation ID before opening dialog
-                                          final operationId =
-                                              operation['id_operacion'] ??
-                                              operation['id'] ??
-                                              operation['operacion_id'];
-                                          if (operationId == null) {
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                  'No se puede editar: ID de operación no válido',
-                                                ),
-                                                backgroundColor: Colors.red,
-                                              ),
-                                            );
-                                            return;
-                                          }
-
-                                          showDialog(
-                                            context: context,
-                                            builder:
-                                                (
-                                                  context,
-                                                ) => ReceptionEditDialog(
-                                                  operationId:
-                                                      operationId.toString(),
-                                                  operationData: operation,
-                                                  onUpdated: () {
-                                                    _loadReceptionOperations();
-                                                  },
-                                                ),
-                                          );
-                                        },
-                                      ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                _buildInfoRow(
-                                  'Fecha',
-                                  DateFormat(
-                                    'dd/MM/yyyy HH:mm',
-                                  ).format(operation['fecha']),
-                                ),
-                                _buildInfoRow(
-                                  'Proveedor',
-                                  operation['proveedor'],
-                                ),
-                                _buildInfoRow('Usuario', operation['usuario']),
-                              ],
-                            ),
-                          ),
-                        )
-                        .toList(),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  ElevatedButton(
-                    onPressed:
-                        _hasPreviousPage
-                            ? () {
-                              if (mounted) setState(() => _currentPage--);
-                              _loadReceptionOperations();
-                            }
-                            : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          _hasPreviousPage
-                              ? AppColors.primary
-                              : AppColors.textLight,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('Anterior'),
-                  ),
-                  Text(
-                    'Página ${_currentPage} de ${_totalPages}',
-                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                  ),
-                  ElevatedButton(
-                    onPressed:
-                        _hasNextPage
-                            ? () {
-                              if (mounted) setState(() => _currentPage++);
-                              _loadReceptionOperations();
-                            }
-                            : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          _hasNextPage
-                              ? AppColors.primary
-                              : AppColors.textLight,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('Siguiente'),
-                  ),
-                ],
+                ),
               ),
             ],
           ),
-      ],
+        ),
+        ],
     );
   }
 

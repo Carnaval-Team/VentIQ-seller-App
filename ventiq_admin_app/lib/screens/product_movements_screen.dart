@@ -54,6 +54,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
   bool _isLoadingWarehouses = false;
   bool _isExportingPdf = false;
   bool _filtersExpanded = false;
+  String? _selectedTipoMovimiento;
   final UserPreferencesService _userPreferencesService = UserPreferencesService();
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -63,7 +64,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     _product = widget.product;
     // Inicializar filtros por defecto: fecha actual
     final now = DateTime.now();
-    _dateFrom = DateTime(now.year, now.month, now.day, 0, 0, 0);
+    _dateFrom = DateTime(now.year, now.month, 1, 0, 0, 0);
     _dateTo = DateTime(now.year, now.month, now.day, 23, 59, 59);
     
     _scrollController = ScrollController();
@@ -238,14 +239,21 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       return true;
     }).toList();
 
-    // Ordenar por fecha descendente (más recientes primero)
+    // Ordenar por fecha ascendente (más antiguos primero)
     _filteredMovements.sort((a, b) {
       final dateA = DateTime.tryParse(a['fecha'] as String? ?? '') ?? DateTime(2000);
       final dateB = DateTime.tryParse(b['fecha'] as String? ?? '') ?? DateTime(2000);
-      return dateB.compareTo(dateA);
+      return dateA.compareTo(dateB);
     });
 
     setState(() {});
+  }
+
+  List<Map<String, dynamic>> get _displayMovements {
+    if (_selectedTipoMovimiento == null) return _filteredMovements;
+    return _filteredMovements
+        .where((m) => m['tipo_movimiento'] == _selectedTipoMovimiento)
+        .toList();
   }
 
   Future<void> _selectDateFrom() async {
@@ -278,11 +286,12 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     // Reiniciar a filtros por defecto (fecha actual)
     final now = DateTime.now();
     setState(() {
-      _dateFrom = DateTime(now.year, now.month, now.day, 0, 0, 0);
+      _dateFrom = DateTime(now.year, now.month, 1, 0, 0, 0);
       _dateTo = DateTime(now.year, now.month, now.day, 23, 59, 59);
       _selectedOperationTypeId = null;
       _selectedWarehouseId = null;
       _selectedWarehouse = 'Todos';
+      _selectedTipoMovimiento = null;
     });
     _loadData();
   }
@@ -402,150 +411,132 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                 // Panel de filtros colapsable
                 _buildCollapsibleFilters(),
 
-                // Resumen
-                if (_filteredMovements.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.blue.shade200),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          Column(
-                            children: [
-                              Text(
-                                'Total Movimientos',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                              Text(
-                                '${_filteredMovements.length}',
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Column(
-                            children: [
-                              Text(
-                                'Recepción',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                              Text(
-                                '${_filteredMovements.where((m) => m['tipo_movimiento'] == 'Recepción').length}',
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Column(
-                            children: [
-                              Text(
-                                'Extracción',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                              Text(
-                                '${_filteredMovements.where((m) => m['tipo_movimiento'] == 'Extracción').length}',
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.orange,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Column(
-                            children: [
-                              Text(
-                                'Control',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                              Text(
-                                '${_filteredMovements.where((m) => m['tipo_movimiento'] == 'Control').length}',
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                // Resumen clicable
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        _buildSummaryTile(
+                          label: 'Total',
+                          count: _filteredMovements.length,
+                          color: Colors.blueGrey,
+                          isSelected: _selectedTipoMovimiento == null,
+                          onTap: () => setState(() => _selectedTipoMovimiento = null),
+                        ),
+                        _buildSummaryDivider(),
+                        _buildSummaryTile(
+                          label: 'Recepción',
+                          count: _filteredMovements
+                              .where((m) => m['tipo_movimiento'] == 'Recepción')
+                              .length,
+                          color: Colors.green,
+                          isSelected: _selectedTipoMovimiento == 'Recepción',
+                          onTap: () => setState(() {
+                            _selectedTipoMovimiento =
+                                _selectedTipoMovimiento == 'Recepción'
+                                    ? null
+                                    : 'Recepción';
+                          }),
+                        ),
+                        _buildSummaryDivider(),
+                        _buildSummaryTile(
+                          label: 'Extracción',
+                          count: _filteredMovements
+                              .where((m) => m['tipo_movimiento'] == 'Extracción')
+                              .length,
+                          color: Colors.orange,
+                          isSelected: _selectedTipoMovimiento == 'Extracción',
+                          onTap: () => setState(() {
+                            _selectedTipoMovimiento =
+                                _selectedTipoMovimiento == 'Extracción'
+                                    ? null
+                                    : 'Extracción';
+                          }),
+                        ),
+                        _buildSummaryDivider(),
+                        _buildSummaryTile(
+                          label: 'Control',
+                          count: _filteredMovements
+                              .where((m) => m['tipo_movimiento'] == 'Control')
+                              .length,
+                          color: Colors.blue,
+                          isSelected: _selectedTipoMovimiento == 'Control',
+                          onTap: () => setState(() {
+                            _selectedTipoMovimiento =
+                                _selectedTipoMovimiento == 'Control'
+                                    ? null
+                                    : 'Control';
+                          }),
+                        ),
+                      ],
                     ),
                   ),
+                ),
 
-                // Lista de movimientos
+                // Lista de movimientos en formato tabla
                 Expanded(
                   child: _filteredMovements.isEmpty
                       ? Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(
-                                Icons.inbox,
-                                size: 64,
-                                color: Colors.grey.shade300,
-                              ),
+                              Icon(Icons.inbox, size: 64, color: Colors.grey.shade300),
                               const SizedBox(height: 16),
                               Text(
                                 'No hay movimientos',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey.shade600,
-                                ),
+                                style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
                               ),
                             ],
                           ),
                         )
-                      : ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.all(8),
-                          itemCount: _filteredMovements.length + (_hasMoreData ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            // Mostrar indicador de carga al final
-                            if (index == _filteredMovements.length) {
-                              return Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: Center(
-                                  child: _isLoadingMore
-                                      ? const CircularProgressIndicator()
-                                      : Text(
-                                          'Cargando más...',
-                                          style: TextStyle(
-                                            color: Colors.grey.shade600,
-                                            fontSize: 12,
-                                          ),
+                      : Column(
+                          children: [
+                            _buildTableHeader(),
+                            Expanded(
+                              child: _displayMovements.isEmpty
+                                  ? Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(32),
+                                        child: Text(
+                                          'Sin movimientos de tipo "$_selectedTipoMovimiento"',
+                                          style: TextStyle(color: Colors.grey.shade600),
+                                          textAlign: TextAlign.center,
                                         ),
-                                ),
-                              );
-                            }
-                            
-                            final movement = _filteredMovements[index];
-                            return _buildMovementCard(movement);
-                          },
+                                      ),
+                                    )
+                                  : ListView.builder(
+                                      controller: _scrollController,
+                                      itemCount: _displayMovements.length +
+                                          (_hasMoreData ? 1 : 0),
+                                      itemBuilder: (context, index) {
+                                        if (index == _displayMovements.length) {
+                                          return Padding(
+                                            padding: const EdgeInsets.all(16.0),
+                                            child: Center(
+                                              child: _isLoadingMore
+                                                  ? const CircularProgressIndicator()
+                                                  : Text(
+                                                      'Cargando más...',
+                                                      style: TextStyle(
+                                                        color: Colors.grey.shade600,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                            ),
+                                          );
+                                        }
+                                        final movement = _displayMovements[index];
+                                        return _buildMovementRow(movement, index);
+                                      },
+                                    ),
+                            ),
+                          ],
                         ),
                 ),
               ],
@@ -555,7 +546,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
 
   bool _hasActiveFilters() {
     final now = DateTime.now();
-    final defaultFrom = DateTime(now.year, now.month, now.day, 0, 0, 0);
+    final defaultFrom = DateTime(now.year, now.month, 1, 0, 0, 0);
     final defaultTo = DateTime(now.year, now.month, now.day, 23, 59, 59);
     final isDefaultDateFrom = _dateFrom != null &&
         _dateFrom!.year == defaultFrom.year &&
@@ -567,6 +558,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         _dateTo!.day == defaultTo.day;
     return _selectedOperationTypeId != null ||
         _selectedWarehouseId != null ||
+        _selectedTipoMovimiento != null ||
         !isDefaultDateFrom ||
         !isDefaultDateTo;
   }
@@ -612,29 +604,42 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                 )['denominacion'] as String? ??
               _selectedWarehouse;
 
-      // Totales
-      final totalRecepciones = _filteredMovements
+      final String tipoMovStr = _selectedTipoMovimiento ?? 'Todos';
+
+      final String tipoOpStr = _selectedOperationTypeId != null
+          ? (_operationTypes.firstWhere(
+                (t) => t['id'] == _selectedOperationTypeId,
+                orElse: () => {'denominacion': 'Desconocido'},
+              )['denominacion'] as String? ??
+              'Desconocido')
+          : 'Todos';
+
+      // Movimientos a exportar (respetando filtro de tipo movimiento)
+      final movimientosExport = _displayMovements;
+
+      // Totales calculados sobre los datos a exportar
+      final totalRecepciones = movimientosExport
           .where((m) => m['tipo_movimiento'] == 'Recepción')
           .fold<double>(
             0,
             (s, m) => s + ((m['cantidad'] as num?)?.toDouble() ?? 0),
           );
-      final totalExtracciones = _filteredMovements
+      final totalExtracciones = movimientosExport
           .where((m) => m['tipo_movimiento'] == 'Extracción')
           .fold<double>(
             0,
             (s, m) => s + ((m['cantidad'] as num?)?.toDouble() ?? 0),
           );
 
-      // Anchos de columna: Fecha, Tipo, Estado, Cant.Inicial, Cant.Movida, Cant.Final, Observaciones
-      const colWidths = {
-        0: pw.FixedColumnWidth(70),
-        1: pw.FixedColumnWidth(66),
-        2: pw.FixedColumnWidth(58),
-        3: pw.FixedColumnWidth(44),
-        4: pw.FixedColumnWidth(44),
-        5: pw.FixedColumnWidth(44),
-        6: pw.FlexColumnWidth(2),
+      // Anchos de columna: Fecha, Almacén, N° Op., Tipo, Entrada, Salida, Saldo
+      final colWidths = {
+        0: const pw.FixedColumnWidth(68),
+        1: const pw.FlexColumnWidth(1.5),
+        2: const pw.FixedColumnWidth(44),
+        3: const pw.FixedColumnWidth(62),
+        4: const pw.FixedColumnWidth(52),
+        5: const pw.FixedColumnWidth(52),
+        6: const pw.FixedColumnWidth(52),
       };
 
       pw.Widget headerCell(String text) => pw.Container(
@@ -708,8 +713,8 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
                           pw.Text(
-                            'Producto: ${_product.denominacion}',
-                            style: pw.TextStyle(font: boldFont, fontSize: 10),
+                            _product.denominacion,
+                            style: pw.TextStyle(font: boldFont, fontSize: 11),
                           ),
                           if (_product.sku.isNotEmpty)
                             pw.Text(
@@ -723,41 +728,49 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                         ],
                       ),
                     ),
-                    pw.SizedBox(width: 20),
+                    pw.SizedBox(width: 16),
                     pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
                         pw.Text(
                           'Período: $periodoStr',
-                          style: pw.TextStyle(font: regularFont, fontSize: 9),
+                          style: pw.TextStyle(font: regularFont, fontSize: 8),
                         ),
                         pw.Text(
                           'Almacén: $almacenStr',
-                          style: pw.TextStyle(font: regularFont, fontSize: 9),
+                          style: pw.TextStyle(font: regularFont, fontSize: 8),
                         ),
                         pw.Text(
-                          'Total registros: ${_filteredMovements.length}',
-                          style: pw.TextStyle(font: regularFont, fontSize: 9),
+                          'Tipo movimiento: $tipoMovStr',
+                          style: pw.TextStyle(font: regularFont, fontSize: 8),
+                        ),
+                        pw.Text(
+                          'Tipo operación: $tipoOpStr',
+                          style: pw.TextStyle(font: regularFont, fontSize: 8),
                         ),
                       ],
                     ),
-                    pw.SizedBox(width: 20),
+                    pw.SizedBox(width: 16),
                     pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
                         pw.Text(
-                          'Total Recepciones: ${totalRecepciones.toStringAsFixed(2)}',
+                          'Total registros: ${movimientosExport.length}',
+                          style: pw.TextStyle(font: regularFont, fontSize: 8),
+                        ),
+                        pw.Text(
+                          'Entradas: ${totalRecepciones.toStringAsFixed(2)}',
                           style: pw.TextStyle(
                             font: boldFont,
-                            fontSize: 9,
+                            fontSize: 8,
                             color: PdfColors.green700,
                           ),
                         ),
                         pw.Text(
-                          'Total Extracciones: ${totalExtracciones.toStringAsFixed(2)}',
+                          'Salidas: ${totalExtracciones.toStringAsFixed(2)}',
                           style: pw.TextStyle(
                             font: boldFont,
-                            fontSize: 9,
+                            fontSize: 8,
                             color: PdfColors.orange700,
                           ),
                         ),
@@ -802,139 +815,73 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                 pw.TableRow(
                   children: [
                     headerCell('Fecha'),
-                    headerCell('Tipo Operación'),
-                    headerCell('Estado'),
-                    headerCell('Cant. Inicial'),
-                    headerCell('Cant. Movida'),
-                    headerCell('Cant. Final'),
-                    headerCell('Observaciones'),
+                    headerCell('Almacén'),
+                    headerCell('N° Op.'),
+                    headerCell('Tipo'),
+                    headerCell('Entrada'),
+                    headerCell('Salida'),
+                    headerCell('Saldo'),
                   ],
                 ),
                 // Filas de datos
-                ..._filteredMovements.asMap().entries.map((entry) {
+                ...movimientosExport.asMap().entries.map((entry) {
                   final i = entry.key;
                   final m = entry.value;
                   final isEven = i % 2 == 0;
                   final rowBg = isEven ? PdfColors.white : PdfColors.blueGrey50;
 
                   final tipoMov = m['tipo_movimiento'] as String? ?? '';
-                  final tipoOp = m['tipo_operacion'] as String? ?? '-';
-                  final estado = m['estado_operacion_nombre'] as String? ?? '-';
-                  final cantInicial = (m['cantidad_inicial'] as num?)?.toStringAsFixed(2) ?? '-';
-                  final cantMovida = (m['cantidad'] as num?)?.toStringAsFixed(2) ?? '-';
+                  final almacenVal = m['almacen'] as String? ?? '-';
+                  final nOp = m['id_operacion']?.toString() ?? '-';
+                  final cantidad = (m['cantidad'] as num?)?.toStringAsFixed(2) ?? '-';
                   final cantFinal = (m['cantidad_final'] as num?)?.toStringAsFixed(2) ?? '-';
-                  final obs = (m['observaciones'] as String?)?.trim() ?? '';
                   final fechaStr = m['fecha'] as String? ?? '';
                   String fechaFmt = '-';
                   try {
-                    fechaFmt = DateFormat('dd/MM/yy HH:mm').format(DateTime.parse(fechaStr));
+                    fechaFmt = DateFormat('dd/MM/yy\nHH:mm').format(DateTime.parse(fechaStr));
                   } catch (_) {}
+
+                  final isEntrada = tipoMov == 'Recepción';
+                  final isControl = tipoMov == 'Control';
 
                   PdfColor tipoColor = PdfColors.black;
                   if (tipoMov == 'Recepción') tipoColor = PdfColors.green800;
                   if (tipoMov == 'Extracción') tipoColor = PdfColors.orange800;
-                  if (tipoMov == 'Control') tipoColor = PdfColors.blue800;
-
-                  PdfColor estadoColor = PdfColors.grey700;
-                  PdfColor estadoBg = PdfColors.grey100;
-                  switch (estado.toLowerCase()) {
-                    case 'completada':
-                      estadoColor = PdfColors.green800;
-                      estadoBg = PdfColors.green50;
-                      break;
-                    case 'pendiente':
-                      estadoColor = PdfColors.orange800;
-                      estadoBg = PdfColors.orange50;
-                      break;
-                    case 'cancelada':
-                      estadoColor = PdfColors.red800;
-                      estadoBg = PdfColors.red50;
-                      break;
-                    case 'devuelta':
-                      estadoColor = PdfColors.blue800;
-                      estadoBg = PdfColors.lightBlue50;
-                      break;
-                  }
+                  if (isControl) tipoColor = PdfColors.blue800;
 
                   return pw.TableRow(
                     decoration: pw.BoxDecoration(color: rowBg),
                     children: [
                       dataCell(fechaFmt),
                       pw.Container(
-                        padding: const pw.EdgeInsets.symmetric(
-                          vertical: 4,
-                          horizontal: 4,
-                        ),
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            pw.Text(
-                              tipoMov,
-                              style: pw.TextStyle(
-                                font: boldFont,
-                                fontSize: 8,
-                                color: tipoColor,
-                              ),
-                            ),
-                            pw.Text(
-                              tipoOp,
-                              style: pw.TextStyle(
-                                font: regularFont,
-                                fontSize: 7,
-                                color: PdfColors.grey600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Celda Estado con fondo coloreado
-                      pw.Container(
-                        padding: const pw.EdgeInsets.symmetric(
-                          vertical: 4,
-                          horizontal: 4,
-                        ),
-                        child: pw.Center(
-                          child: pw.Container(
-                            padding: const pw.EdgeInsets.symmetric(
-                              vertical: 2,
-                              horizontal: 5,
-                            ),
-                            decoration: pw.BoxDecoration(
-                              color: estadoBg,
-                              borderRadius: const pw.BorderRadius.all(
-                                pw.Radius.circular(4),
-                              ),
-                            ),
-                            child: pw.Text(
-                              estado,
-                              style: pw.TextStyle(
-                                font: boldFont,
-                                fontSize: 7,
-                                color: estadoColor,
-                              ),
-                              textAlign: pw.TextAlign.center,
-                            ),
-                          ),
-                        ),
-                      ),
-                      dataCell(cantInicial),
-                      dataCell(cantMovida, bold: true),
-                      dataCell(cantFinal),
-                      pw.Container(
-                        padding: const pw.EdgeInsets.symmetric(
-                          vertical: 4,
-                          horizontal: 4,
-                        ),
+                        padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 4),
                         child: pw.Text(
-                          obs.isEmpty ? '-' : obs,
-                          style: pw.TextStyle(
-                            font: regularFont,
-                            fontSize: 7,
-                            color: PdfColors.grey700,
-                          ),
-                          textAlign: pw.TextAlign.left,
+                          almacenVal,
+                          style: pw.TextStyle(font: regularFont, fontSize: 7, color: PdfColors.grey800),
                         ),
                       ),
+                      dataCell('#$nOp'),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                        child: pw.Text(
+                          tipoMov,
+                          style: pw.TextStyle(font: boldFont, fontSize: 7, color: tipoColor),
+                          textAlign: pw.TextAlign.center,
+                        ),
+                      ),
+                      dataCell(
+                        isEntrada ? cantidad : '',
+                        bold: true,
+                        color: isEntrada ? PdfColors.green800 : PdfColors.white,
+                      ),
+                      dataCell(
+                        !isEntrada ? cantidad : '',
+                        bold: true,
+                        color: !isEntrada
+                            ? (isControl ? PdfColors.blue800 : PdfColors.orange800)
+                            : PdfColors.white,
+                      ),
+                      dataCell(cantFinal, bold: true),
                     ],
                   );
                 }),
@@ -1219,224 +1166,425 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     );
   }
 
-  Widget _buildMovementCard(Map<String, dynamic> movement) {
-    final tipoMovimiento = movement['tipo_movimiento'] as String;
+  // ─── Summary widgets ───────────────────────────────────────────────────────
+
+  Widget _buildSummaryTile({
+    required String label,
+    required int count,
+    required Color color,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          decoration: BoxDecoration(
+            color: isSelected ? color.withOpacity(0.1) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: isSelected ? color : Colors.grey.shade600,
+                  fontWeight:
+                      isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? color : Colors.grey.shade800,
+                ),
+              ),
+              if (isSelected)
+                Container(
+                  margin: const EdgeInsets.only(top: 2),
+                  height: 2,
+                  width: 20,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryDivider() => Container(
+        height: 36,
+        width: 1,
+        color: Colors.grey.shade200,
+      );
+
+  // ─── Table widgets ──────────────────────────────────────────────────────────
+
+  Widget _buildTableHeader() {
+    return Container(
+      color: AppColors.primary,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          const SizedBox(width: 4),
+          Expanded(flex: 24, child: _headerCell('Fecha')),
+          Expanded(flex: 22, child: _headerCell('Almacén')),
+          Expanded(flex: 15, child: _headerCell('N° Op.')),
+          Expanded(flex: 17, child: _headerCell('Entrada', right: true)),
+          Expanded(flex: 17, child: _headerCell('Salida', right: true)),
+          Expanded(flex: 18, child: _headerCell('Saldo', right: true)),
+          const SizedBox(width: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _headerCell(String text, {bool right = false}) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+          textAlign: right ? TextAlign.right : TextAlign.left,
+        ),
+      );
+
+  Widget _buildMovementRow(Map<String, dynamic> movement, int index) {
+    final tipoMovimiento = movement['tipo_movimiento'] as String? ?? '';
+    final color = _getMovementTypeColor(tipoMovimiento);
+    final isEven = index % 2 == 0;
+
+    final fechaStr = movement['fecha'] as String? ?? '';
+    String fechaFmt = '';
+    try {
+      final dt = DateTime.parse(fechaStr);
+      fechaFmt = DateFormat('dd/MM\nHH:mm').format(dt);
+    } catch (_) {
+      fechaFmt = fechaStr;
+    }
+
+    final nOp = movement['id_operacion']?.toString() ?? '-';
+    final cantidad =
+        (movement['cantidad'] as num?)?.toStringAsFixed(2) ?? '';
+    final cantFinal =
+        (movement['cantidad_final'] as num?)?.toStringAsFixed(2) ?? '-';
+
+    final isEntrada = tipoMovimiento == 'Recepción';
+    final isControl = tipoMovimiento == 'Control';
+
+    final almacen = movement['almacen'] as String? ?? '-';
+
+    return InkWell(
+      onTap: () => _showMovementDetail(movement),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isEven ? Colors.white : Colors.grey.shade50,
+          border: Border(
+            bottom: BorderSide(color: Colors.grey.shade200),
+          ),
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(width: 4, color: color),
+              Expanded(
+                flex: 24,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 6, vertical: 6),
+                  child: Text(
+                    fechaFmt,
+                    style: const TextStyle(fontSize: 10, height: 1.35),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 22,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 4, vertical: 6),
+                  child: Text(
+                    almacen,
+                    style: TextStyle(
+                        fontSize: 10, color: Colors.grey.shade700),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 2,
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 15,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 4, vertical: 8),
+                  child: Text(
+                    '#$nOp',
+                    style: TextStyle(
+                        fontSize: 10, color: Colors.grey.shade600),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 17,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 4, vertical: 8),
+                  child: Text(
+                    isEntrada ? cantidad : '',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green,
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 17,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 4, vertical: 8),
+                  child: Text(
+                    !isEntrada ? cantidad : '',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: isControl ? Colors.blue : Colors.orange,
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 18,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 4, vertical: 8),
+                  child: Text(
+                    cantFinal,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey.shade800,
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Detail bottom sheet ────────────────────────────────────────────────────
+
+  void _showMovementDetail(Map<String, dynamic> movement) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.65,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        builder: (_, controller) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius:
+                BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: controller,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                  child: _buildMovementDetailContent(movement),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMovementDetailContent(Map<String, dynamic> movement) {
+    final tipoMovimiento = movement['tipo_movimiento'] as String? ?? '';
     final color = _getMovementTypeColor(tipoMovimiento);
     final icon = _getMovementTypeIcon(tipoMovimiento);
 
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 0),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            // Encabezado con tipo de movimiento
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Icon(icon, color: color, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        tipoMovimiento,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: color,
-                        ),
-                      ),
-                      Text(
-                        movement['tipo_operacion'] as String? ?? 'Desconocido',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (movement['estado_operacion_nombre'] != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: _getEstadoColor(movement['estado_operacion_nombre'] as String).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _getEstadoColor(movement['estado_operacion_nombre'] as String).withOpacity(0.5),
-                          ),
-                        ),
-                        child: Text(
-                          movement['estado_operacion_nombre'] as String,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: _getEstadoColor(movement['estado_operacion_nombre'] as String),
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _formatDate(movement['fecha'] as String? ?? ''),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            
-            // Detalles del movimiento
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.grey.shade50,
+                color: color.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(6),
               ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ID de Operación
-                  if (movement['id_operacion'] != null)
-                    _buildDetailRow(
-                      'Operación #',
-                      '${movement['id_operacion']}',
-                    ),
-                  
-                  
-                  // Cantidad (movida)
-                  if (movement['cantidad'] != null)
-                    _buildDetailRow(
-                      'Cantidad Movida',
-                      '${movement['cantidad']}',
-                    ),
-                  
-                  // Cantidad inicial
-                  if (movement['cantidad_inicial'] != null)
-                    _buildDetailRow(
-                      'Cantidad Inicial',
-                      '${movement['cantidad_inicial']}',
-                    ),
-                  
-                  // Cantidad final
-                  if (movement['cantidad_final'] != null)
-                    _buildDetailRow(
-                      'Cantidad Final',
-                      '${movement['cantidad_final']}',
-                    ),
-                  
-                  // Precio unitario
-                  if (movement['precio_unitario'] != null)
-                    _buildDetailRow(
-                      'Precio Unitario',
-                      '\$${(movement['precio_unitario'] as num).toStringAsFixed(2)}',
-                    ),
-                  
-                  // Costo real
-                  if (movement['costo_real'] != null)
-                    _buildDetailRow(
-                      'Costo Real',
-                      '\$${(movement['costo_real'] as num).toStringAsFixed(2)}',
-                    ),
-                  
-                  // Importe real
-                  if (movement['importe_real'] != null)
-                    _buildDetailRow(
-                      'Importe Real',
-                      '\$${(movement['importe_real'] as num).toStringAsFixed(2)}',
-                    ),
-                  
-                  // Para recepciones: Entregado por y Recibido por
-                  if (movement['tipo_movimiento'] == 'Recepción') ...[
-                    if (movement['entregado_por'] != null)
-                      _buildDetailRow(
-                        'Entregado Por',
-                        movement['entregado_por'] as String,
-                      ),
-                    if (movement['recibido_por'] != null)
-                      _buildDetailRow(
-                        'Recibido Por',
-                        movement['recibido_por'] as String,
-                      ),
-                  ],
-                  
-                  // Para extracciones: Autorizado por
-                  if (movement['tipo_movimiento'] == 'Extracción' &&
-                      movement['autorizado_por'] != null)
-                    _buildDetailRow(
-                      'Autorizado Por',
-                      movement['autorizado_por'] as String,
-                    ),
-                  
-                  // Almacén
-                  if (movement['almacen'] != null)
-                    _buildDetailRow(
-                      'Almacén',
-                      movement['almacen'] as String,
-                    ),
-                  
-                  // Zona
-                  if (movement['zona'] != null)
-                    _buildDetailRow(
-                      'Zona',
-                      movement['zona'] as String,
-                    ),
-                  
-                  // Proveedor
-                  if (movement['proveedor'] != null)
-                    _buildDetailRow(
-                      'Proveedor',
-                      movement['proveedor'] as String,
-                    ),
+                  Text(tipoMovimiento,
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: color)),
+                  Text(
+                    movement['tipo_operacion'] as String? ?? 'Desconocido',
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.grey.shade600),
+                  ),
                 ],
               ),
             ),
-            
-            // Observaciones
-            if (movement['observaciones'] != null && 
-                (movement['observaciones'] as String).isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Observaciones',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey.shade700,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (movement['estado_operacion_nombre'] != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: _getEstadoColor(
+                              movement['estado_operacion_nombre'] as String)
+                          .withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _getEstadoColor(movement[
+                                    'estado_operacion_nombre'] as String)
+                                .withOpacity(0.5),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      movement['observaciones'] as String,
+                    child: Text(
+                      movement['estado_operacion_nombre'] as String,
                       style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: _getEstadoColor(
+                            movement['estado_operacion_nombre'] as String),
                       ),
                     ),
-                  ],
+                  ),
+                const SizedBox(height: 4),
+                Text(
+                  _formatDate(movement['fecha'] as String? ?? ''),
+                  style: TextStyle(
+                      fontSize: 11, color: Colors.grey.shade600),
                 ),
-              ),
+              ],
+            ),
           ],
         ),
-      ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (movement['id_operacion'] != null)
+                _buildDetailRow('Operación #', '${movement['id_operacion']}'),
+              if (movement['cantidad'] != null)
+                _buildDetailRow('Cantidad Movida', '${movement['cantidad']}'),
+              if (movement['cantidad_inicial'] != null)
+                _buildDetailRow(
+                    'Cantidad Inicial', '${movement['cantidad_inicial']}'),
+              if (movement['cantidad_final'] != null)
+                _buildDetailRow(
+                    'Cantidad Final', '${movement['cantidad_final']}'),
+              if (movement['precio_unitario'] != null)
+                _buildDetailRow('Precio Unitario',
+                    '\$${(movement['precio_unitario'] as num).toStringAsFixed(2)}'),
+              if (movement['costo_real'] != null)
+                _buildDetailRow('Costo Real',
+                    '\$${(movement['costo_real'] as num).toStringAsFixed(2)}'),
+              if (movement['importe_real'] != null)
+                _buildDetailRow('Importe Real',
+                    '\$${(movement['importe_real'] as num).toStringAsFixed(2)}'),
+              if (tipoMovimiento == 'Recepción') ...[
+                if (movement['entregado_por'] != null)
+                  _buildDetailRow(
+                      'Entregado Por', movement['entregado_por'] as String),
+                if (movement['recibido_por'] != null)
+                  _buildDetailRow(
+                      'Recibido Por', movement['recibido_por'] as String),
+              ],
+              if (tipoMovimiento == 'Extracción' &&
+                  movement['autorizado_por'] != null)
+                _buildDetailRow(
+                    'Autorizado Por', movement['autorizado_por'] as String),
+              if (movement['almacen'] != null)
+                _buildDetailRow('Almacén', movement['almacen'] as String),
+              if (movement['zona'] != null)
+                _buildDetailRow('Zona', movement['zona'] as String),
+              if (movement['proveedor'] != null)
+                _buildDetailRow('Proveedor', movement['proveedor'] as String),
+            ],
+          ),
+        ),
+        if (movement['observaciones'] != null &&
+            (movement['observaciones'] as String).isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Observaciones',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  movement['observaciones'] as String,
+                  style:
+                      TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
