@@ -1342,6 +1342,9 @@ class OrderService {
           descuento: descuento,
           sellerName: supabaseOrder['usuario_nombre']?.toString(),
           tpvName: supabaseOrder['tpv_nombre']?.toString(),
+          paqueteria:
+              supabaseOrder['detalles']?['paqueteria']
+                  as Map<String, dynamic>?,
         );
 
         _orders.add(order);

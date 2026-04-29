@@ -12,6 +12,7 @@ import '../widgets/bottom_navigation.dart';
 import '../widgets/elaborated_product_chip.dart';
 import '../utils/connection_error_handler.dart';
 import '../widgets/notification_widget.dart';
+import 'package_product_screen.dart';
 
 enum _PriceAdjustmentType {
   increasePercent,
@@ -83,6 +84,21 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   @override
   void initState() {
     super.initState();
+
+    // Si es paquete, redirigir a pantalla dedicada de paquetes
+    if (widget.product.esPaquete) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => PackageProductScreen(
+              product: widget.product,
+              categoryColor: widget.categoryColor,
+            ),
+          ),
+        );
+      });
+      return;
+    }
 
     // Si el producto no tiene stock, mostrar aviso y volver (excepto elaborados y servicios)
     if (widget.product.cantidadReal <= 0 &&

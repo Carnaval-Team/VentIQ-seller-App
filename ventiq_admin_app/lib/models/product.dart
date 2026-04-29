@@ -54,6 +54,9 @@ class Product {
   final List<ProductIngredient> ingredientes;
   final double? costoProduccion;
 
+  // Indica si el producto es un paquete
+  final bool esPaquete;
+
   // Campo de proveedor
   final int? idProveedor;
   final String? nombreProveedor;
@@ -114,6 +117,7 @@ class Product {
     this.esElaborado = false,
     this.ingredientes = const [],
     this.costoProduccion,
+    this.esPaquete = false,
     // Campo de proveedor
     this.idProveedor,
     this.nombreProveedor,
@@ -177,6 +181,7 @@ class Product {
       esElaborado: json['es_elaborado'] ?? false,
       ingredientes: (json['ingredientes'] as List<dynamic>?)?.map((i) => ProductIngredient.fromJson(i)).toList() ?? [],
       costoProduccion: json['costoProduccion'],
+      esPaquete: json['es_paquete'] ?? false,
       // Campo de proveedor
       idProveedor: json['id_proveedor'],
       nombreProveedor: json['nombre_proveedor'] ?? json['proveedor_nombre'],
@@ -224,6 +229,7 @@ class Product {
       'esElaborado': esElaborado,
       'ingredientes': ingredientes.map((i) => i.toJson()).toList(),
       'costoProduccion': costoProduccion,
+      'esPaquete': esPaquete,
       'id_proveedor': idProveedor,
       'nombre_proveedor': nombreProveedor,
       'precio_venta_usd': precioVentaUsd,
@@ -317,6 +323,7 @@ class Product {
     bool? esElaborado,
     List<ProductIngredient>? ingredientes,
     double? costoProduccion,
+    bool? esPaquete,
     int? idProveedor,
     String? nombreProveedor,
     double? precioVentaUsd,
@@ -372,6 +379,7 @@ class Product {
       esElaborado: esElaborado ?? this.esElaborado,
       ingredientes: ingredientes ?? this.ingredientes,
       costoProduccion: costoProduccion ?? this.costoProduccion,
+      esPaquete: esPaquete ?? this.esPaquete,
       idProveedor: idProveedor ?? this.idProveedor,
       nombreProveedor: nombreProveedor ?? this.nombreProveedor,
       precioVentaUsd: clearPrecioVentaUsd ? null : (precioVentaUsd ?? this.precioVentaUsd),

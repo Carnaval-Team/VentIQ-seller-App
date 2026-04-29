@@ -110,6 +110,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
   List<Map<String, dynamic>> _ingredientes = [];
   double _costoProduccionCalculado = 0.0;
 
+  // Es paquete y datos recolectados en el diálogo post-creación
+  bool _esPaquete = false;
+  int? _paqueteUbicacionId;
+  double? _paquetePrecioCosto;
+  int? _paquetePresentacionId;
+
   // Listas dinámicas
   List<String> _etiquetas = [];
   List<Map<String, dynamic>> _multimedias = [];
@@ -185,6 +191,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       _esPorLotes = widget.product!.esPorLotes ?? false;
       _esElaborado = widget.product!.esElaborado ?? false;
       _esServicio = widget.product!.esServicio ?? false;
+      _esPaquete = widget.product!.esPaquete ?? false;
 
       // ✅ AGREGADO: Cargar categoría en modo edición
       final categoryId = int.tryParse(widget.product!.categoryId);
@@ -810,6 +817,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     _esFragil = false;
     _esPeligroso = false;
     _esPorLotes = false;
+    _esPaquete = false;
 
     print('✅ Valores por defecto establecidos correctamente');
   }
@@ -2267,6 +2275,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   onChanged:
                       (value) => setState(() => _esPorLotes = value ?? false),
                 ),
+                CheckboxListTile(
+                  title: const Text('Es Paquete'),
+                  subtitle: const Text(
+                    'Al crear el producto se pedirá ubicación y costo del paquete',
+                  ),
+                  value: _esPaquete,
+                  onChanged:
+                      (value) => setState(() => _esPaquete = value ?? false),
+                ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _diasAlertController,
@@ -2481,6 +2498,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       'es_elaborado': _esElaborado,
       'es_servicio': _esServicio,
       'es_por_lotes': _esPorLotes,
+      'es_paquete': _esPaquete,
       'dias_alert_caducidad':
           _diasAlertController.text.isNotEmpty
               ? int.tryParse(_diasAlertController.text)
@@ -2703,11 +2721,218 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
     }
 
+    // Si es paquete: pedir ubicación y precio de costo, luego registrar inventario
+    if (_esPaquete) {
+      try {
+        // Extraer la presentación base insertada de la respuesta del RPC
+        int? idPresentacionBase;
+        final dataResp = result['data'];
+        if (dataResp is Map<String, dynamic>) {
+          final presentacionesInsertadas = dataResp['presentaciones_insertadas'];
+          if (presentacionesInsertadas is List &&
+              presentacionesInsertadas.isNotEmpty) {
+            Map<String, dynamic>? base;
+            for (final p in presentacionesInsertadas) {
+              if (p is Map<String, dynamic> && p['es_base'] == true) {
+                base = p;
+                break;
+              }
+            }
+            base ??= presentacionesInsertadas.first as Map<String, dynamic>?;
+            if (base != null) {
+              idPresentacionBase = (base['id'] as num?)?.toInt();
+            }
+          }
+        }
+        idPresentacionBase ??= _selectedBasePresentationId;
+
+        final packageInfo = await _showPackageLocationDialog(idTienda);
+        if (packageInfo != null) {
+          final idUbicacion = packageInfo['id_ubicacion'] as int;
+          final precioCosto = packageInfo['precio_costo'] as double?;
+
+          await _supabase.from('app_dat_inventario_productos').insert({
+            'id_producto': productId,
+            'id_ubicacion': idUbicacion,
+            if (idPresentacionBase != null) 'id_presentacion': idPresentacionBase,
+            'cantidad_inicial': 0,
+            'cantidad_final': 1,
+            'sku_producto': _skuController.text,
+            'origen_cambio': 2,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+
+          // Si se ingresó precio de costo, actualizarlo en la presentación
+          if (precioCosto != null && idPresentacionBase != null) {
+            try {
+              await _supabase
+                  .from('app_dat_producto_presentacion')
+                  .update({'precio_promedio': precioCosto})
+                  .eq('id', idPresentacionBase);
+              print('✅ Precio de costo del paquete actualizado: \$${precioCosto.toStringAsFixed(2)}');
+            } catch (e) {
+              print('⚠️ No se pudo actualizar precio_promedio: $e');
+            }
+          }
+          print('✅ Inventario de paquete registrado en ubicación $idUbicacion (presentación $idPresentacionBase)');
+        } else {
+          print('ℹ️ Diálogo de paquete cancelado');
+        }
+      } catch (e) {
+        print('❌ Error registrando inventario de paquete: $e');
+        _showErrorSnackBar('Producto creado, pero falló el registro del paquete: $e');
+      }
+    }
+
     _showSuccessSnackBar('Producto creado exitosamente');
     if (widget.onProductSaved != null) {
       widget.onProductSaved!();
     }
     Navigator.of(context).pop();
+  }
+
+  /// Muestra un diálogo para seleccionar ubicación y precio de costo del paquete.
+  /// Devuelve {'id_ubicacion': int, 'precio_costo': double?} o null si se cancela.
+  Future<Map<String, dynamic>?> _showPackageLocationDialog(int idTienda) async {
+    // Cargar ubicaciones (layouts) de todos los almacenes de la tienda
+    List<Map<String, dynamic>> ubicaciones = [];
+    try {
+      final almacenes = await _supabase
+          .from('app_dat_almacen')
+          .select('id, denominacion')
+          .eq('id_tienda', idTienda);
+
+      final ids = (almacenes as List)
+          .map((a) => a['id'] as int)
+          .toList();
+
+      if (ids.isNotEmpty) {
+        final layouts = await _supabase
+            .from('app_dat_layout_almacen')
+            .select('id, denominacion, sku_codigo, id_almacen')
+            .inFilter('id_almacen', ids)
+            .order('denominacion');
+
+        final almacenNombres = {
+          for (final a in almacenes) a['id'] as int: a['denominacion'] as String,
+        };
+
+        ubicaciones = (layouts as List).map((l) {
+          return {
+            'id': l['id'] as int,
+            'denominacion': l['denominacion'] as String? ?? '',
+            'sku_codigo': l['sku_codigo'] as String? ?? '',
+            'almacen': almacenNombres[l['id_almacen']] ?? '',
+          };
+        }).toList();
+      }
+    } catch (e) {
+      print('❌ Error cargando ubicaciones para paquete: $e');
+    }
+
+    if (!mounted) return null;
+
+    if (ubicaciones.isEmpty) {
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Sin ubicaciones'),
+          content: const Text(
+            'No hay ubicaciones (zonas de almacén) disponibles. Crea al menos una zona antes de registrar un paquete.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        ),
+      );
+      return null;
+    }
+
+    int? selectedId;
+    final precioController = TextEditingController();
+
+    return await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setStateDialog) {
+            return AlertDialog(
+              title: const Text('¿Dónde se almacenarán los paquetes?'),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Selecciona la ubicación disponible:',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<int>(
+                      value: selectedId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        labelText: 'Ubicación',
+                      ),
+                      items: ubicaciones.map((u) {
+                        final label = [
+                          u['almacen'],
+                          u['denominacion'],
+                          if ((u['sku_codigo'] as String).isNotEmpty)
+                            '(${u['sku_codigo']})',
+                        ].where((s) => s.toString().isNotEmpty).join(' · ');
+                        return DropdownMenuItem<int>(
+                          value: u['id'] as int,
+                          child: Text(label, overflow: TextOverflow.ellipsis),
+                        );
+                      }).toList(),
+                      onChanged: (v) => setStateDialog(() => selectedId = v),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: precioController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        labelText: 'Precio de costo del paquete (opcional)',
+                        prefixText: '\$ ',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, null),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: selectedId == null
+                      ? null
+                      : () {
+                          final precio = double.tryParse(
+                            precioController.text.replaceAll(',', '.'),
+                          );
+                          Navigator.pop(ctx, {
+                            'id_ubicacion': selectedId,
+                            'precio_costo': precio,
+                          });
+                        },
+                  child: const Text('Guardar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _updateProduct() async {
@@ -2758,6 +2983,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       'es_elaborado': _esElaborado,
       'es_servicio': _esServicio,
       'es_por_lotes': _esPorLotes,
+      'es_paquete': _esPaquete,
       'dias_alert_caducidad':
           _diasAlertController.text.isNotEmpty
               ? int.tryParse(_diasAlertController.text)

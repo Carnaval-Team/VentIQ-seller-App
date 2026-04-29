@@ -1006,7 +1006,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       _FieldLabel(label: 'Tipo de Documento *'),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        initialValue: _selectedDocType,
+                        value: _selectedDocType,
                         dropdownColor:
                             isDark ? AppTheme.darkCard : Colors.white,
                         style: TextStyle(color: textPrimary),
@@ -1551,7 +1551,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             secondary: const Icon(Icons.ac_unit_outlined),
             value: _vAireAcondicionado,
-            activeThumbColor: AppTheme.primaryColor,
+            activeColor: AppTheme.primaryColor,
             onChanged: (v) => setState(() => _vAireAcondicionado = v),
           ),
         ),
@@ -1573,7 +1573,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _FieldLabel(label: 'Tipo de cuenta'),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
-          initialValue: _shipperTipoCuenta,
+          value: _shipperTipoCuenta,
           dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
           style: TextStyle(color: textPrimary),
           decoration: const InputDecoration(
@@ -1985,7 +1985,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               fontSize: 13),
                         ),
                         value: item.seguroVigente,
-                        activeThumbColor: AppTheme.primaryColor,
+                        activeColor: AppTheme.primaryColor,
                         onChanged: (v) =>
                             setLocal(() => item.seguroVigente = v),
                       ),
@@ -2483,7 +2483,7 @@ class _TransportistaFormCard extends StatelessWidget {
 
           // Tipo carrocería
           DropdownButtonFormField<String>(
-            initialValue: item.tipoCarroceria,
+            value: item.tipoCarroceria,
             dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
             style: TextStyle(color: textPrimary),
             decoration: const InputDecoration(

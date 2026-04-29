@@ -7,7 +7,15 @@
       "Bash(sed \"s/\\\\.rpc\\('//\")",
       "Bash(sed \"s/'$//\")",
       "Bash(sed \"s/.*\\\\.rpc\\('//\")",
-      "Bash(sed \"s/'.*$//\")"
+      "Bash(sed \"s/'.*$//\")",
+      "Read(//c/Users/cesar/Documents/VentIQ-seller-App/ventiq_app/lib/config/**)",
+      "Read(//c/Users/cesar/Documents/VentIQ-seller-App/ventiq_app/lib/utils/**)",
+      "Bash(sed *)",
+      "Bash(sed -n '/^CREATE TABLE public.app_dat_layout_almacen/,/^\\);$/p' VentiQ.sql)",
+      "Bash(sed -n '/^CREATE TABLE public.app_dat_categoria[^_]/,/^\\);$/p' VentiQ.sql)",
+      "Bash(flutter pub *)",
+      "Bash(dart analyze *)",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }

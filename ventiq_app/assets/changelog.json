@@ -1,9 +1,41 @@
 {
-  "current_version": "2.2.2",
-  "build": 824,
+  "current_version": "2.2.3",
+  "build": 825,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.2.3",
+      "date": "2026-04-27",
+      "title": "📦 Vende paquetes con envío de forma más fácil y rápida",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Soporte completo para productos tipo Paquete",
+          "description": "La app reconoce los productos marcados como paquete con envío y abre automáticamente el flujo correcto al venderlos, distinto del de un producto normal."
+        },
+        {
+          "type": "feature",
+          "title": "Nueva pantalla de venta de paquetes",
+          "description": "Cuentas con una pantalla dedicada para vender paquetes con envío: registra el número de paquete, una descripción opcional, toma o adjunta una foto y elige el método de pago, todo desde un mismo lugar."
+        },
+        {
+          "type": "feature",
+          "title": "Promociones y descuentos aplicados al instante",
+          "description": "Si el paquete tiene promoción activa, verás el descuento o recargo claramente reflejado en el precio antes de cobrar, sin tener que hacer cálculos."
+        },
+        {
+          "type": "feature",
+          "title": "Tus órdenes de paquetería bien identificadas",
+          "description": "En el listado de órdenes, las ventas con envío aparecen marcadas con un sello azul de paquetería y muestran los datos del envío y del cliente para que tengas todo a mano."
+        },
+        {
+          "type": "improvement",
+          "title": "Vista optimizada para usar desde la web",
+          "description": "Si trabajas desde una pantalla grande, la pantalla de paquete se reorganiza en dos columnas tipo tienda online: imagen y descripción a un lado, precio, promoción, datos y pago al otro. Más cómoda y profesional."
+        }
+      ]
+    },
     {
       "version": "2.2.2",
       "date": "2026-04-13",

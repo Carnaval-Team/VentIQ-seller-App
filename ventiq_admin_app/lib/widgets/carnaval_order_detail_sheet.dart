@@ -503,6 +503,18 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
                       ),
                       const SizedBox(height: 12),
                     ],
+                    // Paquetería (si aplica)
+                    if (_isPaqueteria) ...[
+                      _buildPaqueteriaBanner(),
+                      const SizedBox(height: 12),
+                      _buildSection('Paquete', _buildPaqueteInfo()),
+                      const SizedBox(height: 12),
+                      _buildSection('Remitente', _buildPersonaInfo(_remitente)),
+                      const SizedBox(height: 12),
+                      _buildSection(
+                          'Destinatario', _buildPersonaInfo(_destinatarioPaq)),
+                      const SizedBox(height: 12),
+                    ],
                     // Cliente
                     _buildSection('Cliente', _buildClienteInfo()),
                     const SizedBox(height: 12),
@@ -611,6 +623,145 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
           Expanded(
               child: Text(value, style: const TextStyle(fontSize: 13))),
         ],
+      ),
+    );
+  }
+
+  Map<String, dynamic>? get _paqueteria {
+    final p = _order['paqueteria'];
+    if (p is Map && p.isNotEmpty) return Map<String, dynamic>.from(p);
+    return null;
+  }
+
+  bool get _isPaqueteria => _paqueteria != null;
+
+  Map<String, dynamic>? get _paquete {
+    final v = _paqueteria?['paquete'];
+    return v is Map ? Map<String, dynamic>.from(v) : null;
+  }
+
+  Map<String, dynamic>? get _remitente {
+    final v = _paqueteria?['remitente'];
+    return v is Map ? Map<String, dynamic>.from(v) : null;
+  }
+
+  Map<String, dynamic>? get _destinatarioPaq {
+    final v = _paqueteria?['destinatario'];
+    return v is Map ? Map<String, dynamic>.from(v) : null;
+  }
+
+  Widget _buildPaqueteriaBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.deepPurple.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.deepPurple.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.local_shipping_outlined,
+              size: 20, color: Colors.deepPurple.shade400),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Orden de Paquetería',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Colors.deepPurple.shade700,
+              ),
+            ),
+          ),
+          if (_paquete?['numero'] != null)
+            Text(
+              '#${_paquete!['numero']}',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.deepPurple.shade400,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPaqueteInfo() {
+    final p = _paquete ?? const {};
+    final fotoUrl = p['foto_url']?.toString();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildInfoRow('Número', p['numero']?.toString() ?? '-'),
+        _buildInfoRow('Descripción', p['descripcion']?.toString() ?? '-'),
+        if (p['peso'] != null && p['peso'].toString().isNotEmpty)
+          _buildInfoRow('Peso', p['peso'].toString()),
+        if (fotoUrl != null && fotoUrl.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: GestureDetector(
+              onTap: () => _showPhotoPreview(fotoUrl),
+              child: Image.network(
+                fotoUrl,
+                height: 180,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 120,
+                  color: Colors.grey[200],
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.broken_image, color: Colors.grey),
+                ),
+                loadingBuilder: (ctx, child, progress) {
+                  if (progress == null) return child;
+                  return Container(
+                    height: 120,
+                    color: Colors.grey[100],
+                    alignment: Alignment.center,
+                    child: const CircularProgressIndicator(strokeWidth: 2),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPersonaInfo(Map<String, dynamic>? persona) {
+    if (persona == null) {
+      return const Text('-', style: TextStyle(color: Colors.grey));
+    }
+    final provincia = persona['provincia_nombre']?.toString();
+    final municipio = persona['municipio_nombre']?.toString();
+    return Column(
+      children: [
+        _buildInfoRow('Nombre', persona['nombre']?.toString() ?? '-'),
+        _buildInfoRow('Teléfono', persona['telefono']?.toString() ?? '-'),
+        _buildInfoRow('Dirección', persona['direccion']?.toString() ?? '-'),
+        _buildInfoRow('Municipio',
+            (municipio != null && municipio.isNotEmpty) ? municipio : '-'),
+        _buildInfoRow('Provincia',
+            (provincia != null && provincia.isNotEmpty) ? provincia : '-'),
+      ],
+    );
+  }
+
+  void _showPhotoPreview(String url) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(12),
+        child: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: InteractiveViewer(
+            child: Image.network(url, fit: BoxFit.contain),
+          ),
+        ),
       ),
     );
   }

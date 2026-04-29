@@ -1,9 +1,41 @@
 {
-  "current_version": "2.1.3",
-  "build": 213,
+  "current_version": "2.1.4",
+  "build": 214,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.1.4",
+      "date": "2026-04-27",
+      "title": "📦 Nuevo módulo de Paquetería de punta a punta",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Crea productos tipo Paquete",
+          "description": "Al dar de alta un producto ya puedes marcarlo como paquete con envío. Estos productos quedan listos para venderse con coordinación de entrega tanto desde la app de venta como desde Carnaval App."
+        },
+        {
+          "type": "feature",
+          "title": "Recibe órdenes de paquetería desde Carnaval App",
+          "description": "Las órdenes de tus clientes en Carnaval App con productos tipo paquete entran automáticamente al sistema con todos los datos necesarios para gestionar el envío."
+        },
+        {
+          "type": "feature",
+          "title": "Identifica al instante las ventas con paquetería",
+          "description": "En el panel de Ventas, las órdenes que incluyen envío con paquetería ahora se distinguen con un sello azul muy visible. Así sabes de un vistazo cuáles necesitan coordinación de entrega."
+        },
+        {
+          "type": "feature",
+          "title": "Toda la información de envío en un solo lugar",
+          "description": "Al abrir el detalle de cualquier orden con paquetería, en Pendientes, Transferencias u Órdenes, verás una nueva sección con el número de paquete, la descripción y los datos del cliente listos para coordinar la entrega sin tener que buscarlos por separado."
+        },
+        {
+          "type": "improvement",
+          "title": "Detalle más limpio y ordenado",
+          "description": "Cuando una orden ya trae los datos del cliente dentro del bloque de paquetería, evitamos repetirlos arriba para que la vista quede más clara y ordenada."
+        }
+      ]
+    },
     {
       "version": "2.1.2",
       "date": "2026-04-22",

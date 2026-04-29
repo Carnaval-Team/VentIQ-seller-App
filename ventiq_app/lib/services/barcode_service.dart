@@ -123,6 +123,7 @@ class BarcodeService {
       esPorLotes: data['es_por_lotes'] ?? false,
       esElaborado: data['es_elaborado'] ?? false,
       esServicio: data['es_servicio'] ?? false,
+      esPaquete: data['es_paquete'] ?? false,
     );
   }
 }

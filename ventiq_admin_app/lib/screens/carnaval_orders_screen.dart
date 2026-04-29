@@ -176,6 +176,19 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     }
   }
 
+  String _formatDestino(String? nombre, String? municipio, String? provincia) {
+    final parts = <String>[];
+    if (nombre != null && nombre.isNotEmpty) parts.add(nombre);
+    final loc = [
+      if (municipio != null && municipio.isNotEmpty && municipio != '-')
+        municipio,
+      if (provincia != null && provincia.isNotEmpty && provincia != '-')
+        provincia,
+    ].join(', ');
+    if (loc.isNotEmpty) parts.add('→ $loc');
+    return parts.join(' ');
+  }
+
   Color _paymentColor(String? metodoPago) {
     switch (metodoPago?.toLowerCase()) {
       case 'efectivo':
@@ -388,6 +401,19 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     final clientePhone = usuario?['telefono'] as String? ?? '';
     final ventiqOpId = _ventiqOps[orderId];
 
+    final paqueteria = order['paqueteria'];
+    final isPaqueteria = paqueteria is Map && paqueteria.isNotEmpty;
+    final paquete = isPaqueteria ? paqueteria['paquete'] as Map? : null;
+    final numeroPaquete = paquete?['numero']?.toString();
+    final descPaquete = paquete?['descripcion']?.toString();
+    final destinatarioInfo =
+        isPaqueteria ? paqueteria['destinatario'] as Map? : null;
+    final destNombre = destinatarioInfo?['nombre']?.toString();
+    final destMunicipio =
+        destinatarioInfo?['municipio_nombre']?.toString();
+    final destProvincia =
+        destinatarioInfo?['provincia_nombre']?.toString();
+
     String dateStr = '-';
     if (createdAt != null) {
       final dt = DateTime.tryParse(createdAt);
@@ -399,6 +425,12 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: isPaqueteria
+            ? const BorderSide(color: Colors.blue, width: 2)
+            : BorderSide.none,
+      ),
       child: InkWell(
         onTap: () => _openOrderDetail(order),
         borderRadius: BorderRadius.circular(12),
@@ -409,6 +441,11 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
             children: [
               Row(
                 children: [
+                  if (isPaqueteria) ...[
+                    const Icon(Icons.local_shipping_outlined,
+                        size: 18, color: Colors.blue),
+                    const SizedBox(width: 6),
+                  ],
                   Text(
                     'Orden #$orderId',
                     style: const TextStyle(
@@ -416,6 +453,33 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                       fontSize: 16,
                     ),
                   ),
+                  if (isPaqueteria) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.inventory_2_outlined,
+                              size: 12, color: Colors.blue),
+                          SizedBox(width: 3),
+                          Text(
+                            'Paquete',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blue,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const Spacer(),
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -435,6 +499,74 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                   ),
                 ],
               ),
+              if (isPaqueteria && (numeroPaquete != null || descPaquete != null)) ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: Colors.blue.withValues(alpha: 0.2)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (numeroPaquete != null && numeroPaquete.isNotEmpty)
+                        Row(
+                          children: [
+                            const Icon(Icons.confirmation_number_outlined,
+                                size: 13, color: Colors.blue),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Paquete #$numeroPaquete',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.blue.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      if (descPaquete != null && descPaquete.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          descPaquete,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      ],
+                      if (destNombre != null && destNombre.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Icon(Icons.person_pin_circle_outlined,
+                                size: 13, color: Colors.grey[600]),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                _formatDestino(destNombre, destMunicipio,
+                                    destProvincia),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
               if (clienteName.isNotEmpty || clientePhone.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Row(

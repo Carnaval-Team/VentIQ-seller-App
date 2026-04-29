@@ -1154,6 +1154,41 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             ),
                           ),
                         ],
+                        if (_getPackageNumber(order) != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: Colors.blue.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.local_shipping_outlined,
+                                  size: 11,
+                                  color: Colors.blue,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  '#${_getPackageNumber(order)}',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1378,6 +1413,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return match?.group(1);
   }
 
+  /// Devuelve el número de paquete si la orden es de paquetería, null si no.
+  String? _getPackageNumber(Order order) {
+    final paq = order.paqueteria;
+    if (paq == null || paq.isEmpty) return null;
+    final numero = paq['numero_paquete']?.toString() ??
+        (paq['paqueteria'] as Map<String, dynamic>?)?['paquete']?['numero']
+            ?.toString();
+    if (numero == null || numero.trim().isEmpty) return null;
+    return numero.trim();
+  }
+
+  /// Devuelve el sub-objeto interno con remitente/destinatario/paquete.
+  Map<String, dynamic>? _getPackageInfo(Order order) {
+    final paq = order.paqueteria;
+    if (paq == null || paq.isEmpty) return null;
+    final inner = paq['paqueteria'];
+    if (inner is Map<String, dynamic>) return inner;
+    return null;
+  }
+
   bool _canPrintOrder(Order order) {
     if (order.status == OrderStatus.pagoConfirmado ||
         order.status == OrderStatus.completada) {
@@ -1571,15 +1626,42 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ),
                       ],
 
-                      // ── Datos del cliente ─────────────────────────────────
+                      // ── Paquete (paquetería) ──────────────────────────────
+                      if (_getPackageNumber(order) != null) ...[
+                        const SizedBox(height: 12),
+                        _buildPackageSection(order),
+                      ],
+
+                      // ── Datos del cliente / Remitente y destinatario ──────
                       const SizedBox(height: 12),
                       _buildDetailSection(
-                        title: 'Datos del Cliente',
-                        icon: Icons.person_outline,
+                        title: _getPackageInfo(order) != null
+                            ? 'Remitente y Destinatario'
+                            : 'Datos del Cliente',
+                        icon: _getPackageInfo(order) != null
+                            ? Icons.swap_horiz
+                            : Icons.person_outline,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (order.buyerName != null ||
+                            if (_getPackageInfo(order) != null) ...[
+                              _buildPartyBlock(
+                                title: 'Remitente',
+                                icon: Icons.outbox_outlined,
+                                color: const Color(0xFF4A90E2),
+                                data: _getPackageInfo(order)!['remitente']
+                                    as Map<String, dynamic>?,
+                              ),
+                              const SizedBox(height: 10),
+                              _buildPartyBlock(
+                                title: 'Destinatario',
+                                icon: Icons.move_to_inbox_outlined,
+                                color: const Color(0xFF10B981),
+                                data: _getPackageInfo(order)!['destinatario']
+                                    as Map<String, dynamic>?,
+                              ),
+                              const SizedBox(height: 4),
+                            ] else if (order.buyerName != null ||
                                 order.buyerPhone != null) ...[
                               if (order.buyerName != null)
                                 _buildDetailRowNew(
@@ -1611,7 +1693,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   ),
                                 ),
                               ),
-                            if (_getCarnavalOrderId(order.notas) == null)
+                            if (_getCarnavalOrderId(order.notas) == null &&
+                                _getPackageInfo(order) == null)
                             SizedBox(
                               width: double.infinity,
                               child: OutlinedButton.icon(
@@ -1923,6 +2006,124 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Sección de información del paquete (foto, número y descripción).
+  Widget _buildPackageSection(Order order) {
+    final info = _getPackageInfo(order);
+    final paquete =
+        (info?['paquete'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
+    final numero = paquete['numero']?.toString() ??
+        order.paqueteria?['numero_paquete']?.toString();
+    final descripcion = paquete['descripcion']?.toString() ??
+        order.paqueteria?['descripcion']?.toString();
+    final fotoUrl = paquete['foto_url']?.toString();
+
+    return _buildDetailSection(
+      title: 'Paquete',
+      icon: Icons.local_shipping_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (fotoUrl != null && fotoUrl.trim().isNotEmpty) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.network(
+                fotoUrl,
+                width: double.infinity,
+                height: 180,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 120,
+                  color: Colors.grey[100],
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.broken_image_outlined,
+                    color: Colors.grey[400],
+                    size: 40,
+                  ),
+                ),
+                loadingBuilder: (_, child, progress) {
+                  if (progress == null) return child;
+                  return Container(
+                    height: 120,
+                    color: Colors.grey[100],
+                    alignment: Alignment.center,
+                    child: const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (numero != null && numero.trim().isNotEmpty)
+            _buildDetailRowNew('Nº paquete', '#${numero.trim()}'),
+          if (descripcion != null && descripcion.trim().isNotEmpty)
+            _buildDetailRowNew('Descripción', descripcion.trim()),
+        ],
+      ),
+    );
+  }
+
+  /// Bloque visual con los datos de remitente/destinatario.
+  Widget _buildPartyBlock({
+    required String title,
+    required IconData icon,
+    required Color color,
+    required Map<String, dynamic>? data,
+  }) {
+    if (data == null || data.isEmpty) return const SizedBox.shrink();
+
+    final nombre = data['nombre']?.toString();
+    final telefono = data['telefono']?.toString();
+    final direccion = data['direccion']?.toString();
+    final municipio = data['municipio_nombre']?.toString();
+    final provincia = data['provincia_nombre']?.toString();
+    final ubicacion = [
+      if (municipio != null && municipio.trim().isNotEmpty) municipio,
+      if (provincia != null && provincia.trim().isNotEmpty) provincia,
+    ].join(', ');
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 6),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (nombre != null && nombre.trim().isNotEmpty)
+            _buildDetailRowNew('Nombre', nombre),
+          if (telefono != null && telefono.trim().isNotEmpty)
+            _buildDetailRowNew('Teléfono', telefono),
+          if (direccion != null && direccion.trim().isNotEmpty)
+            _buildDetailRowNew('Dirección', direccion),
+          if (ubicacion.isNotEmpty)
+            _buildDetailRowNew('Ubicación', ubicacion),
         ],
       ),
     );
