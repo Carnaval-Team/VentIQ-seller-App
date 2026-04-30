@@ -3,12 +3,15 @@ import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import 'inventory_reception_screen.dart';
-import 'inventory_operations_screen.dart';
-import 'inventory_warehouse_screen.dart';
-import 'inventory_stock_screen.dart';
+import 'inventory_reception_web_screen.dart';
+import 'inventory_operations_web_screen.dart';
+import 'inventory_warehouse_web_screen.dart';
+import 'warehouse_web_screen.dart';
+import 'inventory_stock_web_screen.dart';
 import 'inventory_transfer_screen.dart';
 import 'inventory_extraction_screen.dart';
 import 'inventory_adjustment_screen.dart';
+import 'inventory_adjustment_web_screen.dart';
 import 'elaborated_products_extraction_screen.dart';
 import 'inventory_extractionbysale_screen.dart';
 import 'inventory_dashboard.dart';
@@ -17,6 +20,7 @@ import '../utils/platform_utils.dart';
 import 'consignacion_screen.dart';
 import 'inventory_ipv_report_screen.dart';
 import '../widgets/notification_widget.dart';
+import '../widgets/inventory_export_dialog_web.dart';
 import '../services/permissions_service.dart';
 
 class InventoryWebScreen extends StatefulWidget {
@@ -124,7 +128,7 @@ class _InventoryWebScreenState extends State<InventoryWebScreen>
       context: context,
       builder: (context) {
         final screenW = MediaQuery.of(context).size.width;
-        final dialogW = screenW < 600 ? screenW * 0.94 : 620.0;
+        final dialogW = screenW < 600 ? screenW * 0.94 : 760.0;
         return Dialog(
           backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(
@@ -186,7 +190,7 @@ class _InventoryWebScreenState extends State<InventoryWebScreen>
                         const EdgeInsets.fromLTRB(20, 18, 20, 18),
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        final isWide = constraints.maxWidth >= 520;
+                        final isWide = constraints.maxWidth >= 600;
                         final colCount = isWide ? 2 : 1;
                         final spacing = 10.0;
                         final itemWidth = (constraints.maxWidth -
@@ -340,8 +344,9 @@ class _InventoryWebScreenState extends State<InventoryWebScreen>
                       fontWeight: FontWeight.w700,
                       color: AppColors.textPrimary,
                       letterSpacing: 0.1,
+                      height: 1.25,
                     ),
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
@@ -377,7 +382,9 @@ class _InventoryWebScreenState extends State<InventoryWebScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const InventoryReceptionScreen(),
+        builder: (context) => PlatformUtils.isWeb
+            ? const InventoryReceptionWebScreen()
+            : const InventoryReceptionScreen(),
       ),
     );
   }
@@ -438,10 +445,24 @@ class _InventoryWebScreenState extends State<InventoryWebScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const InventoryAdjustmentScreen(
-          operationType: 4,
-          adjustmentType: 'excess',
-        ),
+        builder: (context) => PlatformUtils.isWeb
+            ? const InventoryAdjustmentWebScreen(
+                operationType: 4,
+                adjustmentType: 'excess',
+              )
+            : const InventoryAdjustmentScreen(
+                operationType: 4,
+                adjustmentType: 'excess',
+              ),
+      ),
+    );
+  }
+
+  void _navigateToWarehouseManagement() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const WarehouseWebScreen(),
       ),
     );
   }
@@ -450,10 +471,15 @@ class _InventoryWebScreenState extends State<InventoryWebScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const InventoryAdjustmentScreen(
-          operationType: 3,
-          adjustmentType: 'shortage',
-        ),
+        builder: (context) => PlatformUtils.isWeb
+            ? const InventoryAdjustmentWebScreen(
+                operationType: 3,
+                adjustmentType: 'shortage',
+              )
+            : const InventoryAdjustmentScreen(
+                operationType: 3,
+                adjustmentType: 'shortage',
+              ),
       ),
     );
   }
@@ -480,20 +506,60 @@ class _InventoryWebScreenState extends State<InventoryWebScreen>
   }
 
   Widget? _buildFloatingActionButton() {
-    if (!_canCreateInventoryOperations) {
+    final showOperations = _canCreateInventoryOperations;
+    final isStockTab = _tabController.index == 1;
+    final isWarehouseTab = _tabController.index == 3;
+
+    if (!showOperations && !isStockTab && !isWarehouseTab) {
       return null;
     }
-    return FloatingActionButton.extended(
-      onPressed: _showFabOptions,
-      backgroundColor: AppColors.primary,
-      foregroundColor: Colors.white,
-      elevation: 2,
-      tooltip: 'Opciones de inventario',
-      icon: const Icon(Icons.add_rounded),
-      label: const Text(
-        'Operaciones',
-        style: TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.2),
-      ),
+
+    final children = <Widget>[];
+
+    if (isStockTab) {
+      children.add(
+        _CompactActionButton(
+          heroTag: 'inv_export_fab',
+          icon: Icons.file_download_outlined,
+          label: 'Exportar',
+          tooltip: 'Exportar inventario',
+          backgroundColor: const Color(0xFF10B981),
+          onPressed: () => showInventoryExportDialogWeb(context),
+        ),
+      );
+    }
+
+    if (isWarehouseTab) {
+      children.add(
+        _CompactActionButton(
+          heroTag: 'inv_manage_warehouse_fab',
+          icon: Icons.settings_rounded,
+          label: 'Gestionar',
+          tooltip: 'Gestionar almacenes',
+          backgroundColor: AppColors.primary,
+          onPressed: _navigateToWarehouseManagement,
+        ),
+      );
+    } else if (showOperations) {
+      if (children.isNotEmpty) children.add(const SizedBox(height: 10));
+      children.add(
+        _CompactActionButton(
+          heroTag: 'inv_operations_fab',
+          icon: Icons.add_rounded,
+          label: 'Operaciones',
+          tooltip: 'Opciones de inventario',
+          backgroundColor: AppColors.primary,
+          onPressed: _showFabOptions,
+        ),
+      );
+    }
+
+    if (children.isEmpty) return null;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: children,
     );
   }
 
@@ -530,13 +596,9 @@ class _InventoryWebScreenState extends State<InventoryWebScreen>
           const SizedBox(width: 4),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(56),
+          preferredSize: const Size.fromHeight(48),
           child: Container(
             color: AppColors.primary,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 24,
-              vertical: 8,
-            ),
             child: Center(
               child: ConstrainedBox(
                 constraints:
@@ -561,12 +623,12 @@ class _InventoryWebScreenState extends State<InventoryWebScreen>
                       controller: _tabController,
                       children: [
                         const _PlatformAwareInventoryDashboard(),
-                        InventoryStockScreen(
+                        InventoryStockWebScreen(
                           isAlmacenero: _isAlmacenero,
                           assignedWarehouseId: _assignedWarehouseId,
                         ),
-                        const InventoryOperationsScreen(),
-                        const InventoryWarehouseScreen(),
+                        const InventoryOperationsWebScreen(),
+                        const InventoryWarehouseWebScreen(),
                       ],
                     ),
                   ),
@@ -588,66 +650,50 @@ class _InventoryWebScreenState extends State<InventoryWebScreen>
       _TabData('Almacenes', Icons.warehouse_rounded),
     ];
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(12),
+    return TabBar(
+      controller: _tabController,
+      isScrollable: false,
+      labelColor: Colors.white,
+      unselectedLabelColor: Colors.white.withOpacity(0.72),
+      labelStyle: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.2,
       ),
-      padding: const EdgeInsets.all(4),
-      child: TabBar(
-        controller: _tabController,
-        isScrollable: false,
-        labelColor: AppColors.primary,
-        unselectedLabelColor: Colors.white,
-        labelStyle: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.2,
-        ),
-        unselectedLabelStyle: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-        ),
-        indicator: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        indicatorSize: TabBarIndicatorSize.tab,
-        dividerColor: Colors.transparent,
-        splashFactory: NoSplash.splashFactory,
-        overlayColor: WidgetStateProperty.resolveWith(
-          (states) => Colors.white.withOpacity(0.06),
-        ),
-        tabs: tabs
-            .map(
-              (t) => Tab(
-                height: 40,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(t.icon, size: 16),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        t.label,
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
+      unselectedLabelStyle: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+      ),
+      indicatorColor: Colors.white,
+      indicatorWeight: 3,
+      indicatorSize: TabBarIndicatorSize.label,
+      dividerColor: Colors.transparent,
+      splashFactory: NoSplash.splashFactory,
+      overlayColor: WidgetStateProperty.resolveWith(
+        (states) => Colors.white.withOpacity(0.08),
+      ),
+      tabs: tabs
+          .map(
+            (t) => Tab(
+              height: 48,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(t.icon, size: 18),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      t.label,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            )
-            .toList(),
-      ),
+            ),
+          )
+          .toList(),
     );
   }
 
@@ -768,4 +814,59 @@ class _InventoryOption {
     required this.color,
     required this.onTap,
   });
+}
+
+class _CompactActionButton extends StatelessWidget {
+  final String heroTag;
+  final IconData icon;
+  final String label;
+  final String tooltip;
+  final Color backgroundColor;
+  final VoidCallback onPressed;
+
+  const _CompactActionButton({
+    required this.heroTag,
+    required this.icon,
+    required this.label,
+    required this.tooltip,
+    required this.backgroundColor,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: backgroundColor,
+        elevation: 3,
+        shadowColor: backgroundColor.withOpacity(0.35),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:ventiq_admin_app/screens/excel_import_screen.dart';
 import 'package:ventiq_admin_app/screens/suppliers/supplier_reports_screen.dart';
 import 'package:ventiq_admin_app/widgets/supplier/supplier_alerts_widget.dart';
@@ -86,6 +87,16 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Inventtia Admin',
       debugShowCheckedModeBanner: false,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('es'),
+        Locale('en'),
+      ],
+      locale: const Locale('es'),
       // Configuración específica para web deployment
       // useInheritedMediaQuery: true,
       theme: ThemeData(
