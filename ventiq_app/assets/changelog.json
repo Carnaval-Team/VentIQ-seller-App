@@ -1,9 +1,36 @@
 {
-  "current_version": "2.2.3",
-  "build": 825,
+  "current_version": "2.2.4",
+  "build": 826,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.2.4",
+      "date": "2026-04-30",
+      "title": "🚀 Inventario más preciso y mejor respuesta ante fallos de conexión",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Inventario más rápido y exacto",
+          "description": "Optimizamos el sistema para que siempre veas el stock más reciente en cada almacén de forma inmediata."
+        },
+        {
+          "type": "improvement",
+          "title": "Mejor respuesta ante falta de internet",
+          "description": "Ahora la app te avisa claramente si hay un problema de conexión al verificar el stock, evitando errores y dándote el control para reintentar."
+        },
+        {
+          "type": "improvement",
+          "title": "Cierre de turno inteligente",
+          "description": "Mejoramos la seguridad al cerrar turno. La aplicación ahora distingue entre una caída de internet y un error real, asegurando que tu trabajo se guarde sin conexión si es necesario."
+        },
+        {
+          "type": "improvement",
+          "title": "Control de inventario por ubicación",
+          "description": "Al finalizar el día, ahora cuentas con una vista detallada de tus productos por cada ubicación, facilitando el control de tus existencias."
+        }
+      ]
+    },
     {
       "version": "2.2.3",
       "date": "2026-04-27",

@@ -1,0 +1,489 @@
+﻿commit 8bc19475998308dc9d2201dc4adf223ad5336fff
+Author: aicemaria112 <aicemaria112@gmail.com>
+Date:   Thu Apr 30 11:32:51 2026 -0400
+
+    Llamando a fn_listar_inventario_productos_paged...
+
+diff --git a/ventiq_app/.claude/settings.local.json b/ventiq_app/.claude/settings.local.json
+index e4cb986..f8168fd 100644
+--- a/ventiq_app/.claude/settings.local.json
++++ b/ventiq_app/.claude/settings.local.json
+@@ -2,7 +2,8 @@
+   "permissions": {
+     "allow": [
+       "Bash(flutter analyze:*)",
+-      "Bash(grep -vE \"avoid_print|^Analyzing|^\\\\s*$\")"
++      "Bash(grep -vE \"avoid_print|^Analyzing|^\\\\s*$\")",
++      "Bash(grep -vE \"avoid_print|^Analyzing|^\\\\s*$|withOpacity|deprecated_member_use|use_build_context_synchronously\")"
+     ]
+   }
+ }
+diff --git a/ventiq_app/lib/screens/apertura_screen.dart b/ventiq_app/lib/screens/apertura_screen.dart
+index d41b7cb..56fe04d 100644
+--- a/ventiq_app/lib/screens/apertura_screen.dart
++++ b/ventiq_app/lib/screens/apertura_screen.dart
+@@ -918,7 +918,6 @@ class _AperturaScreenState extends State<AperturaScreen> {
+       }
+ 
+       final userData = await _userPrefs.getUserData();
+-      final idAlmacen = await _userPrefs.getIdAlmacen();
+       final idTiendaRaw = userData['idTienda'];
+       final idTienda =
+           idTiendaRaw is int
+@@ -927,7 +926,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
+ 
+       if (idTienda == null) return [];
+       print(
+-        '­ƒôª Obteniendo ubicaciones del producto $productId para tienda $idTienda... almacen: $idAlmacen',
++        '­ƒôª Obteniendo ubicaciones del producto $productId para tienda $idTienda (todos los almacenes)...',
+       );
+       final response = await Supabase.instance.client.rpc(
+         'fn_listar_inventario_productos_paged2',
+@@ -937,7 +936,6 @@ class _AperturaScreenState extends State<AperturaScreen> {
+           'p_limite': 9999,
+           'p_mostrar_sin_stock': true,
+           'p_pagina': 1,
+-          'p_id_almacen': idAlmacen,
+         },
+       );
+ 
+@@ -1733,10 +1731,17 @@ class _AperturaScreenState extends State<AperturaScreen> {
+             );
+             Navigator.of(context).pop(true);
+           } else {
++            final errorKind = result['errorKind'];
++            final isNetwork = errorKind == TurnoErrorKind.network;
+             ScaffoldMessenger.of(context).showSnackBar(
+               SnackBar(
+-                content: Text(result['message'] ?? 'Error desconocido'),
++                content: Text(
++                  isNetwork
++                      ? 'Sin conexi├│n al servidor. Intenta nuevamente cuando tengas conexi├│n.'
++                      : (result['message'] ?? 'Error desconocido'),
++                ),
+                 backgroundColor: Colors.red,
++                duration: const Duration(seconds: 4),
+               ),
+             );
+           }
+@@ -2257,7 +2262,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
+                                               Text(
+                                                 'Desglose por ubicaci├│n:',
+                                                 style: TextStyle(
+-                                                  fontSize: 9,
++                                                  fontSize: 12,
+                                                   fontWeight: FontWeight.w600,
+                                                   color: Colors.grey[700],
+                                                 ),
+@@ -2283,10 +2288,10 @@ class _AperturaScreenState extends State<AperturaScreen> {
+                                                               child: Text(
+                                                                 '${loc['almacen']} - ${loc['ubicacion']}',
+                                                                 style: TextStyle(
+-                                                                  fontSize: 8,
++                                                                  fontSize: 11,
+                                                                   color:
+                                                                       Colors
+-                                                                          .grey[600],
++                                                                          .grey[700],
+                                                                 ),
+                                                                 overflow:
+                                                                     TextOverflow
+@@ -2299,13 +2304,13 @@ class _AperturaScreenState extends State<AperturaScreen> {
+                                                                 Text(
+                                                                   locReal.toStringAsFixed(2),
+                                                                   style: TextStyle(
+-                                                                    fontSize: 8,
++                                                                    fontSize: 11,
+                                                                     fontWeight:
+                                                                         FontWeight
+-                                                                            .w500,
++                                                                            .w600,
+                                                                     color:
+                                                                         Colors
+-                                                                            .grey[800],
++                                                                            .grey[900],
+                                                                   ),
+                                                                 ),
+                                                                 if (locReservado > 0) ...[
+@@ -2313,7 +2318,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
+                                                                   Text(
+                                                                     '(res: ${locReservado.toStringAsFixed(0)})',
+                                                                     style: TextStyle(
+-                                                                      fontSize: 7,
++                                                                      fontSize: 10,
+                                                                       fontWeight: FontWeight.w600,
+                                                                       color: Colors.orange[700],
+                                                                     ),
+diff --git a/ventiq_app/lib/screens/cierre_screen.dart b/ventiq_app/lib/screens/cierre_screen.dart
+index b57623b..c4f84d6 100644
+--- a/ventiq_app/lib/screens/cierre_screen.dart
++++ b/ventiq_app/lib/screens/cierre_screen.dart
+@@ -1104,6 +1104,110 @@ class _CierreScreenState extends State<CierreScreen> {
+                                           ),
+                                         ],
+                                       ),
++                                      // Desglose por ubicaci├│n (muy peque├▒o)
++                                      if (locations.isNotEmpty) ...[
++                                        const SizedBox(height: 8),
++                                        Container(
++                                          padding: const EdgeInsets.all(6),
++                                          decoration: BoxDecoration(
++                                            color: Colors.grey[100],
++                                            borderRadius:
++                                                BorderRadius.circular(4),
++                                          ),
++                                          child: Column(
++                                            crossAxisAlignment:
++                                                CrossAxisAlignment.start,
++                                            children: [
++                                              Text(
++                                                'Desglose por ubicaci├│n:',
++                                                style: TextStyle(
++                                                  fontSize: 12,
++                                                  fontWeight: FontWeight.w600,
++                                                  color: Colors.grey[700],
++                                                ),
++                                              ),
++                                              const SizedBox(height: 4),
++                                              ...locations.map((loc) {
++                                                final locCantidad =
++                                                    loc['cantidad'] as double;
++                                                final locReservado =
++                                                    ((loc['reservado_carnaval']
++                                                                as num?)
++                                                            ?.toDouble() ??
++                                                        0.0);
++                                                final locReal =
++                                                    (locCantidad - locReservado)
++                                                        .clamp(
++                                                          0.0,
++                                                          double.infinity,
++                                                        );
++                                                return Padding(
++                                                  padding:
++                                                      const EdgeInsets.only(
++                                                        bottom: 2,
++                                                      ),
++                                                  child: Row(
++                                                    mainAxisAlignment:
++                                                        MainAxisAlignment
++                                                            .spaceBetween,
++                                                    children: [
++                                                      Expanded(
++                                                        child: Text(
++                                                          '${loc['almacen']} - ${loc['ubicacion']}',
++                                                          style: TextStyle(
++                                                            fontSize: 11,
++                                                            color: Colors
++                                                                .grey[700],
++                                                          ),
++                                                          overflow: TextOverflow
++                                                              .ellipsis,
++                                                        ),
++                                                      ),
++                                                      Row(
++                                                        mainAxisSize:
++                                                            MainAxisSize.min,
++                                                        children: [
++                                                          Text(
++                                                            locReal
++                                                                .toStringAsFixed(
++                                                                  2,
++                                                                ),
++                                                            style: TextStyle(
++                                                              fontSize: 11,
++                                                              fontWeight:
++                                                                  FontWeight
++                                                                      .w600,
++                                                              color: Colors
++                                                                  .grey[900],
++                                                            ),
++                                                          ),
++                                                          if (locReservado >
++                                                              0) ...[
++                                                            const SizedBox(
++                                                              width: 3,
++                                                            ),
++                                                            Text(
++                                                              '(res: ${locReservado.toStringAsFixed(0)})',
++                                                              style: TextStyle(
++                                                                fontSize: 10,
++                                                                fontWeight:
++                                                                    FontWeight
++                                                                        .w600,
++                                                                color: Colors
++                                                                    .orange[700],
++                                                              ),
++                                                            ),
++                                                          ],
++                                                        ],
++                                                      ),
++                                                    ],
++                                                  ),
++                                                );
++                                              }).toList(),
++                                            ],
++                                          ),
++                                        ),
++                                      ],
+                                     ],
+                                   ),
+                                 );
+@@ -1233,7 +1337,6 @@ class _CierreScreenState extends State<CierreScreen> {
+       }
+ 
+       final userData = await _userPrefs.getUserData();
+-      final idAlmacen = await _userPrefs.getIdAlmacen();
+       final idTiendaRaw = userData['idTienda'];
+       final idTienda =
+           idTiendaRaw is int
+@@ -1242,7 +1345,7 @@ class _CierreScreenState extends State<CierreScreen> {
+ 
+       if (idTienda == null) return [];
+       print(
+-        '­ƒôª Obteniendo ubicaciones del producto $productId para tienda $idTienda... almacen: $idAlmacen',
++        '­ƒôª Obteniendo ubicaciones del producto $productId para tienda $idTienda (todos los almacenes)...',
+       );
+       final response = await Supabase.instance.client.rpc(
+         'fn_listar_inventario_productos_paged2',
+@@ -1252,7 +1355,6 @@ class _CierreScreenState extends State<CierreScreen> {
+           'p_limite': 9999,
+           'p_mostrar_sin_stock': true,
+           'p_pagina': 1,
+-          'p_id_almacen': idAlmacen,
+         },
+       );
+ 
+@@ -2468,30 +2570,24 @@ class _CierreScreenState extends State<CierreScreen> {
+       } else {
+         print('­ƒîÉ Modo online - Creando cierre en Supabase...');
+         // Call TurnoService to close the shift
+-        final success = await TurnoService.cerrarTurno(
++        final result = await TurnoService.cerrarTurnoDetailed(
+           efectivoReal: montoFinal,
+           productos: productCounts ?? [],
+           observaciones:
+               observacionesFinales.isEmpty ? null : observacionesFinales,
+         );
+-        if (success) {
++        if (result.success) {
+           await _userPrefs.clearOfflineTurno();
+           await _userPrefs.clearResumenCierreCache();
+           await _userPrefs.clearTurnoResumenCache();
+-          // Al cerrar online, limpiar cache de turno y res├║menes offline
+-          try {
+-            print(
+-              '­ƒº╣ Cache de turno/res├║menes offline limpiado tras cierre online',
+-            );
+-          } catch (e) {
+-            print('ÔÜá´©Å No se pudo limpiar cache offline tras cierre: $e');
+-          }
++          print(
++            '­ƒº╣ Cache de turno/res├║menes offline limpiado tras cierre online',
++          );
+ 
+-          // Close all pending orders locally
+           _showSuccessDialog(montoFinal, diferencia);
+-        } else {
++        } else if (result.isNetworkError) {
+           print(
+-            'ÔÜá´©Å Error en cierre online. Creando cierre offline de respaldo',
++            '­ƒôÁ Error de red en cierre online. Creando cierre offline de respaldo',
+           );
+           await _createOfflineCierre(
+             efectivoFinal: montoFinal,
+@@ -2499,6 +2595,12 @@ class _CierreScreenState extends State<CierreScreen> {
+             observaciones: observacionesFinales,
+             diferencia: diferencia,
+           );
++        } else {
++          // Error de negocio: NO crear cierre offline. Mostrar mensaje real.
++          print('ÔÜá´©Å Cierre rechazado por el servidor: ${result.message}');
++          _showErrorMessage(
++            result.message ?? 'No se pudo cerrar el turno',
++          );
+         }
+       }
+     } catch (e) {
+diff --git a/ventiq_app/lib/services/turno_service.dart b/ventiq_app/lib/services/turno_service.dart
+index 0aac95e..41c6ab7 100644
+--- a/ventiq_app/lib/services/turno_service.dart
++++ b/ventiq_app/lib/services/turno_service.dart
+@@ -1,8 +1,72 @@
++import 'dart:async';
++import 'dart:io';
++import 'package:http/http.dart' as http;
+ import 'package:supabase_flutter/supabase_flutter.dart';
+ import 'user_preferences_service.dart';
+ import '../models/expense.dart';
+ import 'payment_method_service.dart';
+ 
++/// Tipo de fallo al ejecutar una operaci├│n de turno.
++enum TurnoErrorKind {
++  /// Fall├│ la red o el servidor no respondi├│. Se puede caer a flujo offline.
++  network,
++
++  /// El backend respondi├│ pero rechaz├│ la operaci├│n (raise / regla de negocio).
++  /// NO se debe caer a offline ÔÇö el usuario debe ver el mensaje y corregir.
++  business,
++
++  /// Error inesperado (programaci├│n / datos faltantes).
++  unknown,
++}
++
++/// Resultado tipado de operaciones de turno (apertura/cierre).
++class TurnoOperationResult {
++  final bool success;
++  final String? message;
++  final TurnoErrorKind? errorKind;
++  final dynamic data;
++
++  const TurnoOperationResult.success({this.message, this.data})
++      : success = true,
++        errorKind = null;
++
++  const TurnoOperationResult.failure({
++    required this.message,
++    required this.errorKind,
++    this.data,
++  }) : success = false;
++
++  bool get isNetworkError => errorKind == TurnoErrorKind.network;
++  bool get isBusinessError => errorKind == TurnoErrorKind.business;
++}
++
++/// Determina si una excepci├│n corresponde a un error de red.
++bool _isNetworkException(Object error) {
++  if (error is SocketException) return true;
++  if (error is TimeoutException) return true;
++  if (error is http.ClientException) return true;
++  final msg = error.toString().toLowerCase();
++  return msg.contains('socketexception') ||
++      msg.contains('timeoutexception') ||
++      msg.contains('clientexception') ||
++      msg.contains('failed host lookup') ||
++      msg.contains('connection refused') ||
++      msg.contains('connection closed') ||
++      msg.contains('connection reset') ||
++      msg.contains('network is unreachable');
++}
++
++/// Extrae un mensaje legible de un PostgrestException o error gen├®rico.
++String _extractErrorMessage(Object error) {
++  if (error is PostgrestException) {
++    return error.message;
++  }
++  if (error is AuthException) {
++    return error.message;
++  }
++  return error.toString();
++}
++
+ class TurnoService {
+   static final SupabaseClient _supabase = Supabase.instance.client;
+   static final UserPreferencesService _userPrefs = UserPreferencesService();
+@@ -216,20 +280,40 @@ class TurnoService {
+     }
+   }
+ 
++  /// Versi├│n legacy: retorna s├│lo bool. Usar [cerrarTurnoDetailed] para
++  /// distinguir errores de red vs errores de negocio.
+   static Future<bool> cerrarTurno({
+     required double efectivoReal,
+     required List<Map<String, dynamic>> productos,
+     String? observaciones,
++  }) async {
++    final result = await cerrarTurnoDetailed(
++      efectivoReal: efectivoReal,
++      productos: productos,
++      observaciones: observaciones,
++    );
++    return result.success;
++  }
++
++  /// Cierra el turno y retorna un resultado tipado distinguiendo
++  /// errores de red (caer a offline est├í OK) vs errores de negocio
++  /// (mostrar mensaje y NO crear cierre offline).
++  static Future<TurnoOperationResult> cerrarTurnoDetailed({
++    required double efectivoReal,
++    required List<Map<String, dynamic>> productos,
++    String? observaciones,
+   }) async {
+     try {
+-      // Get user UUID and TPV ID
+       final userUuid = await _userPrefs.getUserId();
+       final workerProfile = await _userPrefs.getWorkerProfile();
+       final idTpv = workerProfile['idTpv'];
+ 
+       if (userUuid == null || idTpv == null) {
+         print('ÔØî Missing user UUID or TPV ID');
+-        return false;
++        return const TurnoOperationResult.failure(
++          message: 'Faltan datos del usuario o TPV',
++          errorKind: TurnoErrorKind.unknown,
++        );
+       }
+ 
+       print('­ƒöä Calling fn_cerrar_turno_tpv with:');
+@@ -251,10 +335,29 @@ class TurnoService {
+       );
+ 
+       print('Ô£à fn_cerrar_turno_tpv response: $response');
+-      return response == true;
++
++      if (response == true) {
++        return const TurnoOperationResult.success();
++      }
++
++      // El backend respondi├│ pero no con true ÔåÆ tratarlo como error de negocio.
++      return TurnoOperationResult.failure(
++        message: 'El servidor rechaz├│ el cierre del turno',
++        errorKind: TurnoErrorKind.business,
++        data: response,
++      );
+     } catch (e) {
+       print('ÔØî Error in cerrarTurno: $e');
+-      return false;
++      if (_isNetworkException(e)) {
++        return const TurnoOperationResult.failure(
++          message: 'Sin conexi├│n al servidor',
++          errorKind: TurnoErrorKind.network,
++        );
++      }
++      return TurnoOperationResult.failure(
++        message: _extractErrorMessage(e),
++        errorKind: TurnoErrorKind.business,
++      );
+     }
+   }
+ 
+@@ -402,6 +505,7 @@ class TurnoService {
+           'success': true,
+           'message': 'Apertura registrada exitosamente',
+           'operacion_id': response,
++          'errorKind': null,
+         };
+       }
+ 
+@@ -409,13 +513,20 @@ class TurnoService {
+         'success': false,
+         'message': 'Respuesta inv├ílida del servidor',
+         'operacion_id': null,
++        'errorKind': TurnoErrorKind.business,
+       };
+     } catch (e) {
+       print('ÔØî Error in registrarAperturaTurno: $e');
++      final isNetwork = _isNetworkException(e);
+       return {
+         'success': false,
+-        'message': 'Error al registrar la apertura: $e',
++        'message': isNetwork
++            ? 'Sin conexi├│n al servidor'
++            : _extractErrorMessage(e),
+         'operacion_id': null,
++        'errorKind': isNetwork
++            ? TurnoErrorKind.network
++            : TurnoErrorKind.business,
+       };
+     }
+   }
