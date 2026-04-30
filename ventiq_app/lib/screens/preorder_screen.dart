@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
@@ -900,11 +902,30 @@ class _PreorderScreenState extends State<PreorderScreen> {
       // Verificar disponibilidad en inventario (en modo online y offline)
       final stockProblems = await _checkInventoryAvailability(currentOrder.items);
       if (!mounted) return;
-      
+
       if (stockProblems.isNotEmpty) {
         _showStockProblemsDialog(stockProblems);
         return;
       }
+    } on _StockCheckNetworkException catch (e) {
+      if (!mounted) return;
+      print('🌐 Verificación de stock falló por red: $e');
+      _showStockNetworkErrorDialog();
+      return;
+    } catch (e) {
+      if (!mounted) return;
+      if (_isNetworkError(e)) {
+        print('🌐 Verificación de stock falló por red (catch general): $e');
+        _showStockNetworkErrorDialog();
+        return;
+      }
+      print('⚠️ Error inesperado verificando stock: $e');
+      AppSnackBar.showPersistent(
+        context,
+        message: 'No se pudo verificar el stock: ${e.toString()}',
+        backgroundColor: Colors.red[700],
+      );
+      return;
     } finally {
       if (mounted) {
         setState(() {
@@ -1067,10 +1088,78 @@ class _PreorderScreenState extends State<PreorderScreen> {
         }
       } catch (e) {
         print('⚠️ Error verificando stock para ${item.nombre}: $e');
+        if (_isNetworkError(e)) {
+          throw _StockCheckNetworkException(item.nombre, e);
+        }
       }
     }
 
     return problems;
+  }
+
+  bool _isNetworkError(Object error) {
+    if (error is SocketException) return true;
+    if (error is TimeoutException) return true;
+    if (error is HttpException) return true;
+    final msg = error.toString().toLowerCase();
+    return msg.contains('socketexception') ||
+        msg.contains('failed host lookup') ||
+        msg.contains('connection closed') ||
+        msg.contains('connection refused') ||
+        msg.contains('connection reset') ||
+        msg.contains('network is unreachable') ||
+        msg.contains('clientexception') ||
+        msg.contains('timeoutexception') ||
+        msg.contains('xmlhttprequest error');
+  }
+
+  /// Muestra diálogo cuando la verificación de stock falla por problemas de red
+  void _showStockNetworkErrorDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.wifi_off_rounded,
+                color: Colors.orange[700],
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Sin conexión',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'No se pudo verificar el stock disponible porque hay un problema de conexión con el servidor.\n\nRevisa tu conexión a internet e inténtalo de nuevo.',
+          style: TextStyle(fontSize: 14, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Muestra diálogo con los problemas de stock encontrados
@@ -2213,4 +2302,14 @@ class _PreorderScreenState extends State<PreorderScreen> {
         break;
     }
   }
+}
+
+class _StockCheckNetworkException implements Exception {
+  final String itemName;
+  final Object original;
+  _StockCheckNetworkException(this.itemName, this.original);
+
+  @override
+  String toString() =>
+      '_StockCheckNetworkException($itemName): $original';
 }
