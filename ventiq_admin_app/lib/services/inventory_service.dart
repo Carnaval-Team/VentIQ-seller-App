@@ -179,7 +179,7 @@ class InventoryService {
       }
 
       final response = await _supabase.rpc(
-        'fn_insertar_extraccion_completa',
+        'fn_crear_extraccion_con_movimiento',
         params: {
           'p_autorizado_por': autorizadoPor,
           'p_estado_inicial': estadoInicial,
@@ -857,6 +857,99 @@ class InventoryService {
     } catch (e) {
       print('❌ Error en transferencia: $e');
       return {'status': 'error', 'message': 'Error en transferencia: $e'};
+    }
+  }
+
+  /// Registers the transfer linkage in app_dat_operacion_transferencia.
+  /// Creates a parent app_dat_operaciones entry for the transfer, then inserts
+  /// the record linking id_extraccion and id_recepcion.
+  static Future<Map<String, dynamic>> registrarOperacionTransferencia({
+    required int idExtraccion,
+    required int idRecepcion,
+    required String autorizadoPor,
+    required int idTienda,
+    required String uuid,
+  }) async {
+    try {
+      print('📋 Registrando en app_dat_operacion_transferencia...');
+      print('   - ID Extracción: $idExtraccion');
+      print('   - ID Recepción: $idRecepcion');
+      print('   - Autorizado por: $autorizadoPor');
+
+      // Step 1: Find id_tipo_operacion for "transferencia"
+      int idTipoOperacion;
+      try {
+        final tipoResponse = await _supabase
+            .from('app_nom_tipo_operacion')
+            .select('id')
+            .ilike('denominacion', '%transfer%')
+            .limit(1)
+            .maybeSingle();
+
+        if (tipoResponse != null) {
+          idTipoOperacion = tipoResponse['id'] as int;
+          print('✅ Tipo operación transferencia encontrado: $idTipoOperacion');
+        } else {
+          // Fallback: reuse the extraction's tipo_operacion
+          final extOp = await _supabase
+              .from('app_dat_operaciones')
+              .select('id_tipo_operacion')
+              .eq('id', idExtraccion)
+              .single();
+          idTipoOperacion = extOp['id_tipo_operacion'] as int;
+          print(
+            '⚠️ Tipo transferencia no encontrado, usando tipo extracción: $idTipoOperacion',
+          );
+        }
+      } catch (e) {
+        // Last fallback: reuse the extraction's tipo_operacion
+        final extOp = await _supabase
+            .from('app_dat_operaciones')
+            .select('id_tipo_operacion')
+            .eq('id', idExtraccion)
+            .single();
+        idTipoOperacion = extOp['id_tipo_operacion'] as int;
+        print('⚠️ Error buscando tipo operación, fallback: $idTipoOperacion');
+      }
+
+      // Step 2: Create parent record in app_dat_operaciones
+      final operacionResponse = await _supabase
+          .from('app_dat_operaciones')
+          .insert({
+            'id_tipo_operacion': idTipoOperacion,
+            'uuid': uuid,
+            'id_tienda': idTienda,
+            'observaciones':
+                'Transferencia - extracción: $idExtraccion, recepción: $idRecepcion',
+          })
+          .select('id')
+          .single();
+
+      final idOperacion = operacionResponse['id'] as int;
+      print('✅ Operación padre creada con ID: $idOperacion');
+
+      // Step 3: Insert into app_dat_operacion_transferencia overriding the generated id
+      await _supabase.from('app_dat_operacion_transferencia').insert({
+        'id_operacion': idOperacion,
+        'id_recepcion': idRecepcion,
+        'id_extraccion': idExtraccion,
+        'autorizado_por': autorizadoPor.isNotEmpty ? autorizadoPor : null,
+      });
+
+      print('✅ Registro en app_dat_operacion_transferencia exitoso');
+      print('   - ID Operación: $idOperacion');
+
+      return {
+        'status': 'success',
+        'id_operacion': idOperacion,
+        'message': 'Transferencia registrada exitosamente',
+      };
+    } catch (e) {
+      print('❌ Error en registrarOperacionTransferencia: $e');
+      return {
+        'status': 'error',
+        'message': 'Error al registrar operación de transferencia: $e',
+      };
     }
   }
 
@@ -2624,11 +2717,11 @@ class InventoryService {
       }
 
       final response = await _supabase.rpc(
-        'fn_contabilizar_operacion',
+        'fn_registrar_cambio_estado_operacion',
         params: {
           'p_id_operacion': idOperacion,
-          'p_comentario': comentario,
-          'p_uuid': uuid,
+          'p_nuevo_estado': 2,
+          'p_uuid_usuario': uuid,
         },
       );
 
