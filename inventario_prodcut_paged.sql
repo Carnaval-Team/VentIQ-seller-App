@@ -10,36 +10,47 @@ BEGIN
     -- Validar acceso si se especifica tienda
     IF p_id_tienda IS NOT NULL THEN
         PERFORM check_user_has_access_to_tienda(p_id_tienda);
-        
-        -- Validar que la tienda exista
+
         IF NOT EXISTS (SELECT 1 FROM app_dat_tienda t WHERE t.id = p_id_tienda) THEN
             RAISE EXCEPTION 'La tienda con ID % no existe', p_id_tienda;
         END IF;
     END IF;
 
 
+    -- ============================================================
     -- Contar total de resultados (para paginación)
+    -- Usa únicamente el último registro histórico por combinación
+    -- (producto, variante, opcion_variante, presentacion, ubicacion)
+    -- ============================================================
     SELECT COUNT(*) INTO v_total_count
     FROM (
         SELECT DISTINCT
             i.id_producto,
-            COALESCE(i.id_variante, 0) AS id_variante,
+            COALESCE(i.id_variante, 0)        AS id_variante,
             COALESCE(i.id_opcion_variante, 0) AS id_opcion_variante,
-            COALESCE(i.id_ubicacion, 0) AS id_ubicacion
+            COALESCE(i.id_ubicacion, 0)       AS id_ubicacion,
+            COALESCE(i.id_presentacion, 0)    AS id_presentacion
         FROM public.app_dat_inventario_productos i
         INNER JOIN public.app_dat_producto p ON i.id_producto = p.id
         INNER JOIN public.app_dat_layout_almacen l ON i.id_ubicacion = l.id
         INNER JOIN public.app_dat_almacen a ON l.id_almacen = a.id
         INNER JOIN public.app_dat_tienda t ON a.id_tienda = t.id
         LEFT JOIN public.app_dat_categoria c ON p.id_categoria = c.id
-        LEFT JOIN public.app_dat_productos_subcategorias ps ON p.id = ps.id_producto
-        LEFT JOIN public.app_dat_subcategorias s ON ps.id_sub_categoria = s.id
         LEFT JOIN public.app_dat_variantes v ON i.id_variante = v.id
         LEFT JOIN public.app_dat_atributos attr ON v.id_atributo = attr.id
         LEFT JOIN public.app_dat_atributo_opcion vo ON i.id_opcion_variante = vo.id
         LEFT JOIN public.app_dat_producto_presentacion pr ON i.id_presentacion = pr.id
-        LEFT JOIN public.app_dat_layout_abc abc ON (l.id = abc.id_layout)
+        LEFT JOIN public.app_dat_layout_abc abc ON l.id = abc.id_layout
         WHERE 1 = 1
+            AND i.id = (
+                SELECT MAX(ih.id)
+                FROM public.app_dat_inventario_productos ih
+                WHERE ih.id_producto = i.id_producto
+                  AND COALESCE(ih.id_variante, 0)        = COALESCE(i.id_variante, 0)
+                  AND COALESCE(ih.id_opcion_variante, 0) = COALESCE(i.id_opcion_variante, 0)
+                  AND COALESCE(ih.id_presentacion, 0)    = COALESCE(i.id_presentacion, 0)
+                  AND COALESCE(ih.id_ubicacion, 0)       = COALESCE(i.id_ubicacion, 0)
+            )
             AND (p_id_tienda IS NULL OR t.id = p_id_tienda)
             AND (p_id_almacen IS NULL OR a.id = p_id_almacen)
             AND (p_id_ubicacion IS NULL OR l.id = p_id_ubicacion)
@@ -47,8 +58,11 @@ BEGIN
             AND (p_id_variante IS NULL OR v.id = p_id_variante)
             AND (p_id_opcion_variante IS NULL OR vo.id = p_id_opcion_variante)
             AND (p_id_presentacion IS NULL OR pr.id = p_id_presentacion)
-            AND (p_id_categoria IS NULL OR c.id = p_id_categoria)
-            AND (p_id_subcategoria IS NULL OR s.id = p_id_subcategoria)
+            AND (p_id_categoria IS NULL OR p.id_categoria = p_id_categoria)
+            AND (p_id_subcategoria IS NULL OR EXISTS (
+                    SELECT 1 FROM public.app_dat_productos_subcategorias ps
+                    WHERE ps.id_producto = p.id AND ps.id_sub_categoria = p_id_subcategoria
+                ))
             AND (p_id_proveedor IS NULL OR i.id_proveedor = p_id_proveedor)
             AND (p_origen_cambio IS NULL OR i.origen_cambio = p_origen_cambio)
             AND (p_es_vendible IS NULL OR p.es_vendible = p_es_vendible)
@@ -62,9 +76,8 @@ BEGIN
                 p.nombre_comercial ILIKE '%' || p_busqueda || '%' OR
                 p.descripcion ILIKE '%' || p_busqueda || '%' OR
                 c.denominacion ILIKE '%' || p_busqueda || '%' OR
-                s.denominacion ILIKE '%' || p_busqueda || '%' OR
                 attr.denominacion ILIKE '%' || p_busqueda || '%' OR
-                vo.valor ILIKE '%' || p_busqueda || '%' 
+                vo.valor ILIKE '%' || p_busqueda || '%'
             )
             AND (
                 p_mostrar_sin_stock = TRUE OR
@@ -73,18 +86,20 @@ BEGIN
             AND (
                 p_con_stock_minimo IS NULL OR
                 i.cantidad_final <= COALESCE(
-                    (SELECT stock_min FROM app_dat_almacen_limites ls WHERE ls.id_producto = p.id AND ls.id_almacen = a.id),
+                    (SELECT ls.stock_min FROM app_dat_almacen_limites ls WHERE ls.id_producto = p.id AND ls.id_almacen = a.id),
                     0
                 )
             )
     ) AS conteo;
 
 
-    -- Calcular totales para resumen de inventario
-    SELECT 
+    -- ============================================================
+    -- Totales para resumen (mismo criterio: último registro)
+    -- ============================================================
+    SELECT
         COUNT(*) AS total_inventario,
         COUNT(CASE WHEN i.cantidad_final < 10 THEN 1 END) AS total_con_cantidad_baja,
-        COUNT(CASE WHEN i.cantidad_final = 0 THEN 1 END) AS total_sin_stock
+        COUNT(CASE WHEN i.cantidad_final = 0 THEN 1 END)  AS total_sin_stock
     INTO v_total_inventario, v_total_con_cantidad_baja, v_total_sin_stock
     FROM public.app_dat_inventario_productos i
     INNER JOIN public.app_dat_producto p ON i.id_producto = p.id
@@ -92,14 +107,21 @@ BEGIN
     INNER JOIN public.app_dat_almacen a ON l.id_almacen = a.id
     INNER JOIN public.app_dat_tienda t ON a.id_tienda = t.id
     LEFT JOIN public.app_dat_categoria c ON p.id_categoria = c.id
-    LEFT JOIN public.app_dat_productos_subcategorias ps ON p.id = ps.id_producto
-    LEFT JOIN public.app_dat_subcategorias s ON ps.id_sub_categoria = s.id
     LEFT JOIN public.app_dat_variantes v ON i.id_variante = v.id
     LEFT JOIN public.app_dat_atributos attr ON v.id_atributo = attr.id
     LEFT JOIN public.app_dat_atributo_opcion vo ON i.id_opcion_variante = vo.id
     LEFT JOIN public.app_dat_producto_presentacion pr ON i.id_presentacion = pr.id
-    LEFT JOIN public.app_dat_layout_abc abc ON (l.id = abc.id_layout)
+    LEFT JOIN public.app_dat_layout_abc abc ON l.id = abc.id_layout
     WHERE 1 = 1
+        AND i.id = (
+            SELECT MAX(ih.id)
+            FROM public.app_dat_inventario_productos ih
+            WHERE ih.id_producto = i.id_producto
+              AND COALESCE(ih.id_variante, 0)        = COALESCE(i.id_variante, 0)
+              AND COALESCE(ih.id_opcion_variante, 0) = COALESCE(i.id_opcion_variante, 0)
+              AND COALESCE(ih.id_presentacion, 0)    = COALESCE(i.id_presentacion, 0)
+              AND COALESCE(ih.id_ubicacion, 0)       = COALESCE(i.id_ubicacion, 0)
+        )
         AND (p_id_tienda IS NULL OR t.id = p_id_tienda)
         AND (p_id_almacen IS NULL OR a.id = p_id_almacen)
         AND (p_id_ubicacion IS NULL OR l.id = p_id_ubicacion)
@@ -107,8 +129,11 @@ BEGIN
         AND (p_id_variante IS NULL OR v.id = p_id_variante)
         AND (p_id_opcion_variante IS NULL OR vo.id = p_id_opcion_variante)
         AND (p_id_presentacion IS NULL OR pr.id = p_id_presentacion)
-        AND (p_id_categoria IS NULL OR c.id = p_id_categoria)
-        AND (p_id_subcategoria IS NULL OR s.id = p_id_subcategoria)
+        AND (p_id_categoria IS NULL OR p.id_categoria = p_id_categoria)
+        AND (p_id_subcategoria IS NULL OR EXISTS (
+                SELECT 1 FROM public.app_dat_productos_subcategorias ps
+                WHERE ps.id_producto = p.id AND ps.id_sub_categoria = p_id_subcategoria
+            ))
         AND (p_id_proveedor IS NULL OR i.id_proveedor = p_id_proveedor)
         AND (p_origen_cambio IS NULL OR i.origen_cambio = p_origen_cambio)
         AND (p_es_vendible IS NULL OR p.es_vendible = p_es_vendible)
@@ -122,7 +147,6 @@ BEGIN
             p.nombre_comercial ILIKE '%' || p_busqueda || '%' OR
             p.descripcion ILIKE '%' || p_busqueda || '%' OR
             c.denominacion ILIKE '%' || p_busqueda || '%' OR
-            s.denominacion ILIKE '%' || p_busqueda || '%' OR
             attr.denominacion ILIKE '%' || p_busqueda || '%' OR
             vo.valor ILIKE '%' || p_busqueda || '%'
         )
@@ -133,22 +157,19 @@ BEGIN
         AND (
             p_con_stock_minimo IS NULL OR
             i.cantidad_final <= COALESCE(
-                (SELECT stock_min FROM app_dat_almacen_limites ls WHERE ls.id_producto = p.id AND ls.id_almacen = a.id),
+                (SELECT ls.stock_min FROM app_dat_almacen_limites ls WHERE ls.id_producto = p.id AND ls.id_almacen = a.id),
                 0
             )
         );
 
 
-    -- Calcular información de paginación
-    --v_total_paginas := CEIL(v_total_count::NUMERIC / p_limite);
-    --v_tiene_siguiente := p_pagina < v_total_paginas;
-
-
+    -- ============================================================
     -- Retornar inventario paginado
+    -- ============================================================
     RETURN QUERY
     WITH inventario_detalle AS (
-        SELECT DISTINCT ON (i.id_producto, COALESCE(i.id_variante, 0), COALESCE(i.id_opcion_variante, 0), 
-                           COALESCE(i.id_presentacion, 0), COALESCE(i.id_ubicacion, 0))
+        -- Último registro por combinación: filtra por MAX(id) correlacionado
+        SELECT
             i.id_producto,
             i.id_variante,
             i.id_opcion_variante,
@@ -166,26 +187,31 @@ BEGIN
         INNER JOIN public.app_dat_layout_almacen l ON i.id_ubicacion = l.id
         INNER JOIN public.app_dat_almacen a ON l.id_almacen = a.id
         INNER JOIN public.app_dat_tienda t ON a.id_tienda = t.id
-        WHERE 1 = 1
+        WHERE i.id = (
+                SELECT MAX(ih.id)
+                FROM public.app_dat_inventario_productos ih
+                WHERE ih.id_producto = i.id_producto
+                  AND COALESCE(ih.id_variante, 0)        = COALESCE(i.id_variante, 0)
+                  AND COALESCE(ih.id_opcion_variante, 0) = COALESCE(i.id_opcion_variante, 0)
+                  AND COALESCE(ih.id_presentacion, 0)    = COALESCE(i.id_presentacion, 0)
+                  AND COALESCE(ih.id_ubicacion, 0)       = COALESCE(i.id_ubicacion, 0)
+            )
             AND (p_id_tienda IS NULL OR t.id = p_id_tienda)
             AND (p_id_almacen IS NULL OR a.id = p_id_almacen)
+            AND (p_id_ubicacion IS NULL OR i.id_ubicacion = p_id_ubicacion)
             AND (p_id_producto IS NULL OR i.id_producto = p_id_producto)
             AND (p_id_variante IS NULL OR COALESCE(i.id_variante, 0) = COALESCE(p_id_variante, 0))
             AND (p_id_opcion_variante IS NULL OR COALESCE(i.id_opcion_variante, 0) = COALESCE(p_id_opcion_variante, 0))
-            AND (p_id_ubicacion IS NULL OR i.id_ubicacion = p_id_ubicacion)
             AND (p_id_presentacion IS NULL OR COALESCE(i.id_presentacion, 0) = COALESCE(p_id_presentacion, 0))
             AND (p_origen_cambio IS NULL OR i.origen_cambio = p_origen_cambio)
             AND (p_id_proveedor IS NULL OR i.id_proveedor = p_id_proveedor)
             AND (
                 p_con_stock_minimo IS NULL OR
                 i.cantidad_final <= COALESCE(
-                    (SELECT stock_min FROM app_dat_almacen_limites ls WHERE ls.id_producto = i.id_producto AND ls.id_almacen = a.id),
+                    (SELECT ls.stock_min FROM app_dat_almacen_limites ls WHERE ls.id_producto = i.id_producto AND ls.id_almacen = a.id),
                     0
                 )
             )
-        ORDER BY i.id_producto, COALESCE(i.id_variante, 0), COALESCE(i.id_opcion_variante, 0), 
-                 COALESCE(i.id_presentacion, 0), COALESCE(i.id_ubicacion, 0), 
-                 i.created_at DESC, i.id DESC
     ),
     producto_info AS (
         SELECT
@@ -198,7 +224,6 @@ BEGIN
             p.descripcion_corta,
             p.um,
             p.id_categoria,
-            ps.id_sub_categoria AS id_subcategoria,
             p.id_tienda,
             p.es_vendible,
             p.es_comprable,
@@ -211,15 +236,29 @@ BEGIN
             p.es_elaborado,
             p.es_servicio,
             p.imagen,
-            p.codigo_barras,
-            COALESCE(pv.precio_venta_cup, 0) as precio_venta,
-            0::NUMERIC as costo_promedio
+            p.codigo_barras
         FROM public.app_dat_producto p
-        LEFT JOIN public.app_dat_productos_subcategorias ps ON p.id = ps.id_producto
-        LEFT JOIN public.app_dat_precio_venta pv ON p.id = pv.id_producto 
-            AND (pv.id_variante IS NULL OR pv.id_variante = 0)
-            AND (pv.fecha_hasta IS NULL OR pv.fecha_hasta >= CURRENT_DATE)
         WHERE (p_id_producto IS NULL OR p.id = p_id_producto)
+    ),
+    -- Primera subcategoría del producto (evita duplicación por multi-subcategoría)
+    producto_subcategoria AS (
+        SELECT DISTINCT ON (ps.id_producto)
+            ps.id_producto,
+            ps.id_sub_categoria AS id_subcategoria,
+            s.denominacion AS subcategoria
+        FROM public.app_dat_productos_subcategorias ps
+        LEFT JOIN public.app_dat_subcategorias s ON ps.id_sub_categoria = s.id
+        ORDER BY ps.id_producto, ps.id_sub_categoria
+    ),
+    -- Precio vigente más reciente por (producto, variante)
+    precio_actual AS (
+        SELECT DISTINCT ON (pv.id_producto, COALESCE(pv.id_variante, 0))
+            pv.id_producto,
+            COALESCE(pv.id_variante, 0) AS id_variante,
+            pv.precio_venta_cup
+        FROM public.app_dat_precio_venta pv
+        WHERE (pv.fecha_hasta IS NULL OR pv.fecha_hasta >= CURRENT_DATE)
+        ORDER BY pv.id_producto, COALESCE(pv.id_variante, 0), pv.fecha_desde DESC, pv.id DESC
     ),
     ubicacion_info AS (
         SELECT
@@ -228,10 +267,12 @@ BEGIN
             a.id AS id_almacen,
             a.denominacion AS almacen,
             t.id AS id_tienda,
-            t.denominacion AS tienda
+            t.denominacion AS tienda,
+            abc.clasificacion_abc
         FROM public.app_dat_layout_almacen l
         INNER JOIN public.app_dat_almacen a ON l.id_almacen = a.id
         INNER JOIN public.app_dat_tienda t ON a.id_tienda = t.id
+        LEFT JOIN public.app_dat_layout_abc abc ON l.id = abc.id_layout
         WHERE (p_id_tienda IS NULL OR t.id = p_id_tienda)
           AND (p_id_almacen IS NULL OR a.id = p_id_almacen)
           AND (p_id_ubicacion IS NULL OR l.id = p_id_ubicacion)
@@ -239,18 +280,18 @@ BEGIN
     stock_reservado AS (
         SELECT
             ep.id_producto,
-            COALESCE(ep.id_variante, 0) as id_variante,
-            COALESCE(ep.id_opcion_variante, 0) as id_opcion_variante,
+            COALESCE(ep.id_variante, 0) AS id_variante,
+            COALESCE(ep.id_opcion_variante, 0) AS id_opcion_variante,
             ep.id_ubicacion,
             SUM(ep.cantidad) AS reservado
         FROM app_dat_extraccion_productos ep
         INNER JOIN app_dat_operaciones o ON ep.id_operacion = o.id
         INNER JOIN (
-            SELECT 
+            SELECT
                 eo1.id_operacion,
                 eo1.estado
             FROM (
-                SELECT 
+                SELECT
                     eo2.id_operacion,
                     eo2.estado,
                     ROW_NUMBER() OVER (PARTITION BY eo2.id_operacion ORDER BY eo2.created_at DESC) as rn
@@ -268,27 +309,6 @@ BEGIN
         FROM public.relation_products_carnaval rpc
         JOIN carnavalapp."Carrito" cart ON cart.product_id = rpc.id_producto_carnaval
         GROUP BY rpc.id_producto, rpc.id_ubicacion
-    ),
-    clasificaciones AS (
-        SELECT
-            p.id AS id_producto,
-            c.denominacion AS categoria,
-            s.denominacion AS subcategoria,
-            attr_v.denominacion AS variante,
-            ao.valor AS opcion_variante,
-            np.denominacion AS presentacion,
-            abc.clasificacion_abc
-        FROM producto_info p
-        LEFT JOIN public.app_dat_categoria c ON p.id_categoria = c.id
-        LEFT JOIN public.app_dat_subcategorias s ON p.id_subcategoria = s.id
-        LEFT JOIN inventario_detalle inv_det ON p.id = inv_det.id_producto
-        LEFT JOIN public.app_dat_variantes v ON inv_det.id_variante = v.id
-        LEFT JOIN public.app_dat_atributos attr_v ON v.id_atributo = attr_v.id
-        LEFT JOIN public.app_dat_atributo_opcion ao ON inv_det.id_opcion_variante = ao.id
-        LEFT JOIN public.app_dat_producto_presentacion pp ON inv_det.id_presentacion = pp.id
-        LEFT JOIN public.app_nom_presentacion np ON pp.id_presentacion = np.id
-        LEFT JOIN public.app_dat_layout_almacen la ON inv_det.id_ubicacion = la.id
-        LEFT JOIN public.app_dat_layout_abc abc ON (la.id = abc.id_layout)
     )
     SELECT
         p.id::BIGINT,
@@ -300,21 +320,21 @@ BEGIN
         p.descripcion_corta::TEXT,
         p.um::TEXT,
         p.id_categoria::BIGINT,
-        COALESCE(c.categoria, 'Sin categoría')::TEXT,
-        p.id_subcategoria::BIGINT,
-        COALESCE(c.subcategoria, 'Sin subcategoría')::TEXT,
+        COALESCE(cat.denominacion, 'Sin categoría')::TEXT,
+        psc.id_subcategoria::BIGINT,
+        COALESCE(psc.subcategoria, 'Sin subcategoría')::TEXT,
         p.id_tienda::BIGINT,
         u.tienda::TEXT,
         u.id_almacen::BIGINT,
         u.almacen::TEXT,
         u.id_ubicacion::BIGINT,
         u.ubicacion::TEXT,
-        COALESCE(inv_det.id_variante, NULL)::BIGINT,
-        COALESCE(c.variante, 'Unidad')::TEXT,
-        COALESCE(inv_det.id_opcion_variante, NULL)::BIGINT,
-        COALESCE(c.opcion_variante, 'Única')::TEXT,
-        COALESCE(inv_det.id_presentacion, NULL)::BIGINT,
-        COALESCE(c.presentacion, 'Unidad')::TEXT,
+        inv_det.id_variante::BIGINT,
+        COALESCE(attr_v.denominacion, 'Unidad')::TEXT,
+        inv_det.id_opcion_variante::BIGINT,
+        COALESCE(ao.valor, 'Única')::TEXT,
+        inv_det.id_presentacion::BIGINT,
+        COALESCE(np.denominacion, 'Unidad')::TEXT,
         inv_det.cantidad_inicial::NUMERIC,
         inv_det.cantidad_final::NUMERIC,
         inv_det.cantidad_final::NUMERIC AS stock_disponible,
@@ -332,15 +352,11 @@ BEGIN
         p.es_servicio::BOOLEAN,
         p.imagen::TEXT,
         p.codigo_barras::TEXT,
-        p.precio_venta::NUMERIC,
-        p.costo_promedio::NUMERIC,
-        CASE
-            WHEN p.precio_venta IS NOT NULL AND p.costo_promedio IS NOT NULL AND p.costo_promedio > 0
-            THEN ROUND(((p.precio_venta - p.costo_promedio) / p.precio_venta) * 100, 2)
-            ELSE NULL
-        END::NUMERIC AS margen_actual,
-        COALESCE(c.clasificacion_abc, 3)::SMALLINT,
-        CASE COALESCE(c.clasificacion_abc, 3)
+        COALESCE(pa.precio_venta_cup, 0)::NUMERIC AS precio_venta,
+        0::NUMERIC AS costo_promedio,
+        NULL::NUMERIC AS margen_actual,
+        COALESCE(u.clasificacion_abc, 3)::SMALLINT,
+        CASE COALESCE(u.clasificacion_abc, 3)
             WHEN 1 THEN 'A (Alta Rotación)'
             WHEN 2 THEN 'B (Media Rotación)'
             WHEN 3 THEN 'C (Baja Rotación)'
@@ -369,7 +385,16 @@ BEGIN
     FROM inventario_detalle inv_det
     INNER JOIN producto_info p ON inv_det.id_producto = p.id
     INNER JOIN ubicacion_info u ON inv_det.id_ubicacion = u.id_ubicacion
-    LEFT JOIN clasificaciones c ON p.id = c.id_producto
+    LEFT JOIN public.app_dat_categoria cat ON p.id_categoria = cat.id
+    LEFT JOIN producto_subcategoria psc ON p.id = psc.id_producto
+    LEFT JOIN public.app_dat_variantes v ON inv_det.id_variante = v.id
+    LEFT JOIN public.app_dat_atributos attr_v ON v.id_atributo = attr_v.id
+    LEFT JOIN public.app_dat_atributo_opcion ao ON inv_det.id_opcion_variante = ao.id
+    LEFT JOIN public.app_dat_producto_presentacion pp ON inv_det.id_presentacion = pp.id
+    LEFT JOIN public.app_nom_presentacion np ON pp.id_presentacion = np.id
+    LEFT JOIN precio_actual pa
+           ON pa.id_producto = p.id
+          AND pa.id_variante = COALESCE(inv_det.id_variante, 0)
     LEFT JOIN stock_reservado sr ON (
         inv_det.id_producto = sr.id_producto
         AND COALESCE(inv_det.id_variante, 0) = sr.id_variante
@@ -382,10 +407,10 @@ BEGIN
     )
     WHERE 1 = 1
         AND (p_id_categoria IS NULL OR p.id_categoria = p_id_categoria)
-        AND (p_id_subcategoria IS NULL OR p.id_subcategoria = p_id_subcategoria)
+        AND (p_id_subcategoria IS NULL OR psc.id_subcategoria = p_id_subcategoria)
         AND (p_es_vendible IS NULL OR p.es_vendible = p_es_vendible)
         AND (p_es_inventariable IS NULL OR p.es_inventariable = p_es_inventariable)
-        AND (p_clasificacion_abc IS NULL OR c.clasificacion_abc = p_clasificacion_abc)
+        AND (p_clasificacion_abc IS NULL OR u.clasificacion_abc = p_clasificacion_abc)
         AND (p_mostrar_sin_stock = TRUE OR inv_det.cantidad_final > 0)
         AND (
             p_busqueda IS NULL OR
@@ -393,11 +418,11 @@ BEGIN
             p.sku_producto ILIKE '%' || p_busqueda || '%' OR
             p.nombre_comercial ILIKE '%' || p_busqueda || '%' OR
             p.descripcion ILIKE '%' || p_busqueda || '%' OR
-            c.categoria ILIKE '%' || p_busqueda || '%' OR
-            c.subcategoria ILIKE '%' || p_busqueda || '%' OR
-            c.variante ILIKE '%' || p_busqueda || '%' OR
-            c.opcion_variante ILIKE '%' || p_busqueda || '%' OR
-            c.presentacion ILIKE '%' || p_busqueda || '%'
+            cat.denominacion ILIKE '%' || p_busqueda || '%' OR
+            psc.subcategoria ILIKE '%' || p_busqueda || '%' OR
+            attr_v.denominacion ILIKE '%' || p_busqueda || '%' OR
+            ao.valor ILIKE '%' || p_busqueda || '%' OR
+            np.denominacion ILIKE '%' || p_busqueda || '%'
         )
     ORDER BY u.tienda, u.almacen, u.ubicacion, p.nombre_producto, COALESCE(inv_det.id_variante, 0);
     -- LIMIT p_limite

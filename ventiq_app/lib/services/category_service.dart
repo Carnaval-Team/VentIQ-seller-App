@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
+import 'supabase_retry_helper.dart';
 
 class CategoryService {
   static final CategoryService _instance = CategoryService._internal();
@@ -29,12 +30,15 @@ class CategoryService {
       debugPrint('🏪 Obteniendo categorías para tienda ID: $idTienda, TPV ID: $idTpv');
 
       // Call the new RPC function to get categories by store and TPV with product count
-      final response = await _supabase.rpc(
-        'get_categorias_by_tienda_tpv',
-        params: {
-          'p_tienda_id': idTienda,
-          'p_tpv_id': idTpv
-        },
+      final response = await withNetworkRetry(
+        () => _supabase.rpc(
+          'get_categorias_by_tienda_tpv',
+          params: {
+            'p_tienda_id': idTienda,
+            'p_tpv_id': idTpv,
+          },
+        ),
+        description: 'Cargar categorías',
       );
 
       if (response == null) {

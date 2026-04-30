@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(flutter analyze:*)"
+      "Bash(flutter analyze:*)",
+      "Bash(grep -vE \"avoid_print|^Analyzing|^\\\\s*$\")",
+      "Bash(grep -vE \"avoid_print|^Analyzing|^\\\\s*$|withOpacity|deprecated_member_use|use_build_context_synchronously\")"
     ]
   }
 }
