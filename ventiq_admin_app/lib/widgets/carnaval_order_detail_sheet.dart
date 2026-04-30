@@ -635,18 +635,28 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
 
   bool get _isPaqueteria => _paqueteria != null;
 
+  /// Sub-objeto interno: el nuevo formato anida `paqueteria.paqueteria.{...}`.
+  /// Si no existe el wrapper interno, cae al objeto raíz para retro-compat.
+  Map<String, dynamic>? get _paqueteriaInner {
+    final inner = _paqueteria?['paqueteria'];
+    if (inner is Map && inner.isNotEmpty) {
+      return Map<String, dynamic>.from(inner);
+    }
+    return _paqueteria;
+  }
+
   Map<String, dynamic>? get _paquete {
-    final v = _paqueteria?['paquete'];
+    final v = _paqueteriaInner?['paquete'];
     return v is Map ? Map<String, dynamic>.from(v) : null;
   }
 
   Map<String, dynamic>? get _remitente {
-    final v = _paqueteria?['remitente'];
+    final v = _paqueteriaInner?['remitente'];
     return v is Map ? Map<String, dynamic>.from(v) : null;
   }
 
   Map<String, dynamic>? get _destinatarioPaq {
-    final v = _paqueteria?['destinatario'];
+    final v = _paqueteriaInner?['destinatario'];
     return v is Map ? Map<String, dynamic>.from(v) : null;
   }
 
@@ -735,17 +745,24 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     if (persona == null) {
       return const Text('-', style: TextStyle(color: Colors.grey));
     }
-    final provincia = persona['provincia_nombre']?.toString();
-    final municipio = persona['municipio_nombre']?.toString();
+    // Formato nuevo (GeoNames): pais_nombre / estado_nombre / ciudad_nombre.
+    // Formato antiguo (carnavalapp): provincia_nombre / municipio_nombre.
+    final ciudad = (persona['ciudad_nombre'] ?? persona['municipio_nombre'])
+        ?.toString();
+    final estado = (persona['estado_nombre'] ?? persona['provincia_nombre'])
+        ?.toString();
+    final pais = persona['pais_nombre']?.toString();
     return Column(
       children: [
         _buildInfoRow('Nombre', persona['nombre']?.toString() ?? '-'),
         _buildInfoRow('Teléfono', persona['telefono']?.toString() ?? '-'),
         _buildInfoRow('Dirección', persona['direccion']?.toString() ?? '-'),
-        _buildInfoRow('Municipio',
-            (municipio != null && municipio.isNotEmpty) ? municipio : '-'),
-        _buildInfoRow('Provincia',
-            (provincia != null && provincia.isNotEmpty) ? provincia : '-'),
+        _buildInfoRow('Ciudad',
+            (ciudad != null && ciudad.isNotEmpty) ? ciudad : '-'),
+        _buildInfoRow('Estado/Provincia',
+            (estado != null && estado.isNotEmpty) ? estado : '-'),
+        if (pais != null && pais.isNotEmpty)
+          _buildInfoRow('País', pais),
       ],
     );
   }

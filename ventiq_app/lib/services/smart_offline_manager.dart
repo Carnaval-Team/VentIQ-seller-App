@@ -3,6 +3,7 @@ import 'connectivity_service.dart';
 import 'auto_sync_service.dart';
 import 'user_preferences_service.dart';
 import 'reauthentication_service.dart';
+import 'network_request_queue.dart';
 
 /// Gestor inteligente del modo offline
 /// Coordina la activación automática del modo offline y la sincronización automática
@@ -26,11 +27,14 @@ class SmartOfflineManager {
   bool _wasOfflineModeManuallyEnabled = false;
   DateTime? _lastAutoActivation;
 
+  bool _connectionLostDialogPending = false;
+  bool _connectionRestoredDialogPending = false;
+  DateTime? _lastNetworkFailureReport;
+
   // Configuración
   static const Duration _connectionLostThreshold = Duration(
     seconds: 3,
   ); // Reducido de 10s a 3s para activación más rápida
-  static const Duration _autoActivationCooldown = Duration(minutes: 5);
 
   // Stream para notificar eventos del manager
   final StreamController<SmartOfflineEvent> _eventController =
@@ -205,15 +209,9 @@ class SmartOfflineManager {
       return;
     }
 
-    // Verificar cooldown para evitar activaciones muy frecuentes
-    if (_lastAutoActivation != null) {
-      final timeSinceLastActivation = DateTime.now().difference(
-        _lastAutoActivation!,
-      );
-      if (timeSinceLastActivation < _autoActivationCooldown) {
-        print('⏳ Cooldown activo - No activando modo offline automáticamente');
-        return;
-      }
+    if (_connectionLostDialogPending) {
+      print('⚠️ Diálogo de pérdida ya pendiente - omitiendo');
+      return;
     }
 
     // Esperar un poco para confirmar que la conexión realmente se perdió
@@ -233,19 +231,177 @@ class SmartOfflineManager {
 
       if (!hasRealConnection) {
         print(
-          '🚨 Conexión perdida confirmada (verificación doble) - Activando modo offline automáticamente',
+          '🚨 Conexión perdida confirmada - Solicitando confirmación al usuario',
         );
-        await _activateOfflineModeAutomatically();
+        _emitConnectionLostPendingConfirmation();
       } else {
         print(
-          '✅ Conexión real detectada en verificación adicional - No activando modo offline',
+          '✅ Conexión real detectada en verificación adicional - No solicitando confirmación',
         );
       }
     } else {
       print(
-        '📶 Conexión restaurada durante verificación - No activando modo offline',
+        '📶 Conexión restaurada durante verificación - No solicitando confirmación',
       );
     }
+  }
+
+  void _emitConnectionLostPendingConfirmation() {
+    _connectionLostDialogPending = true;
+    _eventController.add(
+      SmartOfflineEvent(
+        type: SmartOfflineEventType.connectionLostPendingConfirmation,
+        timestamp: DateTime.now(),
+        message: 'Pérdida de conexión - esperando decisión del usuario',
+      ),
+    );
+  }
+
+  void _emitConnectionRestoredPendingConfirmation() {
+    _connectionRestoredDialogPending = true;
+    _eventController.add(
+      SmartOfflineEvent(
+        type: SmartOfflineEventType.connectionRestoredPendingConfirmation,
+        timestamp: DateTime.now(),
+        message: 'Conexión restaurada - esperando decisión del usuario',
+      ),
+    );
+  }
+
+  /// Reportar fallo de red detectado por una petición real (interceptor).
+  Future<void> reportNetworkFailure(String description, Object error) async {
+    print('🚨 reportNetworkFailure: "$description" → $error');
+
+    final isOfflineModeEnabled =
+        await _userPreferencesService.isOfflineModeEnabled();
+    if (isOfflineModeEnabled) {
+      print('🔌 Ya en modo offline - no se solicita confirmación');
+      return;
+    }
+
+    if (_connectionLostDialogPending) {
+      print('⚠️ Diálogo de pérdida ya pendiente');
+      return;
+    }
+
+    // Debounce: no spamear el ping de verificación
+    final now = DateTime.now();
+    if (_lastNetworkFailureReport != null &&
+        now.difference(_lastNetworkFailureReport!).inSeconds < 2) {
+      print('⏳ Debounce activo en reportNetworkFailure');
+      return;
+    }
+    _lastNetworkFailureReport = now;
+
+    final hasRealConnection =
+        await _connectivityService.performImmediateCheck();
+
+    if (!hasRealConnection) {
+      print(
+        '🚨 Confirmado sin internet por interceptor - Solicitando confirmación',
+      );
+      _emitConnectionLostPendingConfirmation();
+    } else {
+      print(
+        '✅ Internet OK pese al fallo reportado - probablemente error puntual',
+      );
+    }
+  }
+
+  /// Usuario presionó "Reintentar" en el diálogo de pérdida de conexión.
+  /// Retorna true si la conexión se restauró exitosamente.
+  Future<bool> userChoseRetry() async {
+    print('👤 Usuario eligió Reintentar');
+    final hasConnection = await _connectivityService.performImmediateCheck();
+
+    if (hasConnection) {
+      print('✅ Conexión confirmada al reintentar - reintentando cola');
+      _connectionLostDialogPending = false;
+      _lastNetworkFailureReport = null;
+      await NetworkRequestQueue().retryAll();
+
+      _eventController.add(
+        SmartOfflineEvent(
+          type: SmartOfflineEventType.connectionConfirmedOnline,
+          timestamp: DateTime.now(),
+          message: 'Conexión confirmada por reintento del usuario',
+        ),
+      );
+      return true;
+    }
+
+    print('❌ Reintento falló - sigue sin conexión');
+    return false;
+  }
+
+  /// Usuario presionó "Modo Offline" en el diálogo de pérdida de conexión.
+  Future<void> userChoseOffline() async {
+    print('👤 Usuario eligió Modo Offline');
+    _connectionLostDialogPending = false;
+
+    NetworkRequestQueue().rejectAll(
+      Exception('Usuario eligió modo offline'),
+    );
+
+    await _activateOfflineModeAutomatically();
+  }
+
+  /// Usuario presionó "Activar Modo Online" en el diálogo de restauración.
+  Future<void> userChoseGoOnline() async {
+    print('👤 Usuario eligió Activar Modo Online');
+    _connectionRestoredDialogPending = false;
+
+    try {
+      await _userPreferencesService.setOfflineMode(false);
+      _wasOfflineModeManuallyEnabled = false;
+
+      // Reautenticar si es necesario
+      try {
+        final needsReauth = await _reauthService.needsReauthentication();
+        if (needsReauth) {
+          await _reauthService.reauthenticateUser();
+        }
+      } catch (e) {
+        print('⚠️ Error reautenticando tras volver online: $e');
+      }
+
+      if (!_autoSyncService.isRunning) {
+        await _autoSyncService.startAutoSync();
+      }
+
+      _eventController.add(
+        SmartOfflineEvent(
+          type: SmartOfflineEventType.offlineModeAutoDeactivated,
+          timestamp: DateTime.now(),
+          message: 'Modo offline desactivado por el usuario',
+        ),
+      );
+    } catch (e) {
+      print('❌ Error activando modo online: $e');
+      _eventController.add(
+        SmartOfflineEvent(
+          type: SmartOfflineEventType.error,
+          timestamp: DateTime.now(),
+          message: 'Error activando modo online: $e',
+          error: e.toString(),
+        ),
+      );
+    }
+  }
+
+  /// Usuario presionó "Continuar Offline" en el diálogo de restauración.
+  Future<void> userChoseStayOffline() async {
+    print('👤 Usuario eligió Continuar Offline');
+    _connectionRestoredDialogPending = false;
+    _wasOfflineModeManuallyEnabled = true;
+
+    _eventController.add(
+      SmartOfflineEvent(
+        type: SmartOfflineEventType.offlineModeManuallyEnabled,
+        timestamp: DateTime.now(),
+        message: 'Usuario decidió mantener modo offline',
+      ),
+    );
   }
 
   /// Manejar restauración de conexión
@@ -347,63 +503,15 @@ class SmartOfflineManager {
       }
     } else {
       print(
-        '🔌 Modo offline activado - Verificando si fue activado automáticamente...',
+        '🔌 Modo offline activado - Solicitando confirmación al usuario...',
       );
 
-      // Verificar si el modo offline fue activado automáticamente
-      if (!_wasOfflineModeManuallyEnabled) {
-        print(
-          '🔄 Modo offline fue activado automáticamente - Desactivando automáticamente...',
-        );
-
-        try {
-          // Desactivar modo offline automáticamente
-          await _userPreferencesService.setOfflineMode(false);
-
-          // Iniciar sincronización automática
-          if (!_autoSyncService.isRunning) {
-            await _autoSyncService.startAutoSync();
-          }
-
-          _eventController.add(
-            SmartOfflineEvent(
-              type: SmartOfflineEventType.offlineModeAutoDeactivated,
-              timestamp: DateTime.now(),
-              message:
-                  'Modo offline desactivado automáticamente tras restauración de conexión',
-            ),
-          );
-
-          print(
-            '✅ Modo offline desactivado automáticamente y sincronización iniciada',
-          );
-        } catch (e) {
-          print('❌ Error desactivando modo offline automáticamente: $e');
-
-          _eventController.add(
-            SmartOfflineEvent(
-              type: SmartOfflineEventType.error,
-              timestamp: DateTime.now(),
-              message: 'Error desactivando modo offline automáticamente: $e',
-              error: e.toString(),
-            ),
-          );
-        }
-      } else {
-        print(
-          '👤 Modo offline fue activado manualmente - Manteniendo estado actual',
-        );
-
-        // Si el modo offline fue activado manualmente, solo informar al usuario
-        _eventController.add(
-          SmartOfflineEvent(
-            type: SmartOfflineEventType.connectionRestoredWhileOffline,
-            timestamp: DateTime.now(),
-            message:
-                'Conexión restaurada - Puede desactivar modo offline para sincronizar',
-          ),
-        );
+      if (_connectionRestoredDialogPending) {
+        print('⚠️ Diálogo de restauración ya pendiente - omitiendo');
+        return;
       }
+
+      _emitConnectionRestoredPendingConfirmation();
     }
   }
 
@@ -581,6 +689,9 @@ enum SmartOfflineEventType {
   offlineModeManuallyDisabled,
   autoActivationFailed,
   connectionRestoredWhileOffline,
+  connectionLostPendingConfirmation,
+  connectionRestoredPendingConfirmation,
+  connectionConfirmedOnline,
   autoSyncStarted,
   autoSyncEvent,
   reauthenticationStarted,

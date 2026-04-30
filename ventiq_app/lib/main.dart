@@ -17,7 +17,9 @@ import 'screens/wifi_printers_screen.dart';
 import 'services/auth_service.dart';
 import 'services/user_preferences_service.dart';
 import 'utils/platform_utils.dart';
+import 'utils/global_navigator.dart';
 import 'widgets/sync_blocking_overlay.dart';
+import 'widgets/offline_dialog_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,12 +42,18 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'VentIQ POS',
       debugShowCheckedModeBanner: false,
+      navigatorKey: globalNavigatorKey,
+      scaffoldMessengerKey: globalScaffoldMessengerKey,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF194B8C)),
       ),
       builder: (context, child) {
-        return SyncBlockingOverlay(child: child ?? const SizedBox.shrink());
+        return OfflineDialogOverlay(
+          child: SyncBlockingOverlay(
+            child: child ?? const SizedBox.shrink(),
+          ),
+        );
       },
       initialRoute: '/',
       routes: {

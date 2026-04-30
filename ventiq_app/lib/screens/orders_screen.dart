@@ -2084,11 +2084,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final nombre = data['nombre']?.toString();
     final telefono = data['telefono']?.toString();
     final direccion = data['direccion']?.toString();
-    final municipio = data['municipio_nombre']?.toString();
-    final provincia = data['provincia_nombre']?.toString();
+    // Formato nuevo (GeoNames): pais_nombre / estado_nombre / ciudad_nombre.
+    // Formato antiguo (carnavalapp): provincia_nombre / municipio_nombre.
+    final ciudad = (data['ciudad_nombre'] ?? data['municipio_nombre'])
+        ?.toString();
+    final estado = (data['estado_nombre'] ?? data['provincia_nombre'])
+        ?.toString();
+    final pais = data['pais_nombre']?.toString();
     final ubicacion = [
-      if (municipio != null && municipio.trim().isNotEmpty) municipio,
-      if (provincia != null && provincia.trim().isNotEmpty) provincia,
+      if (ciudad != null && ciudad.trim().isNotEmpty) ciudad,
+      if (estado != null && estado.trim().isNotEmpty) estado,
+      if (pais != null && pais.trim().isNotEmpty) pais,
     ].join(', ');
 
     return Container(
