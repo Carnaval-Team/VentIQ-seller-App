@@ -918,7 +918,6 @@ class _AperturaScreenState extends State<AperturaScreen> {
       }
 
       final userData = await _userPrefs.getUserData();
-      final idAlmacen = await _userPrefs.getIdAlmacen();
       final idTiendaRaw = userData['idTienda'];
       final idTienda =
           idTiendaRaw is int
@@ -927,7 +926,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
       if (idTienda == null) return [];
       print(
-        '📦 Obteniendo ubicaciones del producto $productId para tienda $idTienda... almacen: $idAlmacen',
+        '📦 Obteniendo ubicaciones del producto $productId para tienda $idTienda (todos los almacenes)...',
       );
       final response = await Supabase.instance.client.rpc(
         'fn_listar_inventario_productos_paged2',
@@ -937,7 +936,6 @@ class _AperturaScreenState extends State<AperturaScreen> {
           'p_limite': 9999,
           'p_mostrar_sin_stock': true,
           'p_pagina': 1,
-          'p_id_almacen': idAlmacen,
         },
       );
 
@@ -1733,10 +1731,17 @@ class _AperturaScreenState extends State<AperturaScreen> {
             );
             Navigator.of(context).pop(true);
           } else {
+            final errorKind = result['errorKind'];
+            final isNetwork = errorKind == TurnoErrorKind.network;
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(result['message'] ?? 'Error desconocido'),
+                content: Text(
+                  isNetwork
+                      ? 'Sin conexión al servidor. Intenta nuevamente cuando tengas conexión.'
+                      : (result['message'] ?? 'Error desconocido'),
+                ),
                 backgroundColor: Colors.red,
+                duration: const Duration(seconds: 4),
               ),
             );
           }
@@ -2257,7 +2262,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                               Text(
                                                 'Desglose por ubicación:',
                                                 style: TextStyle(
-                                                  fontSize: 9,
+                                                  fontSize: 12,
                                                   fontWeight: FontWeight.w600,
                                                   color: Colors.grey[700],
                                                 ),
@@ -2283,10 +2288,10 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                                               child: Text(
                                                                 '${loc['almacen']} - ${loc['ubicacion']}',
                                                                 style: TextStyle(
-                                                                  fontSize: 8,
+                                                                  fontSize: 11,
                                                                   color:
                                                                       Colors
-                                                                          .grey[600],
+                                                                          .grey[700],
                                                                 ),
                                                                 overflow:
                                                                     TextOverflow
@@ -2299,13 +2304,13 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                                                 Text(
                                                                   locReal.toStringAsFixed(2),
                                                                   style: TextStyle(
-                                                                    fontSize: 8,
+                                                                    fontSize: 11,
                                                                     fontWeight:
                                                                         FontWeight
-                                                                            .w500,
+                                                                            .w600,
                                                                     color:
                                                                         Colors
-                                                                            .grey[800],
+                                                                            .grey[900],
                                                                   ),
                                                                 ),
                                                                 if (locReservado > 0) ...[
@@ -2313,7 +2318,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                                                   Text(
                                                                     '(res: ${locReservado.toStringAsFixed(0)})',
                                                                     style: TextStyle(
-                                                                      fontSize: 7,
+                                                                      fontSize: 10,
                                                                       fontWeight: FontWeight.w600,
                                                                       color: Colors.orange[700],
                                                                     ),

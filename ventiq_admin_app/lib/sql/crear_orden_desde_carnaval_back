@@ -28,9 +28,6 @@ DECLARE
     v_producto_nombre VARCHAR(255);
     v_medio_pago_id SMALLINT;
     v_es_paqueteria BOOLEAN;
-    v_cantidad_solicitada NUMERIC;
-    v_cantidad_real NUMERIC;
-    v_stock_disponible NUMERIC;
 BEGIN
     -- Obtener información de la orden
     SELECT * INTO v_order_record
@@ -40,21 +37,12 @@ BEGIN
     -- Detectar si es una orden de paquetería: cuando es paquetería NO se debe
     -- modificar el inventario (cantidad_final permanece igual) y se ignora la
     -- validación de stock insuficiente.
-    -- Solo es paquetería si paqueteria es un OBJETO JSON con contenido real.
-    -- Antes bastaba con que no fuera SQL NULL ni 'null'::jsonb, lo que marcaba
-    -- como paquetería cualquier {}, [], false, 0, etc., y esto saltaba el
-    -- INSERT en app_dat_inventario_productos para órdenes normales.
     v_es_paqueteria := COALESCE(
         v_order_record IS NOT NULL
         AND v_order_record.paqueteria IS NOT NULL
-        AND v_order_record.paqueteria <> 'null'::jsonb
-        AND jsonb_typeof(v_order_record.paqueteria) = 'object'
-        AND v_order_record.paqueteria <> '{}'::jsonb,
+        AND v_order_record.paqueteria <> 'null'::jsonb,
         FALSE
     );
-
-    RAISE NOTICE 'Orden % paqueteria=% es_paqueteria=%',
-        v_order_record.id, v_order_record.paqueteria, v_es_paqueteria;
 
     -- Solo procesar si la orden existe y está en estado "Creado" o "Pendiente de Pago"
     IF v_order_record IS NULL OR 
@@ -282,8 +270,19 @@ BEGIN
             ) THEN
                 CONTINUE;
             END IF;
-            v_cantidad_solicitada := COALESCE(v_order_detail.quantity, 1);
+            SELECT stock::BIGINT INTO v_stock_producto
+            FROM carnavalapp."Productos"
+            WHERE id = v_order_detail.product_id;
 
+            -- En paquetería el inventario no se valida ni se descuenta:
+            -- el "producto" es el servicio de envío, no algo físico en stock.
+            IF NOT v_es_paqueteria
+               AND (COALESCE(v_order_detail.quantity, 1))::BIGINT > (COALESCE(v_stock_producto, 0))::BIGINT THEN
+                RAISE NOTICE 'Stock insuficiente (producto carnaval %, stock %, solicitado %). No se actualiza inventario.',
+                    v_order_detail.product_id, COALESCE(v_stock_producto, 0), COALESCE(v_order_detail.quantity, 1);
+                CONTINUE;
+            END IF;
+            
             DECLARE
                 v_ubicacion_especifica BIGINT;
             BEGIN
@@ -301,8 +300,8 @@ BEGIN
                       AND id_ubicacion = v_ubicacion_especifica
                     ORDER BY id desc, created_at DESC
                     LIMIT 1;
-
-                    RAISE NOTICE 'Usando ubicación específica % para producto % desde relation_products_carnaval',
+                    
+                    RAISE NOTICE 'Usando ubicación específica % para producto % desde relation_products_carnaval', 
                         v_ubicacion_especifica, v_producto_id;
                 ELSE
                     -- Obtener inventario más reciente
@@ -315,78 +314,14 @@ BEGIN
                 END IF;
             END;
 
-            -- Determinar stock disponible.
-            -- En paquetería no se valida ni se descuenta inventario.
-            IF v_es_paqueteria THEN
-                v_cantidad_real := v_cantidad_solicitada;
-            ELSE
-                v_stock_disponible := COALESCE(v_inventario_record.cantidad_final, 0);
-
-                -- CONCESIÓN 1: Si no hay stock (0 o sin registro de inventario),
-                -- eliminar el OrderDetail para que el cliente no lo vea en su orden.
-                IF v_stock_disponible <= 0 THEN
-                    RAISE NOTICE 'Sin stock para producto % (orden %): se elimina el OrderDetail %',
-                        v_producto_id, v_order_record.id, v_order_detail.id;
-
-                    DELETE FROM carnavalapp."OrderDetails"
-                    WHERE id = v_order_detail.id;
-
-                    -- Recalcular importe del proveedor sin esta línea
-                    SELECT COALESCE(SUM(price * COALESCE(quantity, 1)), 0)
-                    INTO v_importe_total_proveedor
-                    FROM carnavalapp."OrderDetails"
-                    WHERE order_id = v_order_record.id
-                      AND proveedor = v_proveedor_actual;
-
-                    UPDATE public.app_dat_operacion_venta
-                    SET importe_total = v_importe_total_proveedor
-                    WHERE id_operacion = v_operacion_id;
-
-                    UPDATE public.app_dat_pago_venta
-                    SET monto = v_importe_total_proveedor
-                    WHERE id_operacion_venta = v_operacion_id;
-
-                    CONTINUE;
-                END IF;
-
-                -- CONCESIÓN 2: Si la cantidad solicitada supera el stock disponible,
-                -- extraer solo lo disponible y actualizar OrderDetail.quantity para
-                -- que el cliente vea la cantidad real comprada.
-                IF v_cantidad_solicitada > v_stock_disponible THEN
-                    v_cantidad_real := v_stock_disponible;
-
-                    RAISE NOTICE 'Stock parcial para producto % (orden %): solicitado %, disponible %. Se ajusta OrderDetail.',
-                        v_producto_id, v_order_record.id, v_cantidad_solicitada, v_stock_disponible;
-
-                    UPDATE carnavalapp."OrderDetails"
-                    SET quantity = v_cantidad_real
-                    WHERE id = v_order_detail.id;
-
-                    -- Recalcular importe del proveedor con la cantidad ajustada
-                    SELECT COALESCE(SUM(price * COALESCE(quantity, 1)), 0)
-                    INTO v_importe_total_proveedor
-                    FROM carnavalapp."OrderDetails"
-                    WHERE order_id = v_order_record.id
-                      AND proveedor = v_proveedor_actual;
-
-                    UPDATE public.app_dat_operacion_venta
-                    SET importe_total = v_importe_total_proveedor
-                    WHERE id_operacion = v_operacion_id;
-
-                    UPDATE public.app_dat_pago_venta
-                    SET monto = v_importe_total_proveedor
-                    WHERE id_operacion_venta = v_operacion_id;
-                ELSE
-                    v_cantidad_real := v_cantidad_solicitada;
-                END IF;
-            END IF;
-
-            -- Si no es paquetería y no hay registro de inventario, no podemos extraer.
+            -- En paquetería seguimos adelante aunque no haya inventario:
+            -- registramos solo la extracción (con ubicación opcional) y NO
+            -- modificamos cantidad_final.
             IF v_inventario_record IS NULL AND NOT v_es_paqueteria THEN
                 CONTINUE;
             END IF;
 
-            -- Crear extracción de producto con la cantidad realmente disponible
+            -- Crear extracción de producto
             INSERT INTO public.app_dat_extraccion_productos (
                 id_operacion, id_producto, id_variante, id_opcion_variante,
                 id_ubicacion, id_presentacion, cantidad, precio_unitario,
@@ -397,57 +332,37 @@ BEGIN
                 CASE WHEN v_inventario_record IS NULL THEN NULL ELSE v_inventario_record.id_opcion_variante END,
                 CASE WHEN v_inventario_record IS NULL THEN NULL ELSE v_inventario_record.id_ubicacion END,
                 CASE WHEN v_inventario_record IS NULL THEN NULL ELSE v_inventario_record.id_presentacion END,
-                v_cantidad_real,
+                COALESCE(v_order_detail.quantity, 1),
                 v_order_detail.price,
                 CASE WHEN v_inventario_record IS NULL THEN NULL ELSE v_inventario_record.sku_producto END,
                 CASE WHEN v_inventario_record IS NULL THEN NULL ELSE v_inventario_record.sku_ubicacion END,
-                v_order_detail.price * v_cantidad_real,
-                v_order_detail.price * v_cantidad_real
+                v_order_detail.price * COALESCE(v_order_detail.quantity, 1),
+                v_order_detail.price * COALESCE(v_order_detail.quantity, 1)
             ) RETURNING id INTO v_extraccion_id;
 
             -- Actualizar inventario SOLO si no es paquetería y existe registro previo.
             -- En paquetería cantidad_final no debe cambiar.
             IF NOT v_es_paqueteria AND v_inventario_record IS NOT NULL THEN
-                v_nueva_cantidad_final := GREATEST(0, v_inventario_record.cantidad_final - v_cantidad_real);
+                v_nueva_cantidad_final := GREATEST(0, v_inventario_record.cantidad_final - COALESCE(v_order_detail.quantity, 1));
 
-                -- id_presentacion es NOT NULL en app_dat_inventario_productos.
-                -- Si el inventario fuente no lo trae, buscar la primera presentación del producto
-                -- (mismo fallback que usa registrar_venta.sql).
-                DECLARE
-                    v_presentacion_id BIGINT := v_inventario_record.id_presentacion;
-                BEGIN
-                    IF v_presentacion_id IS NULL THEN
-                        SELECT id INTO v_presentacion_id
-                        FROM public.app_dat_producto_presentacion
-                        WHERE id_producto = v_producto_id
-                        ORDER BY id ASC
-                        LIMIT 1;
-
-                        IF v_presentacion_id IS NULL THEN
-                            RAISE NOTICE 'No hay presentación para producto %, se omite inserción de inventario', v_producto_id;
-                            CONTINUE;
-                        END IF;
-                    END IF;
-
-                    INSERT INTO public.app_dat_inventario_productos (
-                        id_producto, id_variante, id_opcion_variante, id_ubicacion,
-                        id_presentacion, cantidad_inicial, sku_producto, sku_ubicacion,
-                        cantidad_final, origen_cambio, id_recepcion, id_extraccion,
-                        id_control, id_proveedor
-                    ) VALUES (
-                        v_producto_id, v_inventario_record.id_variante,
-                        v_inventario_record.id_opcion_variante, v_inventario_record.id_ubicacion,
-                        v_presentacion_id, v_inventario_record.cantidad_final,
-                        v_inventario_record.sku_producto, v_inventario_record.sku_ubicacion,
-                        v_nueva_cantidad_final, 2, NULL, v_extraccion_id, NULL, v_proveedor_actual
-                    );
-                END;
+                INSERT INTO public.app_dat_inventario_productos (
+                    id_producto, id_variante, id_opcion_variante, id_ubicacion,
+                    id_presentacion, cantidad_inicial, sku_producto, sku_ubicacion,
+                    cantidad_final, origen_cambio, id_recepcion, id_extraccion,
+                    id_control, id_proveedor
+                ) VALUES (
+                    v_producto_id, v_inventario_record.id_variante,
+                    v_inventario_record.id_opcion_variante, v_inventario_record.id_ubicacion,
+                    v_inventario_record.id_presentacion, v_inventario_record.cantidad_final,
+                    v_inventario_record.sku_producto, v_inventario_record.sku_ubicacion,
+                    v_nueva_cantidad_final, 2, NULL, v_extraccion_id, NULL, v_proveedor_actual
+                );
             ELSE
                 RAISE NOTICE 'Paquetería: omitiendo actualización de inventario para producto % (orden %)', v_producto_id, v_order_record.id;
             END IF;
-
+            
             -- Agregar al detalle para notificación
-            v_productos_detalle := v_productos_detalle || E'\n- ' || v_producto_nombre || ' (x' || v_cantidad_real || ')';
+            v_productos_detalle := v_productos_detalle || E'\n- ' || v_producto_nombre || ' (x' || COALESCE(v_order_detail.quantity, 1) || ')';
         END LOOP;
 
         -- Crear estado y notificación solo si se agregaron productos o es nueva

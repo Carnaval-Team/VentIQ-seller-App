@@ -149,11 +149,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
           break;
 
         case SmartOfflineEventType.connectionRestoredWhileOffline:
-          // Conexión restaurada mientras está en modo offline
-          print(
-            '📶 Conexión restaurada - Verificando si desactivar modo offline',
-          );
-          _handleConnectionRestored();
+          // Evento legado - el flujo ahora pasa por confirmación global
           break;
 
         default:
@@ -161,61 +157,6 @@ class _CategoriesScreenState extends State<CategoriesScreen>
           break;
       }
     });
-  }
-
-  /// Manejar restauración de conexión
-  Future<void> _handleConnectionRestored() async {
-    // Verificar si hay conexión real
-    final isConnected = await _checkInternetConnection();
-
-    if (isConnected) {
-      print('✅ Conexión confirmada - Desactivando modo offline');
-
-      // Desactivar modo offline
-      await _preferencesService.setOfflineMode(false);
-
-      // Notificar al SmartOfflineManager que fue desactivado manualmente
-      await _smartOfflineManager.onOfflineModeManuallyDisabled();
-
-      // Actualizar UI
-      await _loadOfflineModeSettings();
-
-      // Mostrar mensaje al usuario
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('🌐 Conexión restaurada - Modo online activado'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-
-      // Recargar categorías desde el servidor
-      _loadCategories(forceRefresh: true);
-    } else {
-      print('❌ Sin conexión real - Manteniendo modo offline');
-    }
-  }
-
-  /// Verificar conexión a internet real
-  Future<bool> _checkInternetConnection() async {
-    try {
-      // Usar ConnectivityService para verificar conexión real
-      final connectivityService = ConnectivityService();
-      final hasConnection = await connectivityService.checkConnectivity();
-
-      if (hasConnection) {
-        print('🌐 Verificación de internet: ✅ Conectado');
-      } else {
-        print('🌐 Verificación de internet: ❌ Sin conexión');
-      }
-
-      return hasConnection;
-    } catch (e) {
-      print('❌ Error verificando conexión: $e');
-      return false;
-    }
   }
 
   @override
@@ -253,24 +194,11 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       // Esperar un poco para que el sistema restaure la conexión
       await Future.delayed(const Duration(seconds: 2));
 
-      // Verificar si hay conexión real
-      final hasConnection = await _checkInternetConnection();
-
-      // Verificar si el modo offline está activado
-      final isOfflineMode = await _preferencesService.isOfflineModeEnabled();
-
-      if (hasConnection && isOfflineMode) {
-        print(
-          '🔄 Conexión detectada después de reanudar - Verificando si desactivar modo offline',
-        );
-
-        // Si hay conexión y el modo offline está activo, manejarlo
-        _handleConnectionRestored();
-      } else if (hasConnection) {
-        print('✅ Conexión confirmada después de reanudar - Modo online activo');
-      } else {
-        print('📵 Sin conexión después de reanudar');
-      }
+      // Forzar verificación del ConnectivityService — esto disparará el
+      // flujo de eventos del SmartOfflineManager (incluido el diálogo
+      // de confirmación si corresponde).
+      final connectivityService = ConnectivityService();
+      await connectivityService.performImmediateCheck();
     } catch (e) {
       print('❌ Error verificando conexión después de reanudar: $e');
     }

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../config/supabase_config.dart';
 
 /// Servicio para monitorear el estado de conectividad de la aplicación
 /// Detecta cambios en la conexión de red y valida conectividad real a internet
@@ -28,8 +29,9 @@ class ConnectivityService {
 
   // Configuración
   static const Duration _checkInterval = Duration(seconds: 30);
-  static const Duration _timeoutDuration = Duration(seconds: 60);
-  static const String _testUrl = 'https://jsonplaceholder.typicode.com/todos/1';
+  static const Duration _timeoutDuration = Duration(seconds: 8);
+  static String get _testUrl =>
+      '${SupabaseConfig.supabaseUrl}/auth/v1/health';
 
   Timer? _periodicCheckTimer;
 
@@ -157,17 +159,57 @@ class ConnectivityService {
     }
 
     try {
-      final response = await http
-          .get(Uri.parse(_testUrl))
-          .timeout(_timeoutDuration);
-      print(response.statusCode);
-      final hasConnection = response.statusCode > 0 ;
+      final response = await http.get(
+        Uri.parse(_testUrl),
+        headers: {
+          'apikey': SupabaseConfig.supabaseAnonKey,
+        },
+      ).timeout(_timeoutDuration);
+      // Cualquier respuesta HTTP del servidor (incluso 4xx) confirma conexión.
+      // Solo 5xx o errores de red indican problemas reales.
+      final hasConnection =
+          response.statusCode > 0 && response.statusCode < 500;
       print(
-        '🌐 Verificación de internet: ${hasConnection ? "✅ Conectado" : "❌ Sin acceso"}',
+        '🌐 Verificación de internet (Supabase ${response.statusCode}): ${hasConnection ? "✅ Conectado" : "❌ Sin acceso"}',
       );
       return hasConnection;
+    } on SocketException catch (e) {
+      print('🌐 Sin acceso a internet (Socket): $e');
+      return false;
+    } on TimeoutException catch (e) {
+      print('🌐 Sin acceso a internet (Timeout): $e');
+      return false;
     } catch (e) {
       print('🌐 Sin acceso a internet: $e');
+      return false;
+    }
+  }
+
+  /// Forzar una verificación inmediata de conectividad y actualizar el estado.
+  /// Usado por el botón "Reintentar" del diálogo de pérdida de conexión.
+  Future<bool> performImmediateCheck() async {
+    print('⚡ ConnectivityService: verificación inmediata solicitada');
+    try {
+      final connectivityResults = await _connectivity.checkConnectivity();
+      final hasConnection = connectivityResults.any(
+        (result) => result != ConnectivityResult.none,
+      );
+
+      if (!hasConnection) {
+        await _updateConnectionStatus(false, 'Sin conexión de red');
+        return false;
+      }
+
+      final hasInternet = await _hasInternetConnection();
+      await _updateConnectionStatus(
+        hasInternet,
+        hasInternet
+            ? 'Verificación inmediata: conexión activa'
+            : 'Verificación inmediata: sin acceso a internet',
+      );
+      return hasInternet;
+    } catch (e) {
+      print('❌ Error en verificación inmediata: $e');
       return false;
     }
   }

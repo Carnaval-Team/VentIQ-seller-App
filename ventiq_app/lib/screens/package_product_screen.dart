@@ -1,13 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/payment_method.dart' as pm;
 import '../models/product.dart';
+import '../services/geonames_service.dart';
 import '../services/paqueteria_service.dart';
 import '../services/payment_method_service.dart';
 import '../services/product_detail_service.dart';
 import '../services/promotion_service.dart';
+import '../services/turno_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/promotion_rules.dart';
 
@@ -37,6 +38,8 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
 
   int _quantity = 1;
   bool _isLoading = true;
+  bool _checkingShift = true;
+  bool _hasOpenShift = false;
   Product? _detailedProduct;
 
   double _unitPrice = 0;
@@ -65,25 +68,31 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
 
   bool _isSubmitting = false;
 
-  // Remitente
+  // Remitente (usa GeoNames: país / estado / ciudad)
   final _sTelefonoCtrl = TextEditingController();
   final _sDireccionCtrl = TextEditingController();
   final _sNombreCtrl = TextEditingController();
-  int? _sProvinciaId;
-  int? _sMunicipioId;
-  List<Map<String, dynamic>> _sMunicipios = [];
+  List<Map<String, dynamic>> _sCountries = [];
+  List<Map<String, dynamic>> _sStates = [];
+  List<Map<String, dynamic>> _sCities = [];
+  Map<String, dynamic>? _sSelectedCountry;
+  Map<String, dynamic>? _sSelectedState;
+  Map<String, dynamic>? _sSelectedCity;
+  bool _sLoadingCountries = false;
+  bool _sLoadingStates = false;
+  bool _sLoadingCities = false;
 
-  // Destinatario
+  // Destinatario (usa GeoNames: país / estado / ciudad)
   final _dTelefonoCtrl = TextEditingController();
   final _dDireccionCtrl = TextEditingController();
   final _dNombreCtrl = TextEditingController();
-  int? _dProvinciaId;
-  int? _dMunicipioId;
-  List<Map<String, dynamic>> _dMunicipios = [];
-
-  // Catálogos
-  List<Map<String, dynamic>> _provincias = [];
-  final Map<int, List<Map<String, dynamic>>> _municipiosByProvincia = {};
+  List<Map<String, dynamic>> _dStates = [];
+  List<Map<String, dynamic>> _dCities = [];
+  Map<String, dynamic>? _dSelectedCountry;
+  Map<String, dynamic>? _dSelectedState;
+  Map<String, dynamic>? _dSelectedCity;
+  bool _dLoadingStates = false;
+  bool _dLoadingCities = false;
 
   static const Color _primary = Color(0xFF194B8C);
   static const String _fallbackAsset = 'assets/package.jpg';
@@ -92,7 +101,65 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   void initState() {
     super.initState();
     _unitPrice = widget.product.precio;
+    _checkOpenShift();
     _loadData();
+  }
+
+  Future<void> _checkOpenShift() async {
+    try {
+      setState(() => _checkingShift = true);
+      final hasShift = await TurnoService.hasOpenShift();
+      if (!mounted) return;
+      setState(() {
+        _hasOpenShift = hasShift;
+        _checkingShift = false;
+      });
+      if (!hasShift) _showNoShiftDialog();
+    } catch (e) {
+      debugPrint('❌ Error checking shift: $e');
+      if (!mounted) return;
+      setState(() {
+        _hasOpenShift = false;
+        _checkingShift = false;
+      });
+      _showNoShiftDialog();
+    }
+  }
+
+  void _showNoShiftDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+            const SizedBox(width: 8),
+            const Text('Turno Requerido'),
+          ],
+        ),
+        content: const Text(
+          'Debe tener un turno abierto para enviar un paquete. Por favor, vaya a la sección de Apertura para abrir un turno.',
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pushReplacementNamed(context, '/apertura');
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: _primary),
+            child: const Text('Ir a Apertura'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pop(context);
+            },
+            child: const Text('Volver'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -108,50 +175,123 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     super.dispose();
   }
 
-  Future<void> _loadProvincias() async {
+  // ───────────────── GEONAMES (REMITENTE) ─────────────────
+
+  Future<void> _loadSenderCountries() async {
+    setState(() => _sLoadingCountries = true);
     try {
-      final response = await Supabase.instance.client
-          .schema('carnavalapp')
-          .from('Provincias')
-          .select('id, nombre')
-          .order('nombre');
-      _provincias = List<Map<String, dynamic>>.from(response as List);
+      final countries = await GeonamesService.getCountries();
+      if (!mounted) return;
+      setState(() {
+        _sCountries = countries;
+        _sLoadingCountries = false;
+      });
     } catch (e) {
-      debugPrint('❌ Error cargando provincias: $e');
+      debugPrint('❌ Error cargando países (remitente): $e');
+      if (!mounted) return;
+      setState(() => _sLoadingCountries = false);
     }
   }
 
-  Future<List<Map<String, dynamic>>> _loadMunicipios(int idProvincia) async {
-    if (_municipiosByProvincia.containsKey(idProvincia)) {
-      return _municipiosByProvincia[idProvincia]!;
-    }
+  Future<void> _loadSenderStates(String countryCode) async {
+    setState(() {
+      _sLoadingStates = true;
+      _sStates = [];
+      _sSelectedState = null;
+      _sCities = [];
+      _sSelectedCity = null;
+    });
     try {
-      final response = await Supabase.instance.client
-          .schema('carnavalapp')
-          .from('municipios')
-          .select('id, municipio, precio, precio_alimentos, distancia')
-          .eq('provincia', idProvincia)
-          .order('municipio');
-      final list = List<Map<String, dynamic>>.from(response as List);
-      _municipiosByProvincia[idProvincia] = list;
-      return list;
+      final states = await GeonamesService.getStates(countryCode);
+      if (!mounted) return;
+      setState(() {
+        _sStates = states;
+        _sLoadingStates = false;
+      });
     } catch (e) {
-      debugPrint('❌ Error cargando municipios: $e');
-      return [];
+      debugPrint('❌ Error cargando estados (remitente): $e');
+      if (!mounted) return;
+      setState(() => _sLoadingStates = false);
+    }
+  }
+
+  Future<void> _loadSenderCities(String countryCode, String adminCode) async {
+    setState(() {
+      _sLoadingCities = true;
+      _sCities = [];
+      _sSelectedCity = null;
+    });
+    try {
+      final cities = await GeonamesService.getCities(countryCode, adminCode);
+      if (!mounted) return;
+      setState(() {
+        _sCities = cities;
+        _sLoadingCities = false;
+      });
+    } catch (e) {
+      debugPrint('❌ Error cargando ciudades (remitente): $e');
+      if (!mounted) return;
+      setState(() => _sLoadingCities = false);
+    }
+  }
+
+  // ───────────────── GEONAMES (DESTINATARIO) ─────────────────
+
+  Future<void> _loadReceiverStates(String countryCode) async {
+    setState(() {
+      _dLoadingStates = true;
+      _dStates = [];
+      _dSelectedState = null;
+      _dCities = [];
+      _dSelectedCity = null;
+    });
+    try {
+      final states = await GeonamesService.getStates(countryCode);
+      if (!mounted) return;
+      setState(() {
+        _dStates = states;
+        _dLoadingStates = false;
+      });
+    } catch (e) {
+      debugPrint('❌ Error cargando estados (destinatario): $e');
+      if (!mounted) return;
+      setState(() => _dLoadingStates = false);
+    }
+  }
+
+  Future<void> _loadReceiverCities(String countryCode, String adminCode) async {
+    setState(() {
+      _dLoadingCities = true;
+      _dCities = [];
+      _dSelectedCity = null;
+    });
+    try {
+      final cities = await GeonamesService.getCities(countryCode, adminCode);
+      if (!mounted) return;
+      setState(() {
+        _dCities = cities;
+        _dLoadingCities = false;
+      });
+    } catch (e) {
+      debugPrint('❌ Error cargando ciudades (destinatario): $e');
+      if (!mounted) return;
+      setState(() => _dLoadingCities = false);
     }
   }
 
   Future<void> _loadData() async {
     try {
-      // Cargar provincias en paralelo con el detalle
-      final provinciasFuture = _loadProvincias();
+      // Cargar países (GeoNames) en paralelo con el detalle del producto.
+      // Tanto remitente como destinatario usan el mismo catálogo de países.
+      final countriesFuture = _loadSenderCountries();
 
-      final detailed =
-          await _productDetailService.getProductDetail(widget.product.id);
+      final detailed = await _productDetailService.getProductDetail(
+        widget.product.id,
+      );
       _detailedProduct = detailed;
       if (detailed.precio > 0) _unitPrice = detailed.precio;
 
-      await provinciasFuture;
+      await countriesFuture;
 
       // Métodos de pago disponibles (para resolver el id de Efectivo/Transferencia)
       try {
@@ -162,8 +302,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
 
       // Promociones específicas del producto
       try {
-        final productPromos =
-            await _promotionService.getProductPromotions(widget.product.id);
+        final productPromos = await _promotionService.getProductPromotions(
+          widget.product.id,
+        );
         if (productPromos.isNotEmpty) {
           _productPromotions = productPromos;
         }
@@ -173,8 +314,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       try {
         final idTienda = await _userPreferences.getIdTienda();
         if (idTienda != null) {
-          _globalPromotion =
-              await _promotionService.getGlobalPromotion(idTienda);
+          _globalPromotion = await _promotionService.getGlobalPromotion(
+            idTienda,
+          );
         }
       } catch (_) {}
 
@@ -206,13 +348,12 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     // Transferencia / otros: tomar el primer método NO efectivo cuyo nombre
     // contenga "transfer" o el primer no-efectivo disponible.
     final transferencia = _paymentMethods.firstWhere(
-      (m) =>
-          !m.esEfectivo &&
-          m.denominacion.toLowerCase().contains('transfer'),
-      orElse: () => _paymentMethods.firstWhere(
-        (m) => !m.esEfectivo,
-        orElse: () => _paymentMethods.first,
-      ),
+      (m) => !m.esEfectivo && m.denominacion.toLowerCase().contains('transfer'),
+      orElse:
+          () => _paymentMethods.firstWhere(
+            (m) => !m.esEfectivo,
+            orElse: () => _paymentMethods.first,
+          ),
     );
     return transferencia.id;
   }
@@ -224,18 +365,19 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
 
     // Si aún no se eligió método de pago, usar la promo "para display"
     // (sin filtrar por medio de pago) para mostrar el descuento potencial.
-    final promo = paymentId == null
-        ? PromotionRules.pickPromotionForDisplay(
-            productPromotions: _productPromotions,
-            globalPromotion: _globalPromotion,
-            quantity: _quantity,
-          )
-        : PromotionRules.pickPromotionForPayment(
-            productPromotions: _productPromotions,
-            globalPromotion: _globalPromotion,
-            paymentMethodId: paymentId,
-            quantity: _quantity,
-          );
+    final promo =
+        paymentId == null
+            ? PromotionRules.pickPromotionForDisplay(
+              productPromotions: _productPromotions,
+              globalPromotion: _globalPromotion,
+              quantity: _quantity,
+            )
+            : PromotionRules.pickPromotionForPayment(
+              productPromotions: _productPromotions,
+              globalPromotion: _globalPromotion,
+              paymentMethodId: paymentId,
+              quantity: _quantity,
+            );
 
     if (promo == null) {
       _activePromotion = null;
@@ -270,9 +412,10 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       _hasActivePromo &&
       PromotionRules.isRecargoPromotionType(_activePromotion!);
   bool get _hasDiscount => _hasActivePromo && !_hasSurcharge;
-  int? get _activePromoTipoDescuento => _activePromotion == null
-      ? null
-      : PromotionRules.resolvePromotionDiscountType(_activePromotion!);
+  int? get _activePromoTipoDescuento =>
+      _activePromotion == null
+          ? null
+          : PromotionRules.resolvePromotionDiscountType(_activePromotion!);
   String? get _activePromoName => _activePromotion?['nombre'] as String?;
   double? get _activePromoValor =>
       (_activePromotion?['valor_descuento'] as num?)?.toDouble();
@@ -282,6 +425,15 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_checkingShift) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (!_hasOpenShift) {
+      return const Scaffold(
+        body: Center(child: Text('No tiene un turno abierto')),
+      );
+    }
+
     final isWide = _isWide(context);
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
@@ -304,18 +456,18 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           },
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: isWide ? 1400 : 720,
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: isWide ? 1400 : 720),
+                  child:
+                      _showShipmentForm
+                          ? _buildShipmentForm(isWide)
+                          : _buildProductView(isWide),
                 ),
-                child: _showShipmentForm
-                    ? _buildShipmentForm(isWide)
-                    : _buildProductView(isWide),
               ),
-            ),
     );
   }
 
@@ -370,8 +522,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             children: [
               _chip('Paquete', Icons.card_giftcard_outlined, _primary),
               if (product.categoria.isNotEmpty)
-                _chip(product.categoria, Icons.category_outlined,
-                    Colors.blueGrey),
+                _chip(
+                  product.categoria,
+                  Icons.category_outlined,
+                  Colors.blueGrey,
+                ),
               if (product.sku != null && product.sku!.isNotEmpty)
                 _chip('SKU: ${product.sku}', Icons.qr_code_2, Colors.grey),
             ],
@@ -460,10 +615,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             constraints: BoxConstraints(maxHeight: maxHeight),
             child: AspectRatio(
               aspectRatio: aspect,
-              child: Container(
-                color: Colors.white,
-                child: _fallbackImage(),
-              ),
+              child: Container(color: Colors.white, child: _fallbackImage()),
             ),
           ),
         ),
@@ -475,14 +627,15 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     return Image.asset(
       _fallbackAsset,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => Container(
-        color: Colors.grey.shade100,
-        child: Icon(
-          Icons.inventory_2_rounded,
-          size: 80,
-          color: Colors.grey.shade400,
-        ),
-      ),
+      errorBuilder:
+          (_, __, ___) => Container(
+            color: Colors.grey.shade100,
+            child: Icon(
+              Icons.inventory_2_rounded,
+              size: 80,
+              color: Colors.grey.shade400,
+            ),
+          ),
     );
   }
 
@@ -496,8 +649,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           children: [
             _chip('Paquete', Icons.card_giftcard_outlined, _primary),
             if (product.categoria.isNotEmpty)
-              _chip(product.categoria, Icons.category_outlined,
-                  Colors.blueGrey),
+              _chip(
+                product.categoria,
+                Icons.category_outlined,
+                Colors.blueGrey,
+              ),
             if (product.sku != null && product.sku!.isNotEmpty)
               _chip('SKU: ${product.sku}', Icons.qr_code_2, Colors.grey),
           ],
@@ -585,8 +741,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   color: _primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Icon(Icons.inventory_2_outlined,
-                    color: _primary, size: 16),
+                child: const Icon(
+                  Icons.inventory_2_outlined,
+                  color: _primary,
+                  size: 16,
+                ),
               ),
               const SizedBox(width: 8),
               const Text(
@@ -603,11 +762,14 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               labelText: 'Número de paquete',
               labelStyle: const TextStyle(fontSize: 13),
               prefixIcon: const Icon(Icons.tag, size: 18),
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 10, vertical: 10),
+                horizontal: 10,
+                vertical: 10,
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -620,11 +782,14 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               labelText: 'Descripción',
               labelStyle: const TextStyle(fontSize: 13),
               alignLabelWithHint: true,
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 10, vertical: 10),
+                horizontal: 10,
+                vertical: 10,
+              ),
             ),
           ),
           const SizedBox(height: 10),
@@ -638,19 +803,27 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey.shade300),
+        InkWell(
+          onTap: _pickPackagePhoto,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child:
+                _packagePhotoBytes != null
+                    ? Image.memory(_packagePhotoBytes!, fit: BoxFit.cover)
+                    : Icon(
+                      Icons.add_a_photo_outlined,
+                      color: Colors.grey.shade500,
+                      size: 22,
+                    ),
           ),
-          clipBehavior: Clip.antiAlias,
-          child: _packagePhotoBytes != null
-              ? Image.memory(_packagePhotoBytes!, fit: BoxFit.cover)
-              : Icon(Icons.add_a_photo_outlined,
-                  color: Colors.grey.shade500, size: 22),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -671,8 +844,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: _pickPackagePhoto,
-                      icon: const Icon(Icons.photo_library_outlined,
-                          size: 14),
+                      icon: const Icon(Icons.add_a_photo_outlined, size: 14),
                       label: Text(
                         _packagePhotoBytes == null ? 'Elegir' : 'Cambiar',
                         style: const TextStyle(fontSize: 12),
@@ -681,7 +853,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                         foregroundColor: _primary,
                         side: const BorderSide(color: _primary),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 6),
+                          horizontal: 6,
+                          vertical: 6,
+                        ),
                         minimumSize: const Size(0, 32),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
@@ -690,15 +864,19 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   if (_packagePhotoBytes != null) ...[
                     const SizedBox(width: 4),
                     InkWell(
-                      onTap: () => setState(() {
-                        _packagePhotoBytes = null;
-                        _packagePhotoName = null;
-                      }),
+                      onTap:
+                          () => setState(() {
+                            _packagePhotoBytes = null;
+                            _packagePhotoName = null;
+                          }),
                       borderRadius: BorderRadius.circular(6),
                       child: Padding(
                         padding: const EdgeInsets.all(6),
-                        child: Icon(Icons.close,
-                            size: 18, color: Colors.red.shade600),
+                        child: Icon(
+                          Icons.close,
+                          size: 18,
+                          color: Colors.red.shade600,
+                        ),
                       ),
                     ),
                   ],
@@ -712,9 +890,46 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   }
 
   Future<void> _pickPackagePhoto() async {
+    final ImageSource? source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined, color: _primary),
+              title: const Text('Tomar foto con la cámara'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined, color: _primary),
+              title: const Text('Elegir de la galería'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
     try {
       final XFile? picked = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
+        source: source,
         imageQuality: 80,
         maxWidth: 1400,
       );
@@ -729,7 +944,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('No se pudo abrir la galería: $e'),
+            content: Text('No se pudo abrir la cámara/galería: $e'),
             backgroundColor: Colors.red.shade600,
           ),
         );
@@ -756,8 +971,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   color: _primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.payments_outlined,
-                    color: _primary, size: 20),
+                child: const Icon(
+                  Icons.payments_outlined,
+                  color: _primary,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 10),
               const Text(
@@ -798,10 +1016,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   }) {
     final selected = _metodoPago == value;
     return InkWell(
-      onTap: () => setState(() {
-        _metodoPago = value;
-        _recalcPrices();
-      }),
+      onTap:
+          () => setState(() {
+            _metodoPago = value;
+            _recalcPrices();
+          }),
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
@@ -815,8 +1034,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         ),
         child: Column(
           children: [
-            Icon(icon,
-                color: selected ? _primary : Colors.grey.shade600, size: 24),
+            Icon(
+              icon,
+              color: selected ? _primary : Colors.grey.shade600,
+              size: 24,
+            ),
             const SizedBox(height: 6),
             Text(
               label,
@@ -869,9 +1091,10 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     final prefix = isSurcharge ? '+' : '-';
     // tipo_descuento: 1 % desc, 2 fijo desc, 3 % recargo, 4 fijo recargo
     final isPercent = tipo == 1 || tipo == 3;
-    final label = isPercent
-        ? '$prefix${valor.toStringAsFixed(0)}%'
-        : '$prefix\$${valor.toStringAsFixed(2)}';
+    final label =
+        isPercent
+            ? '$prefix${valor.toStringAsFixed(0)}%'
+            : '$prefix\$${valor.toStringAsFixed(2)}';
 
     return Container(
       padding: const EdgeInsets.all(10),
@@ -943,8 +1166,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               children: [
                 Text(
                   'Precio unitario',
-                  style:
-                      TextStyle(color: Colors.grey.shade600, fontSize: 11),
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
                 ),
                 const SizedBox(height: 2),
                 if (_hasDiscount)
@@ -1024,7 +1246,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       child: Row(
         children: [
           Text(
-            'Cantidad',
+            'Cantidad de libras:',
             style: TextStyle(
               fontWeight: FontWeight.w600,
               fontSize: 13,
@@ -1034,30 +1256,29 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           const Spacer(),
           _qtyButton(
             icon: Icons.remove_rounded,
-            onTap: _quantity > 1
-                ? () => setState(() {
+            onTap:
+                _quantity > 1
+                    ? () => setState(() {
                       _quantity--;
                       _recalcPrices();
                     })
-                : null,
+                    : null,
           ),
           SizedBox(
             width: 48,
             child: Text(
               '$_quantity',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
           ),
           _qtyButton(
             icon: Icons.add_rounded,
-            onTap: () => setState(() {
-              _quantity++;
-              _recalcPrices();
-            }),
+            onTap:
+                () => setState(() {
+                  _quantity++;
+                  _recalcPrices();
+                }),
           ),
         ],
       ),
@@ -1075,15 +1296,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         decoration: BoxDecoration(
           color: enabled ? _primary.withOpacity(0.1) : Colors.grey.shade100,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: enabled ? _primary : Colors.grey.shade300,
-          ),
+          border: Border.all(color: enabled ? _primary : Colors.grey.shade300),
         ),
-        child: Icon(
-          icon,
-          color: enabled ? _primary : Colors.grey,
-          size: 18,
-        ),
+        child: Icon(icon, color: enabled ? _primary : Colors.grey, size: 18),
       ),
     );
   }
@@ -1093,10 +1308,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            _primary.withOpacity(0.12),
-            _primary.withOpacity(0.04),
-          ],
+          colors: [_primary.withOpacity(0.12), _primary.withOpacity(0.04)],
         ),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: _primary.withOpacity(0.3)),
@@ -1109,17 +1321,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             children: [
               Text(
                 'Total',
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
               ),
               Text(
                 '$_quantity × \$${_effectiveUnitPrice.toStringAsFixed(2)}',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 11,
-                ),
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
               ),
             ],
           ),
@@ -1194,16 +1400,17 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       height: 54,
       child: ElevatedButton.icon(
         onPressed: _isSubmitting ? null : _onFinalizar,
-        icon: _isSubmitting
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              )
-            : const Icon(Icons.check_circle_outline_rounded),
+        icon:
+            _isSubmitting
+                ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                )
+                : const Icon(Icons.check_circle_outline_rounded),
         label: Text(
           _isSubmitting ? 'Procesando...' : 'Finalizar',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
@@ -1247,8 +1454,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   color: _primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.receipt_long_outlined,
-                    color: _primary, size: 20),
+                child: const Icon(
+                  Icons.receipt_long_outlined,
+                  color: _primary,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 10),
               const Text(
@@ -1259,13 +1469,15 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           ),
           const SizedBox(height: 14),
           _kv('Producto', product.denominacion),
-          _kv('Cantidad', '$_quantity'),
+          _kv('Cantidad de Libras', '$_quantity'),
           _kv('Precio unit.', '\$${_effectiveUnitPrice.toStringAsFixed(2)}'),
           const Divider(height: 20),
-          _kv('Nº paquete',
-              _numeroPaqueteCtrl.text.trim().isEmpty
-                  ? '-'
-                  : _numeroPaqueteCtrl.text.trim()),
+          _kv(
+            'Nº paquete',
+            _numeroPaqueteCtrl.text.trim().isEmpty
+                ? '-'
+                : _numeroPaqueteCtrl.text.trim(),
+          ),
           _kv('Método pago', _metodoPago ?? '-'),
           if (_packagePhotoBytes != null) ...[
             const SizedBox(height: 6),
@@ -1292,10 +1504,13 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Total',
-                  style: TextStyle(
-                      color: Colors.grey.shade700,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                'Total',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               Text(
                 '\$${_total.toStringAsFixed(2)}',
                 style: const TextStyle(
@@ -1327,10 +1542,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           Expanded(
             child: Text(
               v,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1423,42 +1635,137 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         children: [
           _field(_sNombreCtrl, 'Nombre y apellidos', Icons.person_outline),
           const SizedBox(height: 10),
-          _field(_sTelefonoCtrl, 'Número de teléfono', Icons.phone_outlined,
-              keyboardType: TextInputType.phone),
+          _field(
+            _sTelefonoCtrl,
+            'Número de teléfono',
+            Icons.phone_outlined,
+            keyboardType: TextInputType.phone,
+          ),
           const SizedBox(height: 10),
           _field(_sDireccionCtrl, 'Dirección', Icons.location_on_outlined),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _provinciaDropdown(
-                  value: _sProvinciaId,
-                  onChanged: (v) async {
-                    setState(() {
-                      _sProvinciaId = v;
-                      _sMunicipioId = null;
-                      _sMunicipios = [];
-                    });
-                    if (v != null) {
-                      final m = await _loadMunicipios(v);
-                      if (mounted) setState(() => _sMunicipios = m);
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _municipioDropdown(
-                  value: _sMunicipioId,
-                  municipios: _sMunicipios,
-                  enabled: _sProvinciaId != null,
-                  onChanged: (v) => setState(() => _sMunicipioId = v),
-                ),
-              ),
-            ],
-          ),
+          _senderCountryDropdown(),
+          const SizedBox(height: 10),
+          _senderStateDropdown(),
+          const SizedBox(height: 10),
+          _senderCityDropdown(),
         ],
       ),
+    );
+  }
+
+  Widget _senderCountryDropdown() {
+    return DropdownButtonFormField<Map<String, dynamic>>(
+      value: _sSelectedCountry,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: _sLoadingCountries ? 'Cargando países...' : 'País',
+        prefixIcon: const Icon(Icons.public_outlined, size: 20),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      ),
+      items: _sCountries
+          .map(
+            (c) => DropdownMenuItem<Map<String, dynamic>>(
+              value: c,
+              child: Text(
+                c['countryName']?.toString() ?? '',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: _sLoadingCountries
+          ? null
+          : (country) {
+              if (country == null) return;
+              setState(() {
+                _sSelectedCountry = country;
+                _sSelectedState = null;
+                _sSelectedCity = null;
+                _sStates = [];
+                _sCities = [];
+              });
+              _loadSenderStates(country['countryCode']?.toString() ?? '');
+            },
+      validator: (v) => v == null ? 'Selecciona país' : null,
+    );
+  }
+
+  Widget _senderStateDropdown() {
+    final enabled = _sSelectedCountry != null && !_sLoadingStates;
+    return DropdownButtonFormField<Map<String, dynamic>>(
+      value: _sSelectedState,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: _sLoadingStates ? 'Cargando estados...' : 'Estado/Provincia',
+        prefixIcon: const Icon(Icons.map_outlined, size: 20),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      ),
+      items: _sStates
+          .map(
+            (s) => DropdownMenuItem<Map<String, dynamic>>(
+              value: s,
+              child: Text(
+                s['name']?.toString() ?? '',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: enabled
+          ? (state) {
+              if (state == null) return;
+              setState(() {
+                _sSelectedState = state;
+                _sSelectedCity = null;
+                _sCities = [];
+              });
+              final countryCode =
+                  _sSelectedCountry?['countryCode']?.toString() ?? '';
+              final adminCode = state['adminCode1']?.toString() ?? '';
+              if (countryCode.isNotEmpty && adminCode.isNotEmpty) {
+                _loadSenderCities(countryCode, adminCode);
+              }
+            }
+          : null,
+      validator: (v) => v == null ? 'Selecciona estado/provincia' : null,
+    );
+  }
+
+  Widget _senderCityDropdown() {
+    final enabled = _sSelectedState != null && !_sLoadingCities;
+    return DropdownButtonFormField<Map<String, dynamic>>(
+      value: _sSelectedCity,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: _sLoadingCities ? 'Cargando ciudades...' : 'Ciudad/Municipio',
+        prefixIcon: const Icon(Icons.location_city_outlined, size: 20),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      ),
+      items: _sCities
+          .map(
+            (c) => DropdownMenuItem<Map<String, dynamic>>(
+              value: c,
+              child: Text(
+                c['name']?.toString() ?? '',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: enabled
+          ? (city) => setState(() => _sSelectedCity = city)
+          : null,
+      validator: (v) => v == null ? 'Selecciona ciudad' : null,
     );
   }
 
@@ -1471,42 +1778,137 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         children: [
           _field(_dNombreCtrl, 'Nombre y apellidos', Icons.person_outline),
           const SizedBox(height: 10),
-          _field(_dTelefonoCtrl, 'Número de teléfono', Icons.phone_outlined,
-              keyboardType: TextInputType.phone),
+          _field(
+            _dTelefonoCtrl,
+            'Número de teléfono',
+            Icons.phone_outlined,
+            keyboardType: TextInputType.phone,
+          ),
           const SizedBox(height: 10),
           _field(_dDireccionCtrl, 'Dirección', Icons.location_on_outlined),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _provinciaDropdown(
-                  value: _dProvinciaId,
-                  onChanged: (v) async {
-                    setState(() {
-                      _dProvinciaId = v;
-                      _dMunicipioId = null;
-                      _dMunicipios = [];
-                    });
-                    if (v != null) {
-                      final m = await _loadMunicipios(v);
-                      if (mounted) setState(() => _dMunicipios = m);
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _municipioDropdown(
-                  value: _dMunicipioId,
-                  municipios: _dMunicipios,
-                  enabled: _dProvinciaId != null,
-                  onChanged: (v) => setState(() => _dMunicipioId = v),
-                ),
-              ),
-            ],
-          ),
+          _receiverCountryDropdown(),
+          const SizedBox(height: 10),
+          _receiverStateDropdown(),
+          const SizedBox(height: 10),
+          _receiverCityDropdown(),
         ],
       ),
+    );
+  }
+
+  Widget _receiverCountryDropdown() {
+    return DropdownButtonFormField<Map<String, dynamic>>(
+      value: _dSelectedCountry,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: _sLoadingCountries ? 'Cargando países...' : 'País',
+        prefixIcon: const Icon(Icons.public_outlined, size: 20),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      ),
+      items: _sCountries
+          .map(
+            (c) => DropdownMenuItem<Map<String, dynamic>>(
+              value: c,
+              child: Text(
+                c['countryName']?.toString() ?? '',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: _sLoadingCountries
+          ? null
+          : (country) {
+              if (country == null) return;
+              setState(() {
+                _dSelectedCountry = country;
+                _dSelectedState = null;
+                _dSelectedCity = null;
+                _dStates = [];
+                _dCities = [];
+              });
+              _loadReceiverStates(country['countryCode']?.toString() ?? '');
+            },
+      validator: (v) => v == null ? 'Selecciona país' : null,
+    );
+  }
+
+  Widget _receiverStateDropdown() {
+    final enabled = _dSelectedCountry != null && !_dLoadingStates;
+    return DropdownButtonFormField<Map<String, dynamic>>(
+      value: _dSelectedState,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: _dLoadingStates ? 'Cargando estados...' : 'Estado/Provincia',
+        prefixIcon: const Icon(Icons.map_outlined, size: 20),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      ),
+      items: _dStates
+          .map(
+            (s) => DropdownMenuItem<Map<String, dynamic>>(
+              value: s,
+              child: Text(
+                s['name']?.toString() ?? '',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: enabled
+          ? (state) {
+              if (state == null) return;
+              setState(() {
+                _dSelectedState = state;
+                _dSelectedCity = null;
+                _dCities = [];
+              });
+              final countryCode =
+                  _dSelectedCountry?['countryCode']?.toString() ?? '';
+              final adminCode = state['adminCode1']?.toString() ?? '';
+              if (countryCode.isNotEmpty && adminCode.isNotEmpty) {
+                _loadReceiverCities(countryCode, adminCode);
+              }
+            }
+          : null,
+      validator: (v) => v == null ? 'Selecciona estado/provincia' : null,
+    );
+  }
+
+  Widget _receiverCityDropdown() {
+    final enabled = _dSelectedState != null && !_dLoadingCities;
+    return DropdownButtonFormField<Map<String, dynamic>>(
+      value: _dSelectedCity,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: _dLoadingCities ? 'Cargando ciudades...' : 'Ciudad/Municipio',
+        prefixIcon: const Icon(Icons.location_city_outlined, size: 20),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      ),
+      items: _dCities
+          .map(
+            (c) => DropdownMenuItem<Map<String, dynamic>>(
+              value: c,
+              child: Text(
+                c['name']?.toString() ?? '',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: enabled
+          ? (city) => setState(() => _dSelectedCity = city)
+          : null,
+      validator: (v) => v == null ? 'Selecciona ciudad' : null,
     );
   }
 
@@ -1559,66 +1961,6 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     );
   }
 
-  Widget _provinciaDropdown({
-    required int? value,
-    required ValueChanged<int?> onChanged,
-  }) {
-    return DropdownButtonFormField<int>(
-      value: value,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: 'Provincia',
-        prefixIcon: const Icon(Icons.map_outlined, size: 20),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        isDense: true,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      ),
-      items: _provincias
-          .map((p) => DropdownMenuItem<int>(
-                value: (p['id'] as num).toInt(),
-                child: Text(
-                  p['nombre']?.toString() ?? '',
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ))
-          .toList(),
-      onChanged: onChanged,
-      validator: (v) => v == null ? 'Selecciona provincia' : null,
-    );
-  }
-
-  Widget _municipioDropdown({
-    required int? value,
-    required List<Map<String, dynamic>> municipios,
-    required bool enabled,
-    required ValueChanged<int?> onChanged,
-  }) {
-    return DropdownButtonFormField<int>(
-      value: value,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: 'Municipio',
-        prefixIcon: const Icon(Icons.location_city_outlined, size: 20),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        isDense: true,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      ),
-      items: municipios
-          .map((m) => DropdownMenuItem<int>(
-                value: (m['id'] as num).toInt(),
-                child: Text(
-                  m['municipio']?.toString() ?? '',
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ))
-          .toList(),
-      onChanged: enabled ? onChanged : null,
-      validator: (v) => v == null ? 'Selecciona municipio' : null,
-    );
-  }
-
   Widget _field(
     TextEditingController controller,
     String label,
@@ -1633,11 +1975,13 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         prefixIcon: Icon(icon, size: 20),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
         isDense: true,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 14,
+        ),
       ),
-      validator: (v) =>
-          (v == null || v.trim().isEmpty) ? 'Campo requerido' : null,
+      validator:
+          (v) => (v == null || v.trim().isEmpty) ? 'Campo requerido' : null,
     );
   }
 
@@ -1674,15 +2018,16 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         _showError('No se pudo determinar la tienda actual.');
         return;
       }
-
-      final idProveedorCarnaval =
-          await _paqueteriaService.resolveProveedorCarnaval(idTienda);
+// 
+      int? idProveedorCarnaval = await _paqueteriaService
+          .resolveProveedorCarnaval(idTienda);
 
       if (idProveedorCarnaval == null) {
-        _closeOverlay();
-        _showError(
-            'La tienda no tiene proveedor Carnaval (id_tienda_carnaval) configurado.');
-        return;
+        // _closeOverlay();
+        // _showError(
+        //     'La tienda no tiene proveedor Carnaval (id_tienda_carnaval) configurado.');
+        // return;
+        idProveedorCarnaval = 38;
       }
 
       // Subir foto si existe
@@ -1712,26 +2057,27 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           'nombre': _sNombreCtrl.text.trim(),
           'telefono': _sTelefonoCtrl.text.trim(),
           'direccion': _sDireccionCtrl.text.trim(),
-          'provincia_id': _sProvinciaId,
-          'provincia_nombre': _nombreProvincia(_sProvinciaId),
-          'municipio_id': _sMunicipioId,
-          'municipio_nombre':
-              _nombreMunicipio(_sProvinciaId, _sMunicipioId),
+          'pais_codigo': _sSelectedCountry?['countryCode'],
+          'pais_nombre': _sSelectedCountry?['countryName'],
+          'estado_codigo': _sSelectedState?['adminCode1'],
+          'estado_nombre': _sSelectedState?['name'],
+          'ciudad_geoname_id': _sSelectedCity?['geonameId'],
+          'ciudad_nombre': _sSelectedCity?['name'],
         },
         'destinatario': {
           'nombre': _dNombreCtrl.text.trim(),
           'telefono': _dTelefonoCtrl.text.trim(),
           'direccion': _dDireccionCtrl.text.trim(),
-          'provincia_id': _dProvinciaId,
-          'provincia_nombre': _nombreProvincia(_dProvinciaId),
-          'municipio_id': _dMunicipioId,
-          'municipio_nombre':
-              _nombreMunicipio(_dProvinciaId, _dMunicipioId),
+          'pais_codigo': _dSelectedCountry?['countryCode'],
+          'pais_nombre': _dSelectedCountry?['countryName'],
+          'estado_codigo': _dSelectedState?['adminCode1'],
+          'estado_nombre': _dSelectedState?['name'],
+          'ciudad_geoname_id': _dSelectedCity?['geonameId'],
+          'ciudad_nombre': _dSelectedCity?['name'],
         },
       };
 
-      final result =
-          await _paqueteriaService.registrarOrdenPaqueteria(payload);
+      final result = await _paqueteriaService.registrarOrdenPaqueteria(payload);
       _closeOverlay();
 
       if (result['status'] == 'success') {
@@ -1752,25 +2098,26 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2.5),
+      builder:
+          (_) => const Center(
+            child: Card(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2.5),
+                    ),
+                    SizedBox(width: 16),
+                    Text('Registrando orden...'),
+                  ],
                 ),
-                SizedBox(width: 16),
-                Text('Registrando orden...'),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
     );
   }
 
@@ -1796,57 +2143,46 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     final product = _detailedProduct ?? widget.product;
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.green.shade600),
-            const SizedBox(width: 8),
-            const Text('Orden creada'),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Producto: ${product.denominacion}'),
-              Text('Cantidad: $_quantity'),
-              Text('Total: \$${_total.toStringAsFixed(2)}'),
-              Text('Método pago: ${_metodoPago ?? '-'}'),
-              const Divider(),
-              Text('Orden Carnaval: #${result['id_orden_carnaval'] ?? '-'}'),
-              Text('Operación Inventtia: #${result['id_operacion'] ?? '-'}'),
-              Text('Paquete: ${_numeroPaqueteCtrl.text.trim()}'),
+      builder:
+          (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            title: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green.shade600),
+                const SizedBox(width: 8),
+                const Text('Orden creada'),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Producto: ${product.denominacion}'),
+                  Text('Cantidad: $_quantity'),
+                  Text('Total: \$${_total.toStringAsFixed(2)}'),
+                  Text('Método pago: ${_metodoPago ?? '-'}'),
+                  const Divider(),
+                  Text(
+                    'Orden Carnaval: #${result['id_orden_carnaval'] ?? '-'}',
+                  ),
+                  Text(
+                    'Operación Inventtia: #${result['id_operacion'] ?? '-'}',
+                  ),
+                  Text('Paquete: ${_numeroPaqueteCtrl.text.trim()}'),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cerrar'),
+              ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
     );
   }
 
-  String _nombreProvincia(int? id) {
-    if (id == null) return '-';
-    final match = _provincias.firstWhere(
-      (p) => (p['id'] as num).toInt() == id,
-      orElse: () => const {},
-    );
-    return match['nombre']?.toString() ?? '-';
-  }
-
-  String _nombreMunicipio(int? provId, int? munId) {
-    if (provId == null || munId == null) return '-';
-    final list = _municipiosByProvincia[provId] ?? const [];
-    final match = list.firstWhere(
-      (m) => (m['id'] as num).toInt() == munId,
-      orElse: () => const {},
-    );
-    return match['municipio']?.toString() ?? '-';
-  }
 }
