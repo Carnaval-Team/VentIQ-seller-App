@@ -181,7 +181,7 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Widget _buildGeneratePdfFab() {
-    if (_tabController.index == 4) {
+    if (_tabController.index == 5) { // 5 is now Analyst
       return const SizedBox.shrink();
     }
     // Un solo botón con opciones según el tab activo
@@ -247,7 +247,11 @@ class _SalesScreenState extends State<SalesScreen>
                 : null;
         break;
 
-      case 3: // Análisis
+      case 3: // Desglose ventas
+        // Same pdf action for now or nothing
+        break;
+
+      case 4: // Análisis
         isPdfAction = true;
         isLoading = _isGeneratingPdf;
         label = _isGeneratingPdf ? 'Generando...' : 'Exportar factura PDF';
@@ -1248,10 +1252,13 @@ class _SalesScreenState extends State<SalesScreen>
   List<Map<String, dynamic>> _warehouses = [];
   bool _isLoadingWarehouses = false;
 
+  // Caching para Desglose de Ventas
+  Future<Map<String, dynamic>>? _salesBreakdownFuture;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _tabController.addListener(_onTabChanged);
     _analystController = SalesAnalystController();
     _analystController.addListener(_handleAnalystUpdates);
@@ -1279,10 +1286,17 @@ class _SalesScreenState extends State<SalesScreen>
         case 2: // Suppliers
           _loadSupplierReports();
           break;
-        case 3: // Analysis
+        case 3: // Desglose ventas
+          if (_salesBreakdownFuture == null) {
+            setState(() {
+              _salesBreakdownFuture = _fetchSalesBreakdown();
+            });
+          }
+          break;
+        case 4: // Analysis
           _loadProductAnalysis();
           break;
-        case 4: // Analyst
+        case 5: // Analyst
           if (_hasAdvancedPlan) {
             if (!_isLoadingAnalysis && _productAnalysis.isEmpty) {
               _loadProductAnalysis();
@@ -1329,7 +1343,16 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   void _loadSalesData() {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _salesBreakdownFuture = null; // Limpiar caché de desglose
+    });
+    
+    // Si estamos en la pestaña de desglose, recargar inmediatamente
+    if (_tabController.index == 3) {
+      _salesBreakdownFuture = _fetchSalesBreakdown();
+    }
+
     _loadProductSalesData();
     _loadVendorReports();
     _loadAdvancedPlanStatus();
@@ -1626,6 +1649,10 @@ class _SalesScreenState extends State<SalesScreen>
               text: 'Proveedores',
               icon: Icon(Icons.inventory, size: 18),
             ),
+            const Tab(
+              text: 'Desglose',
+              icon: Icon(Icons.receipt_long, size: 18),
+            ),
             const Tab(text: 'Análisis', icon: Icon(Icons.analytics, size: 18)),
             Tab(
               text: 'Analista',
@@ -1643,6 +1670,7 @@ class _SalesScreenState extends State<SalesScreen>
                   _buildRealTimeTab(),
                   _buildTPVsTab(),
                   _buildSuppliersTab(),
+                  _buildSalesBreakdownTab(),
                   _buildAnalyticsTab(),
                   _buildAnalystGateTab(),
                 ],
@@ -2060,6 +2088,399 @@ class _SalesScreenState extends State<SalesScreen>
                   ),
                 ),
               ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSalesBreakdownTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPeriodSelector(),
+          const SizedBox(height: 16),
+          if (_salesBreakdownFuture != null)
+            FutureBuilder<Map<String, dynamic>>(
+              future: _salesBreakdownFuture,
+              builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  ),
+                );
+              }
+              if (snapshot.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Text(
+                      'Error al cargar el desglose: ${snapshot.error}',
+                      style: const TextStyle(color: AppColors.error),
+                    ),
+                  ),
+                );
+              }
+
+              final data = snapshot.data;
+              if (data == null) {
+                return const Center(child: Text('No hay datos disponibles.'));
+              }
+
+              final completas = (data['ordenes_completas'] as List?) ?? [];
+              final incompletas = (data['ordenes_incompletas'] as List?) ?? [];
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildBreakdownSummaryCard(completas, incompletas),
+                  const SizedBox(height: 16),
+                  if (incompletas.isNotEmpty)
+                    _buildIncompleteOrdersSection(incompletas),
+                  const SizedBox(height: 16),
+                  if (completas.isNotEmpty)
+                    _buildCompleteOrdersSection(completas),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>> _fetchSalesBreakdown() async {
+    final idTienda = await UserPreferencesService().getIdTienda();
+    if (idTienda == null) throw Exception('No hay tienda seleccionada');
+
+    final response = await Supabase.instance.client.rpc(
+      'reporte_ordenes_json',
+      params: {
+        'p_id_tienda': idTienda,
+        'p_fecha_desde': _startDate.toIso8601String(),
+        'p_fecha_hasta': _endDate.toIso8601String(),
+        'p_id_tpv': null,
+      },
+    );
+    return response as Map<String, dynamic>;
+  }
+
+  Widget _buildBreakdownSummaryCard(List completas, List incompletas) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Resumen de Auditoría',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    const Text('Órdenes Completas', style: TextStyle(fontSize: 12, color: AppColors.textSecondary), textAlign: TextAlign.center),
+                    const SizedBox(height: 4),
+                    Text('${completas.length}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.success)),
+                  ],
+                ),
+              ),
+              Container(width: 1, height: 40, color: AppColors.border),
+              Expanded(
+                child: Column(
+                  children: [
+                    const Text('Órdenes Incompletas', style: TextStyle(fontSize: 12, color: AppColors.textSecondary), textAlign: TextAlign.center),
+                    const SizedBox(height: 4),
+                    Text('${incompletas.length}', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: incompletas.isNotEmpty ? AppColors.error : AppColors.success)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (incompletas.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.error.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.error.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: const [
+                  Icon(Icons.warning_amber_rounded, color: AppColors.error),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Existen órdenes incompletas en el período seleccionado. Verifique si falta extracción de inventario, pago u operación de venta.',
+                      style: TextStyle(color: AppColors.error, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ]
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIncompleteOrdersSection(List incompletas) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: AppColors.error.withOpacity(0.5)),
+      ),
+      child: ExpansionTile(
+        title: const Text(
+          'Órdenes Incompletas (Auditoría Detallada)',
+          style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.error),
+        ),
+        subtitle: Text('${incompletas.length} órdenes requieren revisión'),
+        initiallyExpanded: true,
+        children: [
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: incompletas.length,
+            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final orden = incompletas[index];
+              final total = orden['total_operacion'] ?? 0.0;
+              final venta = orden['venta'] as Map?;
+              final razonesList = (orden['razones_incompletitud'] as List?) ?? [];
+              final razon = razonesList.isNotEmpty ? razonesList.join(', ') : 'Desconocida';
+              final fecha = orden['created_at'] != null ? DateFormat('dd/MM/yy HH:mm').format(DateTime.parse(orden['created_at'])) : '';
+              final vendedor = orden['vendedor'] != null ? orden['vendedor']['nombre_completo'] : 'N/A';
+              
+              return ExpansionTile(
+                leading: CircleAvatar(
+                  backgroundColor: AppColors.error.withOpacity(0.1),
+                  child: const Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                ),
+                title: Text('Orden #${orden['id_operacion'] ?? ''} - ${venta != null ? venta['tpv_nombre'] : 'Sin TPV'}'),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Falta: $razon', style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w500)),
+                    Text('$fecha • Vendedor: $vendedor', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                  ],
+                ),
+                trailing: Text('\$${total is num ? total.toStringAsFixed(2) : total}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                children: [
+                  _buildOrderDetailsContent(orden)
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompleteOrdersSection(List completas) {
+    final limited = completas.take(100).toList(); // Limitar a 100
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: AppColors.border),
+      ),
+      child: ExpansionTile(
+        title: const Text(
+          'Órdenes Completas (Auditoría Detallada)',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text('${completas.length} órdenes procesadas correctamente'),
+        children: [
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: limited.length,
+            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final orden = limited[index];
+              final total = orden['total_operacion'] ?? 0.0;
+              final venta = orden['venta'] as Map?;
+              final items = orden['items'] as List? ?? [];
+              final pagos = orden['pagos'] as List? ?? [];
+              final fecha = orden['created_at'] != null ? DateFormat('dd/MM/yy HH:mm').format(DateTime.parse(orden['created_at'])) : '';
+              final vendedor = orden['vendedor'] != null ? orden['vendedor']['nombre_completo'] : 'N/A';
+              
+              return ExpansionTile(
+                title: Text('Orden #${orden['id_operacion'] ?? ''} - ${venta != null ? venta['tpv_nombre'] : 'Sin TPV'}'),
+                subtitle: Text('$fecha • Vendedor: $vendedor', style: const TextStyle(fontSize: 12)),
+                trailing: Text('\$${total is num ? total.toStringAsFixed(2) : total}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.success, fontSize: 14)),
+                children: [
+                  _buildOrderDetailsContent(orden)
+                ],
+              );
+            },
+          ),
+          if (completas.length > 100)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'Mostrando las primeras 100 de ${completas.length} órdenes.',
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrderDetailsContent(Map orden) {
+    final venta = orden['venta'] as Map?;
+    final items = orden['items'] as List? ?? [];
+    final pagos = orden['pagos'] as List? ?? [];
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: AppColors.background,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // INFO DE LA VENTA Y CLIENTE
+          if (venta != null) ...[
+            Row(
+              children: [
+                const Icon(Icons.person_outline, size: 16, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Text('Cliente: ${venta['cliente_nombre'] ?? 'General'}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: (venta['es_pagada'] == true) ? AppColors.success.withOpacity(0.1) : AppColors.warning.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    (venta['es_pagada'] == true) ? 'PAGADA' : 'NO PAGADA',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: (venta['es_pagada'] == true) ? AppColors.success : AppColors.warning,
+                    ),
+                  ),
+                )
+              ],
+            ),
+            const SizedBox(height: 12),
+          ] else ...[
+            const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, size: 16, color: AppColors.warning),
+                SizedBox(width: 8),
+                Text('Sin registro de operación de venta', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.warning)),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
+          
+          // PAGOS
+          if (pagos.isNotEmpty) ...[
+            const Text('💰 Pagos Registrados:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: AppColors.textSecondary)),
+            const SizedBox(height: 6),
+            ...pagos.map((p) {
+              final monto = p['monto'] ?? 0.0;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4.0, left: 8.0),
+                child: Row(
+                  children: [
+                    Icon(p['es_efectivo'] == true ? Icons.money : Icons.credit_card, size: 14, color: Colors.grey[600]),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text('${p['medio_pago'] ?? 'Pago'} - Ref: ${p['referencia_pago'] ?? 'N/A'}', style: const TextStyle(fontSize: 12))),
+                    Text('\$${monto is num ? monto.toStringAsFixed(2) : monto}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              );
+            }).toList(),
+            const SizedBox(height: 12),
+          ] else ...[
+            const Text('💰 Pagos Registrados: Ninguno', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: AppColors.warning)),
+            const SizedBox(height: 12),
+          ],
+
+          // ITEMS Y AUDITORIA DE INVENTARIO
+          const Text('📦 Items y Extracción de Inventario:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+          if (items.isEmpty)
+            const Text('No hay items en esta orden.', style: TextStyle(color: AppColors.warning, fontStyle: FontStyle.italic)),
+          ...items.map((item) {
+            final inv = item['inventario'] as Map?;
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8.0),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(color: AppColors.border.withOpacity(0.5)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${item['cantidad']}x ', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Expanded(child: Text('${item['producto_nombre'] ?? 'Producto'}', style: const TextStyle(fontWeight: FontWeight.w600))),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text('\$${item['importe'] is num ? (item['importe'] as num).toStringAsFixed(2) : item['importe']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                            Text('\$${item['precio_unitario'] is num ? (item['precio_unitario'] as num).toStringAsFixed(2) : item['precio_unitario']} c/u', style: const TextStyle(color: AppColors.textSecondary, fontSize: 10)),
+                          ],
+                        ),
+                      ],
+                    ),
+                    if (inv != null) ...[
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 6.0),
+                        child: Divider(height: 1),
+                      ),
+                      Row(
+                        children: [
+                          const Icon(Icons.inventory_2_outlined, size: 14, color: AppColors.info),
+                          const SizedBox(width: 6),
+                          Text('Inventario (ID: ${inv['id_inventario']}):', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                          const Spacer(),
+                          Text('${inv['cantidad_inicial']} ', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                          const Icon(Icons.arrow_forward, size: 10, color: Colors.grey),
+                          Text(' ${inv['cantidad_final']} unidades', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ] else ...[
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 6.0),
+                        child: Divider(height: 1),
+                      ),
+                      const Row(
+                        children: [
+                          Icon(Icons.warning_amber_rounded, size: 14, color: AppColors.warning),
+                          SizedBox(width: 6),
+                          Text('No se registró extracción de inventario.', style: TextStyle(fontSize: 11, color: AppColors.warning)),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
         ],
       ),
     );

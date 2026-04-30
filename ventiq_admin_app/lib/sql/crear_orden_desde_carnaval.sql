@@ -31,6 +31,13 @@ DECLARE
     v_cantidad_solicitada NUMERIC;
     v_cantidad_real NUMERIC;
     v_stock_disponible NUMERIC;
+    -- Variable para presentación de inventario (declarada aquí para que CONTINUE
+    -- dentro del FOR loop funcione correctamente sin bloques DECLARE anidados)
+    v_presentacion_id_inv BIGINT;
+    -- Flag explícito de si se encontró registro de inventario.
+    -- Usar IS NOT NULL en RECORD no es confiable: PostgreSQL devuelve FALSE
+    -- si algún campo del composite es NULL, aunque el registro exista.
+    v_tiene_inventario BOOLEAN := FALSE;
 BEGIN
     -- Obtener información de la orden
     SELECT * INTO v_order_record
@@ -274,14 +281,11 @@ BEGIN
                 CONTINUE;
             END IF;
 
-            -- Verificar si el producto ya fue agregado a la operación
-            IF EXISTS (
-                SELECT 1 FROM public.app_dat_extraccion_productos
-                WHERE id_operacion = v_operacion_id
-                AND id_producto = v_producto_id
-            ) THEN
-                CONTINUE;
-            END IF;
+            -- NOTA: El guard de deduplicación por id_operacion+id_producto fue eliminado.
+            -- Antes era necesario cuando el trigger iteraba todos los OrderDetails.
+            -- Ahora el trigger procesa EXCLUSIVAMENTE NEW (un row único por invocación),
+            -- por lo que el guard generaba falsos positivos al reusar operaciones existentes,
+            -- bloqueando silenciosamente la extracción y el descuento de inventario.
             v_cantidad_solicitada := COALESCE(v_order_detail.quantity, 1);
 
             DECLARE
@@ -301,9 +305,11 @@ BEGIN
                       AND id_ubicacion = v_ubicacion_especifica
                     ORDER BY id desc, created_at DESC
                     LIMIT 1;
+                    -- FOUND es la forma confiable de saber si SELECT INTO encontró filas
+                    v_tiene_inventario := FOUND;
 
-                    RAISE NOTICE 'Usando ubicación específica % para producto % desde relation_products_carnaval',
-                        v_ubicacion_especifica, v_producto_id;
+                    RAISE NOTICE 'Usando ubicación específica % para producto % desde relation_products_carnaval. Encontrado: %',
+                        v_ubicacion_especifica, v_producto_id, v_tiene_inventario;
                 ELSE
                     -- Obtener inventario más reciente
                     SELECT * INTO v_inventario_record
@@ -311,7 +317,9 @@ BEGIN
                     WHERE id_producto = v_producto_id
                     ORDER BY id desc, created_at DESC
                     LIMIT 1;
-                    RAISE NOTICE 'No se encontró ubicación específica para producto %, usando inventario más reciente', v_producto_id;
+                    v_tiene_inventario := FOUND;
+                    RAISE NOTICE 'No se encontró ubicación específica para producto %, usando inventario más reciente. Encontrado: %',
+                        v_producto_id, v_tiene_inventario;
                 END IF;
             END;
 
@@ -382,7 +390,8 @@ BEGIN
             END IF;
 
             -- Si no es paquetería y no hay registro de inventario, no podemos extraer.
-            IF v_inventario_record IS NULL AND NOT v_es_paqueteria THEN
+            IF NOT v_tiene_inventario AND NOT v_es_paqueteria THEN
+                RAISE NOTICE 'Sin registro de inventario para producto %, se omite extracción', v_producto_id;
                 CONTINUE;
             END IF;
 
@@ -407,28 +416,38 @@ BEGIN
 
             -- Actualizar inventario SOLO si no es paquetería y existe registro previo.
             -- En paquetería cantidad_final no debe cambiar.
-            IF NOT v_es_paqueteria AND v_inventario_record IS NOT NULL THEN
+            -- IMPORTANTE: usar v_tiene_inventario (booleano) en lugar de IS NOT NULL
+            -- sobre el RECORD, ya que PostgreSQL evalúa composite IS NOT NULL como FALSE
+            -- si cualquier campo del registro es NULL.
+            IF NOT v_es_paqueteria AND v_tiene_inventario THEN
                 v_nueva_cantidad_final := GREATEST(0, v_inventario_record.cantidad_final - v_cantidad_real);
 
                 -- id_presentacion es NOT NULL en app_dat_inventario_productos.
                 -- Si el inventario fuente no lo trae, buscar la primera presentación del producto
                 -- (mismo fallback que usa registrar_venta.sql).
-                DECLARE
-                    v_presentacion_id BIGINT := v_inventario_record.id_presentacion;
-                BEGIN
-                    IF v_presentacion_id IS NULL THEN
-                        SELECT id INTO v_presentacion_id
-                        FROM public.app_dat_producto_presentacion
-                        WHERE id_producto = v_producto_id
-                        ORDER BY id ASC
-                        LIMIT 1;
+                -- NOTA: NO usar un bloque DECLARE anidado aquí porque CONTINUE dentro
+                -- de un sub-bloque BEGIN/END no opera sobre el FOR loop externo
+                -- de forma confiable en PL/pgSQL (el CONTINUE se pierde).
+                IF v_inventario_record.id_presentacion IS NULL THEN
+                    SELECT id INTO v_presentacion_id_inv
+                    FROM public.app_dat_producto_presentacion
+                    WHERE id_producto = v_producto_id
+                    ORDER BY id ASC
+                    LIMIT 1;
 
-                        IF v_presentacion_id IS NULL THEN
-                            RAISE NOTICE 'No hay presentación para producto %, se omite inserción de inventario', v_producto_id;
-                            CONTINUE;
-                        END IF;
+                    IF v_presentacion_id_inv IS NULL THEN
+                        RAISE NOTICE 'No hay presentación para producto %, se omite inserción de inventario', v_producto_id;
+                        CONTINUE;
                     END IF;
+                ELSE
+                    v_presentacion_id_inv := v_inventario_record.id_presentacion;
+                END IF;
 
+                RAISE NOTICE 'Insertando inventario: producto=% variante=% ubicacion=% presentacion=% cant_inicial=% cant_final=% extraccion=%',
+                    v_producto_id, v_inventario_record.id_variante, v_inventario_record.id_ubicacion,
+                    v_presentacion_id_inv, v_inventario_record.cantidad_final, v_nueva_cantidad_final, v_extraccion_id;
+
+                BEGIN
                     INSERT INTO public.app_dat_inventario_productos (
                         id_producto, id_variante, id_opcion_variante, id_ubicacion,
                         id_presentacion, cantidad_inicial, sku_producto, sku_ubicacion,
@@ -437,13 +456,19 @@ BEGIN
                     ) VALUES (
                         v_producto_id, v_inventario_record.id_variante,
                         v_inventario_record.id_opcion_variante, v_inventario_record.id_ubicacion,
-                        v_presentacion_id, v_inventario_record.cantidad_final,
+                        v_presentacion_id_inv, v_inventario_record.cantidad_final,
                         v_inventario_record.sku_producto, v_inventario_record.sku_ubicacion,
                         v_nueva_cantidad_final, 2, NULL, v_extraccion_id, NULL, v_proveedor_actual
                     );
+                    RAISE NOTICE 'Inventario insertado correctamente para producto % (orden %)', v_producto_id, v_order_record.id;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        RAISE NOTICE 'ERROR al insertar inventario para producto % (orden %): % (SQLSTATE: %)',
+                            v_producto_id, v_order_record.id, SQLERRM, SQLSTATE;
                 END;
             ELSE
-                RAISE NOTICE 'Paquetería: omitiendo actualización de inventario para producto % (orden %)', v_producto_id, v_order_record.id;
+                RAISE NOTICE 'Omitiendo inventario: es_paqueteria=% tiene_inventario=% producto=% orden=%',
+                    v_es_paqueteria, v_tiene_inventario, v_producto_id, v_order_record.id;
             END IF;
 
             -- Agregar al detalle para notificación
