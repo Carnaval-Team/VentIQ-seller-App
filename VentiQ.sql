@@ -698,7 +698,6 @@ CREATE TABLE public.app_dat_inventario_productos (
   CONSTRAINT app_dat_inventario_productos_id_opcion_variante_fkey FOREIGN KEY (id_opcion_variante) REFERENCES public.app_dat_atributo_opcion(id),
   CONSTRAINT app_dat_inventario_productos_id_presentacion_fkey FOREIGN KEY (id_presentacion) REFERENCES public.app_dat_producto_presentacion(id),
   CONSTRAINT app_dat_inventario_productos_id_control_fkey FOREIGN KEY (id_control) REFERENCES public.app_dat_control_productos(id),
-  CONSTRAINT app_dat_inventario_productos_id_proveedor_fkey1 FOREIGN KEY (id_proveedor) REFERENCES carnavalapp.proveedores(id),
   CONSTRAINT app_dat_inventario_productos_id_recepcion_fkey FOREIGN KEY (id_recepcion) REFERENCES public.app_dat_recepcion_productos(id),
   CONSTRAINT app_dat_inventario_productos_id_ubicacion_fkey FOREIGN KEY (id_ubicacion) REFERENCES public.app_dat_layout_almacen(id),
   CONSTRAINT app_dat_inventario_productos_id_extraccion_fkey FOREIGN KEY (id_extraccion) REFERENCES public.app_dat_extraccion_productos(id)
@@ -1033,6 +1032,7 @@ CREATE TABLE public.app_dat_producto (
   id_vendedor_app bigint,
   mostrar_en_catalogo boolean DEFAULT false,
   id_proveedor integer,
+  es_paquete boolean,
   CONSTRAINT app_dat_producto_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_producto_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
   CONSTRAINT app_dat_producto_id_categoria_fkey FOREIGN KEY (id_categoria) REFERENCES public.app_dat_categoria(id),
@@ -1226,6 +1226,17 @@ CREATE TABLE public.app_dat_recepcion_productos (
   CONSTRAINT app_dat_recepcion_productos_id_ubicacion_fkey FOREIGN KEY (id_ubicacion) REFERENCES public.app_dat_layout_almacen(id),
   CONSTRAINT app_dat_recepcion_productos_id_presentacion_fkey FOREIGN KEY (id_presentacion) REFERENCES public.app_dat_producto_presentacion(id)
 );
+CREATE TABLE public.app_dat_recursos_humanos (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  uuid uuid NOT NULL,
+  id_tienda bigint NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  id_trabajador bigint,
+  CONSTRAINT app_dat_recursos_humanos_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_recursos_humanos_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT app_dat_recursos_humanos_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id),
+  CONSTRAINT app_dat_recursos_humanos_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id)
+);
 CREATE TABLE public.app_dat_subcategorias (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   idcategoria bigint NOT NULL,
@@ -1361,6 +1372,7 @@ CREATE TABLE public.app_dat_trabajadores (
   deleted_at timestamp with time zone,
   salario_horas numeric NOT NULL DEFAULT 0,
   maneja_apertura_control boolean DEFAULT true,
+  pago_por_resultado numeric DEFAULT 0,
   CONSTRAINT app_dat_trabajadores_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_trabajadores_id_roll_fkey FOREIGN KEY (id_roll) REFERENCES public.seg_roll(id),
   CONSTRAINT app_dat_trabajadores_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
@@ -1800,19 +1812,6 @@ CREATE TABLE public.app_versiones (
   activa boolean DEFAULT true,
   CONSTRAINT app_versiones_pkey PRIMARY KEY (id)
 );
-
-CREATE TABLE public.app_dat_recursos_humanos (
-   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-   uuid uuid NOT NULL,
-   id_tienda bigint NOT NULL,
-   created_at timestamp with time zone NOT NULL DEFAULT now(),
-   id_trabajador bigint,
-   CONSTRAINT app_dat_recursos_humanos_pkey PRIMARY KEY (id),
-   CONSTRAINT app_dat_recursos_humanos_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
-   CONSTRAINT app_dat_recursos_humanos_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id),
-   CONSTRAINT app_dat_recursos_humanos_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id)
- );
- 
 CREATE TABLE public.auditor (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   uuid uuid NOT NULL,
@@ -1854,6 +1853,51 @@ CREATE TABLE public.config_asistant_model (
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT config_asistant_model_pkey PRIMARY KEY (id)
 );
+CREATE TABLE public.hr_dat_asistencia (
+  id bigint NOT NULL DEFAULT nextval('hr_dat_asistencia_id_seq'::regclass),
+  id_tienda bigint NOT NULL,
+  id_trabajador bigint NOT NULL,
+  hora_entrada timestamp with time zone NOT NULL DEFAULT now(),
+  hora_salida timestamp with time zone,
+  horas_trabajadas numeric DEFAULT 
+CASE
+    WHEN (hora_salida IS NOT NULL) THEN LEAST((EXTRACT(epoch FROM (hora_salida - hora_entrada)) / 3600.0), 8.0)
+    ELSE NULL::numeric
+END,
+  salario_hora numeric NOT NULL DEFAULT 0,
+  salario_total numeric DEFAULT 
+CASE
+    WHEN (hora_salida IS NOT NULL) THEN (LEAST((EXTRACT(epoch FROM (hora_salida - hora_entrada)) / 3600.0), 8.0) * salario_hora)
+    ELSE NULL::numeric
+END,
+  pago_por_resultado numeric DEFAULT 0,
+  aplica_pago_resultado boolean DEFAULT false,
+  registrado_por uuid,
+  cerrado_por uuid,
+  observaciones text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT hr_dat_asistencia_pkey PRIMARY KEY (id),
+  CONSTRAINT hr_dat_asistencia_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT hr_dat_asistencia_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id),
+  CONSTRAINT hr_dat_asistencia_registrado_por_fkey FOREIGN KEY (registrado_por) REFERENCES auth.users(id),
+  CONSTRAINT hr_dat_asistencia_cerrado_por_fkey FOREIGN KEY (cerrado_por) REFERENCES auth.users(id)
+);
+CREATE TABLE public.hr_dat_auditoria_salario (
+  id bigint NOT NULL DEFAULT nextval('hr_dat_auditoria_salario_id_seq'::regclass),
+  id_trabajador bigint NOT NULL,
+  id_tienda bigint NOT NULL,
+  campo_modificado text NOT NULL,
+  valor_anterior text,
+  valor_nuevo text,
+  modificado_por uuid NOT NULL,
+  motivo text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT hr_dat_auditoria_salario_pkey PRIMARY KEY (id),
+  CONSTRAINT hr_dat_auditoria_salario_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id),
+  CONSTRAINT hr_dat_auditoria_salario_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT hr_dat_auditoria_salario_modificado_por_fkey FOREIGN KEY (modificado_por) REFERENCES auth.users(id)
+);
 CREATE TABLE public.monedas (
   codigo character NOT NULL,
   nombre character varying NOT NULL,
@@ -1874,6 +1918,18 @@ CREATE TABLE public.municipios (
   precio_alimentos numeric NOT NULL DEFAULT '0'::numeric,
   CONSTRAINT municipios_pkey PRIMARY KEY (id),
   CONSTRAINT municipios_provincia_fkey FOREIGN KEY (provincia) REFERENCES public.provincias(id)
+);
+CREATE TABLE public.paqueteria_ordenes (
+  id bigint NOT NULL DEFAULT nextval('paqueteria_ordenes_id_seq'::regclass),
+  id_operacion bigint NOT NULL,
+  id_orden_carnaval bigint,
+  numero_paquete text NOT NULL,
+  descripcion text,
+  foto_url text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT paqueteria_ordenes_pkey PRIMARY KEY (id),
+  CONSTRAINT paqueteria_ordenes_id_operacion_fkey FOREIGN KEY (id_operacion) REFERENCES public.app_dat_operaciones(id),
+  CONSTRAINT paqueteria_ordenes_id_orden_carnaval_fkey FOREIGN KEY (id_orden_carnaval) REFERENCES carnavalapp.Orders(id)
 );
 CREATE TABLE public.precio_global_productos_carnaval (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,

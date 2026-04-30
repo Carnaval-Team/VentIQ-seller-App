@@ -538,6 +538,33 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             print('📍 StackTrace completo: $stackTrace');
             // Don't throw here - transfer was successful, completion is secondary
           }
+
+          // Register the transfer linkage in app_dat_operacion_transferencia
+          try {
+            print('📋 Registrando en app_dat_operacion_transferencia...');
+            final transferRegistroResult =
+                await InventoryService.registrarOperacionTransferencia(
+                  idExtraccion: result['id_extraccion'] as int,
+                  idRecepcion: result['id_recepcion'] as int,
+                  autorizadoPor: _autorizadoPorController.text,
+                  idTienda: idTienda,
+                  uuid: userUuid,
+                );
+            if (transferRegistroResult['status'] == 'success') {
+              print(
+                '✅ Operación de transferencia registrada - ID: ${transferRegistroResult['id_operacion']}',
+              );
+            } else {
+              print(
+                '⚠️ Error al registrar en app_dat_operacion_transferencia: ${transferRegistroResult['message']}',
+              );
+            }
+          } catch (regError) {
+            print(
+              '❌ Error al registrar en app_dat_operacion_transferencia: $regError',
+            );
+            // Don't throw - primary transfer already succeeded
+          }
         } else {
           print('⚠️ No se obtuvieron IDs de operaciones para completar');
         }
