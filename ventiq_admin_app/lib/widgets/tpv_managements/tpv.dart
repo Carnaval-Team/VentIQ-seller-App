@@ -326,16 +326,51 @@ class _TpvListWidgetState extends State<TpvListWidget> {
                 final trabajador =
                     vendedor['trabajador'] as Map<String, dynamic>?;
                 if (trabajador != null) {
+                  final email = trabajador['user_mail'] as String?;
                   return Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.person, size: 16, color: AppColors.info),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${trabajador['nombres']} ${trabajador['apellidos'] ?? ''}',
-                          style: TextStyle(color: AppColors.info, fontSize: 13),
+                        Row(
+                          children: [
+                            Icon(Icons.person, size: 16, color: AppColors.info),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${trabajador['nombres']} ${trabajador['apellidos'] ?? ''}',
+                                style: TextStyle(
+                                  color: AppColors.info,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
+                        if (email != null && email.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 24, top: 2),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.email_outlined,
+                                  size: 13,
+                                  color: Colors.grey[600],
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    email,
+                                    style: TextStyle(
+                                      color: Colors.grey[700],
+                                      fontSize: 12,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                   );
