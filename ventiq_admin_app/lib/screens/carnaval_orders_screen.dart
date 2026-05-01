@@ -406,13 +406,26 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     final paquete = isPaqueteria ? paqueteria['paquete'] as Map? : null;
     final numeroPaquete = paquete?['numero']?.toString();
     final descPaquete = paquete?['descripcion']?.toString();
-    final destinatarioInfo =
-        isPaqueteria ? paqueteria['destinatario'] as Map? : null;
+    // El destinatario puede venir en el wrapper exterior (formato carnaval) o
+    // en el sub-objeto interno paqueteria.paqueteria.destinatario (nuevo).
+    Map? destinatarioInfo;
+    if (isPaqueteria) {
+      final inner = paqueteria['paqueteria'];
+      if (inner is Map && inner['destinatario'] is Map) {
+        destinatarioInfo = inner['destinatario'] as Map;
+      } else if (paqueteria['destinatario'] is Map) {
+        destinatarioInfo = paqueteria['destinatario'] as Map;
+      }
+    }
     final destNombre = destinatarioInfo?['nombre']?.toString();
-    final destMunicipio =
-        destinatarioInfo?['municipio_nombre']?.toString();
-    final destProvincia =
-        destinatarioInfo?['provincia_nombre']?.toString();
+    // Nuevo formato (GeoNames): ciudad_nombre / estado_nombre / pais_nombre.
+    // Formato antiguo (carnavalapp): municipio_nombre / provincia_nombre.
+    final destMunicipio = (destinatarioInfo?['ciudad_nombre'] ??
+            destinatarioInfo?['municipio_nombre'])
+        ?.toString();
+    final destProvincia = (destinatarioInfo?['estado_nombre'] ??
+            destinatarioInfo?['provincia_nombre'])
+        ?.toString();
 
     String dateStr = '-';
     if (createdAt != null) {

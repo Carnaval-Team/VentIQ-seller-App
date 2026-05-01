@@ -1104,6 +1104,110 @@ class _CierreScreenState extends State<CierreScreen> {
                                           ),
                                         ],
                                       ),
+                                      // Desglose por ubicación (muy pequeño)
+                                      if (locations.isNotEmpty) ...[
+                                        const SizedBox(height: 8),
+                                        Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey[100],
+                                            borderRadius:
+                                                BorderRadius.circular(4),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Desglose por ubicación:',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.grey[700],
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              ...locations.map((loc) {
+                                                final locCantidad =
+                                                    loc['cantidad'] as double;
+                                                final locReservado =
+                                                    ((loc['reservado_carnaval']
+                                                                as num?)
+                                                            ?.toDouble() ??
+                                                        0.0);
+                                                final locReal =
+                                                    (locCantidad - locReservado)
+                                                        .clamp(
+                                                          0.0,
+                                                          double.infinity,
+                                                        );
+                                                return Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        bottom: 2,
+                                                      ),
+                                                  child: Row(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .spaceBetween,
+                                                    children: [
+                                                      Expanded(
+                                                        child: Text(
+                                                          '${loc['almacen']} - ${loc['ubicacion']}',
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            color: Colors
+                                                                .grey[700],
+                                                          ),
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                        ),
+                                                      ),
+                                                      Row(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          Text(
+                                                            locReal
+                                                                .toStringAsFixed(
+                                                                  2,
+                                                                ),
+                                                            style: TextStyle(
+                                                              fontSize: 11,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                              color: Colors
+                                                                  .grey[900],
+                                                            ),
+                                                          ),
+                                                          if (locReservado >
+                                                              0) ...[
+                                                            const SizedBox(
+                                                              width: 3,
+                                                            ),
+                                                            Text(
+                                                              '(res: ${locReservado.toStringAsFixed(0)})',
+                                                              style: TextStyle(
+                                                                fontSize: 10,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                                color: Colors
+                                                                    .orange[700],
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ],
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ],
                                   ),
                                 );
@@ -1233,7 +1337,6 @@ class _CierreScreenState extends State<CierreScreen> {
       }
 
       final userData = await _userPrefs.getUserData();
-      final idAlmacen = await _userPrefs.getIdAlmacen();
       final idTiendaRaw = userData['idTienda'];
       final idTienda =
           idTiendaRaw is int
@@ -1242,7 +1345,7 @@ class _CierreScreenState extends State<CierreScreen> {
 
       if (idTienda == null) return [];
       print(
-        '📦 Obteniendo ubicaciones del producto $productId para tienda $idTienda... almacen: $idAlmacen',
+        '📦 Obteniendo ubicaciones del producto $productId para tienda $idTienda (todos los almacenes)...',
       );
       final response = await Supabase.instance.client.rpc(
         'fn_listar_inventario_productos_paged2',
@@ -1252,7 +1355,6 @@ class _CierreScreenState extends State<CierreScreen> {
           'p_limite': 9999,
           'p_mostrar_sin_stock': true,
           'p_pagina': 1,
-          'p_id_almacen': idAlmacen,
         },
       );
 
@@ -2468,36 +2570,36 @@ class _CierreScreenState extends State<CierreScreen> {
       } else {
         print('🌐 Modo online - Creando cierre en Supabase...');
         // Call TurnoService to close the shift
-        final success = await TurnoService.cerrarTurno(
+        final result = await TurnoService.cerrarTurnoDetailed(
           efectivoReal: montoFinal,
           productos: productCounts ?? [],
           observaciones:
               observacionesFinales.isEmpty ? null : observacionesFinales,
         );
-        if (success) {
+        if (result.success) {
           await _userPrefs.clearOfflineTurno();
           await _userPrefs.clearResumenCierreCache();
           await _userPrefs.clearTurnoResumenCache();
-          // Al cerrar online, limpiar cache de turno y resúmenes offline
-          try {
-            print(
-              '🧹 Cache de turno/resúmenes offline limpiado tras cierre online',
-            );
-          } catch (e) {
-            print('⚠️ No se pudo limpiar cache offline tras cierre: $e');
-          }
-
-          // Close all pending orders locally
-          _showSuccessDialog(montoFinal, diferencia);
-        } else {
           print(
-            '⚠️ Error en cierre online. Creando cierre offline de respaldo',
+            '🧹 Cache de turno/resúmenes offline limpiado tras cierre online',
+          );
+
+          _showSuccessDialog(montoFinal, diferencia);
+        } else if (result.isNetworkError) {
+          print(
+            '📵 Error de red en cierre online. Creando cierre offline de respaldo',
           );
           await _createOfflineCierre(
             efectivoFinal: montoFinal,
             productos: productCounts ?? [],
             observaciones: observacionesFinales,
             diferencia: diferencia,
+          );
+        } else {
+          // Error de negocio: NO crear cierre offline. Mostrar mensaje real.
+          print('⚠️ Cierre rechazado por el servidor: ${result.message}');
+          _showErrorMessage(
+            result.message ?? 'No se pudo cerrar el turno',
           );
         }
       }

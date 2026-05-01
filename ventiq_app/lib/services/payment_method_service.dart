@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/payment_method.dart';
 import 'user_preferences_service.dart';
+import 'supabase_retry_helper.dart';
 
 class PaymentMethodService {
   static final SupabaseClient _supabase = Supabase.instance.client;
@@ -64,21 +65,27 @@ class PaymentMethodService {
   }) async {
     try {
       print('🔍 Fetching active payment methods...');
-      List<Map<String, dynamic>> response;
+      final List<Map<String, dynamic>> response;
       if (!only_efectivo) {
-        response = await _supabase
-            .from('app_nom_medio_pago')
-            .select('*')
-            .eq('es_activo', true)
-            .order('denominacion', ascending: true);
+        response = await withNetworkRetry(
+          () => _supabase
+              .from('app_nom_medio_pago')
+              .select('*')
+              .eq('es_activo', true)
+              .order('denominacion', ascending: true),
+          description: 'Cargar métodos de pago',
+        );
       } else {
         print('solo efectivo');
-        response = await _supabase
-            .from('app_nom_medio_pago')
-            .select('*')
-            .eq('es_activo', true)
-            .eq('id', 1)
-            .order('denominacion', ascending: true);
+        response = await withNetworkRetry(
+          () => _supabase
+              .from('app_nom_medio_pago')
+              .select('*')
+              .eq('es_activo', true)
+              .eq('id', 1)
+              .order('denominacion', ascending: true),
+          description: 'Cargar métodos de pago (solo efectivo)',
+        );
       }
       print('📊 Payment methods response: $response');
 

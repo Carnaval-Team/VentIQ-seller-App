@@ -1,7 +1,71 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import '../models/expense.dart';
 import 'payment_method_service.dart';
+
+/// Tipo de fallo al ejecutar una operación de turno.
+enum TurnoErrorKind {
+  /// Falló la red o el servidor no respondió. Se puede caer a flujo offline.
+  network,
+
+  /// El backend respondió pero rechazó la operación (raise / regla de negocio).
+  /// NO se debe caer a offline — el usuario debe ver el mensaje y corregir.
+  business,
+
+  /// Error inesperado (programación / datos faltantes).
+  unknown,
+}
+
+/// Resultado tipado de operaciones de turno (apertura/cierre).
+class TurnoOperationResult {
+  final bool success;
+  final String? message;
+  final TurnoErrorKind? errorKind;
+  final dynamic data;
+
+  const TurnoOperationResult.success({this.message, this.data})
+      : success = true,
+        errorKind = null;
+
+  const TurnoOperationResult.failure({
+    required this.message,
+    required this.errorKind,
+    this.data,
+  }) : success = false;
+
+  bool get isNetworkError => errorKind == TurnoErrorKind.network;
+  bool get isBusinessError => errorKind == TurnoErrorKind.business;
+}
+
+/// Determina si una excepción corresponde a un error de red.
+bool _isNetworkException(Object error) {
+  if (error is SocketException) return true;
+  if (error is TimeoutException) return true;
+  if (error is http.ClientException) return true;
+  final msg = error.toString().toLowerCase();
+  return msg.contains('socketexception') ||
+      msg.contains('timeoutexception') ||
+      msg.contains('clientexception') ||
+      msg.contains('failed host lookup') ||
+      msg.contains('connection refused') ||
+      msg.contains('connection closed') ||
+      msg.contains('connection reset') ||
+      msg.contains('network is unreachable');
+}
+
+/// Extrae un mensaje legible de un PostgrestException o error genérico.
+String _extractErrorMessage(Object error) {
+  if (error is PostgrestException) {
+    return error.message;
+  }
+  if (error is AuthException) {
+    return error.message;
+  }
+  return error.toString();
+}
 
 class TurnoService {
   static final SupabaseClient _supabase = Supabase.instance.client;
@@ -216,20 +280,40 @@ class TurnoService {
     }
   }
 
+  /// Versión legacy: retorna sólo bool. Usar [cerrarTurnoDetailed] para
+  /// distinguir errores de red vs errores de negocio.
   static Future<bool> cerrarTurno({
     required double efectivoReal,
     required List<Map<String, dynamic>> productos,
     String? observaciones,
   }) async {
+    final result = await cerrarTurnoDetailed(
+      efectivoReal: efectivoReal,
+      productos: productos,
+      observaciones: observaciones,
+    );
+    return result.success;
+  }
+
+  /// Cierra el turno y retorna un resultado tipado distinguiendo
+  /// errores de red (caer a offline está OK) vs errores de negocio
+  /// (mostrar mensaje y NO crear cierre offline).
+  static Future<TurnoOperationResult> cerrarTurnoDetailed({
+    required double efectivoReal,
+    required List<Map<String, dynamic>> productos,
+    String? observaciones,
+  }) async {
     try {
-      // Get user UUID and TPV ID
       final userUuid = await _userPrefs.getUserId();
       final workerProfile = await _userPrefs.getWorkerProfile();
       final idTpv = workerProfile['idTpv'];
 
       if (userUuid == null || idTpv == null) {
         print('❌ Missing user UUID or TPV ID');
-        return false;
+        return const TurnoOperationResult.failure(
+          message: 'Faltan datos del usuario o TPV',
+          errorKind: TurnoErrorKind.unknown,
+        );
       }
 
       print('🔄 Calling fn_cerrar_turno_tpv with:');
@@ -251,10 +335,29 @@ class TurnoService {
       );
 
       print('✅ fn_cerrar_turno_tpv response: $response');
-      return response == true;
+
+      if (response == true) {
+        return const TurnoOperationResult.success();
+      }
+
+      // El backend respondió pero no con true → tratarlo como error de negocio.
+      return TurnoOperationResult.failure(
+        message: 'El servidor rechazó el cierre del turno',
+        errorKind: TurnoErrorKind.business,
+        data: response,
+      );
     } catch (e) {
       print('❌ Error in cerrarTurno: $e');
-      return false;
+      if (_isNetworkException(e)) {
+        return const TurnoOperationResult.failure(
+          message: 'Sin conexión al servidor',
+          errorKind: TurnoErrorKind.network,
+        );
+      }
+      return TurnoOperationResult.failure(
+        message: _extractErrorMessage(e),
+        errorKind: TurnoErrorKind.business,
+      );
     }
   }
 
@@ -402,6 +505,7 @@ class TurnoService {
           'success': true,
           'message': 'Apertura registrada exitosamente',
           'operacion_id': response,
+          'errorKind': null,
         };
       }
 
@@ -409,13 +513,20 @@ class TurnoService {
         'success': false,
         'message': 'Respuesta inválida del servidor',
         'operacion_id': null,
+        'errorKind': TurnoErrorKind.business,
       };
     } catch (e) {
       print('❌ Error in registrarAperturaTurno: $e');
+      final isNetwork = _isNetworkException(e);
       return {
         'success': false,
-        'message': 'Error al registrar la apertura: $e',
+        'message': isNetwork
+            ? 'Sin conexión al servidor'
+            : _extractErrorMessage(e),
         'operacion_id': null,
+        'errorKind': isNetwork
+            ? TurnoErrorKind.network
+            : TurnoErrorKind.business,
       };
     }
   }

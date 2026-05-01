@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/product.dart';
 import 'user_preferences_service.dart';
+import 'supabase_retry_helper.dart';
 
 class ProductService {
   static final ProductService _instance = ProductService._internal();
@@ -32,15 +33,18 @@ class ProductService {
       );
 
       // Call the RPC function to get products by category
-      final response = await _supabase.rpc(
-        'get_productos_by_categoria_tpv_search_meta',
-        params: {
-          'id_categoria_param': categoryId,
-          'id_tienda_param': idTienda,
-          'id_tpv_param': idTpv,
-          'solo_disponibles_param': false,
-          'text_search': null,
-        },
+      final response = await withNetworkRetry(
+        () => _supabase.rpc(
+          'get_productos_by_categoria_tpv_search_meta',
+          params: {
+            'id_categoria_param': categoryId,
+            'id_tienda_param': idTienda,
+            'id_tpv_param': idTpv,
+            'solo_disponibles_param': false,
+            'text_search': null,
+          },
+        ),
+        description: 'Cargar productos por categoría',
       );
 
       if (response == null) {
@@ -115,15 +119,18 @@ class ProductService {
         '🔎 Buscando productos: "$trimmed" tienda: $idTienda tpv: $idTpv cat: $categoryId',
       );
 
-      final response = await _supabase.rpc(
-        'get_productos_by_categoria_tpv_search_meta',
-        params: {
-          'id_categoria_param': categoryId,
-          'id_tienda_param': idTienda,
-          'id_tpv_param': idTpv,
-          'solo_disponibles_param': soloDisponibles,
-          'text_search': trimmed,
-        },
+      final response = await withNetworkRetry(
+        () => _supabase.rpc(
+          'get_productos_by_categoria_tpv_search_meta',
+          params: {
+            'id_categoria_param': categoryId,
+            'id_tienda_param': idTienda,
+            'id_tpv_param': idTpv,
+            'solo_disponibles_param': soloDisponibles,
+            'text_search': trimmed,
+          },
+        ),
+        description: 'Buscar productos',
       );
 
       if (response == null) return [];

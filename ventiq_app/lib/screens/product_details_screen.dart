@@ -2925,24 +2925,27 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     List<String> addedItems = [];
 
     try {
+      final conversionFactor = _getPresentationConversionFactor(currentProduct);
+
       if (currentProduct.variantes.isEmpty) {
         // Producto sin variantes
         if (selectedQuantity > 0) {
           final basePrice = _getEffectiveBasePrice(currentProduct);
           final discountPrice = _calculateDiscountPrice(basePrice);
           final finalPrice = discountPrice ?? basePrice;
+          final cantidadEnUnidadesBase = selectedQuantity * conversionFactor;
 
           orderService.addItemToCurrentOrder(
             producto: currentProduct,
-            cantidad: selectedQuantity,
+            cantidad: cantidadEnUnidadesBase,
             ubicacionAlmacen: _getLocationName(currentProduct, null),
             inventoryData: _buildInventoryData(currentProduct, null),
             precioUnitario: finalPrice,
             precioBase: basePrice,
             promotionData: _getActivePromotion(),
           );
-          totalItemsAdded += selectedQuantity;
-          addedItems.add('${currentProduct.denominacion} (x${PriceUtils.formatQuantity(selectedQuantity)})');
+          totalItemsAdded += cantidadEnUnidadesBase;
+          addedItems.add('${currentProduct.denominacion} (x${PriceUtils.formatQuantity(cantidadEnUnidadesBase)})');
 
           // Resetear cantidad después de agregar
           setState(() {
@@ -2956,19 +2959,20 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             final basePrice = _getEffectiveBasePrice(currentProduct, entry.key);
             final discountPrice = _calculateDiscountPrice(basePrice);
             final finalPrice = discountPrice ?? basePrice;
+            final cantidadEnUnidadesBase = entry.value * conversionFactor;
 
             orderService.addItemToCurrentOrder(
               producto: currentProduct,
               variante: entry.key,
-              cantidad: entry.value,
+              cantidad: cantidadEnUnidadesBase,
               ubicacionAlmacen: _getLocationName(currentProduct, entry.key),
               inventoryData: _buildInventoryData(currentProduct, entry.key),
               precioUnitario: finalPrice,
               precioBase: basePrice,
               promotionData: _getActivePromotion(),
             );
-            totalItemsAdded += entry.value;
-            addedItems.add('${entry.key.nombre} (x${PriceUtils.formatQuantity(entry.value)})');
+            totalItemsAdded += cantidadEnUnidadesBase;
+            addedItems.add('${entry.key.nombre} (x${PriceUtils.formatQuantity(cantidadEnUnidadesBase)})');
           }
         }
 

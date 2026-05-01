@@ -909,6 +909,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   Widget _buildOperationCard(Map<String, dynamic> operation) {
     final tipoOperacion = operation['tipo_operacion_nombre'] ?? 'Desconocido';
+    final accion = operation['tipo_operacion_accion']?.toString() ?? '';
     final fecha = DateTime.parse(operation['created_at']);
     final total = _calculateTotalPrice(operation);
     final cantidadItems = _calculateTotalItems(operation);
@@ -917,31 +918,37 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
     // Debug: Log the exact status we're getting from the database
     print(
-      '📋 Operation Card - ID: ${operation['id']}, Estado: "$estadoNombre"',
+      '📋 Operation Card - ID: ${operation['id']}, Tipo: "$tipoOperacion", Accion: "$accion", Estado: "$estadoNombre"',
     );
 
-    // Determine operation type icon and color
+    // Determine operation type icon and color using stable accion field
     IconData operationIcon;
     Color operationColor;
 
-    if (tipoOperacion.toLowerCase().contains('recepcion')) {
-      operationIcon = Icons.input;
-      operationColor = Colors.green;
-    } else if (tipoOperacion.toLowerCase().contains('extraccion')) {
-      operationIcon = Icons.output;
-      operationColor = Colors.orange;
-    } else if (tipoOperacion.toLowerCase().contains('venta')) {
-      operationIcon = Icons.shopping_cart;
-      operationColor = Colors.blue;
-    } else if (tipoOperacion.toLowerCase().contains('apertura de caja')) {
-      operationIcon = Icons.point_of_sale;
-      operationColor = Colors.green;
-    } else if (tipoOperacion.toLowerCase().contains('cierre de caja')) {
-      operationIcon = Icons.point_of_sale;
-      operationColor = Colors.orange;
-    } else {
+    if (accion == 'transferencia') {
       operationIcon = Icons.swap_horiz;
       operationColor = Colors.purple;
+    } else if (accion == 'apertura_caja') {
+      operationIcon = Icons.point_of_sale;
+      operationColor = Colors.green;
+    } else if (accion == 'cierre_caja') {
+      operationIcon = Icons.point_of_sale;
+      operationColor = Colors.orange;
+    } else if (tipoOperacion.toLowerCase() == 'venta') {
+      operationIcon = Icons.shopping_cart;
+      operationColor = Colors.blue;
+    } else if (tipoOperacion.toLowerCase() == 'recepcion') {
+      operationIcon = Icons.input;
+      operationColor = Colors.green;
+    } else if (tipoOperacion.toLowerCase().contains('extrac')) {
+      operationIcon = Icons.output;
+      operationColor = Colors.orange;
+    } else if (tipoOperacion.toLowerCase().contains('ajuste')) {
+      operationIcon = Icons.tune;
+      operationColor = Colors.teal;
+    } else {
+      operationIcon = Icons.inventory_2_outlined;
+      operationColor = Colors.blueGrey;
     }
 
     return Card(
@@ -1293,10 +1300,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                               ),
                             ),
                             // Mostrar almacén para operaciones de recepción y extracción
-                            if (tipoOperacion.contains('recepción') || tipoOperacion.contains('recepcion') || 
-                                tipoOperacion.contains('extracción') || tipoOperacion.contains('extraccion') ||
-                                tipoOperacion.contains('reception') || tipoOperacion.contains('extraction') ||
-                                tipoOperacion.contains('productos')) ...[
+                            if (tipoOperacion.toLowerCase().contains('recepci') ||
+                                tipoOperacion.toLowerCase().contains('extrac') ||
+                                tipoOperacion.toLowerCase() == 'extracción' ||
+                                tipoOperacion.toLowerCase().contains('productos')) ...[
                               FutureBuilder<String>(
                                 future: InventoryService.getWarehouseFromOperation(
                                   operation['id'],
@@ -1317,6 +1324,46 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                                   );
                                 },
                               ),
+                            ],
+                            // Mostrar almacenes origen y destino para transferencias
+                            if ((operation['tipo_operacion_accion']?.toString() ?? '') == 'transferencia') ...[
+                              Builder(builder: (context) {
+                                final det = operation['detalles'] as Map<String, dynamic>?;
+                                final esp = det?['detalles_especificos'] as Map<String, dynamic>?;
+                                final idExt = esp?['id_extraccion'];
+                                final idRec = esp?['id_recepcion'];
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (idExt != null)
+                                      FutureBuilder<String>(
+                                        future: InventoryService.getWarehouseFromOperation(
+                                          idExt is int ? idExt : int.parse(idExt.toString()),
+                                          'extraccion',
+                                        ),
+                                        builder: (context, snap) {
+                                          if (snap.connectionState == ConnectionState.waiting) {
+                                            return _buildModalDetailRow('Almacén Origen:', 'Cargando...');
+                                          }
+                                          return _buildModalDetailRow('Almacén Origen:', snap.data ?? 'N/A');
+                                        },
+                                      ),
+                                    if (idRec != null)
+                                      FutureBuilder<String>(
+                                        future: InventoryService.getWarehouseFromOperation(
+                                          idRec is int ? idRec : int.parse(idRec.toString()),
+                                          'recepcion',
+                                        ),
+                                        builder: (context, snap) {
+                                          if (snap.connectionState == ConnectionState.waiting) {
+                                            return _buildModalDetailRow('Almacén Destino:', 'Cargando...');
+                                          }
+                                          return _buildModalDetailRow('Almacén Destino:', snap.data ?? 'N/A');
+                                        },
+                                      ),
+                                  ],
+                                );
+                              }),
                             ],
                             _buildModalDetailRow(
                               'Total:',
@@ -1811,19 +1858,48 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     if (detalles == null) return const Text('Sin detalles específicos');
 
     if (detalles is Map<String, dynamic>) {
+      final especificos = detalles['detalles_especificos'];
+      final isTransfer = especificos is Map<String, dynamic> &&
+          (especificos.containsKey('extraccion') || especificos.containsKey('recepcion'));
+
+      final extItems = isTransfer
+          ? (especificos['extraccion']?['items'] as List<dynamic>?)
+          : null;
+      final recItems = isTransfer
+          ? (especificos['recepcion']?['items'] as List<dynamic>?)
+          : null;
+
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (detalles['detalles_especificos'] != null) ...[
+          if (especificos != null) ...[
             const Text(
               'Información específica:',
               style: TextStyle(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 4),
-            _buildSpecificDetails(detalles['detalles_especificos']),
+            _buildSpecificDetails(especificos),
             const SizedBox(height: 12),
           ],
-          if (detalles['items'] != null && detalles['items'] is List) ...[
+          if (isTransfer) ...[
+            if (extItems != null && extItems.isNotEmpty) ...[
+              const Text(
+                'Productos Extraídos (Origen):',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              _buildProductsList(extItems),
+              const SizedBox(height: 12),
+            ],
+            if (recItems != null && recItems.isNotEmpty) ...[
+              const Text(
+                'Productos Recibidos (Destino):',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              _buildProductsList(recItems),
+            ],
+          ] else if (detalles['items'] != null && detalles['items'] is List) ...[
             const Text(
               'Productos:',
               style: TextStyle(fontWeight: FontWeight.w600),
@@ -1854,7 +1930,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ...especificos.entries.where((e) => e.key != 'cliente_info').map((entry) {
+            ...especificos.entries.where((e) => e.key != 'cliente_info' && e.key != 'extraccion' && e.key != 'recepcion').map((entry) {
               String label = _formatFieldLabel(entry.key);
               String value = _formatFieldValue(entry.value);
               return Padding(
@@ -2107,6 +2183,14 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         return 'Motivo';
       case 'recibido_por':
         return 'Recibido por';
+      case 'autorizado_por':
+        return 'Autorizado por';
+      case 'entregado_por':
+        return 'Entregado por';
+      case 'id_recepcion':
+        return 'ID Recepción';
+      case 'id_extraccion':
+        return 'ID Extracción';
       default:
         return key.replaceAll('_', ' ').toUpperCase();
     }
@@ -2215,31 +2299,17 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   }
 
   bool _shouldShowCompleteButton(Map<String, dynamic> operation) {
-    // Show complete button for reception operations that are pending
     String tipoOperacion =
         operation['tipo_operacion_nombre']?.toString().toLowerCase() ?? '';
+    final accion = operation['tipo_operacion_accion']?.toString() ?? '';
     String estado = operation['estado_nombre']?.toString().toLowerCase() ?? '';
 
-    // Debug logging
-    print('🔍 Checking completion button for operation:');
-    print('   - ID: ${operation['id']}');
-    print('   - Tipo: "$tipoOperacion"');
-    print('   - Estado: "$estado"');
-    print('   - Contains recepción: ${tipoOperacion.contains('recepción')}');
-    print('   - Contains pendiente: ${estado.contains('pendiente')}');
+    print('🔍 Checking completion button - ID: ${operation['id']}, accion: "$accion", tipo: "$tipoOperacion"');
 
-    // Check for different variations of the operation type
-    bool isReception =
-        tipoOperacion.contains('recepción') ||
-        tipoOperacion.contains('recepcion') ||
-        tipoOperacion.contains('entrada') ||
-        tipoOperacion.contains('ingreso');
-    bool isExtraction =
-        tipoOperacion.contains('extracción') ||
-        tipoOperacion.contains('extraccion') ||
-        tipoOperacion.contains('salida');
-
+    bool isReception = tipoOperacion.contains('recepci');
+    bool isExtraction = tipoOperacion.contains('extrac');
     bool isAjuste = tipoOperacion.contains('ajuste');
+    bool isTransfer = accion == 'transferencia';
 
     // Check for different variations of pending status
     bool isPending =
@@ -2255,7 +2325,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       '   - Should show button: ${(isReception || isExtraction) && isPending}',
     );
 
-    return (isReception || isExtraction ||isAjuste) && isPending;
+    return (isReception || isExtraction || isAjuste || isTransfer) && isPending;
   }
 
   bool _shouldShowCancelButton(Map<String, dynamic> operation) {
