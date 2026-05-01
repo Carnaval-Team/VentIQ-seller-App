@@ -245,7 +245,7 @@ class InventoryService {
 
       // Get regular inventory operations
       final response = await _supabase.rpc(
-        'fn_listar_operaciones_inventario',
+        'fn_listar_operaciones_inventario_new',
         params: {
           'p_id_tienda': idTienda,
           'p_id_tpv': null,
