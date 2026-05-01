@@ -968,13 +968,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         color: AppColors.info,
                         tooltip: 'Ver detalles',
                       ),
-                      if (_canEditProduct)
+                      /* if (_canEditProduct)
                         IconButton(
                           icon: const Icon(Icons.edit, size: 20),
                           onPressed: () => _showEditProductDialog(product),
                           color: AppColors.primary,
                           tooltip: 'Editar',
-                        ),
+                        ), */
                       if (_canEditProduct)
                         IconButton(
                           icon: Icon(
