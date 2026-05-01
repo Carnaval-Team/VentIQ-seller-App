@@ -1160,7 +1160,7 @@ class InventoryService {
       final productosConvertidos = await processProductsForReception(productos);
 
       final response = await _supabase.rpc(
-        'fn_insertar_recepcion_completa_with_currency',
+        'fn_registrar_recepcion_con_inventario',
         params: {
           'p_entregado_por': entregadoPor,
           'p_id_tienda': idTienda,

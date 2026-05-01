@@ -395,6 +395,17 @@ BEGIN
     INSERT INTO app_dat_estado_operacion (id_operacion, estado, comentario)
     VALUES (v_id_operacion_extraccion, 2, 'Extracción completada — devolución aprobada por consignador');
 
+    -- 4b. Asegurar que app_dat_operacion_extraccion existe (puede faltar si se creó como operación básica).
+    INSERT INTO app_dat_operacion_extraccion (id_operacion, id_motivo_operacion, observaciones, autorizado_por)
+    SELECT
+      v_id_operacion_extraccion,
+      (SELECT id FROM app_nom_motivo_extraccion ORDER BY id LIMIT 1),
+      'Extracción por devolución - ' || v_numero_envio,
+      'Sistema'
+    WHERE NOT EXISTS (
+      SELECT 1 FROM app_dat_operacion_extraccion WHERE id_operacion = v_id_operacion_extraccion
+    );
+
   ELSE
     -- ⚠️ CASO FALLBACK: No hay extracción pre-construida (flujo manual/edge).
     -- Construir y completar la extracción ahora vía fn_crear_extraccion_con_movimiento.
@@ -497,6 +508,17 @@ BEGIN
   INSERT INTO app_dat_estado_operacion (id_operacion, estado, comentario)
   VALUES (v_id_operacion_recepcion, 1, 'Recepción creada — pendiente de completar por el consignador');
 
+  -- 5b. Registrar en app_dat_operacion_recepcion (tabla de detalle del tipo de operación)
+  INSERT INTO app_dat_operacion_recepcion (
+    id_operacion,
+    recibido_por,
+    observaciones
+  ) VALUES (
+    v_id_operacion_recepcion,
+    'Sistema',
+    'Recepción de devolución - ' || v_numero_envio
+  );
+
   -- 6. Registrar productos de recepción (con datos originales del consignador)
   -- Resolver ubicación de fallback: primer layout del almacén de recepción del consignador.
   -- Necesario cuando id_ubicacion_original es NULL (fn_contabilizar_operacion rechaza NULL).
@@ -547,6 +569,26 @@ BEGIN
       v_producto.precio_costo_usd
     );
   END LOOP;
+
+  -- 6b. Registrar movimientos en app_dat_movimiento_consignacion (tipo 3 = devolución)
+  INSERT INTO app_dat_movimiento_consignacion (
+    id_producto_consignacion,
+    tipo_movimiento,
+    cantidad,
+    id_usuario,
+    observaciones,
+    fecha_movimiento
+  )
+  SELECT
+    cep.id_producto_consignacion,
+    3,  -- Tipo: Devolución
+    cep.cantidad_propuesta,
+    p_id_usuario,
+    'Devolución aprobada - ' || v_numero_envio,
+    CURRENT_TIMESTAMP
+  FROM app_dat_consignacion_envio_producto cep
+  WHERE cep.id_envio = p_id_envio
+    AND cep.id_producto_consignacion IS NOT NULL;
 
   -- 7. Actualizar estado del envío a CONFIGURADO y vincular recepción
   UPDATE app_dat_consignacion_envio
