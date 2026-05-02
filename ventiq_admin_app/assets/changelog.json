@@ -1,9 +1,51 @@
 {
-  "current_version": "2.1.4",
-  "build": 214,
+  "current_version": "2.1.5",
+  "build": 215,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.1.5",
+      "date": "2026-05-02",
+      "title": "💵 Ventas en USD y EUR a la vista, y más control de tu inventario",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Identifica al instante las ventas en moneda extranjera",
+          "description": "Cuando un cliente paga en USD o EUR desde Carnaval App, ahora se muestra un sello de color muy visible con el monto exacto en su moneda. Verde para dólares, azul para euros: detectas en segundos qué órdenes entran en divisa sin tener que abrir el detalle."
+        },
+        {
+          "type": "feature",
+          "title": "Total en divisa dentro del detalle de cada orden",
+          "description": "Al abrir una orden de Carnaval, además del total en CUP verás un bloque resaltado con el total en USD o EUR según la moneda del cliente. Más claridad para cuadrar caja y conciliar pagos."
+        },
+        {
+          "type": "improvement",
+          "title": "Movimientos de producto más limpios y enfocados",
+          "description": "El historial de movimientos de cada producto ahora muestra únicamente las operaciones completadas. Olvídate del ruido de operaciones pendientes o canceladas: ves solo lo que realmente afectó tu inventario."
+        },
+        {
+          "type": "improvement",
+          "title": "Reportes PDF de movimientos con más detalle",
+          "description": "Al exportar el historial de un producto a PDF, ahora se incluyen el tipo de operación y el estado con colores distintivos. Reportes más completos para auditorías y revisiones internas."
+        },
+        {
+          "type": "feature",
+          "title": "Mejoras en el flujo de consignaciones",
+          "description": "Reforzamos la pantalla de detalle de envíos en consignación con mejor manejo de devoluciones. Ahora gestionar las mercancías que regresan del cliente es más rápido y transparente."
+        },
+        {
+          "type": "improvement",
+          "title": "Gestión de TPVs, vendedores y almacenes más fluida",
+          "description": "Pulimos las pantallas de configuración de puntos de venta, vendedores y almacenes para que asignar permisos y editar datos sea más directo y con menos pasos."
+        },
+        {
+          "type": "improvement",
+          "title": "Dashboard de inventario con más información útil",
+          "description": "El panel principal de inventario ahora muestra indicadores adicionales y mejor analítica para que tomes decisiones más rápido sobre qué reponer y dónde priorizar."
+        }
+      ]
+    },
     {
       "version": "2.1.4",
       "date": "2026-04-27",
