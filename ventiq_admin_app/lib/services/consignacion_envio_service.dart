@@ -189,6 +189,7 @@ class ConsignacionEnvioService {
     required int idEnvio,
     required int idAlmacenRecepcion,
     required String idUsuario,
+    int? idZonaRecepcion,
   }) async {
     try {
       debugPrint('✅ Aprobando devolución $idEnvio...');
@@ -199,6 +200,7 @@ class ConsignacionEnvioService {
           'p_id_envio': idEnvio,
           'p_id_almacen_recepcion': idAlmacenRecepcion,
           'p_id_usuario': idUsuario,
+          if (idZonaRecepcion != null) 'p_id_zona_recepcion': idZonaRecepcion,
         },
       );
 

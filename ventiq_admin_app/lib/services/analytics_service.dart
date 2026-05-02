@@ -136,35 +136,72 @@ class AnalyticsService {
   /// Mapear respuesta de productos analysis a InventoryMetrics
   static InventoryMetrics _mapProductsAnalysisToInventoryMetrics(
     Map<String, dynamic> response,
-    double averageRotation, // ✅ Recibir rotación calculada
+    double averageRotation, // ✅ Rotación calculada desde productos
   ) {
     print('🗐️ Mapeando respuesta a InventoryMetrics...');
     print('  Response keys: ${response.keys}');
 
-    final metricas = response['metricas_principales'] ?? {};
-    final detalles = response['detalles_adicionales'] ?? {};
+    // Soporte para AMBOS formatos:
+    // 1) fn_analytics_inventory_metrics → claves planas en camelCase
+    // 2) get_inventario_analisis_tienda_json → metricas_principales / detalles_adicionales
+    final hasFlatFormat = response.containsKey('totalProducts') ||
+        response.containsKey('totalValue');
 
-    print('  Métricas principales: $metricas');
-    print('  Detalles adicionales: $detalles');
+    int totalProducts;
+    int lowStock;
+    int outOfStock;
+    double totalValue;
+    double monthlyMovement;
+    double? rotationFromRpc;
+    double? valueChangePercent;
 
-    final totalProducts = metricas['total_productos'] ?? 0;
-    final lowStock = metricas['stock_bajo'] ?? 0;
-    final outOfStock = detalles['productos_sin_stock'] ?? 0;
+    if (hasFlatFormat) {
+      totalProducts = (response['totalProducts'] ?? 0) is int
+          ? response['totalProducts'] ?? 0
+          : (response['totalProducts'] as num).toInt();
+      lowStock = (response['lowStockProducts'] ?? 0) is int
+          ? response['lowStockProducts'] ?? 0
+          : (response['lowStockProducts'] as num).toInt();
+      outOfStock = (response['outOfStockProducts'] ?? 0) is int
+          ? response['outOfStockProducts'] ?? 0
+          : (response['outOfStockProducts'] as num).toInt();
+      totalValue = (response['totalValue'] ?? 0).toDouble();
+      monthlyMovement = (response['monthlyMovement'] ?? 0).toDouble();
+      rotationFromRpc = (response['averageRotation'] ?? 0).toDouble();
+      valueChangePercent = (response['valueChangePercent'] ?? 0).toDouble();
+    } else {
+      final metricas = response['metricas_principales'] ?? {};
+      final detalles = response['detalles_adicionales'] ?? {};
+      totalProducts = metricas['total_productos'] ?? 0;
+      lowStock = metricas['stock_bajo'] ?? 0;
+      outOfStock = detalles['productos_sin_stock'] ?? 0;
+      totalValue = (metricas['valor_inventario'] ?? 0.0).toDouble();
+      monthlyMovement = (metricas['productos_con_stock'] ?? 0) * 0.25;
+    }
+
+    // Si la rotación calculada desde productos es > 0, úsala; si no, fallback
+    // a la del RPC (cuando exista).
+    final finalRotation = averageRotation > 0
+        ? averageRotation
+        : (rotationFromRpc ?? 0.0);
 
     print('📊 Valores extraídos:');
     print('  totalProducts: $totalProducts');
+    print('  totalValue: $totalValue');
     print('  lowStockProducts: $lowStock');
     print('  outOfStockProducts: $outOfStock');
-    print('  averageRotation: $averageRotation');
+    print('  monthlyMovement: $monthlyMovement');
+    print('  averageRotation (final): $finalRotation');
 
     return InventoryMetrics(
-      totalValue: (metricas['valor_inventario'] ?? 0.0).toDouble(),
+      totalValue: totalValue,
       totalProducts: totalProducts,
       lowStockProducts: lowStock,
       outOfStockProducts: outOfStock,
-      averageRotation: averageRotation, // ✅ Usar rotación real calculada
-      monthlyMovement: (metricas['productos_con_stock'] ?? 0) * 0.25,
+      averageRotation: finalRotation,
+      monthlyMovement: monthlyMovement,
       calculatedAt: DateTime.now(),
+      valueChangePercent: valueChangePercent ?? 0.0,
     );
   }
 

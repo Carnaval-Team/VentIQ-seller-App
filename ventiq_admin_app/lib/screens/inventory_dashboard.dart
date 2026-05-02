@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/analytics/inventory_metrics.dart';
 import '../services/dashboard_service.dart';
+import '../services/sales_service.dart';
 import '../widgets/analytics/metric_card.dart';
 import 'analytics/stock_health_detail_screen.dart';
 import 'analytics/rotation_detail_screen.dart';
@@ -19,10 +20,20 @@ class _InventoryDashboardState extends State<InventoryDashboard> {
   bool _isLoading = true;
   String _errorMessage = '';
 
+  // Ventas/Ganancia del mes (mismo cálculo que sales_screen tab Proveedores)
+  bool _isLoadingSalesMetrics = true;
+  double _ventasDelMes = 0.0; // CUP
+  double _ventasDelMesUsd = 0.0;
+  double _gananciaDelMes = 0.0; // CUP
+  double _gananciaDelMesUsd = 0.0;
+  double _costoDelMes = 0.0; // CUP (= compras del mes)
+  double _costoDelMesUsd = 0.0;
+
   @override
   void initState() {
     super.initState();
     _loadDashboard();
+    _loadMonthlySalesMetrics();
   }
 
   Future<void> _loadDashboard() async {
@@ -54,6 +65,55 @@ class _InventoryDashboardState extends State<InventoryDashboard> {
     }
   }
 
+  Future<void> _loadMonthlySalesMetrics() async {
+    if (mounted) setState(() => _isLoadingSalesMetrics = true);
+    try {
+      final now = DateTime.now();
+      final startOfMonth = DateTime(now.year, now.month, 1);
+      final endOfMonth = DateTime(now.year, now.month + 1, 0);
+
+      final detailedSales = await SalesService.getProductSalesWithSupplier(
+        fechaDesde: startOfMonth,
+        fechaHasta: endOfMonth,
+      );
+
+      double ventas = 0.0;
+      double costo = 0.0;
+      double ganancia = 0.0;
+      double ventasUsd = 0.0;
+      double costoUsd = 0.0;
+      double gananciaUsd = 0.0;
+      for (final s in detailedSales) {
+        ventas += s.ingresosTotales;
+        costo += s.costoTotalVendido;
+        ganancia += s.gananciaTotal;
+
+        // Conversión a USD por fila usando su propia tasa (valor_usd)
+        final tasa = s.valorUsd;
+        if (tasa > 0) {
+          ventasUsd += s.ingresosTotales / tasa;
+          costoUsd += s.costoTotalVendido / tasa;
+          gananciaUsd += s.gananciaTotal / tasa;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _ventasDelMes = ventas;
+        _costoDelMes = costo;
+        _gananciaDelMes = ganancia;
+        _ventasDelMesUsd = ventasUsd;
+        _costoDelMesUsd = costoUsd;
+        _gananciaDelMesUsd = gananciaUsd;
+        _isLoadingSalesMetrics = false;
+      });
+    } catch (e) {
+      print('❌ Error cargando métricas de ventas del mes: $e');
+      if (!mounted) return;
+      setState(() => _isLoadingSalesMetrics = false);
+    }
+  }
+
   void _showStockHealthDetail() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (context) => const StockHealthDetailScreen()),
@@ -68,7 +128,12 @@ class _InventoryDashboardState extends State<InventoryDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(onRefresh: _loadDashboard, child: _buildContent());
+    return RefreshIndicator(
+      onRefresh: () async {
+        await Future.wait([_loadDashboard(), _loadMonthlySalesMetrics()]);
+      },
+      child: _buildContent(),
+    );
   }
 
   Widget _buildContent() {
@@ -105,6 +170,10 @@ class _InventoryDashboardState extends State<InventoryDashboard> {
     final supplierDashboard =
         _dashboardData!['supplier_dashboard'] as Map<String, dynamic>? ?? {};
 
+    final margenPct = _ventasDelMes > 0
+        ? (_gananciaDelMes / _ventasDelMes) * 100
+        : 0.0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -132,11 +201,50 @@ class _InventoryDashboardState extends State<InventoryDashboard> {
             Expanded(
               child: MetricCard(
                 title: 'Compras del Mes',
-                value:
-                    'CUP \$${NumberFormatter.formatCurrency(supplierDashboard['valor_compras_mes'] ?? 0.0)}',
+                value: _isLoadingSalesMetrics
+                    ? '—'
+                    : 'CUP \$${NumberFormatter.formatCurrency(_costoDelMes)}',
                 icon: Icons.shopping_cart,
                 color: Colors.green,
-                subtitle: _buildComprasSubtitle(supplierDashboard),
+                subtitle: _isLoadingSalesMetrics
+                    ? 'Calculando...'
+                    : 'USD \$${NumberFormatter.formatCurrency(_costoDelMesUsd)}',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: MetricCard(
+                title: 'Ventas del Mes',
+                value: _isLoadingSalesMetrics
+                    ? '—'
+                    : 'CUP \$${NumberFormatter.formatCurrency(_ventasDelMes)}',
+                icon: Icons.point_of_sale,
+                color: Colors.teal,
+                subtitle: _isLoadingSalesMetrics
+                    ? 'Calculando...'
+                    : 'USD \$${NumberFormatter.formatCurrency(_ventasDelMesUsd)}',
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: MetricCard(
+                title: 'Ganancia del Mes',
+                value: _isLoadingSalesMetrics
+                    ? '—'
+                    : 'CUP \$${NumberFormatter.formatCurrency(_gananciaDelMes)}',
+                icon: Icons.trending_up,
+                color: _gananciaDelMes < 0
+                    ? Colors.red
+                    : (_gananciaDelMes > 0
+                          ? Colors.deepPurple
+                          : Colors.grey),
+                subtitle: _isLoadingSalesMetrics
+                    ? 'Calculando...'
+                    : 'USD \$${NumberFormatter.formatCurrency(_gananciaDelMesUsd)} • ${margenPct.toStringAsFixed(1)}%',
               ),
             ),
           ],
@@ -509,17 +617,6 @@ class _InventoryDashboardState extends State<InventoryDashboard> {
         ],
       ),
     );
-  }
-
-  String _buildComprasSubtitle(Map<String, dynamic> supplierDashboard) {
-    final comprasDetalle =
-        supplierDashboard['compras_detalle'] as Map<String, dynamic>?;
-    if (comprasDetalle != null) {
-      final totalUSD = (comprasDetalle['total_usd'] ?? 0.0) as double;
-      final numOperaciones = comprasDetalle['numero_operaciones'] ?? 0;
-      return 'USD \$${totalUSD.toStringAsFixed(2)} • $numOperaciones ops';
-    }
-    return 'Sin datos de compras';
   }
 
   void _showAlertsDetail(String severity) {

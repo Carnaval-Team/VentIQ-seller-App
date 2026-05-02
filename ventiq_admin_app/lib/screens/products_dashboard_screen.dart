@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/products_analytics_service.dart';
 import '../services/permissions_service.dart';
+import '../services/ai_strategic_recommendations_service.dart';
 import '../widgets/products_kpi_cards.dart';
 import '../widgets/products_charts_widget.dart';
 import '../widgets/admin_bottom_navigation.dart';
@@ -39,12 +40,64 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
   List<Map<String, dynamic>> _alerts = [];
   Map<String, dynamic> _bcgAnalysis = {};
 
+  // IA - Recomendaciones estratégicas
+  final AiStrategicRecommendationsService _strategicAi =
+      AiStrategicRecommendationsService();
+  bool _isLoadingStrategicAi = false;
+  String? _strategicAiError;
+  StrategicAnalysisResult? _strategicResult;
+  bool _hasTriggeredStrategicAi = false;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(_onTabChanged);
     _checkPermissions();
     _loadDashboardData();
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging) return;
+    if (_tabController.index == 3 && !_hasTriggeredStrategicAi) {
+      _hasTriggeredStrategicAi = true;
+      _runStrategicAnalysis();
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _runStrategicAnalysis({bool force = false}) async {
+    if (_isLoadingStrategicAi) return;
+    if (_isLoadingKPIs || _isLoadingCharts || _isLoadingAlerts) {
+      // Esperar a que terminen las cargas base si aún están en curso
+      await _loadDashboardData();
+    }
+    setState(() {
+      _isLoadingStrategicAi = true;
+      _strategicAiError = null;
+      if (force) _strategicResult = null;
+    });
+    try {
+      final result = await _strategicAi.analyze(
+        kpis: _kpis,
+        categoryDistribution: _categoryDistribution,
+        abcAnalysis: _abcAnalysis,
+        topProducts: _topProducts,
+        alerts: _alerts,
+        bcgAnalysis: _bcgAnalysis,
+      );
+      if (!mounted) return;
+      setState(() {
+        _strategicResult = result;
+        _isLoadingStrategicAi = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _strategicAiError = e.toString();
+        _isLoadingStrategicAi = false;
+      });
+    }
   }
 
   void _checkPermissions() async {
@@ -59,6 +112,7 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
   }
@@ -430,16 +484,224 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
 
   Widget _buildEstrategiaTab() {
     return RefreshIndicator(
-      onRefresh: _refreshData,
+      onRefresh: () async {
+        await _refreshData();
+        await _runStrategicAnalysis(force: true);
+      },
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            _buildExecutiveSummaryCard(),
+            if (_strategicResult != null &&
+                _strategicResult!.insights.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildInsightsCard(),
+            ],
+            const SizedBox(height: 20),
             _buildRecommendationsCard(),
             const SizedBox(height: 20),
             _buildStrategicActionsCard(),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildExecutiveSummaryCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.primary.withOpacity(0.08),
+            AppColors.primary.withOpacity(0.02),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.auto_awesome,
+                  color: AppColors.primary,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Análisis con IA',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              if (_strategicResult != null && !_isLoadingStrategicAi)
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 20),
+                  color: AppColors.primary,
+                  tooltip: 'Regenerar análisis',
+                  onPressed: () => _runStrategicAnalysis(force: true),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_isLoadingStrategicAi)
+            Row(
+              children: [
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'La IA está analizando tu inventario, ventas y alertas…',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else if (_strategicAiError != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.error_outline, color: AppColors.error, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'No se pudo generar el análisis',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _strategicAiError!,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Reintentar'),
+                    onPressed: () => _runStrategicAnalysis(force: true),
+                  ),
+                ),
+              ],
+            )
+          else if (_strategicResult != null &&
+              _strategicResult!.resumenEjecutivo.isNotEmpty)
+            Text(
+              _strategicResult!.resumenEjecutivo,
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: AppColors.textPrimary,
+              ),
+            )
+          else
+            Text(
+              'Toca el botón para que la IA analice tus datos.',
+              style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInsightsCard() {
+    final insights = _strategicResult!.insights;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.insights, color: AppColors.info, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Insights clave',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...insights.map(
+            (i) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.fiber_manual_record,
+                    size: 8,
+                    color: AppColors.info,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      i,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        height: 1.4,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -741,40 +1003,331 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
             children: [
               Icon(Icons.lightbulb, color: AppColors.warning, size: 20),
               const SizedBox(width: 8),
-              const Text(
-                'Recomendaciones Estratégicas',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+              const Expanded(
+                child: Text(
+                  'Recomendaciones Estratégicas',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              if (_strategicResult != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${_strategicResult!.recomendaciones.length}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildRecommendationsContent(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecommendationsContent() {
+    if (_isLoadingStrategicAi) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 32),
+        alignment: Alignment.center,
+        child: Column(
+          children: [
+            const CircularProgressIndicator(color: AppColors.primary),
+            const SizedBox(height: 12),
+            Text(
+              'Generando recomendaciones…',
+              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_strategicAiError != null && _strategicResult == null) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.error.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.error.withOpacity(0.2)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.error_outline, color: AppColors.error),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'No se pudieron obtener recomendaciones. Intenta de nuevo.',
+                style: TextStyle(color: Colors.grey[800], fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_strategicResult == null ||
+        _strategicResult!.recomendaciones.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        alignment: Alignment.center,
+        child: Column(
+          children: [
+            Icon(
+              Icons.lightbulb_outline,
+              size: 48,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _hasTriggeredStrategicAi
+                  ? 'No hay recomendaciones por ahora'
+                  : 'Esperando análisis…',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              icon: const Icon(Icons.auto_awesome, size: 16),
+              label: const Text('Generar con IA'),
+              onPressed: () => _runStrategicAnalysis(force: true),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: _strategicResult!.recomendaciones
+          .map((r) => _buildRecommendationItem(r))
+          .toList(),
+    );
+  }
+
+  Widget _buildRecommendationItem(StrategicRecommendation rec) {
+    Color color;
+    IconData icon;
+    switch (rec.prioridad) {
+      case 'alta':
+        color = AppColors.error;
+        icon = Icons.priority_high;
+        break;
+      case 'baja':
+        color = AppColors.info;
+        icon = Icons.info_outline;
+        break;
+      default:
+        color = AppColors.warning;
+        icon = Icons.lightbulb_outline;
+    }
+
+    IconData categoryIcon;
+    switch (rec.categoria) {
+      case 'inventario':
+        categoryIcon = Icons.inventory_2;
+        break;
+      case 'ventas':
+        categoryIcon = Icons.trending_up;
+        break;
+      case 'precios':
+        categoryIcon = Icons.attach_money;
+        break;
+      case 'mix':
+        categoryIcon = Icons.dashboard_customize;
+        break;
+      case 'crecimiento':
+        categoryIcon = Icons.rocket_launch;
+        break;
+      default:
+        categoryIcon = Icons.settings_suggest;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(icon, color: color, size: 16),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  rec.titulo,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  rec.prioridad.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.lightbulb_outline,
-                  size: 48,
-                  color: Colors.grey[400],
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Próximamente',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Sistema de recomendaciones inteligentes en desarrollo',
-                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+          const SizedBox(height: 10),
+          Text(
+            rec.descripcion,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: Colors.grey[800],
             ),
           ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(categoryIcon, size: 14, color: Colors.grey[600]),
+              const SizedBox(width: 4),
+              Text(
+                rec.categoria,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey[700],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Icon(Icons.bolt, size: 14, color: Colors.grey[600]),
+              const SizedBox(width: 4),
+              Text(
+                'impacto ${rec.impacto}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey[700],
+                ),
+              ),
+            ],
+          ),
+          if (rec.acciones.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Acciones sugeridas',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey[700],
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  ...rec.acciones.map(
+                    (a) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.check_circle_outline,
+                            size: 14,
+                            color: AppColors.success,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              a,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (rec.productosRelacionados.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: rec.productosRelacionados
+                  .take(8)
+                  .map(
+                    (p) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: Text(
+                        p,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
         ],
       ),
     );

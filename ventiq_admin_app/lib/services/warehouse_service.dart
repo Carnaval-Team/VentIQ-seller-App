@@ -672,6 +672,41 @@ class WarehouseService {
     await Future.delayed(const Duration(milliseconds: 150));
   }
 
+  /// Normaliza la respuesta de fn_registrar_actualizar_layout_almacen.
+  /// Soporta tanto el formato nuevo `[{"id_layout":..,"mensaje":..,"estado_operacion":..}]`
+  /// como el formato posicional antiguo `[{"f1":..,"f2":..,"f3":..}]`.
+  /// Devuelve `(layoutId, mensaje, estadoOperacion)` o lanza Exception en error.
+  Map<String, dynamic> _parseLayoutRpcResponse(dynamic response) {
+    if (response == null) {
+      throw Exception('Respuesta vacía del RPC de layout');
+    }
+
+    Map<String, dynamic>? row;
+    if (response is List && response.isNotEmpty && response.first is Map) {
+      row = Map<String, dynamic>.from(response.first as Map);
+    } else if (response is Map) {
+      row = Map<String, dynamic>.from(response);
+    }
+
+    if (row == null) {
+      throw Exception('Formato de respuesta inesperado del RPC: $response');
+    }
+
+    final layoutId = row['id_layout'] ?? row['f1'];
+    final mensaje = (row['mensaje'] ?? row['f2'] ?? '').toString();
+    final estadoOp = (row['estado_operacion'] ?? row['f3'] ?? '').toString();
+
+    if (estadoOp.toLowerCase() == 'error') {
+      throw Exception(mensaje.isNotEmpty ? mensaje : 'Error en operación de layout');
+    }
+
+    return {
+      'layoutId': layoutId,
+      'mensaje': mensaje,
+      'estadoOperacion': estadoOp,
+    };
+  }
+
   Future<void> addLayout(
     String warehouseId,
     Map<String, dynamic> layout,
@@ -704,9 +739,7 @@ class WarehouseService {
 
       print('✅ Layout agregado exitosamente: $response');
 
-      if (response == null || response['success'] == false) {
-        throw Exception(response?['message'] ?? 'Error al agregar layout');
-      }
+      _parseLayoutRpcResponse(response);
     } catch (e) {
       print('❌ Error en addLayout: $e');
       rethrow;
@@ -746,9 +779,7 @@ class WarehouseService {
 
       print('✅ Layout actualizado exitosamente: $response');
 
-      if (response == null || response['success'] == false) {
-        throw Exception(response?['message'] ?? 'Error al actualizar layout');
-      }
+      _parseLayoutRpcResponse(response);
     } catch (e) {
       print('❌ Error en updateLayout: $e');
       rethrow;
@@ -1144,32 +1175,25 @@ class WarehouseService {
 
       print('🔄 Respuesta RPC: $response');
 
-      if (response == null || response.isEmpty) {
+      if (response == null) {
         print('❌ Respuesta vacía del RPC');
         return null;
       }
 
-      // La función devuelve: [id_layout, mensaje, estado_op]
-      final result = response[0];
-      final layoutIdResult = result['f1']; // id_layout
-      final mensaje = result['f2']; // mensaje
-      final estadoOp = result['f3']; // estado_op
+      // Soporta formato nuevo (id_layout/mensaje/estado_operacion)
+      // y formato posicional antiguo (f1/f2/f3).
+      final parsed = _parseLayoutRpcResponse(response);
 
       print('✅ Resultado:');
-      print('  - Layout ID: $layoutIdResult');
-      print('  - Mensaje: $mensaje');
-      print('  - Estado: $estadoOp');
-
-      if (estadoOp == 'error') {
-        print('❌ Error en la operación: $mensaje');
-        return {'success': false, 'message': mensaje, 'error': true};
-      }
+      print('  - Layout ID: ${parsed['layoutId']}');
+      print('  - Mensaje: ${parsed['mensaje']}');
+      print('  - Estado: ${parsed['estadoOperacion']}');
 
       return {
         'success': true,
-        'layoutId': layoutIdResult?.toString(),
-        'message': mensaje,
-        'operation': estadoOp, // 'creado' o 'actualizado'
+        'layoutId': parsed['layoutId']?.toString(),
+        'message': parsed['mensaje'],
+        'operation': parsed['estadoOperacion'], // 'creado' o 'actualizado'
       };
     } catch (e) {
       print('❌ Error en registerOrUpdateLayout: $e');

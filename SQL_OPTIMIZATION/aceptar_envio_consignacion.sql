@@ -215,6 +215,26 @@ BEGIN
       CURRENT_TIMESTAMP
     );
   END LOOP;
+
+  -- 4e. Registrar movimientos en app_dat_movimiento_consignacion (tipo 1 = envío recibido)
+  INSERT INTO app_dat_movimiento_consignacion (
+    id_producto_consignacion,
+    tipo_movimiento,
+    cantidad,
+    id_usuario,
+    observaciones,
+    fecha_movimiento
+  )
+  SELECT
+    cep.id_producto_consignacion,
+    1,  -- Tipo: Envío
+    cep.cantidad_propuesta,
+    p_id_usuario,
+    'Envío aceptado - ' || v_numero_envio,
+    CURRENT_TIMESTAMP
+  FROM app_dat_consignacion_envio_producto cep
+  WHERE cep.id_envio = p_id_envio
+    AND cep.id_producto_consignacion IS NOT NULL;
   
   -- 5. Actualizar envío: asignar operación de recepción y cambiar estado a CONFIGURADO (estado 2)
   -- Los triggers se encargarán de cambiar a EN TRÁNSITO (3) y ACEPTADO (4) automáticamente
