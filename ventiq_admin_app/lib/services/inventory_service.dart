@@ -2944,14 +2944,27 @@ class InventoryService {
           esDevolucion = (envioRecepcion['tipo_envio'] as int?) == 2 || 
                         (movimientoEnvio != null && (movimientoEnvio['tipo_movimiento'] as int?) == 2);
         }
-        
-        if (esDevolucion) {
-          print('⚠️ Esta es una operación de DEVOLUCIÓN - NO se actualizarán los precios promedio');
+
+        // Verificar si esta recepción pertenece a una transferencia.
+        // motivo = 2 en app_dat_operacion_recepcion indica entrada por transferencia.
+        // Este valor se graba cuando se crea la recepción (antes de completeOperation),
+        // a diferencia de app_dat_operacion_transferencia que se inserta después desde la pantalla.
+        final recepcionDetalle = await _supabase
+            .from('app_dat_operacion_recepcion')
+            .select('motivo')
+            .eq('id_operacion', idOperacion)
+            .maybeSingle();
+        final esTransferencia = (recepcionDetalle?['motivo'] as int?) == 2;
+
+        if (esDevolucion || esTransferencia) {
+          final motivo = esDevolucion ? 'devolución' : 'transferencia';
+          print('⚠️ Esta es una operación de ${motivo.toUpperCase()} - NO se actualizarán los precios promedio');
           return {
             'success': true,
-            'message': 'Operación completada (devolución - precios no actualizados)',
+            'message': 'Operación completada ($motivo - precios no actualizados)',
             'operacion_completada': true,
-            'es_devolucion': true,
+            'es_devolucion': esDevolucion,
+            'es_transferencia': esTransferencia,
           };
         }
         
