@@ -49,7 +49,8 @@ class VendedorService {
               nombres,
               apellidos,
               id_roll,
-              id_tienda
+              id_tienda,
+              user_mail
             ),
             tpv:app_dat_tpv(
               id,
@@ -97,7 +98,8 @@ class VendedorService {
               nombres,
               apellidos,
               id_roll,
-              id_tienda
+              id_tienda,
+              user_mail
             ),
             tpv:app_dat_tpv(
               id,

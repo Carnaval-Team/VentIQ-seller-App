@@ -31,7 +31,8 @@ class TpvService {
           nombres,
           apellidos,
           uuid,
-          id_tienda
+          id_tienda,
+          user_mail
         )
       )
     ''')
@@ -187,7 +188,8 @@ class TpvService {
         id,
         trabajador:app_dat_trabajadores(
           nombres,
-          apellidos
+          apellidos,
+          user_mail
         )
       )
     ''')
@@ -328,7 +330,8 @@ class TpvService {
         id,
         trabajador:app_dat_trabajadores(
           nombres,
-          apellidos
+          apellidos,
+          user_mail
         )
       )
     ''')

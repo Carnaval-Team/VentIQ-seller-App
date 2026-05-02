@@ -240,6 +240,31 @@ class _VendorListWidgetState extends State<VendorListWidget> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                      if (trabajador?['user_mail'] != null &&
+                          (trabajador!['user_mail'] as String).isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.email_outlined,
+                                size: 13,
+                                color: Colors.grey[600],
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  trabajador['user_mail'],
+                                  style: TextStyle(
+                                    color: Colors.grey[700],
+                                    fontSize: 12,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       if (trabajador?['id_roll'] != null)
                         Text(
                           'ID Trabajador: ${trabajador!['id']}',
