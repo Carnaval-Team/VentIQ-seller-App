@@ -7,12 +7,14 @@ class BillCountDialog extends StatefulWidget {
   final Order order;
   final UserPreferencesService userPreferencesService;
   final VoidCallback onConfirmPayment;
+  final bool useDialogLayout;
 
   const BillCountDialog({
     Key? key,
     required this.order,
     required this.userPreferencesService,
     required this.onConfirmPayment,
+    this.useDialogLayout = false,
   }) : super(key: key);
 
   @override
@@ -295,29 +297,57 @@ class _BillCountDialogState extends State<BillCountDialog> {
 
     final changeBreakdown = _calculateChange();
 
+    if (widget.useDialogLayout) {
+      return _buildContent(
+        scrollController: ScrollController(),
+        changeBreakdown: changeBreakdown,
+        showDragHandle: false,
+        topRadius: 20,
+      );
+    }
+
     return DraggableScrollableSheet(
       initialChildSize: 0.8,
       maxChildSize: 0.95,
       minChildSize: 0.6,
-      builder:
-          (context, scrollController) => Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      builder: (context, scrollController) => _buildContent(
+        scrollController: scrollController,
+        changeBreakdown: changeBreakdown,
+        showDragHandle: true,
+        topRadius: 20,
+        bottomRadius: 0,
+      ),
+    );
+  }
+
+  Widget _buildContent({
+    required ScrollController scrollController,
+    required List<Map<String, dynamic>> changeBreakdown,
+    required bool showDragHandle,
+    double topRadius = 20,
+    double bottomRadius = 20,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(topRadius),
+          bottom: Radius.circular(bottomRadius),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Handle (solo en bottom sheet)
+          if (showDragHandle)
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-            child: Column(
-              children: [
-                // Handle
-                Container(
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                // Header
                 Padding(
                   padding: const EdgeInsets.all(16),
                   child: Row(
@@ -812,7 +842,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
                 ),
               ],
             ),
-          ),
-    );
+          );
   }
 }
+

@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:ventiq_app/models/order.dart';
 import 'package:ventiq_app/models/payment_method.dart' as pm;
 import 'package:ventiq_app/services/order_service.dart';
@@ -31,6 +33,7 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
   bool _checkingShift = true;
   bool _hasOpenShift = false;
   bool _elaboratingProducts = false;
+  bool _isCheckingInventory = false;
   bool _noSolicitarCliente = false;
   pm.PaymentMethod? _globalPaymentMethod;
   final Map<String, TextEditingController> _qtyControllers = {};
@@ -69,6 +72,14 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
   Future<void> _loadPersistentPreorder() async {
     try {
       await _orderService.loadPersistentPreorder();
+      final isOfflineModeEnabled =
+          await _userPreferencesService.isOfflineModeEnabled();
+      if (isOfflineModeEnabled) {
+        await _orderService.refreshPromotionsFromCache();
+      }
+      if (mounted) {
+        setState(() {});
+      }
       print('📱 PreorderScreen: Preorden persistente cargada al inicializar');
     } catch (e) {
       print('❌ PreorderScreen: Error cargando preorden persistente: $e');
@@ -558,7 +569,7 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
                           ],
                         ),
                         child: ElevatedButton(
-                          onPressed: _elaboratingProducts ? null : _finalizeOrder,
+                          onPressed: (_elaboratingProducts || _isCheckingInventory) ? null : _finalizeOrder,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF4A90E2),
                             foregroundColor: Colors.white,
@@ -566,14 +577,33 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             padding: EdgeInsets.zero,
                           ),
-                          child: _elaboratingProducts
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation(Colors.white),
-                                  ),
+                          child: (_elaboratingProducts || _isCheckingInventory)
+                              ? Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation(Colors.white),
+                                      ),
+                                    ),
+                                    if (_isCheckingInventory) ...[
+                                      const SizedBox(width: 6),
+                                      const Flexible(
+                                        child: Text(
+                                          'VERIFICANDO...',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 0.5,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 )
                               : Text(
                                   _noSolicitarCliente ? 'CREAR ORDEN' : 'ENVIAR ORDEN',
@@ -755,7 +785,7 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
               SizedBox(
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: _elaboratingProducts ? null : _finalizeOrder,
+                  onPressed: (_elaboratingProducts || _isCheckingInventory) ? null : _finalizeOrder,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF4A90E2),
                     foregroundColor: Colors.white,
@@ -763,14 +793,26 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 32),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: _elaboratingProducts
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
+                  child: (_elaboratingProducts || _isCheckingInventory)
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            ),
+                            if (_isCheckingInventory) ...[
+                              const SizedBox(width: 10),
+                              const Text(
+                                'VERIFICANDO INVENTARIO...',
+                                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.6),
+                              ),
+                            ],
+                          ],
                         )
                       : Row(
                           mainAxisSize: MainAxisSize.min,
@@ -1412,6 +1454,46 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
     // Verificar si el modo offline está activado
     final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
 
+    // Deshabilitar botón y mostrar indicador de carga mientras se verifica inventario
+    setState(() {
+      _isCheckingInventory = true;
+    });
+
+    try {
+      final stockProblems = await _checkInventoryAvailability(currentOrder.items);
+      if (!mounted) return;
+
+      if (stockProblems.isNotEmpty) {
+        _showStockProblemsDialog(stockProblems);
+        return;
+      }
+    } on _StockCheckNetworkException catch (e) {
+      if (!mounted) return;
+      print('🌐 Verificación de stock falló por red: $e');
+      _showStockNetworkErrorDialog();
+      return;
+    } catch (e) {
+      if (!mounted) return;
+      if (_isNetworkError(e)) {
+        print('🌐 Verificación de stock falló por red (catch general): $e');
+        _showStockNetworkErrorDialog();
+        return;
+      }
+      print('⚠️ Error inesperado verificando stock: $e');
+      AppSnackBar.showPersistent(
+        context,
+        message: 'No se pudo verificar el stock: ${e.toString()}',
+        backgroundColor: Colors.red[700],
+      );
+      return;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCheckingInventory = false;
+        });
+      }
+    }
+
     // Si no se solicitan datos del cliente, crear orden directamente
     if (_noSolicitarCliente) {
       await _createOrderDirectly(currentOrder, isOfflineModeEnabled);
@@ -1451,6 +1533,301 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
         setState(() {});
       });
     }
+  }
+
+  /// Verifica disponibilidad de inventario para todos los items de la orden.
+  /// Para productos elaborados/servicios, verifica el stock de sus ingredientes.
+  /// Para productos normales, verifica directamente en inventario.
+  /// Retorna lista de problemas: [{nombre, cantidad_pedida, stock_disponible, diferencia, presentacion}]
+  Future<List<Map<String, dynamic>>> _checkInventoryAvailability(
+    List<OrderItem> items,
+  ) async {
+    final supabase = Supabase.instance.client;
+    final problems = <Map<String, dynamic>>[];
+    final isOfflineMode = await _userPreferencesService.isOfflineModeEnabled();
+
+    for (final item in items) {
+      try {
+        final isElaboradoOrServicio = item.producto.esElaborado || item.producto.esServicio;
+
+        if (isElaboradoOrServicio && !isOfflineMode) {
+          print('🍽️ Verificando ingredientes para producto elaborado/servicio: ${item.nombre}');
+          final ingredientes = await _productDetailService.getProductIngredients(item.producto.id);
+
+          if (ingredientes.isEmpty) {
+            print('⚠️ Producto elaborado/servicio ${item.nombre} sin ingredientes definidos, se permite continuar');
+            continue;
+          }
+
+          for (final ingrediente in ingredientes) {
+            final idIngrediente = ingrediente['producto_id'] as int?;
+            final cantidadNecesaria = ((ingrediente['cantidad_necesaria'] as num?)?.toDouble() ?? 0.0) * item.cantidad;
+            final cantidadDisponible = (ingrediente['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+            final nombreIngrediente = ingrediente['producto_nombre'] as String? ?? 'Ingrediente desconocido';
+
+            if (idIngrediente == null) continue;
+
+            if (cantidadDisponible < cantidadNecesaria) {
+              problems.add({
+                'nombre': '${item.nombre} → $nombreIngrediente',
+                'cantidad_pedida': cantidadNecesaria,
+                'stock_disponible': cantidadDisponible,
+                'diferencia': cantidadNecesaria - cantidadDisponible,
+                'ubicacion': item.ubicacionAlmacen,
+                'presentacion': ' (ingrediente)',
+              });
+            }
+          }
+        } else {
+          final idProducto = item.producto.id;
+          final idUbicacion = item.inventoryData?['id_ubicacion'];
+          final idVariante = item.inventoryData?['id_variante'];
+          final idPresentacion = item.inventoryData?['id_presentacion'];
+
+          double stockActual = 0.0;
+
+          if (isOfflineMode) {
+            print('🔌 Verificando stock en modo offline para ${item.nombre}');
+            stockActual = item.cantidadInicial ?? 0.0;
+          } else {
+            var query = supabase
+                .from('app_dat_inventario_productos')
+                .select('cantidad_final')
+                .eq('id_producto', idProducto);
+
+            if (idUbicacion != null) {
+              query = query.eq('id_ubicacion', idUbicacion);
+            }
+
+            if (idVariante != null) {
+              query = query.eq('id_variante', idVariante);
+            }
+
+            if (idPresentacion != null) {
+              query = query.eq('id_presentacion', idPresentacion);
+            }
+
+            final response = await query.order('created_at', ascending: false).limit(1);
+
+            if (response.isNotEmpty) {
+              stockActual = (response.first['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+            }
+          }
+
+          if (stockActual < item.cantidad) {
+            final presentacionInfo = idPresentacion != null ? ' (Presentación ID: $idPresentacion)' : '';
+            problems.add({
+              'nombre': item.nombre,
+              'cantidad_pedida': item.cantidad,
+              'stock_disponible': stockActual,
+              'diferencia': item.cantidad - stockActual,
+              'ubicacion': item.ubicacionAlmacen,
+              'presentacion': presentacionInfo,
+            });
+          }
+        }
+      } catch (e) {
+        print('⚠️ Error verificando stock para ${item.nombre}: $e');
+        if (_isNetworkError(e)) {
+          throw _StockCheckNetworkException(item.nombre, e);
+        }
+      }
+    }
+
+    return problems;
+  }
+
+  bool _isNetworkError(Object error) {
+    if (error is SocketException) return true;
+    if (error is TimeoutException) return true;
+    if (error is HttpException) return true;
+    final msg = error.toString().toLowerCase();
+    return msg.contains('socketexception') ||
+        msg.contains('failed host lookup') ||
+        msg.contains('connection closed') ||
+        msg.contains('connection refused') ||
+        msg.contains('connection reset') ||
+        msg.contains('network is unreachable') ||
+        msg.contains('clientexception') ||
+        msg.contains('timeoutexception') ||
+        msg.contains('xmlhttprequest error');
+  }
+
+  /// Muestra diálogo cuando la verificación de stock falla por problemas de red
+  void _showStockNetworkErrorDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.wifi_off_rounded,
+                color: Colors.orange[700],
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Sin conexión',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'No se pudo verificar el stock disponible porque hay un problema de conexión con el servidor.\n\nRevisa tu conexión a internet e inténtalo de nuevo.',
+          style: TextStyle(fontSize: 14, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Muestra diálogo con los problemas de stock encontrados
+  void _showStockProblemsDialog(List<Map<String, dynamic>> problems) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.inventory_2_outlined, color: Colors.orange[700], size: 26),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Problema de Inventario',
+                style: TextStyle(fontSize: 17),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Los siguientes productos no tienen suficiente existencia:',
+                style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 12),
+              ...problems.map((p) {
+                final cantPedida = (p['cantidad_pedida'] as double);
+                final stock = (p['stock_disponible'] as double);
+                final diff = (p['diferencia'] as double);
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red[200]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        p['nombre'] as String,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildStockChip(
+                              'Pedido',
+                              cantPedida,
+                              Colors.blue[700]!,
+                              Colors.blue[50]!,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: _buildStockChip(
+                              'En stock',
+                              stock,
+                              Colors.green[700]!,
+                              Colors.green[50]!,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: _buildStockChip(
+                              'Faltante',
+                              diff,
+                              Colors.red[700]!,
+                              Colors.red[100]!,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Revisar Orden'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange[700],
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStockChip(String label, double value, Color textColor, Color bgColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        children: [
+          Text(
+            label,
+            style: TextStyle(fontSize: 11, color: textColor, fontWeight: FontWeight.w500),
+          ),
+          Text(
+            value % 1 == 0 ? value.toInt().toString() : value.toStringAsFixed(2),
+            style: TextStyle(fontSize: 13, color: textColor, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Crea la orden directamente sin pasar por checkout (cuando no_solicitar_cliente está activo)
@@ -2228,4 +2605,14 @@ class _PreorderWebScreenState extends State<PreorderWebScreen> {
         break;
     }
   }
+}
+
+class _StockCheckNetworkException implements Exception {
+  final String itemName;
+  final Object original;
+  _StockCheckNetworkException(this.itemName, this.original);
+
+  @override
+  String toString() =>
+      '_StockCheckNetworkException($itemName): $original';
 }

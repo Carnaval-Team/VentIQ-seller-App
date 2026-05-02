@@ -18,14 +18,14 @@ import '../widgets/egresos_list_screen.dart';
 import '../widgets/filtered_orders_screen.dart';
 import '../screens/orders_screen.dart';
 
-class VentaTotalScreen extends StatefulWidget {
-  const VentaTotalScreen({Key? key}) : super(key: key);
+class VentaTotalWebScreen extends StatefulWidget {
+  const VentaTotalWebScreen({Key? key}) : super(key: key);
 
   @override
-  State<VentaTotalScreen> createState() => _VentaTotalScreenState();
+  State<VentaTotalWebScreen> createState() => _VentaTotalWebScreenState();
 }
 
-class _VentaTotalScreenState extends State<VentaTotalScreen> {
+class _VentaTotalWebScreenState extends State<VentaTotalWebScreen> {
   final OrderService _orderService = OrderService();
   final BluetoothPrinterService _printerService = BluetoothPrinterService();
   final PrinterManager _printerManager = PrinterManager();
@@ -548,7 +548,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                             onTap: _showEgresosList,
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: _buildClickableSummaryCard(
                             'Total Ventas',
@@ -558,21 +558,17 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                             onTap: _showAllOrders,
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
+                        const SizedBox(width: 12),
                         Expanded(
                           child: _buildClickableSummaryCard(
-                            'Total Transferencia',
+                            'Total Transf.',
                             '\$${((_totalEgresado - _egresosEfectivo) > 0 ? (_totalEgresado - _egresosEfectivo) : 0).toStringAsFixed(0)}',
                             Icons.credit_card,
                             Colors.orange,
                             onTap: _showTransferOrders,
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: _buildClickableSummaryCard(
                             'Efectivo Real',
@@ -622,22 +618,25 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     Color color,
   ) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withOpacity(0.3)),
       ),
-      child: Column(
+      child: Row(
         children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-            textAlign: TextAlign.center,
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13, color: Colors.grey[700], fontWeight: FontWeight.w600),
+            ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(width: 4),
           Text(
             value,
             style: TextStyle(
@@ -645,7 +644,6 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               fontWeight: FontWeight.bold,
               color: color,
             ),
-            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -663,25 +661,32 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
+          color: color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: color.withOpacity(0.3)),
         ),
-        child: Column(
+        child: Row(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [Icon(icon, color: color, size: 24)],
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: color, size: 20),
             ),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              textAlign: TextAlign.center,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 13, color: Colors.grey[800], fontWeight: FontWeight.w600),
+              ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(width: 4),
             Text(
               value,
               style: TextStyle(
@@ -689,7 +694,6 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 fontWeight: FontWeight.bold,
                 color: color,
               ),
-              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -814,72 +818,96 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   Widget _buildOrdersList() {
     return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          // Header de la lista
           Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.grey[100],
-            child: const Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    'Orden',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    'Cliente',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    'Total',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    'Acción',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[200]!),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
                 ),
               ],
             ),
-          ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Column(
+                children: [
+                  // Header de la lista
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            'Orden',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF4B5563),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            'Cliente',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF4B5563),
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            'Total',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF4B5563),
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            'Acción',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF4B5563),
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
-          // Lista de órdenes
-          Container(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children:
-                  _ordenesVendidas
-                      .map((order) => _buildOrderItem(order))
-                      .toList(),
+                  // Lista de órdenes
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _ordenesVendidas.length,
+                    separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey[100]),
+                    itemBuilder: (context, index) => _buildOrderItem(_ordenesVendidas[index]),
+                  ),
+                ],
+              ),
             ),
           ),
+
 
           // Resumen de productos detallado
           Container(
@@ -936,14 +964,17 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
           // Total final
           Container(
-            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.only(left: 16, right: 16, bottom: 80),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
             decoration: BoxDecoration(
               color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3), width: 1.5),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, -2),
+                  color: const Color(0xFF4A90E2).withOpacity(0.08),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
                 ),
               ],
             ),
@@ -951,19 +982,21 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
-                  'TOTAL GENERAL:',
+                  'TOTAL GENERAL',
                   style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
                     color: Color(0xFF1F2937),
+                    letterSpacing: 0.5,
                   ),
                 ),
                 Text(
                   '\$${_totalVentas.toStringAsFixed(0)}',
                   style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
                     color: Color(0xFF4A90E2),
+                    letterSpacing: 0.5,
                   ),
                 ),
               ],
@@ -976,12 +1009,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   Widget _buildOrderItem(Order order) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey[300]!),
       ),
       child: Row(
         children: [
@@ -1201,89 +1231,102 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     final productosFinales = productosAgrupados.values.toList();
     print('📋 Total items en resumen: ${productosFinales.length}');
 
-    return Column(
-      children: [
-        // Header de la tabla detallada
-        Container(
-          padding: const EdgeInsets.all(12),
-          color: Colors.grey[100],
-          child: const Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: Text(
-                  'Producto',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+    return ClipRRect(
+      borderRadius: const BorderRadius.only(
+        bottomLeft: Radius.circular(12),
+        bottomRight: Radius.circular(12),
+      ),
+      child: Column(
+        children: [
+          // Header de la tabla detallada
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+            ),
+            child: const Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    'Producto',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF4B5563),
+                    ),
                   ),
                 ),
-              ),
-              Expanded(
-                child: Text(
-                  'Inicial',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                Expanded(
+                  child: Text(
+                    'Inicial',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF4B5563),
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
                 ),
-              ),
-              Expanded(
-                child: Text(
-                  'Entra.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                Expanded(
+                  child: Text(
+                    'Entra.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF4B5563),
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
                 ),
-              ),
-              Expanded(
-                child: Text(
-                  'Vend.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                Expanded(
+                  child: Text(
+                    'Vend.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF4B5563),
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
                 ),
-              ),
-              Expanded(
-                child: Text(
-                  'Final',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                Expanded(
+                  child: Text(
+                    'Final',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF4B5563),
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
                 ),
-              ),
-              Expanded(
-                child: Text(
-                  'Total',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                Expanded(
+                  child: Text(
+                    'Total',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF4B5563),
+                    ),
+                    textAlign: TextAlign.right,
                   ),
-                  textAlign: TextAlign.right,
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
 
-        // Lista de productos detallada
-        ...productosFinales.map(
-          (producto) => _buildDetailedProductItem(producto),
-        ),
-      ],
+          // Lista de productos detallada
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: productosFinales.length,
+            separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey[100]),
+            itemBuilder: (context, index) => _buildDetailedProductItem(productosFinales[index]),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1318,10 +1361,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             : (cantidadFinal ?? 0.0).toStringAsFixed(esIngrediente ? 1 : 0);
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
-        // Fondo diferente para ingredientes
         color: esIngrediente ? Colors.orange[50] : Colors.white,
       ),
       child: Row(

@@ -74,21 +74,37 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
 
   Future<void> _checkForChangelog() async {
     try {
-      final isFirstTime = await _preferencesService.isFirstTimeOpening();
+      // Obtener el changelog más reciente para obtener la versión actual
+      final changelog = await _changelogService.getLatestChangelog();
+      if (changelog == null) return;
 
-      if (isFirstTime) {
+      // Verificar si es primera vez o hay nueva versión
+      final shouldShowChangelog = await _preferencesService.isFirstTimeOpening(
+        changelog.version,
+      );
+
+      if (shouldShowChangelog) {
+        await _preferencesService.clearOfflinePreferencesForNewVersion();
+        // Wait a bit for the screen to load
         await Future.delayed(const Duration(milliseconds: 500));
 
-        final changelog = await _changelogService.getLatestChangelog();
-        if (changelog != null && mounted) {
+        if (mounted) {
           await showDialog(
             context: context,
             barrierDismissible: false,
             builder: (context) => ChangelogDialog(changelog: changelog),
           );
 
-          await _preferencesService.saveAppVersion('1.0.0');
+          // Guardar la versión actual del changelog
+          await _preferencesService.saveAppVersion(changelog.version);
+          debugPrint(
+            '📱 Changelog mostrado y versión guardada: ${changelog.version}',
+          );
         }
+      } else {
+        debugPrint(
+          '📱 Changelog no mostrado - Versión actual: ${changelog.version}',
+        );
       }
     } catch (e) {
       debugPrint('Error checking changelog: $e');
@@ -451,36 +467,76 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
                                     ),
                                     decoration: BoxDecoration(
                                       color:
-                                          (product.cantidad > 0
+                                          (product.cantidadReal > 0
                                               ? Colors.green[50]
                                               : Colors.red[50]) ??
                                           Colors.grey[100],
                                       borderRadius: BorderRadius.circular(10),
                                       border: Border.all(
                                         color:
-                                            (product.cantidad > 0
+                                            (product.cantidadReal > 0
                                                 ? Colors.green[300]
                                                 : Colors.red[300]) ??
                                             Colors.grey,
                                       ),
                                     ),
                                     child: Text(
-                                      product.cantidad > 0
-                                          ? 'Stock: ${product.cantidad}'
+                                      product.cantidadReal > 0
+                                          ? 'Stock: ${product.cantidadReal}'
                                           : 'Sin stock',
                                       style: TextStyle(
                                         fontSize: 11,
                                         color:
-                                            product.cantidad > 0
+                                            product.cantidadReal > 0
                                                 ? Colors.green[700]
                                                 : Colors.red[700],
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),
+                                  if (product.reservadoCarnaval > 0) ...[
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange[50],
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: Colors.orange[300]!,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'Reservado: ${product.reservadoCarnaval}',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.orange[800],
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                               onTap: () {
+                                if (product.cantidadReal <= 0) {
+                                  showDialog(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('Sin stock'),
+                                      content: const Text('Este producto no tiene stock disponible.'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.of(ctx).pop(),
+                                          child: const Text('Aceptar'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  return;
+                                }
                                 _toggleSearch();
                                 Navigator.pushNamed(
                                   context,

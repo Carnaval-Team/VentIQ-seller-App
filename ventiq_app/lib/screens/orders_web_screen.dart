@@ -1821,21 +1821,38 @@ class _OrdersWebScreenState extends State<OrdersWebScreen> {
 
   /// Mostrar diálogo de conteo de billetes
   void _showBillCountDialog(Order order) {
-    showModalBottomSheet(
+    final screenSize = MediaQuery.of(context).size;
+    final dialogWidth = screenSize.width.clamp(0.0, 720.0);
+    final dialogHeight = (screenSize.height * 0.85).clamp(0.0, 880.0);
+
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      isDismissible: false, // No se puede cerrar tocando fuera
-      enableDrag: false, // No se puede cerrar arrastrando
-      builder:
-          (context) => BillCountDialog(
-            order: order,
-            userPreferencesService: _userPreferencesService,
-            onConfirmPayment: () {
-              // Confirmar el pago después del conteo
-              _updateOrderStatus(order, OrderStatus.completada);
-            },
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: dialogWidth,
+            maxHeight: dialogHeight,
           ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Material(
+              color: Colors.white,
+              child: BillCountDialog(
+                order: order,
+                userPreferencesService: _userPreferencesService,
+                useDialogLayout: true,
+                onConfirmPayment: () {
+                  _updateOrderStatus(order, OrderStatus.completada);
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

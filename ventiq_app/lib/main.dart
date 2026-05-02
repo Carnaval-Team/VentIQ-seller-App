@@ -13,9 +13,12 @@ import 'screens/preorder_web_screen.dart';
 import 'screens/orders_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/apertura_screen.dart';
+import 'screens/apertura_web_screen.dart';
 import 'screens/egreso_screen.dart';
 import 'screens/venta_total_screen.dart';
+import 'screens/venta_total_web_screen.dart';
 import 'screens/cierre_screen.dart';
+import 'screens/cierre_web_screen.dart';
 import 'screens/shift_workers_screen.dart';
 import 'screens/subscription_detail_screen.dart';
 import 'screens/wifi_printers_screen.dart';
@@ -174,10 +177,22 @@ class MyApp extends StatelessWidget {
                     : const PreorderScreen(),
         '/orders': (context) => const OrdersScreen(),
         '/settings': (context) => const SettingsScreen(),
-        '/apertura': (context) => const AperturaScreen(),
+        '/apertura':
+            (context) =>
+                _shouldUseWebLayout(context)
+                    ? const AperturaWebScreen()
+                    : const AperturaScreen(),
         '/egreso': (context) => const EgresoScreen(),
-        '/venta-total': (context) => const VentaTotalScreen(),
-        '/cierre': (context) => const CierreScreen(),
+        '/venta-total':
+            (context) =>
+                _shouldUseWebLayout(context)
+                    ? const VentaTotalWebScreen()
+                    : const VentaTotalScreen(),
+        '/cierre':
+            (context) =>
+                _shouldUseWebLayout(context)
+                    ? const CierreWebScreen()
+                    : const CierreScreen(),
         '/shift-workers': (context) => const ShiftWorkersScreen(),
         '/subscription-detail': (context) => const SubscriptionDetailScreen(),
         '/wifi-printers': (context) => const WiFiPrintersScreen(),
