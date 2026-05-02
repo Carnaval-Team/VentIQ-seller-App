@@ -387,9 +387,47 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     );
   }
 
+  Widget _buildForeignCurrencyBadge({
+    required String symbol,
+    required double amount,
+    required String code,
+    required Color color,
+    required Color bg,
+  }) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.payments_outlined, size: 13, color: color),
+            const SizedBox(width: 4),
+            Text(
+              '$symbol${amount.toStringAsFixed(2)} $code',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildOrderCard(Map<String, dynamic> order) {
     final status = order['status'] as String? ?? 'Desconocido';
     final total = (order['total'] as num?)?.toDouble() ?? 0;
+    final moneda = (order['moneda'] as String?)?.toUpperCase();
+    final totalUsd = (order['totalUsd'] as num?)?.toDouble();
+    final totalEuro = (order['totalEuro'] as num?)?.toDouble();
     final createdAt = order['created_at'] as String?;
     final orderId = order['id'];
     final metodoEntrega = order['metodo_entrega'] as String? ?? '-';
@@ -628,13 +666,32 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                   const SizedBox(width: 16),
                   Icon(Icons.attach_money,
                       size: 14, color: Colors.grey[600]),
-                  Text('\$${total.toStringAsFixed(2)}',
+                  Text('\$${total.toStringAsFixed(2)} CUP',
                       style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                           color: Colors.grey[800])),
                 ],
               ),
+              if (moneda == 'USD' && totalUsd != null && totalUsd > 0) ...[
+                const SizedBox(height: 4),
+                _buildForeignCurrencyBadge(
+                  symbol: '\$',
+                  amount: totalUsd,
+                  code: 'USD',
+                  color: Colors.green.shade700,
+                  bg: Colors.green.withValues(alpha: 0.10),
+                ),
+              ] else if (moneda == 'EUR' && totalEuro != null && totalEuro > 0) ...[
+                const SizedBox(height: 4),
+                _buildForeignCurrencyBadge(
+                  symbol: '€',
+                  amount: totalEuro,
+                  code: 'EUR',
+                  color: Colors.blue.shade700,
+                  bg: Colors.blue.withValues(alpha: 0.10),
+                ),
+              ],
               const SizedBox(height: 6),
               Row(
                 children: [

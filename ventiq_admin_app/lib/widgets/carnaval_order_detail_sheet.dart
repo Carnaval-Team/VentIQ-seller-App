@@ -829,15 +829,83 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   }
 
   Widget _buildPagoInfo() {
+    final moneda = (_order['moneda'] as String?)?.toUpperCase();
+    final totalUsd = (_order['totalUsd'] as num?)?.toDouble();
+    final totalEuro = (_order['totalEuro'] as num?)?.toDouble();
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildInfoRow('Método', _order['metodo_pago'] ?? '-'),
         _buildInfoRow('Moneda', _order['moneda'] ?? '-'),
         _buildInfoRow('Total',
-            '\$${(_order['total'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
+            '\$${(_order['total'] as num?)?.toStringAsFixed(2) ?? '0.00'} CUP'),
+        if (moneda == 'USD' && totalUsd != null && totalUsd > 0) ...[
+          const SizedBox(height: 6),
+          _buildForeignCurrencyTile(
+            symbol: '\$',
+            amount: totalUsd,
+            code: 'USD',
+            label: 'Total en USD',
+            color: Colors.green.shade700,
+            bg: Colors.green.withValues(alpha: 0.10),
+          ),
+        ] else if (moneda == 'EUR' && totalEuro != null && totalEuro > 0) ...[
+          const SizedBox(height: 6),
+          _buildForeignCurrencyTile(
+            symbol: '€',
+            amount: totalEuro,
+            code: 'EUR',
+            label: 'Total en EUR',
+            color: Colors.blue.shade700,
+            bg: Colors.blue.withValues(alpha: 0.10),
+          ),
+        ],
+        const SizedBox(height: 4),
         _buildInfoRow('Tax',
             '\$${(_order['tax'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
       ],
+    );
+  }
+
+  Widget _buildForeignCurrencyTile({
+    required String symbol,
+    required double amount,
+    required String code,
+    required String label,
+    required Color color,
+    required Color bg,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.payments_outlined, size: 18, color: color),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            '$symbol${amount.toStringAsFixed(2)} $code',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

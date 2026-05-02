@@ -17,5 +17,8 @@
       "Bash(dart analyze *)",
       "mcp__ide__getDiagnostics"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "supabase"
+  ]
 }
