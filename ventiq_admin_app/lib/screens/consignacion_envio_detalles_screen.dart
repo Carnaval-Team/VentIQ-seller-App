@@ -217,7 +217,7 @@ class _ConsignacionEnvioDetallesScreenState
               (_canManageConsignacion &&
                   tipoEnvio == 2 &&
                   widget.rol == 'consignador' &&
-                  estadoEnvio == 1);
+                  estadoEnvio == ConsignacionEnvioListadoService.ESTADO_PROPUESTO);
 
           // Botón "Verificar Envío" para CONSIGNATARIO cuando envío está PROPUESTO
           bool puedeVerificarEnvio =
@@ -232,10 +232,10 @@ class _ConsignacionEnvioDetallesScreenState
               (_canManageConsignacion &&
                   ((tipoEnvio == 1 &&
                           widget.rol == 'consignador' &&
-                          estadoEnvio == 1) ||
+                          estadoEnvio == ConsignacionEnvioListadoService.ESTADO_PROPUESTO) ||
                       (tipoEnvio == 2 &&
                           widget.rol == 'consignatario' &&
-                          estadoEnvio == 1)));
+                          estadoEnvio == ConsignacionEnvioListadoService.ESTADO_PROPUESTO)));
 
           // Quién puede completar la extracción:
           // - Envío normal (tipo 1): consignador cuando CONFIGURADO y extracción PENDIENTE
@@ -764,7 +764,7 @@ class _ConsignacionEnvioDetallesScreenState
     }
   }
 
-  Future<void> _rechazarEnvioGlobal() async {
+  Future<void> _rechazarEnvioGlobal({int tipoEnvio = 1}) async {
     if (!_canManageConsignacion) {
       NavigationGuard.showActionDeniedMessage(context, 'Rechazar envío');
       return;
@@ -780,9 +780,12 @@ class _ConsignacionEnvioDetallesScreenState
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '¿Estás seguro de que deseas rechazar este envío por completo? '
-                  'Esta acción devolverá los productos al stock del consignador.',
+                Text(
+                  tipoEnvio == 2
+                      ? '¿Estás seguro de que deseas rechazar esta solicitud de devolución? '
+                        'El envío quedará marcado como rechazado.'
+                      : '¿Estás seguro de que deseas rechazar este envío por completo? '
+                        'Esta acción devolverá los productos al stock del consignador.',
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -907,7 +910,7 @@ class _ConsignacionEnvioDetallesScreenState
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
-            onPressed: _isAccepting ? null : _rechazarEnvioGlobal,
+            onPressed: _isAccepting ? null : () => _rechazarEnvioGlobal(tipoEnvio: 1),
             icon: const Icon(Icons.close),
             label: const Text(
               'Rechazar Envío',
@@ -1022,7 +1025,7 @@ class _ConsignacionEnvioDetallesScreenState
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
-            onPressed: () => _rechazarEnvioGlobal(),
+            onPressed: () => _rechazarEnvioGlobal(tipoEnvio: 2),
             icon: const Icon(Icons.close),
             label: const Text(
               'Rechazar Solicitud de Devolución',
@@ -1047,61 +1050,186 @@ class _ConsignacionEnvioDetallesScreenState
       return;
     }
 
-    // ⭐ Usar automáticamente el almacén de origen (id_almacen_origen del envío)
-    final idAlmacenOrigen = envio['id_almacen_origen'] as int?;
-    
-    if (idAlmacenOrigen == null) {
+    // Obtener tienda del usuario actual para filtrar sus almacenes
+    final userData = await UserPreferencesService().getUserData();
+    final idTiendaRaw = userData['idTienda'];
+    final idTienda = idTiendaRaw is int
+        ? idTiendaRaw
+        : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
+
+    if (idTienda == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('❌ No se pudo determinar el almacén de origen'),
+          content: Text('❌ No se pudo determinar la tienda del usuario'),
           backgroundColor: Colors.red,
         ),
       );
       return;
     }
 
+    // Pre-cargar almacenes del consignador
+    final almacenesResp = await Supabase.instance.client
+        .from('app_dat_almacen')
+        .select('id, denominacion')
+        .eq('id_tienda', idTienda);
+
+    final almacenes =
+        (almacenesResp as List).cast<Map<String, dynamic>>();
+
+    if (almacenes.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ No hay almacenes configurados para tu tienda'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    int? selectedAlmacenId = almacenes.first['id'] as int;
+
+    // Pre-cargar zonas del primer almacén
+    final zonasIniciales = await Supabase.instance.client
+        .from('app_dat_layout_almacen')
+        .select('id, denominacion')
+        .eq('id_almacen', selectedAlmacenId!);
+
+    List<Map<String, dynamic>> zonas =
+        (zonasIniciales as List).cast<Map<String, dynamic>>();
+    int? selectedZonaId =
+        zonas.isNotEmpty ? zonas.first['id'] as int : null;
+
     if (!mounted) return;
 
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Aprobar Devolución'),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Al aprobar la devolución:',
-              style: TextStyle(fontWeight: FontWeight.bold),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          title: const Text('Aprobar Devolución'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Selecciona dónde se recibirán los productos:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+                const Text('Almacén de recepción:'),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<int>(
+                  value: selectedAlmacenId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
+                  items: almacenes
+                      .map(
+                        (a) => DropdownMenuItem<int>(
+                          value: a['id'] as int,
+                          child: Text(
+                            a['denominacion'] as String,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) async {
+                    if (value == null) return;
+                    final nuevasZonas = await Supabase.instance.client
+                        .from('app_dat_layout_almacen')
+                        .select('id, denominacion')
+                        .eq('id_almacen', value);
+                    final lista =
+                        (nuevasZonas as List).cast<Map<String, dynamic>>();
+                    setStateDialog(() {
+                      selectedAlmacenId = value;
+                      zonas = lista;
+                      selectedZonaId = lista.isNotEmpty
+                          ? lista.first['id'] as int
+                          : null;
+                    });
+                  },
+                ),
+                const SizedBox(height: 16),
+                const Text('Zona de recepción:'),
+                const SizedBox(height: 6),
+                zonas.isEmpty
+                    ? const Text(
+                        'Sin zonas disponibles para este almacén',
+                        style: TextStyle(color: Colors.grey, fontSize: 13),
+                      )
+                    : DropdownButtonFormField<int>(
+                        value: selectedZonaId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                        ),
+                        items: zonas
+                            .map(
+                              (z) => DropdownMenuItem<int>(
+                                value: z['id'] as int,
+                                child: Text(
+                                  z['denominacion'] as String,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) =>
+                            setStateDialog(() => selectedZonaId = value),
+                      ),
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+                const Text(
+                  'Al aprobar:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '• Se descontará el stock del consignatario inmediatamente',
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  '• Se creará una recepción PENDIENTE en el almacén seleccionado',
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  '• Completa la recepción desde esta pantalla para registrar el stock',
+                  style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12),
+                ),
+              ],
             ),
-            SizedBox(height: 12),
-            Text('• Se descontará el stock del consignatario inmediatamente (extracción completada)'),
-            SizedBox(height: 8),
-            Text('• Se creará una operación de recepción PENDIENTE en tu tienda'),
-            SizedBox(height: 8),
-            Text('• Deberás completar la recepción para registrar los productos en tu inventario'),
-            SizedBox(height: 12),
-            Text(
-              'Una vez aprobada, completa la recepción desde esta misma pantalla.',
-              style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('CANCELAR'),
+            ),
+            ElevatedButton(
+              onPressed: selectedAlmacenId == null
+                  ? null
+                  : () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('APROBAR DEVOLUCIÓN'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('CANCELAR'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('APROBAR DEVOLUCIÓN'),
-          ),
-        ],
       ),
     );
 
@@ -1113,8 +1241,9 @@ class _ConsignacionEnvioDetallesScreenState
 
       final result = await ConsignacionEnvioService.aprobarDevolucion(
         idEnvio: widget.idEnvio,
-        idAlmacenRecepcion: idAlmacenOrigen,  // ⭐ Usar almacén de origen
+        idAlmacenRecepcion: selectedAlmacenId!,
         idUsuario: user.id,
+        idZonaRecepcion: selectedZonaId,
       );
 
       if (mounted) setState(() => _isAccepting = false);
@@ -1124,12 +1253,13 @@ class _ConsignacionEnvioDetallesScreenState
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              '✅ Devolución procesada y stock reintegrado exitosamente',
+              '✅ Devolución aprobada — completa la recepción para registrar el stock',
             ),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 4),
           ),
         );
-        Navigator.pop(context, true); // Volver avisando que hubo cambios
+        _refrescar();
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(

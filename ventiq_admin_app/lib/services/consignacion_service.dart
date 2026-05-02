@@ -1754,12 +1754,12 @@ class ConsignacionService {
               .eq('id', idProductoConsignacion);
 
           // Registrar movimiento de envío
-          await _supabase.from('app_dat_movimiento_consignacion').insert({
+          /* await _supabase.from('app_dat_movimiento_consignacion').insert({
             'id_producto_consignacion': idProductoConsignacion,
             'tipo_movimiento': 1, // Envío
             'cantidad': (productosConsignacion.firstWhere((p) => p['id'] == idProductoConsignacion)['cantidad_enviada'] as num).toDouble(),
             'observaciones': 'Envío confirmado de producto en consignación',
-          });
+          }); */
 
           debugPrint('✅ Producto consignación confirmado: $idProductoConsignacion');
 

@@ -337,7 +337,8 @@ COMMENT ON FUNCTION crear_devolucion_consignacion_v2 IS
 CREATE OR REPLACE FUNCTION aprobar_devolucion_consignacion_v2(
   p_id_envio BIGINT,
   p_id_almacen_recepcion BIGINT,
-  p_id_usuario UUID
+  p_id_usuario UUID,
+  p_id_zona_recepcion BIGINT DEFAULT NULL
 ) RETURNS TABLE (
   success BOOLEAN,
   id_operacion_recepcion BIGINT,
@@ -519,37 +520,49 @@ BEGIN
     'Recepción de devolución - ' || v_numero_envio
   );
 
-  -- 6. Registrar productos de recepción (con datos originales del consignador)
-  -- Resolver ubicación de fallback: primer layout del almacén de recepción del consignador.
-  -- Necesario cuando id_ubicacion_original es NULL (fn_contabilizar_operacion rechaza NULL).
-  SELECT la.id INTO v_id_ubicacion_recepcion
-  FROM app_dat_layout_almacen la
-  WHERE la.id_almacen = p_id_almacen_recepcion
-  ORDER BY la.id
-  LIMIT 1;
+  -- 6. Registrar productos de recepción en la zona seleccionada por el usuario.
+  -- Si se proporcionó p_id_zona_recepcion y pertenece al almacén, se usa directamente.
+  -- De lo contrario se usa la primera zona del almacén como fallback.
+  IF p_id_zona_recepcion IS NOT NULL AND EXISTS (
+    SELECT 1 FROM app_dat_layout_almacen
+    WHERE id = p_id_zona_recepcion AND id_almacen = p_id_almacen_recepcion
+  ) THEN
+    v_id_ubicacion_recepcion := p_id_zona_recepcion;
+  ELSE
+    SELECT la.id INTO v_id_ubicacion_recepcion
+    FROM app_dat_layout_almacen la
+    WHERE la.id_almacen = p_id_almacen_recepcion
+    ORDER BY la.id
+    LIMIT 1;
+  END IF;
 
-  FOR v_producto IN 
-    SELECT 
-      cep.id_producto,
+  -- Registrar cada producto usando los datos ORIGINALES del consignador.
+  -- app_dat_producto_consignacion_duplicado mapea duplicado → original,
+  -- resolviendo tanto el id_producto como la id_presentacion del consignador.
+  FOR v_producto IN
+    SELECT
       cep.cantidad_propuesta,
-      cep.id_presentacion_original,
-      cep.id_variante_original,
-      cep.id_ubicacion_original,
-      cep.precio_costo_usd
+      cep.precio_costo_usd,
+      cep.id_producto              AS id_producto_dup,
+      cep.id_presentacion_original AS id_presentacion_cep,
+      cep.id_variante_original     AS id_variante_cep
     FROM app_dat_consignacion_envio_producto cep
     WHERE cep.id_envio = p_id_envio
   LOOP
-    -- Resolver el producto ORIGINAL del consignador.
-    -- cep.id_producto puede ser el duplicado en el consignatario; necesitamos el original.
-    SELECT pcd.id_producto_original INTO v_id_producto_original
+    -- Resolver producto y presentación originales del consignador
+    -- via tabla de duplicados
+    SELECT
+      pcd.id_producto_original,
+      pcd.id_presentacion_original
+    INTO v_id_producto_original, v_id_presentacion_inv
     FROM app_dat_producto_consignacion_duplicado pcd
-    WHERE pcd.id_producto_duplicado = v_producto.id_producto
+    WHERE pcd.id_producto_duplicado = v_producto.id_producto_dup
       AND pcd.id_tienda_destino = v_id_tienda_consignataria
     ORDER BY pcd.fecha_duplicacion DESC
     LIMIT 1;
 
-    -- Si no hay duplicado registrado, el producto ya es el original
-    v_id_producto_original := COALESCE(v_id_producto_original, v_producto.id_producto);
+    -- Fallback: si no hay registro de duplicado, el producto ya es el original
+    v_id_producto_original := COALESCE(v_id_producto_original, v_producto.id_producto_dup);
 
     INSERT INTO app_dat_recepcion_productos (
       id_operacion,
@@ -562,12 +575,16 @@ BEGIN
     ) VALUES (
       v_id_operacion_recepcion,
       v_id_producto_original,
-      v_producto.id_presentacion_original,
-      v_producto.id_variante_original,
-      COALESCE(v_producto.id_ubicacion_original, v_id_ubicacion_recepcion),
+      COALESCE(v_id_presentacion_inv, v_producto.id_presentacion_cep),
+      v_producto.id_variante_cep,
+      v_id_ubicacion_recepcion,
       v_producto.cantidad_propuesta,
       v_producto.precio_costo_usd
     );
+
+    -- Resetear variables para la siguiente iteración
+    v_id_producto_original := NULL;
+    v_id_presentacion_inv  := NULL;
   END LOOP;
 
   -- 6b. Registrar movimientos en app_dat_movimiento_consignacion (tipo 3 = devolución)
