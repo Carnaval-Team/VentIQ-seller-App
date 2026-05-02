@@ -2716,6 +2716,134 @@ class InventoryService {
         print('⚠️ Error validando operación de consignación: $e');
       }
 
+      // =====================================================
+      // REGISTRAR MOVIMIENTO DE INVENTARIO
+      // Se ejecuta para recepciones y extracciones que aún
+      // no tengan su movimiento registrado en app_dat_inventario_productos.
+      // (Es idempotente: si ya existe el registro, lo omite.)
+      // =====================================================
+      print('\n📦 Registrando movimientos de inventario para operación $idOperacion...');
+      try {
+        // ── CASO RECEPCIÓN ───────────────────────────────────────────────────
+        final productosRecepcion = await _supabase
+            .from('app_dat_recepcion_productos')
+            .select('id, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad, sku_producto, sku_ubicacion, id_proveedor')
+            .eq('id_operacion', idOperacion);
+
+        for (final rp in productosRecepcion as List) {
+          final idRP = rp['id'] as int;
+
+          // Verificar si ya existe un movimiento vinculado a este id_recepcion
+          final yaExiste = await _supabase
+              .from('app_dat_inventario_productos')
+              .select('id')
+              .eq('id_recepcion', idRP)
+              .limit(1);
+
+          if ((yaExiste as List).isNotEmpty) {
+            print('   ⏭️ Inventario ya registrado para recepcion_producto $idRP');
+            continue;
+          }
+
+          final idProducto   = rp['id_producto']        as int?;
+          final idUbicacion  = rp['id_ubicacion']        as int?;
+          final idPresentacion = rp['id_presentacion']   as int?;
+          final cantidad     = (rp['cantidad'] as num?)?.toDouble() ?? 0.0;
+
+          if (idProducto == null) continue;
+
+          // Obtener último saldo: filtrar por producto, ubicación y presentación
+          var stockQuery = _supabase
+              .from('app_dat_inventario_productos')
+              .select('cantidad_final')
+              .eq('id_producto', idProducto);
+          if (idUbicacion  != null) stockQuery = stockQuery.eq('id_ubicacion',   idUbicacion);
+          if (idPresentacion != null) stockQuery = stockQuery.eq('id_presentacion', idPresentacion);
+          final stockRows = await stockQuery.order('id', ascending: false).limit(1);
+
+          final cantidadInicial = (stockRows as List).isNotEmpty
+              ? ((stockRows.first['cantidad_final'] as num?)?.toDouble() ?? 0.0)
+              : 0.0;
+
+          await _supabase.from('app_dat_inventario_productos').insert({
+            'id_producto':        idProducto,
+            'id_variante':        rp['id_variante'],
+            'id_opcion_variante': rp['id_opcion_variante'],
+            'id_ubicacion':       idUbicacion,
+            'id_presentacion':    idPresentacion,
+            'cantidad_inicial':   cantidadInicial,
+            'cantidad_final':     cantidadInicial + cantidad,
+            'sku_producto':       rp['sku_producto'],
+            'sku_ubicacion':      rp['sku_ubicacion'],
+            'origen_cambio':      1, // 1 = recepción
+            'id_recepcion':       idRP,
+            'id_proveedor':       rp['id_proveedor'],
+            'created_at':         DateTime.now().toIso8601String(),
+          });
+          print('   ✅ Recepción: producto $idProducto  +$cantidad  (${cantidadInicial} → ${cantidadInicial + cantidad})');
+        }
+
+        // ── CASO EXTRACCIÓN ──────────────────────────────────────────────────
+        final productosExtraccion = await _supabase
+            .from('app_dat_extraccion_productos')
+            .select('id, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad, sku_producto, sku_ubicacion')
+            .eq('id_operacion', idOperacion);
+
+        for (final ep in productosExtraccion as List) {
+          final idEP = ep['id'] as int;
+
+          // Verificar si ya existe un movimiento vinculado a este id_extraccion
+          final yaExiste = await _supabase
+              .from('app_dat_inventario_productos')
+              .select('id')
+              .eq('id_extraccion', idEP)
+              .limit(1);
+
+          if ((yaExiste as List).isNotEmpty) {
+            print('   ⏭️ Inventario ya registrado para extraccion_producto $idEP');
+            continue;
+          }
+
+          final idProducto    = ep['id_producto']       as int?;
+          final idUbicacion   = ep['id_ubicacion']       as int?;
+          final idPresentacion = ep['id_presentacion']   as int?;
+          final cantidad      = (ep['cantidad'] as num?)?.toDouble() ?? 0.0;
+
+          if (idProducto == null) continue;
+
+          var stockQuery = _supabase
+              .from('app_dat_inventario_productos')
+              .select('cantidad_final')
+              .eq('id_producto', idProducto);
+          if (idUbicacion   != null) stockQuery = stockQuery.eq('id_ubicacion',    idUbicacion);
+          if (idPresentacion != null) stockQuery = stockQuery.eq('id_presentacion', idPresentacion);
+          final stockRows = await stockQuery.order('id', ascending: false).limit(1);
+
+          final cantidadInicial = (stockRows as List).isNotEmpty
+              ? ((stockRows.first['cantidad_final'] as num?)?.toDouble() ?? 0.0)
+              : 0.0;
+
+          await _supabase.from('app_dat_inventario_productos').insert({
+            'id_producto':        idProducto,
+            'id_variante':        ep['id_variante'],
+            'id_opcion_variante': ep['id_opcion_variante'],
+            'id_ubicacion':       idUbicacion,
+            'id_presentacion':    idPresentacion,
+            'cantidad_inicial':   cantidadInicial,
+            'cantidad_final':     cantidadInicial - cantidad,
+            'sku_producto':       ep['sku_producto'],
+            'sku_ubicacion':      ep['sku_ubicacion'],
+            'origen_cambio':      2, // 2 = extracción
+            'id_extraccion':      idEP,
+            'created_at':         DateTime.now().toIso8601String(),
+          });
+          print('   ✅ Extracción: producto $idProducto  -$cantidad  (${cantidadInicial} → ${cantidadInicial - cantidad})');
+        }
+      } catch (e) {
+        print('⚠️ Error registrando movimientos de inventario: $e');
+        print('   - Continuando con cambio de estado de operación');
+      }
+
       final response = await _supabase.rpc(
         'fn_registrar_cambio_estado_operacion',
         params: {
