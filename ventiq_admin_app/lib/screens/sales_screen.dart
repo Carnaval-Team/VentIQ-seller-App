@@ -2264,6 +2264,10 @@ class _SalesScreenState extends State<SalesScreen>
               final fecha = orden['created_at'] != null ? DateFormat('dd/MM/yy HH:mm').format(DateTime.parse(orden['created_at'])) : '';
               final vendedor = orden['vendedor'] != null ? orden['vendedor']['nombre_completo'] : 'N/A';
               
+              final tieneItemsSinInventario = razonesList.contains('SIN_INVENTARIO_EN_ITEMS');
+              final items = (orden['items'] as List?) ?? [];
+              final itemsSinInv = items.where((it) => (it as Map)['inventario'] == null).toList();
+
               return ExpansionTile(
                 leading: CircleAvatar(
                   backgroundColor: AppColors.error.withOpacity(0.1),
@@ -2279,7 +2283,23 @@ class _SalesScreenState extends State<SalesScreen>
                 ),
                 trailing: Text('\$${total is num ? total.toStringAsFixed(2) : total}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 children: [
-                  _buildOrderDetailsContent(orden)
+                  _buildOrderDetailsContent(orden),
+                  if (tieneItemsSinInventario && itemsSinInv.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _reinyectarInventarioOrden(orden),
+                          icon: const Icon(Icons.healing, size: 18),
+                          label: Text('Reinyectar inventario (${itemsSinInv.length} items)'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.warning,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               );
             },
@@ -2484,6 +2504,153 @@ class _SalesScreenState extends State<SalesScreen>
         ],
       ),
     );
+  }
+
+  Future<void> _reinyectarInventarioOrden(Map orden) async {
+    final supabase = Supabase.instance.client;
+    final idOperacion = orden['id_operacion'];
+    final items = (orden['items'] as List?) ?? [];
+    final itemsSinInv = items.where((it) => (it as Map)['inventario'] == null).toList();
+
+    if (itemsSinInv.isEmpty) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reinyectar inventario'),
+        content: Text(
+          'Se insertarán ${itemsSinInv.length} registro(s) de inventario para la orden #$idOperacion. ¿Continuar?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.warning, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reinyectar'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
+    );
+
+    int exitos = 0;
+    final List<String> errores = [];
+
+    try {
+      for (final item in itemsSinInv) {
+        final idExtraccion = (item as Map)['id_extraccion'];
+        if (idExtraccion == null) {
+          errores.add('Item sin id_extraccion');
+          continue;
+        }
+        try {
+          // 1. Cargar la extracción completa
+          final extRows = await supabase
+              .from('app_dat_extraccion_productos')
+              .select('id, id_operacion, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad, sku_producto, sku_ubicacion')
+              .eq('id', idExtraccion)
+              .limit(1);
+          if ((extRows as List).isEmpty) {
+            errores.add('Extracción $idExtraccion no encontrada');
+            continue;
+          }
+          final ext = Map<String, dynamic>.from(extRows.first);
+          final idProducto = ext['id_producto'];
+          final idVariante = ext['id_variante'];
+          final idOpcionVariante = ext['id_opcion_variante'];
+          final idPresentacion = ext['id_presentacion'];
+          var idUbicacion = ext['id_ubicacion'];
+          final cantidadExt = (ext['cantidad'] as num?)?.toDouble() ?? 0.0;
+
+          // 2. Buscar última fila de inventario que coincida (id desc limit 1)
+          var invQuery = supabase
+              .from('app_dat_inventario_productos')
+              .select('id, id_ubicacion, cantidad_final, sku_producto, sku_ubicacion')
+              .eq('id_producto', idProducto);
+          if (idVariante != null) {
+            invQuery = invQuery.eq('id_variante', idVariante);
+          } else {
+            invQuery = invQuery.isFilter('id_variante', null);
+          }
+          if (idOpcionVariante != null) {
+            invQuery = invQuery.eq('id_opcion_variante', idOpcionVariante);
+          } else {
+            invQuery = invQuery.isFilter('id_opcion_variante', null);
+          }
+          if (idPresentacion != null) {
+            invQuery = invQuery.eq('id_presentacion', idPresentacion);
+          }
+
+          final invRows = await invQuery.order('id', ascending: false).limit(1);
+
+          double cantidadFinalUltima = 0.0;
+          int? idUbicacionInventario;
+          String? skuProductoInv;
+          String? skuUbicacionInv;
+          if ((invRows as List).isNotEmpty) {
+            final lastInv = Map<String, dynamic>.from(invRows.first);
+            cantidadFinalUltima = (lastInv['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+            idUbicacionInventario = lastInv['id_ubicacion'];
+            skuProductoInv = lastInv['sku_producto'];
+            skuUbicacionInv = lastInv['sku_ubicacion'];
+          }
+
+          // 3. Si la extracción no tiene id_ubicacion (o difiere) y el inventario sí lo tiene, actualizamos la extracción
+          if (idUbicacionInventario != null && idUbicacion != idUbicacionInventario) {
+            await supabase
+                .from('app_dat_extraccion_productos')
+                .update({'id_ubicacion': idUbicacionInventario})
+                .eq('id', idExtraccion);
+            idUbicacion = idUbicacionInventario;
+          }
+
+          // 4. Calcular cantidades para nueva fila
+          final double nuevaInicial = cantidadFinalUltima;
+          final double nuevaFinal = cantidadFinalUltima == 0.0
+              ? 0.0
+              : cantidadFinalUltima - cantidadExt;
+
+          await supabase.from('app_dat_inventario_productos').insert({
+            'id_producto': idProducto,
+            'id_variante': idVariante,
+            'id_opcion_variante': idOpcionVariante,
+            'id_ubicacion': idUbicacion,
+            'id_presentacion': idPresentacion,
+            'cantidad_inicial': nuevaInicial,
+            'cantidad_final': nuevaFinal,
+            'sku_producto': ext['sku_producto'] ?? skuProductoInv,
+            'sku_ubicacion': ext['sku_ubicacion'] ?? skuUbicacionInv,
+            'origen_cambio': 2,
+            'id_extraccion': idExtraccion,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+          exitos++;
+        } catch (e) {
+          errores.add('Extracción $idExtraccion: $e');
+        }
+      }
+    } finally {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    if (!mounted) return;
+
+    final msg = errores.isEmpty
+        ? '✅ Reinyectados $exitos registro(s) de inventario.'
+        : '⚠️ $exitos OK, ${errores.length} error(es): ${errores.take(2).join(' | ')}';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: errores.isEmpty ? AppColors.success : AppColors.warning),
+    );
+
+    setState(() {
+      _salesBreakdownFuture = _fetchSalesBreakdown();
+    });
   }
 
   Widget _buildAnalyticsTab() {
