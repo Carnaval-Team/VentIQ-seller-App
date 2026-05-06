@@ -1305,28 +1305,89 @@ class CarnavalService {
     }
   }
 
-  /// Crea un nuevo repartidor en carnavalapp.repartidores
-  static Future<Map<String, dynamic>?> addRepartidor({
+  /// Crea un nuevo repartidor: registra usuario en Supabase Auth (para que pueda
+  /// loguearse en la app de repartidor) y luego inserta el registro en
+  /// `carnavalapp.repartidores` con su UUID. Si el email ya existe, intenta
+  /// reusar la cuenta autenticando con la contraseña provista.
+  ///
+  /// Retorna `{'repartidor': Map, 'userAlreadyExisted': bool}` en éxito o
+  /// `{'error': String}` con el mensaje cuando falla.
+  static Future<Map<String, dynamic>> addRepartidor({
     required String nombre,
-    String? telefono,
-    String? correo,
+    required String correo,
+    required String password,
+    required String telefono,
+    String? chatId,
   }) async {
     try {
+      String? userUuid;
+      bool userAlreadyExisted = false;
+
+      try {
+        final authResponse = await _supabase.auth.signUp(
+          email: correo,
+          password: password,
+          data: {
+            'nombre': nombre,
+            'rol': 'repartidor',
+          },
+        );
+        if (authResponse.user == null) {
+          return {'error': 'No se pudo registrar el usuario en Supabase Auth.'};
+        }
+        userUuid = authResponse.user!.id;
+        print('✅ Repartidor: usuario registrado con UUID: $userUuid');
+      } catch (signUpError) {
+        final msg = signUpError.toString();
+        if (msg.contains('user_already_exists') ||
+            msg.contains('User already registered')) {
+          try {
+            final loginResponse = await _supabase.auth.signInWithPassword(
+              email: correo,
+              password: password,
+            );
+            if (loginResponse.user == null) {
+              return {
+                'error':
+                    'El email ya existe pero la contraseña proporcionada es incorrecta.'
+              };
+            }
+            userUuid = loginResponse.user!.id;
+            userAlreadyExisted = true;
+            print('✅ Repartidor: usuario existente reutilizado UUID: $userUuid');
+          } catch (loginError) {
+            return {
+              'error':
+                  'El email ya está registrado y no se pudo autenticar (verifica la contraseña).'
+            };
+          }
+        } else {
+          return {'error': 'Error en signUp: $msg'};
+        }
+      }
+
+      // Insertar en carnavalapp.repartidores con UUID.
+      final telefonoNum = num.tryParse(telefono.replaceAll(RegExp(r'\D'), ''));
       final response = await _supabase
           .schema('carnavalapp')
           .from('repartidores')
           .insert({
             'nombre': nombre,
-            if (telefono != null && telefono.isNotEmpty) 'telefono': telefono,
-            if (correo != null && correo.isNotEmpty) 'correo': correo,
+            'correo': correo,
+            'telefono': telefonoNum,
+            'uuid': userUuid,
             'status': true,
+            if (chatId != null && chatId.isNotEmpty) 'chat_id': chatId,
           })
           .select()
           .single();
-      return Map<String, dynamic>.from(response);
+      return {
+        'repartidor': Map<String, dynamic>.from(response),
+        'userAlreadyExisted': userAlreadyExisted,
+      };
     } catch (e) {
       print('❌ Error al crear repartidor: $e');
-      return null;
+      return {'error': 'Error al guardar repartidor: $e'};
     }
   }
 
@@ -1355,23 +1416,55 @@ class CarnavalService {
       final operacionIds = (opsResponse as List)
           .map((o) => o['id'] as int)
           .toList();
+      print('🔍 paqueteria: ops encontradas tienda=$idTienda '
+          'rango=${from.toIso8601String()}..${to.toIso8601String()} '
+          '=> ${operacionIds.length}');
       if (operacionIds.isEmpty) return [];
 
       // 2. Obtener órdenes carnaval asociadas a esas operaciones via paqueteria_ordenes.
+      // Nota: si esta tabla tiene RLS restrictiva la respuesta vendrá vacía.
       final paqResponse = await _supabase
           .from('paqueteria_ordenes')
           .select('id_orden_carnaval, id_operacion, numero_paquete, descripcion')
           .inFilter('id_operacion', operacionIds);
 
+      print('🔍 paqueteria: filas paqueteria_ordenes => '
+          '${(paqResponse as List).length}');
+
       final ordenIdToOpId = <int, int>{};
-      for (final row in paqResponse as List) {
+      for (final row in paqResponse) {
         final ordenId = row['id_orden_carnaval'] as int?;
         final opId = row['id_operacion'] as int?;
         if (ordenId != null && opId != null) {
           ordenIdToOpId[ordenId] = opId;
         }
       }
-      if (ordenIdToOpId.isEmpty) return [];
+      // Fallback: si paqueteria_ordenes no devolvió nada (posible RLS) pero la
+      // orden Carnaval ya guarda su `paqueteria` JSONB y su `observaciones`
+      // VentIQ apunta a la operación, podemos resolver vía observaciones.
+      if (ordenIdToOpId.isEmpty) {
+        print('⚠️ paqueteria_ordenes vacío. Intentando fallback por '
+            'observaciones de operaciones.');
+        final opsObs = await _supabase
+            .from('app_dat_operaciones')
+            .select('id, observaciones')
+            .inFilter('id', operacionIds)
+            .ilike('observaciones', '%Venta desde orden %');
+        final regex = RegExp(r'Venta desde orden\s+(\d+)');
+        for (final row in opsObs as List) {
+          final obs = row['observaciones']?.toString() ?? '';
+          final match = regex.firstMatch(obs);
+          if (match != null) {
+            final ordenId = int.tryParse(match.group(1)!);
+            final opId = row['id'] as int?;
+            if (ordenId != null && opId != null) {
+              ordenIdToOpId[ordenId] = opId;
+            }
+          }
+        }
+        print('🔁 fallback: órdenes derivadas = ${ordenIdToOpId.length}');
+        if (ordenIdToOpId.isEmpty) return [];
+      }
 
       final ordenIds = ordenIdToOpId.keys.toList();
 
@@ -1403,14 +1496,20 @@ class CarnavalService {
           .range(from0, to0);
 
       final orders = List<Map<String, dynamic>>.from(ordersResponse);
-      // 4. Adjuntar id_operacion para mostrarlo sin reconsultar.
+      // 4. Adjuntar id_operacion y filtrar solo las que efectivamente son paquetería.
+      final filtered = <Map<String, dynamic>>[];
       for (final o in orders) {
         final opId = ordenIdToOpId[o['id'] as int?];
         if (opId != null) {
           o['_ventiq_operacion_id'] = opId;
         }
+        final paq = o['paqueteria'];
+        final isPaq = paq is Map && paq.isNotEmpty;
+        if (isPaq) filtered.add(o);
       }
-      return orders;
+      print('✅ paqueteria: órdenes finales = ${filtered.length} '
+          '(de ${orders.length} en rango)');
+      return filtered;
     } catch (e) {
       print('❌ Error al obtener órdenes de paquetería por tienda: $e');
       return [];

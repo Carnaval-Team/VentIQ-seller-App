@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/carnaval_service.dart';
 import '../services/user_preferences_service.dart';
+import 'carnaval_order_detail_sheet.dart';
 
 class PaqueteriaTab extends StatefulWidget {
   const PaqueteriaTab({super.key});
@@ -28,6 +29,7 @@ class _PaqueteriaTabState extends State<PaqueteriaTab> {
   bool _hasMore = true;
   int _currentPage = 0;
   int? _idTienda;
+  int? _carnavalStoreId;
 
   late DateTime _startDate;
   late DateTime _endDate;
@@ -74,7 +76,30 @@ class _PaqueteriaTabState extends State<PaqueteriaTab> {
       return;
     }
     _idTienda = storeId;
+    _carnavalStoreId = await CarnavalService.getCarnavalStoreId(storeId);
     await _loadOrders();
+  }
+
+  void _openOrderDetail(Map<String, dynamic> order) {
+    if (_carnavalStoreId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tu tienda no está vinculada a Carnaval.'),
+        ),
+      );
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => CarnavalOrderDetailSheet(
+        order: order,
+        isAdmin: true,
+        carnavalStoreId: _carnavalStoreId!,
+        onOrderUpdated: _loadOrders,
+      ),
+    );
   }
 
   int? get _searchOrderId {
@@ -393,43 +418,105 @@ class _PaqueteriaTabState extends State<PaqueteriaTab> {
     final nombreCtrl = TextEditingController();
     final telCtrl = TextEditingController();
     final correoCtrl = TextEditingController();
+    final passwordCtrl = TextEditingController();
+    final chatIdCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
+    bool obscurePassword = true;
 
     return showDialog<Map<String, dynamic>>(
       context: parentCtx,
+      barrierDismissible: false,
       builder: (dctx) {
         bool saving = false;
         return StatefulBuilder(builder: (dctx, setDState) {
           return AlertDialog(
             title: const Text('Nuevo repartidor'),
-            content: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: nombreCtrl,
-                    decoration: const InputDecoration(labelText: 'Nombre *'),
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? 'Requerido' : null,
-                  ),
-                  TextFormField(
-                    controller: telCtrl,
-                    decoration: const InputDecoration(labelText: 'Teléfono'),
-                    keyboardType: TextInputType.phone,
-                  ),
-                  TextFormField(
-                    controller: correoCtrl,
-                    decoration: const InputDecoration(labelText: 'Correo'),
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                ],
+            content: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Se creará una cuenta para que el chofer pueda iniciar sesión en la app de repartidor.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: nombreCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre completo *',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Requerido'
+                          : null,
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: correoCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Correo *',
+                        prefixIcon: Icon(Icons.email_outlined),
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (v) {
+                        final value = v?.trim() ?? '';
+                        if (value.isEmpty) return 'Requerido';
+                        if (!value.contains('@')) return 'Correo inválido';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: passwordCtrl,
+                      obscureText: obscurePassword,
+                      decoration: InputDecoration(
+                        labelText: 'Contraseña *',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          icon: Icon(obscurePassword
+                              ? Icons.visibility
+                              : Icons.visibility_off),
+                          onPressed: () => setDState(
+                              () => obscurePassword = !obscurePassword),
+                        ),
+                        helperText: 'Mínimo 6 caracteres',
+                      ),
+                      validator: (v) {
+                        final value = v ?? '';
+                        if (value.isEmpty) return 'Requerido';
+                        if (value.length < 6) return 'Mínimo 6 caracteres';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: telCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Teléfono *',
+                        prefixIcon: Icon(Icons.phone_outlined),
+                      ),
+                      keyboardType: TextInputType.phone,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Requerido'
+                          : null,
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: chatIdCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Chat ID Telegram (opcional)',
+                        prefixIcon: Icon(Icons.chat_outlined),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             actions: [
               TextButton(
-                onPressed:
-                    saving ? null : () => Navigator.pop(dctx, null),
+                onPressed: saving ? null : () => Navigator.pop(dctx, null),
                 child: const Text('Cancelar'),
               ),
               ElevatedButton(
@@ -440,23 +527,38 @@ class _PaqueteriaTabState extends State<PaqueteriaTab> {
                           return;
                         }
                         setDState(() => saving = true);
-                        final created = await CarnavalService.addRepartidor(
+                        final result = await CarnavalService.addRepartidor(
                           nombre: nombreCtrl.text.trim(),
-                          telefono: telCtrl.text.trim(),
                           correo: correoCtrl.text.trim(),
+                          password: passwordCtrl.text,
+                          telefono: telCtrl.text.trim(),
+                          chatId: chatIdCtrl.text.trim().isEmpty
+                              ? null
+                              : chatIdCtrl.text.trim(),
                         );
                         if (!dctx.mounted) return;
-                        if (created == null) {
+                        if (result['error'] != null) {
                           setDState(() => saving = false);
                           ScaffoldMessenger.of(dctx).showSnackBar(
-                            const SnackBar(
-                              content: Text('Error al crear repartidor'),
+                            SnackBar(
+                              content: Text(result['error'] as String),
                               backgroundColor: Colors.red,
                             ),
                           );
                           return;
                         }
-                        Navigator.pop(dctx, created);
+                        final repartidor =
+                            result['repartidor'] as Map<String, dynamic>;
+                        if (result['userAlreadyExisted'] == true) {
+                          ScaffoldMessenger.of(dctx).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                  'Cuenta existente reutilizada y vinculada como repartidor.'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                        }
+                        Navigator.pop(dctx, repartidor);
                       },
                 child: saving
                     ? const SizedBox(
@@ -680,7 +782,10 @@ class _PaqueteriaTabState extends State<PaqueteriaTab> {
         borderRadius: BorderRadius.circular(12),
         side: const BorderSide(color: Colors.blue, width: 2),
       ),
-      child: Padding(
+      child: InkWell(
+        onTap: () => _openOrderDetail(order),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -875,6 +980,7 @@ class _PaqueteriaTabState extends State<PaqueteriaTab> {
               ],
             ),
           ],
+        ),
         ),
       ),
     );
