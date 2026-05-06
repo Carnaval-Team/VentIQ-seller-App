@@ -15,6 +15,7 @@ import 'package:excel/excel.dart' as excel;
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
+import '../widgets/paqueteria_tab.dart';
 import '../models/sales.dart';
 import '../models/sales_analyst_models.dart';
 import '../services/sales_service.dart';
@@ -181,7 +182,8 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Widget _buildGeneratePdfFab() {
-    if (_tabController.index == 5) { // 5 is now Analyst
+    if (_tabController.index == 5 || _tabController.index == 6) {
+      // 5 = Paquetería, 6 = Analista — sin FAB.
       return const SizedBox.shrink();
     }
     // Un solo botón con opciones según el tab activo
@@ -1258,7 +1260,7 @@ class _SalesScreenState extends State<SalesScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _tabController.addListener(_onTabChanged);
     _analystController = SalesAnalystController();
     _analystController.addListener(_handleAnalystUpdates);
@@ -1296,7 +1298,9 @@ class _SalesScreenState extends State<SalesScreen>
         case 4: // Analysis
           _loadProductAnalysis();
           break;
-        case 5: // Analyst
+        case 5: // Paquetería
+          break;
+        case 6: // Analyst
           if (_hasAdvancedPlan) {
             if (!_isLoadingAnalysis && _productAnalysis.isEmpty) {
               _loadProductAnalysis();
@@ -1654,6 +1658,10 @@ class _SalesScreenState extends State<SalesScreen>
               icon: Icon(Icons.receipt_long, size: 18),
             ),
             const Tab(text: 'Análisis', icon: Icon(Icons.analytics, size: 18)),
+            const Tab(
+              text: 'Paquetería',
+              icon: Icon(Icons.local_shipping_outlined, size: 18),
+            ),
             Tab(
               text: 'Analista',
               icon: Icon(Icons.smart_toy, size: 18),
@@ -1672,6 +1680,7 @@ class _SalesScreenState extends State<SalesScreen>
                   _buildSuppliersTab(),
                   _buildSalesBreakdownTab(),
                   _buildAnalyticsTab(),
+                  const PaqueteriaTab(),
                   _buildAnalystGateTab(),
                 ],
               ),

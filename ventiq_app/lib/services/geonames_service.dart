@@ -15,7 +15,7 @@ class GeonamesService {
       );
 
       final response = await http.get(url).timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 120),
         onTimeout: () => throw Exception('Timeout al conectar con GeoNames'),
       );
 
@@ -60,7 +60,7 @@ class GeonamesService {
       );
 
       final response = await http.get(url).timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 120),
         onTimeout: () => throw Exception('Timeout al conectar con GeoNames'),
       );
 
@@ -109,7 +109,7 @@ class GeonamesService {
       );
 
       final response = await http.get(url).timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 120),
         onTimeout: () => throw Exception('Timeout al conectar con GeoNames'),
       );
 

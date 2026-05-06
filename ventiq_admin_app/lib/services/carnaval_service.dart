@@ -1305,6 +1305,118 @@ class CarnavalService {
     }
   }
 
+  /// Crea un nuevo repartidor en carnavalapp.repartidores
+  static Future<Map<String, dynamic>?> addRepartidor({
+    required String nombre,
+    String? telefono,
+    String? correo,
+  }) async {
+    try {
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('repartidores')
+          .insert({
+            'nombre': nombre,
+            if (telefono != null && telefono.isNotEmpty) 'telefono': telefono,
+            if (correo != null && correo.isNotEmpty) 'correo': correo,
+            'status': true,
+          })
+          .select()
+          .single();
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      print('❌ Error al crear repartidor: $e');
+      return null;
+    }
+  }
+
+  /// Lista órdenes de paquetería filtradas por id_tienda (operaciones VentIQ).
+  /// Usa la tabla puente `paqueteria_ordenes` para encontrar las órdenes
+  /// Carnaval asociadas a operaciones VentIQ de la tienda dada en el rango
+  /// de fechas indicado.
+  static Future<List<Map<String, dynamic>>> getPaqueteriaOrdersByTienda({
+    required int idTienda,
+    required DateTime from,
+    required DateTime to,
+    int page = 0,
+    int pageSize = 20,
+    String? statusFilter,
+    int? orderIdFilter,
+  }) async {
+    try {
+      // 1. Obtener IDs de operaciones de la tienda en el rango.
+      final opsResponse = await _supabase
+          .from('app_dat_operaciones')
+          .select('id')
+          .eq('id_tienda', idTienda)
+          .gte('created_at', from.toIso8601String())
+          .lte('created_at', to.toIso8601String());
+
+      final operacionIds = (opsResponse as List)
+          .map((o) => o['id'] as int)
+          .toList();
+      if (operacionIds.isEmpty) return [];
+
+      // 2. Obtener órdenes carnaval asociadas a esas operaciones via paqueteria_ordenes.
+      final paqResponse = await _supabase
+          .from('paqueteria_ordenes')
+          .select('id_orden_carnaval, id_operacion, numero_paquete, descripcion')
+          .inFilter('id_operacion', operacionIds);
+
+      final ordenIdToOpId = <int, int>{};
+      for (final row in paqResponse as List) {
+        final ordenId = row['id_orden_carnaval'] as int?;
+        final opId = row['id_operacion'] as int?;
+        if (ordenId != null && opId != null) {
+          ordenIdToOpId[ordenId] = opId;
+        }
+      }
+      if (ordenIdToOpId.isEmpty) return [];
+
+      final ordenIds = ordenIdToOpId.keys.toList();
+
+      // 3. Cargar las órdenes desde carnavalapp.Orders.
+      var query = _supabase
+          .schema('carnavalapp')
+          .from('Orders')
+          .select('*, Usuarios:user_id(name, telefono)')
+          .inFilter('id', ordenIds);
+
+      if (statusFilter != null) {
+        if (statusFilter == 'Nuevo') {
+          query = query.inFilter(
+              'status', ['Nuevo', 'En Revision', 'Pendiente de Pago']);
+        } else {
+          query = query.eq('status', statusFilter);
+        }
+      }
+      if (orderIdFilter != null) {
+        query = query.eq('id', orderIdFilter);
+      }
+
+      final from0 = page * pageSize;
+      final to0 = from0 + pageSize - 1;
+
+      final ordersResponse = await query
+          .order('id', ascending: false)
+          .order('created_at', ascending: false)
+          .range(from0, to0);
+
+      final orders = List<Map<String, dynamic>>.from(ordersResponse);
+      // 4. Adjuntar id_operacion para mostrarlo sin reconsultar.
+      for (final o in orders) {
+        final opId = ordenIdToOpId[o['id'] as int?];
+        if (opId != null) {
+          o['_ventiq_operacion_id'] = opId;
+        }
+      }
+      return orders;
+    } catch (e) {
+      print('❌ Error al obtener órdenes de paquetería por tienda: $e');
+      return [];
+    }
+  }
+
   /// Actualiza la cantidad de un detalle de orden
   static Future<bool> updateOrderDetailQuantity(
     int detailId,

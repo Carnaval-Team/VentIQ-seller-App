@@ -1587,6 +1587,8 @@ class _CategoryCardState extends State<_CategoryCard>
                                       );
                                     },
                                   )
+                                  : _isPackageCategory(widget.name)
+                                  ? _packageFallbackImage()
                                   : Container(
                                     decoration: BoxDecoration(
                                       color: Colors.white.withOpacity(0.2),
@@ -1651,6 +1653,45 @@ class _CategoryCardState extends State<_CategoryCard>
       default:
         return Icons.category;
     }
+  }
+
+  bool _isPackageCategory(String name) {
+    final n = name.toLowerCase();
+    const keywords = [
+      'paquete',
+      'paquetes',
+      'paqueteria',
+      'paquetería',
+      'envio',
+      'envío',
+      'envios',
+      'envíos',
+      'shipping',
+      'package',
+    ];
+    return keywords.any((k) => n.contains(k));
+  }
+
+  Widget _packageFallbackImage() {
+    return Image.asset(
+      'assets/package.jpg',
+      width: 120,
+      height: 80,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(
+            _getCategoryIcon(widget.name),
+            size: 40,
+            color: Colors.white,
+          ),
+        );
+      },
+    );
   }
 }
 
