@@ -1381,6 +1381,42 @@ class CarnavalService {
           })
           .select()
           .single();
+
+      // Insertar/actualizar también en carnavalapp.Usuarios con rol 'Repartidor'
+      // y el mismo uuid del auth para que ambas tablas queden vinculadas.
+      try {
+        final existing = await _supabase
+            .schema('carnavalapp')
+            .from('Usuarios')
+            .select('id')
+            .eq('uuid', userUuid!)
+            .maybeSingle();
+        if (existing == null) {
+          await _supabase.schema('carnavalapp').from('Usuarios').insert({
+            'email': correo,
+            'uuid': userUuid,
+            'name': nombre,
+            'telefono': telefono,
+            'rol': 'Repartidor',
+            'email_confirmacion': true,
+          });
+          print('✅ Repartidor: Usuarios creado para uuid $userUuid');
+        } else {
+          await _supabase
+              .schema('carnavalapp')
+              .from('Usuarios')
+              .update({
+                'name': nombre,
+                'telefono': telefono,
+                'rol': 'Repartidor',
+              })
+              .eq('uuid', userUuid);
+          print('✅ Repartidor: Usuarios actualizado a rol Repartidor');
+        }
+      } catch (uErr) {
+        print('⚠️ No se pudo sincronizar Usuarios: $uErr');
+      }
+
       return {
         'repartidor': Map<String, dynamic>.from(response),
         'userAlreadyExisted': userAlreadyExisted,
