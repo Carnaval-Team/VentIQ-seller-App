@@ -69,6 +69,8 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   String? _metodoPago; // 'Efectivo' | 'Transferencia'
   Uint8List? _packagePhotoBytes;
   String? _packagePhotoName;
+  // Fotos adicionales del paquete (además de la principal).
+  final List<({Uint8List bytes, String name})> _packageExtraPhotos = [];
   final ImagePicker _imagePicker = ImagePicker();
 
   bool _isSubmitting = false;
@@ -861,96 +863,183 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   }
 
   Widget _buildPhotoPicker() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
-          onTap: _pickPackagePhoto,
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            InkWell(
+              onTap: () => _pickPackagePhoto(isExtra: false),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child:
-                _packagePhotoBytes != null
-                    ? Image.memory(_packagePhotoBytes!, fit: BoxFit.cover)
-                    : Icon(
-                      Icons.add_a_photo_outlined,
-                      color: Colors.grey.shade500,
-                      size: 22,
-                    ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Foto (opcional)',
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+              child: Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _pickPackagePhoto,
-                      icon: const Icon(Icons.add_a_photo_outlined, size: 14),
-                      label: Text(
-                        _packagePhotoBytes == null ? 'Elegir' : 'Cambiar',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _primary,
-                        side: const BorderSide(color: _primary),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 6,
+                clipBehavior: Clip.antiAlias,
+                child:
+                    _packagePhotoBytes != null
+                        ? Image.memory(_packagePhotoBytes!, fit: BoxFit.cover)
+                        : Icon(
+                          Icons.add_a_photo_outlined,
+                          color: Colors.grey.shade500,
+                          size: 22,
                         ),
-                        minimumSize: const Size(0, 32),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Foto principal (opcional)',
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (_packagePhotoBytes != null) ...[
-                    const SizedBox(width: 4),
-                    InkWell(
-                      onTap:
-                          () => setState(() {
-                            _packagePhotoBytes = null;
-                            _packagePhotoName = null;
-                          }),
-                      borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: Icon(
-                          Icons.close,
-                          size: 18,
-                          color: Colors.red.shade600,
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _pickPackagePhoto(isExtra: false),
+                          icon: const Icon(
+                            Icons.add_a_photo_outlined,
+                            size: 14,
+                          ),
+                          label: Text(
+                            _packagePhotoBytes == null ? 'Elegir' : 'Cambiar',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _primary,
+                            side: const BorderSide(color: _primary),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 6,
+                            ),
+                            minimumSize: const Size(0, 32),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ),
+                      if (_packagePhotoBytes != null) ...[
+                        const SizedBox(width: 4),
+                        InkWell(
+                          onTap:
+                              () => setState(() {
+                                _packagePhotoBytes = null;
+                                _packagePhotoName = null;
+                              }),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: Icon(
+                              Icons.close,
+                              size: 18,
+                              color: Colors.red.shade600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Text(
+              'Fotos adicionales (${_packageExtraPhotos.length})',
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            OutlinedButton.icon(
+              onPressed: () => _pickPackagePhoto(isExtra: true),
+              icon: const Icon(Icons.add_photo_alternate_outlined, size: 14),
+              label: const Text('Agregar', style: TextStyle(fontSize: 12)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _primary,
+                side: const BorderSide(color: _primary),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 6,
+                ),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ],
+        ),
+        if (_packageExtraPhotos.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 64,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _packageExtraPhotos.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              itemBuilder: (ctx, i) {
+                final photo = _packageExtraPhotos[i];
+                return Stack(
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Image.memory(photo.bytes, fit: BoxFit.cover),
+                    ),
+                    Positioned(
+                      top: -4,
+                      right: -4,
+                      child: InkWell(
+                        onTap:
+                            () => setState(
+                              () => _packageExtraPhotos.removeAt(i),
+                            ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade600,
+                            shape: BoxShape.circle,
+                          ),
+                          padding: const EdgeInsets.all(2),
+                          child: const Icon(
+                            Icons.close,
+                            size: 14,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
                   ],
-                ],
-              ),
-            ],
+                );
+              },
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
 
-  Future<void> _pickPackagePhoto() async {
+  Future<void> _pickPackagePhoto({bool isExtra = false}) async {
     final ImageSource? source = await showModalBottomSheet<ImageSource>(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -997,8 +1086,12 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       if (picked == null) return;
       final bytes = await picked.readAsBytes();
       setState(() {
-        _packagePhotoBytes = bytes;
-        _packagePhotoName = picked.name;
+        if (isExtra) {
+          _packageExtraPhotos.add((bytes: bytes, name: picked.name));
+        } else {
+          _packagePhotoBytes = bytes;
+          _packagePhotoName = picked.name;
+        }
       });
     } catch (e) {
       debugPrint('❌ Error eligiendo foto: $e');
@@ -1205,12 +1298,19 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   String _toUsd(double cup) {
     if (_usdRate <= 0) return '';
     final usd = cup / _usdRate;
-    return '≈ USD \$${usd.toStringAsFixed(2)}';
+    return 'USD \$${usd.toStringAsFixed(2)}';
+  }
+
+  double _usdValue(double cup) {
+    if (_usdRate <= 0) return 0;
+    return cup / _usdRate;
   }
 
   Widget _buildPriceCard() {
+    final effectiveUsd = _usdValue(_effectiveUnitPrice);
+    final baseUsd = _usdValue(_unitPrice);
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -1219,42 +1319,55 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(7),
+            padding: const EdgeInsets.all(9),
             decoration: BoxDecoration(
-              color: _primary.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(8),
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.sell_outlined, color: _primary, size: 18),
+            child: Icon(
+              Icons.attach_money_rounded,
+              color: Colors.green.shade700,
+              size: 22,
+            ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Precio unitario',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+                  'Precio unitario (USD)',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                 ),
-                const SizedBox(height: 2),
-                if (_hasDiscount)
+                const SizedBox(height: 4),
+                if (_usdRate <= 0)
+                  Text(
+                    'Cargando tasa...',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 14,
+                    ),
+                  )
+                else if (_hasDiscount)
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '\$${_discountedPrice!.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 19,
+                        '\$${effectiveUsd.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 32,
                           fontWeight: FontWeight.bold,
-                          color: _primary,
+                          color: Colors.green.shade700,
+                          height: 1,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 3),
+                        padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
-                          '\$${_unitPrice.toStringAsFixed(2)}',
+                          '\$${baseUsd.toStringAsFixed(2)}',
                           style: const TextStyle(
-                            fontSize: 12,
+                            fontSize: 14,
                             color: Colors.grey,
                             decoration: TextDecoration.lineThrough,
                           ),
@@ -1267,19 +1380,21 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '\$${_discountedPrice!.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 19,
+                        '\$${effectiveUsd.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 32,
                           fontWeight: FontWeight.bold,
+                          color: Colors.green.shade700,
+                          height: 1,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 3),
+                        padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
-                          'base \$${_unitPrice.toStringAsFixed(2)}',
+                          'base \$${baseUsd.toStringAsFixed(2)}',
                           style: const TextStyle(
-                            fontSize: 11,
+                            fontSize: 12,
                             color: Colors.grey,
                           ),
                         ),
@@ -1288,23 +1403,14 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   )
                 else
                   Text(
-                    '\$${_unitPrice.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                if (_usdRate > 0) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    _toUsd(_effectiveUnitPrice),
+                    '\$${effectiveUsd.toStringAsFixed(2)}',
                     style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
                       color: Colors.green.shade700,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      height: 1,
                     ),
                   ),
-                ],
               ],
             ),
           ),
@@ -1418,14 +1524,16 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   }
 
   Widget _buildTotalCard() {
+    final totalUsd = _usdValue(_total);
+    final unitUsd = _usdValue(_effectiveUnitPrice);
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [_primary.withOpacity(0.12), _primary.withOpacity(0.04)],
+          colors: [Colors.green.shade100, Colors.green.shade50],
         ),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _primary.withOpacity(0.3)),
+        border: Border.all(color: Colors.green.shade300),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1434,36 +1542,28 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Total',
-                style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+                'Total (USD)',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               Text(
-                '${_formatQty(_quantity)} × \$${_effectiveUnitPrice.toStringAsFixed(2)}',
+                _usdRate > 0
+                    ? '${_formatQty(_quantity)} × \$${unitUsd.toStringAsFixed(2)}'
+                    : 'Cargando tasa...',
                 style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
               ),
             ],
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '\$${_total.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: _primary,
-                ),
-              ),
-              if (_usdRate > 0)
-                Text(
-                  _toUsd(_total),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.green.shade700,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-            ],
+          Text(
+            _usdRate > 0 ? '\$${totalUsd.toStringAsFixed(2)}' : '--',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: Colors.green.shade800,
+            ),
           ),
         ],
       ),
@@ -1598,7 +1698,12 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           const SizedBox(height: 14),
           _kv('Producto', product.denominacion),
           _kv('Cantidad de Libras', _formatQty(_quantity)),
-          _kv('Precio unit.', '\$${_effectiveUnitPrice.toStringAsFixed(2)}'),
+          _kv(
+            'Precio unit. (USD)',
+            _usdRate > 0
+                ? '\$${_usdValue(_effectiveUnitPrice).toStringAsFixed(2)}'
+                : '--',
+          ),
           const Divider(height: 20),
           _kv(
             'Nº paquete',
@@ -1619,6 +1724,26 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               ),
             ),
           ],
+          if (_packageExtraPhotos.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 48,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _packageExtraPhotos.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 4),
+                itemBuilder: (_, i) => ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.memory(
+                    _packageExtraPhotos[i].bytes,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            ),
+          ],
           if (_descPaqueteCtrl.text.trim().isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
@@ -1633,18 +1758,20 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Total',
+                'Total (USD)',
                 style: TextStyle(
                   color: Colors.grey.shade700,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               Text(
-                '\$${_total.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  fontSize: 20,
+                _usdRate > 0
+                    ? '\$${_usdValue(_total).toStringAsFixed(2)}'
+                    : '--',
+                style: TextStyle(
+                  fontSize: 22,
                   fontWeight: FontWeight.bold,
-                  color: _primary,
+                  color: Colors.green.shade800,
                 ),
               ),
             ],
@@ -1721,7 +1848,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  '${_formatQty(_quantity)} × \$${_effectiveUnitPrice.toStringAsFixed(2)}',
+                  _usdRate > 0
+                      ? '${_formatQty(_quantity)} × USD \$${_usdValue(_effectiveUnitPrice).toStringAsFixed(2)}'
+                      : '${_formatQty(_quantity)} libras',
                   style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
                 ),
                 if (_numeroPaqueteCtrl.text.trim().isNotEmpty ||
@@ -1742,10 +1871,12 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             ),
           ),
           Text(
-            '\$${_total.toStringAsFixed(2)}',
-            style: const TextStyle(
+            _usdRate > 0
+                ? 'USD \$${_usdValue(_total).toStringAsFixed(2)}'
+                : '--',
+            style: TextStyle(
               fontWeight: FontWeight.bold,
-              color: _primary,
+              color: Colors.green.shade800,
               fontSize: 20,
             ),
           ),
@@ -2186,13 +2317,23 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         idProveedorCarnaval = 38;
       }
 
-      // Subir foto si existe
+      // Subir foto principal si existe
       String? fotoUrl;
       if (_packagePhotoBytes != null) {
         fotoUrl = await _paqueteriaService.uploadPackagePhoto(
           bytes: _packagePhotoBytes!,
           filename: _packagePhotoName ?? 'paquete.jpg',
         );
+      }
+
+      // Subir fotos adicionales (si existen)
+      final List<String> fotosExtrasUrls = [];
+      for (final extra in _packageExtraPhotos) {
+        final url = await _paqueteriaService.uploadPackagePhoto(
+          bytes: extra.bytes,
+          filename: extra.name,
+        );
+        if (url != null && url.isNotEmpty) fotosExtrasUrls.add(url);
       }
 
       final payload = <String, dynamic>{
@@ -2208,6 +2349,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           'numero': _numeroPaqueteCtrl.text.trim(),
           'descripcion': _descPaqueteCtrl.text.trim(),
           'foto_url': fotoUrl,
+          'fotos_extras': fotosExtrasUrls,
         },
         'remitente': {
           'nombre': _sNombreCtrl.text.trim(),
@@ -2318,7 +2460,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                 children: [
                   Text('Producto: ${product.denominacion}'),
                   Text('Cantidad: ${_formatQty(_quantity)} lb'),
-                  Text('Total: \$${_total.toStringAsFixed(2)}'),
+                  Text(
+                    'Total: ${_usdRate > 0 ? 'USD \$${_usdValue(_total).toStringAsFixed(2)}' : '\$${_total.toStringAsFixed(2)}'}',
+                  ),
                   Text('Método pago: ${_metodoPago ?? '-'}'),
                   const Divider(),
                   Text(

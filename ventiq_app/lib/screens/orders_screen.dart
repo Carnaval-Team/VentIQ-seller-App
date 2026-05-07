@@ -2021,6 +2021,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final descripcion = paquete['descripcion']?.toString() ??
         order.paqueteria?['descripcion']?.toString();
     final fotoUrl = paquete['foto_url']?.toString();
+    final fotosExtrasRaw = paquete['fotos_extras'];
+    final List<String> fotosExtras = fotosExtrasRaw is List
+        ? fotosExtrasRaw
+            .map((e) => e?.toString() ?? '')
+            .where((e) => e.trim().isNotEmpty)
+            .toList()
+        : <String>[];
 
     return _buildDetailSection(
       title: 'Paquete',
@@ -2031,31 +2038,79 @@ class _OrdersScreenState extends State<OrdersScreen> {
           if (fotoUrl != null && fotoUrl.trim().isNotEmpty) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                fotoUrl,
-                width: double.infinity,
-                height: 180,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 120,
-                  color: Colors.grey[100],
-                  alignment: Alignment.center,
-                  child: Icon(
-                    Icons.broken_image_outlined,
-                    color: Colors.grey[400],
-                    size: 40,
-                  ),
-                ),
-                loadingBuilder: (_, child, progress) {
-                  if (progress == null) return child;
-                  return Container(
+              child: GestureDetector(
+                onTap: () => _showFullImage(fotoUrl),
+                child: Image.network(
+                  fotoUrl,
+                  width: double.infinity,
+                  height: 180,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
                     height: 120,
                     color: Colors.grey[100],
                     alignment: Alignment.center,
-                    child: const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.grey[400],
+                      size: 40,
+                    ),
+                  ),
+                  loadingBuilder: (_, child, progress) {
+                    if (progress == null) return child;
+                    return Container(
+                      height: 120,
+                      color: Colors.grey[100],
+                      alignment: Alignment.center,
+                      child: const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (fotosExtras.isNotEmpty) ...[
+            Text(
+              'Fotos adicionales (${fotosExtras.length})',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[700],
+              ),
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 80,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: fotosExtras.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 6),
+                itemBuilder: (_, i) {
+                  final url = fotosExtras[i];
+                  return GestureDetector(
+                    onTap: () => _showFullImage(url),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        url,
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 80,
+                          height: 80,
+                          color: Colors.grey[100],
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: Colors.grey[400],
+                            size: 24,
+                          ),
+                        ),
+                      ),
                     ),
                   );
                 },
@@ -2068,6 +2123,22 @@ class _OrdersScreenState extends State<OrdersScreen> {
           if (descripcion != null && descripcion.trim().isNotEmpty)
             _buildDetailRowNew('Descripción', descripcion.trim()),
         ],
+      ),
+    );
+  }
+
+  void _showFullImage(String url) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(12),
+        child: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: InteractiveViewer(
+            child: Image.network(url, fit: BoxFit.contain),
+          ),
+        ),
       ),
     );
   }

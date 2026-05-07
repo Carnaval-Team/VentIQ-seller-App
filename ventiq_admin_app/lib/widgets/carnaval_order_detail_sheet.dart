@@ -700,6 +700,13 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   Widget _buildPaqueteInfo() {
     final p = _paquete ?? const {};
     final fotoUrl = p['foto_url']?.toString();
+    final fotosExtrasRaw = p['fotos_extras'];
+    final List<String> fotosExtras = fotosExtrasRaw is List
+        ? fotosExtrasRaw
+            .map((e) => e?.toString() ?? '')
+            .where((e) => e.isNotEmpty)
+            .toList()
+        : <String>[];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -734,6 +741,49 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
                   );
                 },
               ),
+            ),
+          ),
+        ],
+        if (fotosExtras.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            'Fotos adicionales (${fotosExtras.length})',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 90,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: fotosExtras.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              itemBuilder: (_, i) {
+                final url = fotosExtras[i];
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: GestureDetector(
+                    onTap: () => _showPhotoPreview(url),
+                    child: Image.network(
+                      url,
+                      width: 90,
+                      height: 90,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 90,
+                        height: 90,
+                        color: Colors.grey[200],
+                        alignment: Alignment.center,
+                        child:
+                            const Icon(Icons.broken_image, color: Colors.grey),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ],
