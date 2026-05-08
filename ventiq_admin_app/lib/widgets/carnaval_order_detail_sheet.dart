@@ -971,7 +971,13 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
         final image = producto?['image'] as String?;
         final proveedorData = producto?['proveedores'] as Map<String, dynamic>?;
         final proveedorName = proveedorData?['name'] as String?;
-        final qty = (d['quantity'] as num?)?.toInt() ?? 0;
+        final qtyInt = (d['quantity'] as num?)?.toInt() ?? 0;
+        final extra = (d['extra'] as num?)?.toDouble() ?? 0.0;
+        final qty = qtyInt + extra;
+        final hasExtra = extra > 0;
+        final qtyLabel = hasExtra
+            ? qty.toStringAsFixed(qty.truncateToDouble() == qty ? 0 : 2)
+            : qtyInt.toString();
         final price = (d['price'] as num?)?.toDouble() ?? 0;
         final subtotal = price * qty;
 
@@ -1017,7 +1023,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 2),
                     Text(
-                        '$qty x \$${price.toStringAsFixed(2)} = \$${subtotal.toStringAsFixed(2)}',
+                        '$qtyLabel x \$${price.toStringAsFixed(2)} = \$${subtotal.toStringAsFixed(2)}',
                         style:
                             TextStyle(fontSize: 12, color: Colors.grey[600])),
                   ],
@@ -1054,7 +1060,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text('$qty',
+                  child: Text(qtyLabel,
                       style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
                 IconButton(

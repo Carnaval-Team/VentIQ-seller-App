@@ -836,9 +836,7 @@ class _SalesScreenState extends State<SalesScreen>
         ...items
             .map((item) {
               final nombre = item['producto_nombre']?.toString() ?? 'Producto';
-              final cantidad = _toDoubleSafe(
-                item['cantidad'],
-              ).toStringAsFixed(0);
+              final cantidad = _formatCantidadDecimal(item['cantidad']);
               final precio = _toDoubleSafe(
                 item['precio_unitario'],
               ).toStringAsFixed(2);
@@ -2465,7 +2463,7 @@ class _SalesScreenState extends State<SalesScreen>
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('${item['cantidad']}x ', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Text('${_formatCantidadDecimal(item['cantidad'])}x ', style: const TextStyle(fontWeight: FontWeight.bold)),
                         Expanded(child: Text('${item['producto_nombre'] ?? 'Producto'}', style: const TextStyle(fontWeight: FontWeight.w600))),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
@@ -5313,7 +5311,7 @@ class _SalesScreenState extends State<SalesScreen>
                                                                   Expanded(
                                                                     flex: 1,
                                                                     child: Text(
-                                                                      'x${item['cantidad']}',
+                                                                      'x${_formatCantidadDecimal(item['cantidad'])}',
                                                                       textAlign:
                                                                           TextAlign
                                                                               .center,
@@ -5999,6 +5997,17 @@ class _SalesScreenState extends State<SalesScreen>
       return double.tryParse(value) ?? 0.0;
     }
     return 0.0;
+  }
+
+  /// Formatea una cantidad que puede ser entera o decimal:
+  /// - Entera (10.0) -> "10"
+  /// - Fraccionaria (10.2) -> "10.2"
+  /// - Trim ceros sobrantes (10.20 -> "10.2")
+  String _formatCantidadDecimal(dynamic value) {
+    final d = _toDoubleSafe(value);
+    if (d == d.truncateToDouble()) return d.toInt().toString();
+    final s = d.toStringAsFixed(2);
+    return s.endsWith('0') ? s.substring(0, s.length - 1) : s;
   }
 
   int? _toIntSafe(dynamic value) {
@@ -6806,7 +6815,7 @@ class _SalesScreenState extends State<SalesScreen>
                             ),
                             child: Center(
                               child: Text(
-                                cantidad.toInt().toString(),
+                                _formatCantidadDecimal(cantidad),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,

@@ -63,7 +63,7 @@ class PaqueteriaService {
   ) async {
     try {
       final response = await _supabase.rpc(
-        'fn_registrar_orden_paqueteria',
+        'fn_registrar_orden_paqueteria_v2',
         params: {'p_payload': payload},
       );
 

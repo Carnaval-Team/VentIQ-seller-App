@@ -2336,9 +2336,15 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         if (url != null && url.isNotEmpty) fotosExtrasUrls.add(url);
       }
 
+      // Separar cantidad entera y parte decimal (extra) para soportar
+      // libras fraccionarias en la RPC v2.
+      final int qtyInt = _quantity.floor();
+      final double qtyExtra =
+          double.parse((_quantity - qtyInt).toStringAsFixed(4));
       final payload = <String, dynamic>{
         'id_producto_inventtia': product.id,
-        'cantidad': _quantity,
+        'cantidad': qtyInt,
+        'extra': qtyExtra,
         'precio_unitario': _unitPrice,
         'precio_descuento': _discountedPrice,
         'id_proveedor_carnaval': idProveedorCarnaval,
