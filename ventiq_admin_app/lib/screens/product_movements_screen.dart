@@ -209,12 +209,6 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
   void _applyFilters() {
     // Optimización: Filtrado eficiente con validaciones tempranas
     _filteredMovements = _movements.where((movement) {
-      // Solo operaciones completadas
-      final estadoNombre = movement['estado_operacion_nombre'] as String?;
-      if (estadoNombre != null && estadoNombre.toLowerCase() != 'completada') {
-        return false;
-      }
-
       // Filtro por tipo de operación (validación más rápida)
       if (_selectedOperationTypeId != null && 
           movement['tipo_operacion_id'] != _selectedOperationTypeId) {
@@ -283,7 +277,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       lastDate: DateTime.now(),
     );
     if (picked != null) {
-      setState(() => _dateTo = picked);
+      setState(() => _dateTo = DateTime(picked.year, picked.month, picked.day, 23, 59, 59));
       _loadData();
     }
   }
@@ -334,6 +328,8 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         return Colors.orange;
       case 'Control':
         return Colors.blue;
+      case 'Reajuste':
+        return Colors.purple;
       default:
         return Colors.grey;
     }
@@ -347,6 +343,8 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         return Icons.arrow_upward;
       case 'Control':
         return Icons.assignment_turned_in;
+      case 'Reajuste':
+        return Icons.swap_horiz;
       default:
         return Icons.info;
     }
@@ -1682,32 +1680,32 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                 _buildDetailRow('Zona', movement['zona'] as String),
               if (movement['proveedor'] != null)
                 _buildDetailRow('Proveedor', movement['proveedor'] as String),
+              if (movement['observaciones'] != null &&
+                  (movement['observaciones'] as String).isNotEmpty) ...[
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 4),
+                  child: Divider(height: 1),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Observaciones',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  movement['observaciones'] as String,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+              ],
             ],
           ),
         ),
-        if (movement['observaciones'] != null &&
-            (movement['observaciones'] as String).isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Observaciones',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade700),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  movement['observaciones'] as String,
-                  style:
-                      TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
-          ),
       ],
     );
   }
