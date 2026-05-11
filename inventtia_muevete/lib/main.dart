@@ -19,6 +19,7 @@ import 'providers/location_provider.dart';
 import 'providers/transport_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/address_provider.dart';
+import 'providers/plan_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/landing_screen.dart';
 import 'screens/login_screen.dart';
@@ -39,6 +40,7 @@ import 'screens/shipper/shipper_home_screen.dart';
 import 'screens/shipper/carrier_directory_screen.dart';
 import 'screens/carrier/carrier_home_screen.dart';
 import 'screens/dispatcher/dispatcher_home_screen.dart';
+import 'screens/common/planes_screen.dart';
 import 'widgets/notification_overlay.dart';
 
 Future<void> main() async {
@@ -103,6 +105,7 @@ class MueveteApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => WalletProvider()),
         ChangeNotifierProvider(create: (_) => AddressProvider()),
         ChangeNotifierProvider(create: (_) => CargaProvider()),
+        ChangeNotifierProvider(create: (_) => PlanProvider()),
         ChangeNotifierProvider.value(value: MbTilesService.instance),
       ],
       child: Consumer<ThemeProvider>(
@@ -146,6 +149,12 @@ class MueveteApp extends StatelessWidget {
               '/carrier-directory': (context) => const CarrierDirectoryScreen(),
               '/carrier/home': (context) => const CarrierHomeScreen(),
               '/dispatcher/home': (context) => const DispatcherHomeScreen(),
+              '/planes': (context) {
+                final args = ModalRoute.of(context)!.settings.arguments
+                    as Map<String, dynamic>?;
+                final tipo = args?['tipoUsuario'] as String? ?? 'shipper';
+                return PlanesScreen(tipoUsuario: tipo);
+              },
             },
           );
         },

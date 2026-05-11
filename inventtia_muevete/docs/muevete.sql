@@ -1,12 +1,109 @@
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
 
+CREATE TABLE muevete.cargas (
+  id bigint NOT NULL DEFAULT nextval('muevete.cargas_id_seq'::regclass),
+  shipper_id uuid NOT NULL,
+  tipo text NOT NULL DEFAULT 'ftl'::text CHECK (tipo = ANY (ARRAY['ftl'::text, 'ltl'::text])),
+  estado text NOT NULL DEFAULT 'publicada'::text CHECK (estado = ANY (ARRAY['publicada'::text, 'en_matching'::text, 'ofertada'::text, 'aceptada'::text, 'en_transito'::text, 'entregada'::text, 'completada'::text, 'cancelada'::text, 'disputa'::text])),
+  dir_origen text NOT NULL,
+  lat_origen double precision NOT NULL DEFAULT 0,
+  lon_origen double precision NOT NULL DEFAULT 0,
+  ciudad_origen text,
+  estado_origen text,
+  pais_origen text,
+  dir_destino text NOT NULL,
+  lat_destino double precision NOT NULL DEFAULT 0,
+  lon_destino double precision NOT NULL DEFAULT 0,
+  ciudad_destino text,
+  estado_destino text,
+  pais_destino text,
+  descripcion text,
+  tipo_mercancia text,
+  peso_kg numeric,
+  volumen_m3 numeric,
+  longitud_m numeric,
+  ancho_m numeric,
+  alto_m numeric,
+  valor_declarado numeric,
+  requiere_refrigeracion boolean NOT NULL DEFAULT false,
+  temperatura_min numeric,
+  temperatura_max numeric,
+  requiere_seguro boolean NOT NULL DEFAULT false,
+  instrucciones text,
+  tipo_equipo text,
+  id_tipo_vehiculo bigint,
+  fecha_recogida date,
+  fecha_entrega date,
+  ventana_recogida_desde time without time zone,
+  ventana_recogida_hasta time without time zone,
+  ventana_entrega_desde time without time zone,
+  ventana_entrega_hasta time without time zone,
+  precio_ofertado numeric,
+  precio_final numeric,
+  moneda text NOT NULL DEFAULT 'USD'::text,
+  destacada boolean NOT NULL DEFAULT false,
+  destacada_hasta timestamp with time zone,
+  exclusiva_hasta timestamp with time zone,
+  distancia_km numeric,
+  distancia_millas numeric,
+  es_ltl boolean NOT NULL DEFAULT false,
+  ltl_espacio_ocupado numeric,
+  es_recurrente boolean NOT NULL DEFAULT false,
+  carrier_driver_id bigint,
+  oferta_aceptada_id bigint,
+  ultima_lat double precision,
+  ultima_lon double precision,
+  ultima_ubicacion_at timestamp with time zone,
+  expires_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone,
+  unidad_peso text DEFAULT 'kg'::text CHECK (unidad_peso = ANY (ARRAY['kg'::text, 'tonelada'::text])),
+  horas_carga numeric,
+  horas_descarga numeric,
+  CONSTRAINT cargas_pkey PRIMARY KEY (id),
+  CONSTRAINT cargas_shipper_id_fkey FOREIGN KEY (shipper_id) REFERENCES auth.users(id),
+  CONSTRAINT cargas_id_tipo_vehiculo_fkey FOREIGN KEY (id_tipo_vehiculo) REFERENCES muevete.vehiculos(id),
+  CONSTRAINT cargas_carrier_driver_id_fkey FOREIGN KEY (carrier_driver_id) REFERENCES muevete.drivers(id)
+);
+CREATE TABLE muevete.carrocerias (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  driver_id bigint NOT NULL,
+  marca text,
+  modelo text,
+  matricula text,
+  tipo_carroceria text NOT NULL,
+  capacidad_ton numeric,
+  longitud_m numeric,
+  seguro_vigente boolean NOT NULL DEFAULT false,
+  seguro_vence date,
+  seguro_url text,
+  mc_number text,
+  dot_number text,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT carrocerias_pkey PRIMARY KEY (id),
+  CONSTRAINT carrocerias_driver_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id)
+);
 CREATE TABLE muevete.configuracion_navegacion (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   precio_x_km numeric,
   tiempo_espera_driver integer,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT configuracion_navegacion_pkey PRIMARY KEY (id)
+);
+CREATE TABLE muevete.direcciones_rapidas (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  user_id uuid NOT NULL,
+  label text NOT NULL,
+  icon text NOT NULL DEFAULT 'place'::text,
+  direccion text NOT NULL,
+  latitud double precision NOT NULL,
+  longitud double precision NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT direcciones_rapidas_pkey PRIMARY KEY (id),
+  CONSTRAINT direcciones_rapidas_user_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE muevete.drivers (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -25,9 +122,89 @@ CREATE TABLE muevete.drivers (
   revisado boolean DEFAULT false,
   motivo text,
   uuid uuid,
+  usado_actualmente boolean DEFAULT false,
+  tipo_documento text,
+  doc_frente_url text,
+  doc_dorso_url text,
+  tipo_usuario text NOT NULL DEFAULT 'conductor_pasajeros'::text,
+  dispatcher_id bigint,
+  mc_number text,
+  dot_number text,
+  tipo_carroceria text,
+  capacidad_ton numeric,
+  longitud_plataforma_m numeric,
+  seguro_carga_vigente boolean DEFAULT false,
+  seguro_carga_vence date,
+  seguro_carga_url text,
+  empresa_nombre text,
+  empresa_rut text,
+  empresa_direccion text,
+  pais text,
+  province text,
+  municipality text,
   CONSTRAINT drivers_pkey PRIMARY KEY (id),
+  CONSTRAINT drivers_dispatcher_id_fkey FOREIGN KEY (dispatcher_id) REFERENCES muevete.drivers(id),
   CONSTRAINT drivers_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id),
   CONSTRAINT drivers_vehiculo_fkey FOREIGN KEY (vehiculo) REFERENCES muevete.vehiculos(id)
+);
+CREATE TABLE muevete.notificaciones (
+  id bigint NOT NULL DEFAULT nextval('muevete.notificaciones_id_seq'::regclass),
+  user_uuid uuid NOT NULL,
+  tipo text NOT NULL,
+  titulo text NOT NULL,
+  mensaje text NOT NULL,
+  data jsonb DEFAULT '{}'::jsonb,
+  leida boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT notificaciones_pkey PRIMARY KEY (id)
+);
+CREATE TABLE muevete.ofertas_carga (
+  id bigint NOT NULL DEFAULT nextval('muevete.ofertas_carga_id_seq'::regclass),
+  carga_id bigint NOT NULL,
+  driver_id bigint NOT NULL,
+  precio numeric NOT NULL,
+  tarifa_por_milla numeric,
+  tiempo_estimado_dias integer,
+  fecha_recogida_prop date,
+  fecha_entrega_prop date,
+  vehiculo_id bigint,
+  incluye_seguro boolean NOT NULL DEFAULT false,
+  notas text,
+  estado text NOT NULL DEFAULT 'pendiente'::text CHECK (estado = ANY (ARRAY['pendiente'::text, 'aceptada'::text, 'rechazada'::text, 'retirada'::text, 'expirada'::text])),
+  matching_score numeric,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone,
+  CONSTRAINT ofertas_carga_pkey PRIMARY KEY (id),
+  CONSTRAINT ofertas_carga_carga_id_fkey FOREIGN KEY (carga_id) REFERENCES muevete.cargas(id),
+  CONSTRAINT ofertas_carga_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id),
+  CONSTRAINT ofertas_carga_vehiculo_id_fkey FOREIGN KEY (vehiculo_id) REFERENCES muevete.vehiculos(id)
+);
+CREATE TABLE muevete.ofertas_chofer (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  solicitud_id bigint NOT NULL,
+  driver_id bigint NOT NULL,
+  precio numeric,
+  tiempo_estimado integer,
+  estado character varying DEFAULT 'pendiente'::character varying,
+  mensaje text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT ofertas_chofer_pkey PRIMARY KEY (id),
+  CONSTRAINT ofertas_chofer_solicitud_id_fkey FOREIGN KEY (solicitud_id) REFERENCES muevete.solicitudes_transporte(id),
+  CONSTRAINT ofertas_chofer_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id)
+);
+CREATE TABLE muevete.paradas_viaje (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_viaje bigint NOT NULL,
+  driver_id bigint NOT NULL,
+  latitud double precision NOT NULL,
+  longitud double precision NOT NULL,
+  direccion text,
+  tiempo_detenido integer DEFAULT 0,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  salida_at timestamp with time zone,
+  CONSTRAINT paradas_viaje_pkey PRIMARY KEY (id),
+  CONSTRAINT paradas_viaje_viaje_fkey FOREIGN KEY (id_viaje) REFERENCES muevete.viajes(id),
+  CONSTRAINT paradas_viaje_driver_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id)
 );
 CREATE TABLE muevete.place (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -45,6 +222,53 @@ CREATE TABLE muevete.place (
   CONSTRAINT place_pkey PRIMARY KEY (id, driver),
   CONSTRAINT place_driver_fkey FOREIGN KEY (driver) REFERENCES muevete.drivers(id),
   CONSTRAINT place_vehiculo_id_fkey FOREIGN KEY (vehiculo_id) REFERENCES muevete.vehiculos(id)
+);
+CREATE TABLE muevete.push_tokens (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  user_uuid uuid NOT NULL,
+  device_token text NOT NULL,
+  platform text NOT NULL DEFAULT 'android'::text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT push_tokens_pkey PRIMARY KEY (id),
+  CONSTRAINT push_tokens_user_uuid_fkey FOREIGN KEY (user_uuid) REFERENCES auth.users(id)
+);
+CREATE TABLE muevete.solicitudes_transporte (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  user_id uuid,
+  lat_origen double precision,
+  lon_origen double precision,
+  lat_destino double precision,
+  lon_destino double precision,
+  tipo_vehiculo character varying,
+  precio_oferta numeric,
+  estado character varying DEFAULT 'pendiente'::character varying,
+  direccion_origen text,
+  direccion_destino text,
+  distancia_km double precision,
+  expires_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  id_tipo_vehiculo bigint,
+  metodo_pago text DEFAULT 'efectivo'::text,
+  CONSTRAINT solicitudes_transporte_pkey PRIMARY KEY (id),
+  CONSTRAINT solicitudes_transporte_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE muevete.sub_usuarios (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  propietario_uuid uuid NOT NULL,
+  tipo_propietario text NOT NULL,
+  sub_uuid uuid NOT NULL,
+  sub_driver_id bigint,
+  rol text NOT NULL DEFAULT 'conductor'::text,
+  invitacion_estado text NOT NULL DEFAULT 'pendiente'::text,
+  invitacion_email text,
+  invitacion_token text,
+  activo boolean NOT NULL DEFAULT false,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT sub_usuarios_pkey PRIMARY KEY (id),
+  CONSTRAINT sub_usuarios_propietario_fkey FOREIGN KEY (propietario_uuid) REFERENCES auth.users(id),
+  CONSTRAINT sub_usuarios_sub_uuid_fkey FOREIGN KEY (sub_uuid) REFERENCES auth.users(id),
+  CONSTRAINT sub_usuarios_sub_driver_fkey FOREIGN KEY (sub_driver_id) REFERENCES muevete.drivers(id)
 );
 CREATE TABLE muevete.suscription_plan (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -71,7 +295,32 @@ CREATE TABLE muevete.suscription_user (
   current_balance numeric,
   active_until timestamp without time zone,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  balance numeric DEFAULT 0,
   CONSTRAINT suscription_user_pkey PRIMARY KEY (id)
+);
+CREATE TABLE muevete.track_place_history (
+  id bigint NOT NULL DEFAULT nextval('muevete.track_place_history_id_seq'::regclass),
+  driver_id integer NOT NULL,
+  latitude double precision NOT NULL,
+  longitude double precision NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT track_place_history_pkey PRIMARY KEY (id)
+);
+CREATE TABLE muevete.transacciones_wallet (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  user_id uuid,
+  driver_id bigint,
+  tipo character varying NOT NULL CHECK (tipo::text = ANY (ARRAY['recarga'::character varying, 'cobro_viaje'::character varying, 'pago_viaje'::character varying, 'reembolso'::character varying, 'comision_viaje'::character varying]::text[])),
+  monto numeric NOT NULL,
+  balance_despues numeric,
+  viaje_id bigint,
+  descripcion text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  estado character varying NOT NULL DEFAULT 'completada'::character varying CHECK (estado::text = ANY (ARRAY['pendiente'::character varying, 'aceptada'::character varying, 'cancelada'::character varying, 'completada'::character varying]::text[])),
+  CONSTRAINT transacciones_wallet_pkey PRIMARY KEY (id),
+  CONSTRAINT transacciones_wallet_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT transacciones_wallet_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id),
+  CONSTRAINT transacciones_wallet_viaje_id_fkey FOREIGN KEY (viaje_id) REFERENCES muevete.viajes(id)
 );
 CREATE TABLE muevete.users (
   user_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -88,8 +337,42 @@ CREATE TABLE muevete.users (
   municipality text,
   direccion text,
   pais text,
+  photo_url text,
+  tipo_documento text,
+  doc_frente_url text,
+  doc_dorso_url text,
+  tipo_usuario text NOT NULL DEFAULT 'cliente_pasajero'::text,
+  tipo_cuenta text DEFAULT 'individual'::text,
+  empresa_nombre text,
+  empresa_rut text,
+  empresa_direccion text,
+  mercaderias_habituales jsonb DEFAULT '[]'::jsonb,
   CONSTRAINT users_pkey PRIMARY KEY (user_id),
   CONSTRAINT clientes_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id)
+);
+CREATE TABLE muevete.valoraciones_viaje (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  viaje_id bigint NOT NULL UNIQUE,
+  driver_id bigint NOT NULL,
+  user_id uuid NOT NULL,
+  rating smallint NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  comentario text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT valoraciones_viaje_pkey PRIMARY KEY (id),
+  CONSTRAINT valoraciones_viaje_viaje_fkey FOREIGN KEY (viaje_id) REFERENCES muevete.viajes(id),
+  CONSTRAINT valoraciones_viaje_driver_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id),
+  CONSTRAINT valoraciones_viaje_user_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE muevete.vehicle_type (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  tipo text,
+  precio_km_default numeric,
+  status boolean,
+  tiempo_min_por_km numeric,
+  precio_inside_sc numeric,
+  precio_espera_min numeric,
+  CONSTRAINT vehicle_type_pkey PRIMARY KEY (id)
 );
 CREATE TABLE muevete.vehiculos (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -103,7 +386,29 @@ CREATE TABLE muevete.vehiculos (
   image character varying,
   descripcion character varying,
   color character varying,
-  CONSTRAINT vehiculos_pkey PRIMARY KEY (id)
+  id_tipo_vehiculo bigint,
+  tipo_carroceria text,
+  capacidad_ton numeric,
+  longitud_m numeric,
+  año integer,
+  tiene_gps boolean DEFAULT false,
+  seguro_vigente boolean DEFAULT false,
+  seguro_vence date,
+  condicion text DEFAULT 'bueno'::text,
+  aire_acondicionado boolean NOT NULL DEFAULT false,
+  capacidad_int integer,
+  driver_uuid uuid,
+  CONSTRAINT vehiculos_pkey PRIMARY KEY (id),
+  CONSTRAINT vehiculos_id_tipo_vehiculo_fkey FOREIGN KEY (id_tipo_vehiculo) REFERENCES muevete.vehicle_type(id)
+);
+CREATE TABLE muevete.verificacion_operacion_recarga (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  transaccion_id bigint NOT NULL,
+  imagen_url text,
+  detalle_texto text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT verificacion_operacion_recarga_pkey PRIMARY KEY (id),
+  CONSTRAINT verificacion_operacion_recarga_tx_fkey FOREIGN KEY (transaccion_id) REFERENCES muevete.transacciones_wallet(id)
 );
 CREATE TABLE muevete.viajes (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -117,47 +422,11 @@ CREATE TABLE muevete.viajes (
   latitud_cliente text,
   longitud_cliente text,
   telefono character varying,
+  cobro_espera numeric,
+  tiempo_espera_segundos numeric,
   CONSTRAINT viajes_pkey PRIMARY KEY (id),
   CONSTRAINT viajes_driver_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id)
 );
-
--- =============================================
--- Tablas faltantes referenciadas en lib/services/
--- =============================================
-
-CREATE TABLE muevete.solicitudes_transporte (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  user_id uuid,
-  lat_origen double precision,
-  lon_origen double precision,
-  lat_destino double precision,
-  lon_destino double precision,
-  tipo_vehiculo character varying,
-  precio_oferta numeric,
-  estado character varying DEFAULT 'pendiente'::character varying,
-  direccion_origen text,
-  direccion_destino text,
-  distancia_km double precision,
-  expires_at timestamp with time zone,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT solicitudes_transporte_pkey PRIMARY KEY (id),
-  CONSTRAINT solicitudes_transporte_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
-);
-
-CREATE TABLE muevete.ofertas_chofer (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  solicitud_id bigint NOT NULL,
-  driver_id bigint NOT NULL,
-  precio numeric,
-  tiempo_estimado integer,
-  estado character varying DEFAULT 'pendiente'::character varying,
-  mensaje text,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT ofertas_chofer_pkey PRIMARY KEY (id),
-  CONSTRAINT ofertas_chofer_solicitud_id_fkey FOREIGN KEY (solicitud_id) REFERENCES muevete.solicitudes_transporte(id),
-  CONSTRAINT ofertas_chofer_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id)
-);
-
 CREATE TABLE muevete.wallet_drivers (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   driver_id bigint NOT NULL UNIQUE,
@@ -166,346 +435,3 @@ CREATE TABLE muevete.wallet_drivers (
   CONSTRAINT wallet_drivers_pkey PRIMARY KEY (id),
   CONSTRAINT wallet_drivers_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id)
 );
-
-CREATE TABLE muevete.transacciones_wallet (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  user_id uuid,
-  driver_id bigint,
-  tipo character varying NOT NULL,
-  monto numeric NOT NULL,
-  balance_despues numeric,
-  viaje_id bigint,
-  descripcion text,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT transacciones_wallet_pkey PRIMARY KEY (id),
-  CONSTRAINT transacciones_wallet_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
-  CONSTRAINT transacciones_wallet_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id),
-  CONSTRAINT transacciones_wallet_viaje_id_fkey FOREIGN KEY (viaje_id) REFERENCES muevete.viajes(id)
-);
-
--- =============================================
--- Columna faltante en tabla existente
--- =============================================
-
--- wallet_service.dart lee/escribe 'balance' en suscription_user,
--- pero la tabla solo tiene 'current_balance'. Agregar columna 'balance':
-ALTER TABLE muevete.suscription_user ADD COLUMN balance numeric DEFAULT 0;
-
--- =============================================================================
--- PERMISOS DE ACCESO AL SCHEMA muevete
--- =============================================================================
--- Ejecutar en el SQL Editor de Supabase Dashboard
-
--- 1) Permitir uso del schema
-GRANT USAGE ON SCHEMA muevete TO anon, authenticated, service_role;
-
--- 2) Permisos sobre todas las tablas existentes
-GRANT ALL ON ALL TABLES IN SCHEMA muevete TO authenticated, service_role;
-GRANT SELECT ON ALL TABLES IN SCHEMA muevete TO anon;
-
--- 3) Permisos sobre secuencias (necesario para GENERATED ALWAYS AS IDENTITY)
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA muevete TO authenticated, service_role;
-
--- 4) Permisos por defecto para tablas/secuencias futuras
-ALTER DEFAULT PRIVILEGES IN SCHEMA muevete GRANT ALL ON TABLES TO authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA muevete GRANT SELECT ON TABLES TO anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA muevete GRANT USAGE, SELECT ON SEQUENCES TO authenticated, service_role;
-
--- 5) Exponer schema en PostgREST (para que supabase.schema('muevete') funcione)
---    Opcion A: hacerlo desde Dashboard > Project Settings > API > Exposed schemas > agregar "muevete"
---    Opcion B: por SQL:
-ALTER ROLE authenticator SET pgrst.db_schemas = 'public, muevete';
-NOTIFY pgrst, 'reload config';
-
--- =============================================================================
--- HABILITAR ROW LEVEL SECURITY EN TODAS LAS TABLAS
--- =============================================================================
-
-ALTER TABLE muevete.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE muevete.drivers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE muevete.place ENABLE ROW LEVEL SECURITY;
-ALTER TABLE muevete.vehiculos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE muevete.viajes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE muevete.configuracion_navegacion ENABLE ROW LEVEL SECURITY;
-ALTER TABLE muevete.suscription_plan ENABLE ROW LEVEL SECURITY;
-ALTER TABLE muevete.suscription_user ENABLE ROW LEVEL SECURITY;
-ALTER TABLE muevete.suscription_plan_user_history ENABLE ROW LEVEL SECURITY;
-ALTER TABLE muevete.solicitudes_transporte ENABLE ROW LEVEL SECURITY;
-ALTER TABLE muevete.ofertas_chofer ENABLE ROW LEVEL SECURITY;
-ALTER TABLE muevete.wallet_drivers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE muevete.transacciones_wallet ENABLE ROW LEVEL SECURITY;
-
--- =============================================================================
--- POLITICAS RLS
--- =============================================================================
--- Logica basada en auth_service, driver_service, transport_request_service,
--- wallet_service y los modelos de la app.
---
--- Convencion:
---   - Las tablas con uuid/user_id vinculado a auth.users(id) usan auth.uid()
---   - Las tablas vinculadas a drivers.id usan un subselect:
---     (SELECT id FROM muevete.drivers WHERE uuid = auth.uid())
-
--- -------------------------------------------------------
--- muevete.users
--- auth_service: getUserProfile, updateUserProfile, createUserProfile
--- El usuario solo ve y modifica su propio perfil.
--- -------------------------------------------------------
-CREATE POLICY "users_select_own" ON muevete.users
-  FOR SELECT TO authenticated
-  USING (uuid = auth.uid());
-
-CREATE POLICY "users_insert_own" ON muevete.users
-  FOR INSERT TO authenticated
-  WITH CHECK (uuid = auth.uid());
-
-CREATE POLICY "users_update_own" ON muevete.users
-  FOR UPDATE TO authenticated
-  USING (uuid = auth.uid())
-  WITH CHECK (uuid = auth.uid());
-
--- -------------------------------------------------------
--- muevete.drivers
--- auth_service: getDriverProfile, createDriverProfile, updateDriverProfile
--- driver_service: toggleOnlineStatus (update por id)
--- El driver solo ve y modifica su propio perfil.
--- -------------------------------------------------------
-CREATE POLICY "drivers_select_own" ON muevete.drivers
-  FOR SELECT TO authenticated
-  USING (uuid = auth.uid());
-
-CREATE POLICY "drivers_insert_own" ON muevete.drivers
-  FOR INSERT TO authenticated
-  WITH CHECK (uuid = auth.uid());
-
-CREATE POLICY "drivers_update_own" ON muevete.drivers
-  FOR UPDATE TO authenticated
-  USING (uuid = auth.uid())
-  WITH CHECK (uuid = auth.uid());
-
--- -------------------------------------------------------
--- muevete.vehiculos
--- Catalogo publico de vehiculos, solo lectura para autenticados.
--- -------------------------------------------------------
-CREATE POLICY "vehiculos_select_all" ON muevete.vehiculos
-  FOR SELECT TO authenticated
-  USING (true);
-
--- -------------------------------------------------------
--- muevete.place
--- transport_request_service: getNearbyDrivers (SELECT donde estado=true)
--- driver_service: updateDriverLocation, toggleOnlineStatus (UPDATE por driver)
--- Todos los autenticados pueden leer places activos (para ver drivers cercanos).
--- Solo el driver duenno puede actualizar su place.
--- -------------------------------------------------------
-CREATE POLICY "place_select_active" ON muevete.place
-  FOR SELECT TO authenticated
-  USING (true);
-
-CREATE POLICY "place_insert_own" ON muevete.place
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    driver IN (SELECT id FROM muevete.drivers WHERE uuid = auth.uid())
-  );
-
-CREATE POLICY "place_update_own" ON muevete.place
-  FOR UPDATE TO authenticated
-  USING (
-    driver IN (SELECT id FROM muevete.drivers WHERE uuid = auth.uid())
-  )
-  WITH CHECK (
-    driver IN (SELECT id FROM muevete.drivers WHERE uuid = auth.uid())
-  );
-
--- -------------------------------------------------------
--- muevete.configuracion_navegacion
--- Configuracion global, solo lectura.
--- -------------------------------------------------------
-CREATE POLICY "config_nav_select_all" ON muevete.configuracion_navegacion
-  FOR SELECT TO authenticated
-  USING (true);
-
--- -------------------------------------------------------
--- muevete.suscription_plan
--- Planes de suscripcion, catalogo publico, solo lectura.
--- -------------------------------------------------------
-CREATE POLICY "suscription_plan_select_all" ON muevete.suscription_plan
-  FOR SELECT TO authenticated
-  USING (true);
-
--- -------------------------------------------------------
--- muevete.suscription_user
--- wallet_service: getClientBalance (SELECT), addFunds/processRidePayment (UPDATE)
--- El usuario solo ve y modifica su propia suscripcion.
--- -------------------------------------------------------
-CREATE POLICY "suscription_user_select_own" ON muevete.suscription_user
-  FOR SELECT TO authenticated
-  USING (user_id = auth.uid());
-
-CREATE POLICY "suscription_user_insert_own" ON muevete.suscription_user
-  FOR INSERT TO authenticated
-  WITH CHECK (user_id = auth.uid());
-
-CREATE POLICY "suscription_user_update_own" ON muevete.suscription_user
-  FOR UPDATE TO authenticated
-  USING (user_id = auth.uid())
-  WITH CHECK (user_id = auth.uid());
-
--- -------------------------------------------------------
--- muevete.suscription_plan_user_history
--- Historial de planes del usuario, solo lectura propia.
--- -------------------------------------------------------
-CREATE POLICY "suscription_history_select_own" ON muevete.suscription_plan_user_history
-  FOR SELECT TO authenticated
-  USING (user_id = auth.uid());
-
-CREATE POLICY "suscription_history_insert_own" ON muevete.suscription_plan_user_history
-  FOR INSERT TO authenticated
-  WITH CHECK (user_id = auth.uid());
-
--- -------------------------------------------------------
--- muevete.solicitudes_transporte
--- transport_request_service: createRequest (INSERT), cancelRequest (UPDATE),
---   getActiveRequest (SELECT por user_id)
--- driver_service: subscribeToRequests (Realtime INSERT -> necesita SELECT)
--- Clientes: CRUD sobre sus propias solicitudes.
--- Drivers: pueden leer solicitudes pendientes (para recibir peticiones).
--- -------------------------------------------------------
-CREATE POLICY "solicitudes_select_own_client" ON muevete.solicitudes_transporte
-  FOR SELECT TO authenticated
-  USING (user_id = auth.uid());
-
-CREATE POLICY "solicitudes_select_pending_driver" ON muevete.solicitudes_transporte
-  FOR SELECT TO authenticated
-  USING (
-    estado = 'pendiente'
-    AND EXISTS (SELECT 1 FROM muevete.drivers WHERE uuid = auth.uid())
-  );
-
-CREATE POLICY "solicitudes_insert_client" ON muevete.solicitudes_transporte
-  FOR INSERT TO authenticated
-  WITH CHECK (user_id = auth.uid());
-
-CREATE POLICY "solicitudes_update_own_client" ON muevete.solicitudes_transporte
-  FOR UPDATE TO authenticated
-  USING (user_id = auth.uid())
-  WITH CHECK (user_id = auth.uid());
-
--- -------------------------------------------------------
--- muevete.ofertas_chofer
--- driver_service: makeOffer (INSERT)
--- transport_request_service: subscribeToOffers (Realtime -> SELECT),
---   acceptOffer (UPDATE estado + SELECT)
--- Drivers: insertan y leen sus propias ofertas.
--- Clientes: leen ofertas de sus solicitudes y las aceptan (UPDATE).
--- -------------------------------------------------------
-CREATE POLICY "ofertas_select_own_driver" ON muevete.ofertas_chofer
-  FOR SELECT TO authenticated
-  USING (
-    driver_id IN (SELECT id FROM muevete.drivers WHERE uuid = auth.uid())
-  );
-
-CREATE POLICY "ofertas_select_own_client" ON muevete.ofertas_chofer
-  FOR SELECT TO authenticated
-  USING (
-    solicitud_id IN (
-      SELECT id FROM muevete.solicitudes_transporte WHERE user_id = auth.uid()
-    )
-  );
-
-CREATE POLICY "ofertas_insert_driver" ON muevete.ofertas_chofer
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    driver_id IN (SELECT id FROM muevete.drivers WHERE uuid = auth.uid())
-  );
-
-CREATE POLICY "ofertas_update_client" ON muevete.ofertas_chofer
-  FOR UPDATE TO authenticated
-  USING (
-    solicitud_id IN (
-      SELECT id FROM muevete.solicitudes_transporte WHERE user_id = auth.uid()
-    )
-  );
-
--- -------------------------------------------------------
--- muevete.viajes
--- driver_service: getActiveTrip (SELECT), updateTripStatus (UPDATE)
--- Drivers: leen y actualizan sus propios viajes.
--- Clientes: leen viajes donde son el usuario.
--- -------------------------------------------------------
-CREATE POLICY "viajes_select_driver" ON muevete.viajes
-  FOR SELECT TO authenticated
-  USING (
-    driver_id IN (SELECT id FROM muevete.drivers WHERE uuid = auth.uid())
-  );
-
-CREATE POLICY "viajes_select_client" ON muevete.viajes
-  FOR SELECT TO authenticated
-  USING (
-    "user" = auth.uid()::text
-  );
-
-CREATE POLICY "viajes_insert_authenticated" ON muevete.viajes
-  FOR INSERT TO authenticated
-  WITH CHECK (true);
-
-CREATE POLICY "viajes_update_driver" ON muevete.viajes
-  FOR UPDATE TO authenticated
-  USING (
-    driver_id IN (SELECT id FROM muevete.drivers WHERE uuid = auth.uid())
-  );
-
--- -------------------------------------------------------
--- muevete.wallet_drivers
--- wallet_service: getDriverBalance (SELECT), processRidePayment (UPDATE)
--- El driver solo ve y modifica su propia wallet.
--- -------------------------------------------------------
-CREATE POLICY "wallet_drivers_select_own" ON muevete.wallet_drivers
-  FOR SELECT TO authenticated
-  USING (
-    driver_id IN (SELECT id FROM muevete.drivers WHERE uuid = auth.uid())
-  );
-
-CREATE POLICY "wallet_drivers_insert_own" ON muevete.wallet_drivers
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    driver_id IN (SELECT id FROM muevete.drivers WHERE uuid = auth.uid())
-  );
-
-CREATE POLICY "wallet_drivers_update_own" ON muevete.wallet_drivers
-  FOR UPDATE TO authenticated
-  USING (
-    driver_id IN (SELECT id FROM muevete.drivers WHERE uuid = auth.uid())
-  );
-
--- -------------------------------------------------------
--- muevete.transacciones_wallet
--- wallet_service: addFunds (INSERT), getTransactions (SELECT),
---   processRidePayment (INSERT para ambas partes)
--- Usuarios ven sus transacciones. Drivers ven las suyas.
--- Insertar: usuario para sus propias, driver para las suyas.
--- -------------------------------------------------------
-CREATE POLICY "transacciones_select_client" ON muevete.transacciones_wallet
-  FOR SELECT TO authenticated
-  USING (user_id = auth.uid());
-
-CREATE POLICY "transacciones_select_driver" ON muevete.transacciones_wallet
-  FOR SELECT TO authenticated
-  USING (
-    driver_id IN (SELECT id FROM muevete.drivers WHERE uuid = auth.uid())
-  );
-
-CREATE POLICY "transacciones_insert_client" ON muevete.transacciones_wallet
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    user_id = auth.uid()
-    OR driver_id IN (SELECT id FROM muevete.drivers WHERE uuid = auth.uid())
-  );
-
--- =============================================================================
--- NOTA IMPORTANTE SOBRE service_role
--- =============================================================================
--- service_role BYPASSA RLS automaticamente en Supabase.
--- Si processRidePayment necesita escribir en wallet del driver Y del cliente
--- al mismo tiempo (cross-user), se recomienda ejecutar esa logica desde una
--- Edge Function con service_role key, no desde el cliente Flutter directamente.

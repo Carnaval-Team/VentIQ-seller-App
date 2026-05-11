@@ -113,11 +113,11 @@ class _LoginScreenState extends State<LoginScreen> {
         );
         return;
       }
-      if (kIsWeb) {
-        Navigator.pushNamedAndRemoveUntil(context, '/landing', (_) => false);
-      } else {
-        Navigator.pushReplacementNamed(context, authProvider.homeRoute);
-      }
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        authProvider.homeRoute,
+        (_) => false,
+      );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
