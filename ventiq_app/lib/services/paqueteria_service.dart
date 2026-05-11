@@ -11,21 +11,61 @@ class PaqueteriaService {
   static const String _photoBucket = 'productos';
   static const String _photoFolder = 'paqueteria';
 
+  /// Pide al backend el siguiente número correlativo de paquete para la tienda.
+  /// Se reinicia automáticamente cada mes por tienda (RPC
+  /// `fn_get_next_numero_paquete`). Devuelve algo como `P-001`. Si falla,
+  /// retorna `null` y el caller debe decidir un fallback.
+  Future<String?> getNextNumeroPaquete(int idTienda) async {
+    try {
+      final response = await _supabase.rpc(
+        'fn_get_next_numero_paquete',
+        params: {'p_id_tienda': idTienda},
+      );
+      if (response is Map) {
+        final map = Map<String, dynamic>.from(response);
+        if (map['status'] == 'success') {
+          final code = map['numero_paquete']?.toString();
+          if (code != null && code.isNotEmpty) return code;
+        }
+        debugPrint('⚠️ fn_get_next_numero_paquete: $map');
+      }
+      return null;
+    } catch (e) {
+      debugPrint('❌ Error obteniendo numero_paquete: $e');
+      return null;
+    }
+  }
+
   /// Sube una foto del paquete al bucket `productos/paqueteria/` y devuelve
   /// la URL pública. Si la carga falla retorna `null`.
+  ///
+  /// En Flutter Web `uploadBinary` por defecto envía `application/octet-stream`
+  /// si no se pasa `contentType`, y eso provoca que Supabase Storage rechace
+  /// la imagen o la guarde sin tipo, mientras que en Android/iOS la librería
+  /// infiere el MIME del path nativo. Por eso pasamos el `contentType` de
+  /// forma explícita siempre.
   Future<String?> uploadPackagePhoto({
     required Uint8List bytes,
     required String filename,
+    String? mimeType,
   }) async {
     try {
       final safeName = filename.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
       final path =
           '$_photoFolder/${DateTime.now().millisecondsSinceEpoch}_$safeName';
 
+      final resolvedMime =
+          (mimeType != null && mimeType.isNotEmpty)
+              ? mimeType
+              : _guessMimeFromName(safeName);
+
       await _supabase.storage.from(_photoBucket).uploadBinary(
             path,
             bytes,
-            fileOptions: const FileOptions(upsert: false),
+            fileOptions: FileOptions(
+              upsert: false,
+              contentType: resolvedMime,
+            ),
           );
 
       return _supabase.storage.from(_photoBucket).getPublicUrl(path);
@@ -33,6 +73,17 @@ class PaqueteriaService {
       debugPrint('❌ Error subiendo foto de paquete: $e');
       return null;
     }
+  }
+
+  String _guessMimeFromName(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.heic')) return 'image/heic';
+    if (lower.endsWith('.heif')) return 'image/heif';
+    if (lower.endsWith('.bmp')) return 'image/bmp';
+    return 'image/jpeg';
   }
 
   /// Resuelve el `id` del proveedor en Carnaval (`carnavalapp.proveedores.id`)

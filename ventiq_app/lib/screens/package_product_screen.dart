@@ -1,8 +1,8 @@
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import '../utils/package_image_picker.dart' as web_picker;
 import '../models/payment_method.dart' as pm;
 import '../models/product.dart';
 import '../services/currency_service.dart';
@@ -69,9 +69,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   String? _metodoPago; // 'Efectivo' | 'Transferencia'
   Uint8List? _packagePhotoBytes;
   String? _packagePhotoName;
+  String? _packagePhotoMime;
   // Fotos adicionales del paquete (además de la principal).
-  final List<({Uint8List bytes, String name})> _packageExtraPhotos = [];
+  final List<({Uint8List bytes, String name, String? mime})> _packageExtraPhotos = [];
   final ImagePicker _imagePicker = ImagePicker();
+  bool _loadingPackageNumber = false;
 
   bool _isSubmitting = false;
 
@@ -108,15 +110,35 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   void initState() {
     super.initState();
     _unitPrice = widget.product.precio;
-    _numeroPaqueteCtrl.text = _generatePackageNumber();
+    _loadPackageNumber();
     _checkOpenShift();
     _loadData();
   }
 
-  String _generatePackageNumber() {
-    final rnd = Random();
-    final n = rnd.nextInt(1000000); // 0..999999
-    return 'P-${n.toString().padLeft(6, '0')}';
+  /// Obtiene el siguiente número correlativo del mes para la tienda actual.
+  /// Reinicia a 1 cada mes (RPC `fn_get_next_numero_paquete`).
+  /// IMPORTANTE: el RPC incrementa el contador en cada llamada, así que solo
+  /// debe invocarse cuando realmente vamos a reservar un número (init y botón
+  /// de refrescar).
+  Future<void> _loadPackageNumber() async {
+    if (_loadingPackageNumber) return;
+    setState(() => _loadingPackageNumber = true);
+    try {
+      final idTienda = await _userPreferences.getIdTienda();
+      String? code;
+      if (idTienda != null) {
+        code = await _paqueteriaService.getNextNumeroPaquete(idTienda);
+      }
+      if (!mounted) return;
+      setState(() {
+        _numeroPaqueteCtrl.text = code ?? '';
+        _loadingPackageNumber = false;
+      });
+    } catch (e) {
+      debugPrint('❌ Error cargando numero de paquete: $e');
+      if (!mounted) return;
+      setState(() => _loadingPackageNumber = false);
+    }
   }
 
   Future<void> _checkOpenShift() async {
@@ -758,7 +780,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   void _onSiguienteFromDetail() {
     final missing = <String>[];
     if (_numeroPaqueteCtrl.text.trim().isEmpty) {
-      _numeroPaqueteCtrl.text = _generatePackageNumber();
+      // No bloqueamos: intentamos refrescar el correlativo en segundo plano.
+      _loadPackageNumber();
+      missing.add('número de paquete');
     }
     if (_quantity <= 0) missing.add('cantidad de libras');
     if (_descPaqueteCtrl.text.trim().isEmpty) missing.add('descripción');
@@ -812,19 +836,27 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           const SizedBox(height: 10),
           TextField(
             controller: _numeroPaqueteCtrl,
+            readOnly: true,
             style: const TextStyle(fontSize: 13),
             decoration: InputDecoration(
-              labelText: 'Número de paquete (auto-generado)',
-              hintText: 'P-XXXXXX',
+              labelText: 'Número de paquete (correlativo del mes)',
+              hintText: 'P-001',
               labelStyle: const TextStyle(fontSize: 13),
               prefixIcon: const Icon(Icons.tag, size: 18),
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.refresh, size: 18),
-                tooltip: 'Generar nuevo número',
-                onPressed: () => setState(() {
-                  _numeroPaqueteCtrl.text = _generatePackageNumber();
-                }),
-              ),
+              suffixIcon: _loadingPackageNumber
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.refresh, size: 18),
+                      tooltip: 'Obtener nuevo correlativo',
+                      onPressed: _loadPackageNumber,
+                    ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -937,6 +969,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                               () => setState(() {
                                 _packagePhotoBytes = null;
                                 _packagePhotoName = null;
+                                _packagePhotoMime = null;
                               }),
                           borderRadius: BorderRadius.circular(6),
                           child: Padding(
@@ -1078,19 +1111,46 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     if (source == null) return;
 
     try {
-      final XFile? picked = await _imagePicker.pickImage(
-        source: source,
-        imageQuality: 80,
-        maxWidth: 1400,
-      );
-      if (picked == null) return;
-      final bytes = await picked.readAsBytes();
+      Uint8List? bytes;
+      String? name;
+      String? mime;
+
+      if (kIsWeb) {
+        // En Web image_picker_web sufre del bug "Could not load Blob from
+        // its URL. Has it been revoked?". Usamos nuestro picker propio
+        // basado en <input type=file>, que además permite capture=camera
+        // en navegadores móviles (Chrome Android / Safari iOS) y dispara
+        // automáticamente el prompt de permiso de cámara del navegador.
+        final picked = await web_picker.pickImageWeb(
+          useCamera: source == ImageSource.camera,
+        );
+        if (picked == null) return;
+        bytes = picked.bytes;
+        name = picked.name;
+        mime = picked.mimeType;
+      } else {
+        final XFile? picked = await _imagePicker.pickImage(
+          source: source,
+          imageQuality: 80,
+          maxWidth: 1400,
+        );
+        if (picked == null) return;
+        bytes = await picked.readAsBytes();
+        name = picked.name;
+        mime = picked.mimeType;
+      }
+
+      if (bytes == null || bytes.isEmpty) return;
+
       setState(() {
         if (isExtra) {
-          _packageExtraPhotos.add((bytes: bytes, name: picked.name));
+          _packageExtraPhotos.add(
+            (bytes: bytes!, name: name ?? 'paquete.jpg', mime: mime),
+          );
         } else {
           _packagePhotoBytes = bytes;
-          _packagePhotoName = picked.name;
+          _packagePhotoName = name ?? 'paquete.jpg';
+          _packagePhotoMime = mime;
         }
       });
     } catch (e) {
@@ -2323,7 +2383,15 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         fotoUrl = await _paqueteriaService.uploadPackagePhoto(
           bytes: _packagePhotoBytes!,
           filename: _packagePhotoName ?? 'paquete.jpg',
+          mimeType: _packagePhotoMime,
         );
+        if (fotoUrl == null) {
+          _closeOverlay();
+          _showError(
+            'No se pudo subir la foto del paquete. Verifica tu conexión e inténtalo de nuevo.',
+          );
+          return;
+        }
       }
 
       // Subir fotos adicionales (si existen)
@@ -2332,6 +2400,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         final url = await _paqueteriaService.uploadPackagePhoto(
           bytes: extra.bytes,
           filename: extra.name,
+          mimeType: extra.mime,
         );
         if (url != null && url.isNotEmpty) fotosExtrasUrls.add(url);
       }
