@@ -60,7 +60,9 @@
   <link rel="preload" href="flutter_bootstrap.js" as="script">
   
   <!-- Security Headers -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: https:; img-src 'self' data: https: blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: https:; img-src 'self' data: https: blob:; media-src 'self' data: blob:;">
+  <!-- Permissions Policy: habilitar cámara/micrófono/galería para captura de fotos en Web -->
+  <meta http-equiv="Permissions-Policy" content="camera=(self), microphone=(self), geolocation=(self)">
   
   <!-- App Loading Styles -->
   <style>
