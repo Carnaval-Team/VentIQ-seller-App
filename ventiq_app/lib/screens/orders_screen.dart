@@ -20,6 +20,7 @@ import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/currency_service.dart';
 import '../utils/platform_utils.dart';
+import '../utils/pdf_download.dart';
 import '../utils/connection_error_handler.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
@@ -4113,17 +4114,82 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Future<void> _generateCustomerInvoice(Order order) async {
     print('📄 Generar factura cliente (PDF) - Orden: ${order.id}');
 
-    // Web aún no soporta shareXFiles con filesystem temporal
+    // En Web: generar el PDF y descargarlo directamente en el navegador
     if (PlatformUtils.isWeb) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              'La generación/compartir de factura en PDF no está disponible en Web en esta versión.',
-            ),
-            backgroundColor: Colors.orange,
+            content: Text('Generando factura PDF...'),
+            backgroundColor: Colors.blueAccent,
+            duration: Duration(seconds: 2),
           ),
         );
+      }
+      setState(() => _isGeneratingCustomerInvoice = true);
+      try {
+        final storeId = await _userPreferencesService.getIdTienda();
+        Map<String, dynamic>? storeData;
+        if (storeId != null) {
+          storeData = await Supabase.instance.client
+              .from('app_dat_tienda')
+              .select('denominacion, direccion, ubicacion, imagen_url, phone')
+              .eq('id', storeId)
+              .maybeSingle();
+        }
+        final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+        final storeAddress = storeData?['direccion'] as String? ?? '';
+        final storeLocation = storeData?['ubicacion'] as String? ?? '';
+        final storePhone = storeData?['phone'] as String? ?? '';
+        final storeLogoUrl = storeData?['imagen_url'] as String?;
+        final logoBytes = await _downloadImageBytes(storeLogoUrl);
+        final discountData = _getDiscountData(order);
+        final hasDiscount = discountData['hasDiscount'] as bool;
+        final double originalTotal = (discountData['originalTotal'] as num?)?.toDouble() ?? order.total;
+        final double finalTotal = (discountData['finalTotal'] as num?)?.toDouble() ?? order.total;
+        final double saved = (discountData['saved'] as num?)?.toDouble() ?? 0.0;
+        final String discountLabel = discountData['label'] as String? ?? '';
+        final items = order.items.where((item) => item.subtotal > 0).toList();
+        final ingredientsByProduct = await _loadIngredientsForProducts(
+          items.map((i) => i.producto.id).toSet(),
+        );
+        final pdf = _buildInvoicePdf(
+          order: order,
+          storeName: storeName,
+          storeAddress: storeAddress,
+          storeLocation: storeLocation,
+          storePhone: storePhone,
+          logoBytes: logoBytes,
+          hasDiscount: hasDiscount,
+          originalTotal: originalTotal,
+          finalTotal: finalTotal,
+          saved: saved,
+          discountLabel: discountLabel,
+          items: items,
+          ingredientsByProduct: ingredientsByProduct,
+        );
+        final bytes = await pdf.save();
+        downloadPdfWeb(bytes, 'factura_${order.id}.pdf');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Factura descargada como PDF.'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      } catch (e) {
+        print('Error generando factura web: \$e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error al generar factura: \$e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isGeneratingCustomerInvoice = false);
       }
       return;
     }
@@ -4200,366 +4266,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
       final ingredientsByProduct = await _loadIngredientsForProducts(
         items.map((i) => i.producto.id).toSet(),
       );
-      final pdf = pw.Document();
-
-      pdf.addPage(
-        pw.MultiPage(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-          build:
-              (context) => [
-                pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    if (logoBytes != null)
-                      pw.Container(
-                        width: 72,
-                        height: 72,
-                        decoration: pw.BoxDecoration(
-                          borderRadius: pw.BorderRadius.circular(12),
-                          border: pw.Border.all(
-                            color: PdfColors.grey300,
-                            width: 1,
-                          ),
-                        ),
-                        child: pw.ClipRRect(
-                          horizontalRadius: 12,
-                          verticalRadius: 12,
-                          child: pw.Image(
-                            pw.MemoryImage(logoBytes),
-                            fit: pw.BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                    if (logoBytes != null) pw.SizedBox(width: 16),
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            storeName,
-                            style: pw.TextStyle(
-                              fontSize: 20,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black,
-                            ),
-                          ),
-                          if (storeAddress.isNotEmpty ||
-                              storeLocation.isNotEmpty)
-                            pw.Text(
-                              [
-                                if (storeAddress.isNotEmpty) storeAddress,
-                                if (storeLocation.isNotEmpty) storeLocation,
-                              ].join(' · '),
-                              style: const pw.TextStyle(
-                                fontSize: 10,
-                                color: PdfColors.grey600,
-                              ),
-                            ),
-                          if (storePhone.isNotEmpty)
-                            pw.Text(
-                              'Tel: $storePhone',
-                              style: const pw.TextStyle(
-                                fontSize: 10,
-                                color: PdfColors.grey600,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        pw.Text(
-                          'Factura Cliente',
-                          style: pw.TextStyle(
-                            fontSize: 16,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColor.fromHex('#0F172A'),
-                          ),
-                        ),
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          'Orden: ${order.id}',
-                          style: const pw.TextStyle(
-                            fontSize: 11,
-                            color: PdfColors.grey700,
-                          ),
-                        ),
-                        pw.Text(
-                          _formatInvoiceDate(order.fechaCreacion),
-                          style: const pw.TextStyle(
-                            fontSize: 11,
-                            color: PdfColors.grey700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                pw.SizedBox(height: 24),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(12),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex('#F8FAFC'),
-                    borderRadius: pw.BorderRadius.circular(12),
-                    border: pw.Border.all(color: PdfColors.grey300, width: 1),
-                  ),
-                  child: pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'Cliente',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColor.fromHex('#334155'),
-                            ),
-                          ),
-                          pw.Text(
-                            order.buyerName?.isNotEmpty == true
-                                ? order.buyerName!
-                                : 'Cliente Final',
-                            style: const pw.TextStyle(
-                              fontSize: 11,
-                              color: PdfColors.grey700,
-                            ),
-                          ),
-                          if (order.buyerPhone != null &&
-                              order.buyerPhone!.isNotEmpty)
-                            pw.Text(
-                              order.buyerPhone!,
-                              style: const pw.TextStyle(
-                                fontSize: 10,
-                                color: PdfColors.grey600,
-                              ),
-                            ),
-                        ],
-                      ),
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.end,
-                        children: [
-                          pw.Text(
-                            'Estado',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColor.fromHex('#334155'),
-                            ),
-                          ),
-                          pw.Container(
-                            padding: const pw.EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: pw.BoxDecoration(
-                              color: PdfColor.fromHex('#DCFCE7'),
-                              borderRadius: pw.BorderRadius.circular(8),
-                            ),
-                            child: pw.Text(
-                              'Completada',
-                              style: pw.TextStyle(
-                                fontSize: 11,
-                                fontWeight: pw.FontWeight.bold,
-                                color: PdfColor.fromHex('#15803D'),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                pw.SizedBox(height: 20),
-                pw.Text(
-                  'Productos',
-                  style: pw.TextStyle(
-                    fontSize: 13,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColor.fromHex('#0F172A'),
-                  ),
-                ),
-                pw.SizedBox(height: 8),
-                pw.Table(
-                  border: pw.TableBorder(
-                    horizontalInside: pw.BorderSide(
-                      color: PdfColors.grey300,
-                      width: 0.4,
-                    ),
-                    bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.6),
-                  ),
-                  columnWidths: {
-                    0: const pw.FlexColumnWidth(4),
-                    1: const pw.FlexColumnWidth(1.3),
-                    2: const pw.FlexColumnWidth(1.5),
-                    3: const pw.FlexColumnWidth(1.7),
-                  },
-                  children: [
-                    pw.TableRow(
-                      children: [
-                        _pdfHeaderCell('Producto'),
-                        _pdfHeaderCell('Cant.'),
-                        _pdfHeaderCell('Precio'),
-                        _pdfHeaderCell('Subtotal'),
-                      ],
-                    ),
-                    ...items.expand((item) {
-                      final List<pw.TableRow> rows = [
-                        pw.TableRow(
-                          children: [
-                            _pdfBodyCell(item.nombre),
-                            _pdfBodyCell(PriceUtils.formatQuantity(item.cantidad)),
-                            _pdfBodyCell(
-                              '\$${item.displayPrice.toStringAsFixed(2)}',
-                            ),
-                            _pdfBodyCell(
-                              '\$${item.subtotal.toStringAsFixed(2)}',
-                              isBold: true,
-                            ),
-                          ],
-                        ),
-                      ];
-
-                      final ingredientes =
-                          ingredientsByProduct[item.producto.id] ??
-                          item.ingredientes;
-                      if (ingredientes != null && ingredientes.isNotEmpty) {
-                        rows.add(
-                          pw.TableRow(
-                            children: [
-                              _pdfBodyCell(
-                                '    Aditamentos',
-                                isBold: true,
-                                isIngredient: true,
-                              ),
-                              _pdfBodyCell('', isIngredient: true),
-                              _pdfBodyCell('', isIngredient: true),
-                              _pdfBodyCell('', isIngredient: true),
-                            ],
-                          ),
-                        );
-
-                        rows.addAll(
-                          ingredientes.map<pw.TableRow>((ingrediente) {
-                            final nombreIngrediente =
-                                (ingrediente['nombre_ingrediente'] ??
-                                        'Ingrediente')
-                                    .toString();
-                            final double cantidadBase =
-                                (ingrediente['cantidad_necesaria'] ??
-                                            ingrediente['cantidad_vendida'] ??
-                                            0)
-                                        is num
-                                    ? (ingrediente['cantidad_necesaria'] ??
-                                            ingrediente['cantidad_vendida'])
-                                        .toDouble()
-                                    : 0;
-                            final unidad =
-                                (ingrediente['unidad_medida'] ?? 'unid')
-                                    .toString();
-                            final double cantidadTotal =
-                                (ingrediente['cantidad_vendida'] is num)
-                                    ? (ingrediente['cantidad_vendida'] as num)
-                                        .toDouble()
-                                    : (cantidadBase * item.cantidad);
-                            final cantidad = cantidadTotal.toStringAsFixed(2);
-
-                            return pw.TableRow(
-                              children: [
-                                _pdfBodyCell(
-                                  '    $nombreIngrediente',
-                                  isIngredient: true,
-                                ),
-                                _pdfBodyCell(
-                                  '$cantidad $unidad',
-                                  isIngredient: true,
-                                ),
-                                _pdfBodyCell('', isIngredient: true),
-                                _pdfBodyCell('', isIngredient: true),
-                              ],
-                            );
-                          }),
-                        );
-                      }
-
-                      return rows;
-                    }),
-                  ],
-                ),
-                pw.SizedBox(height: 18),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(12),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex('#F1F5F9'),
-                    borderRadius: pw.BorderRadius.circular(12),
-                    border: pw.Border.all(color: PdfColors.grey300, width: 1),
-                  ),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          _pdfSummaryLabel('Total sin descuento'),
-                          _pdfSummaryValue(
-                            '\$${originalTotal.toStringAsFixed(2)}',
-                          ),
-                        ],
-                      ),
-                      if (hasDiscount) ...[
-                        pw.SizedBox(height: 4),
-                        pw.Row(
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                          children: [
-                            _pdfSummaryLabel(
-                              discountLabel.isNotEmpty
-                                  ? discountLabel
-                                  : 'Descuento aplicado',
-                            ),
-                            _pdfSummaryValue(
-                              '- \$${saved.toStringAsFixed(2)}',
-                              color: PdfColor.fromHex('#DC2626'),
-                            ),
-                          ],
-                        ),
-                      ],
-                      pw.Divider(
-                        color: PdfColors.grey400,
-                        height: 14,
-                        thickness: 0.6,
-                      ),
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          _pdfSummaryLabel(
-                            'Total a pagar',
-                            fontSize: 13,
-                            isBold: true,
-                          ),
-                          _pdfSummaryValue(
-                            '\$${finalTotal.toStringAsFixed(2)}',
-                            fontSize: 14,
-                            isBold: true,
-                            color: PdfColor.fromHex('#0F172A'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                pw.SizedBox(height: 16),
-                pw.Text(
-                  'Gracias por su compra.',
-                  style: const pw.TextStyle(
-                    fontSize: 11,
-                    color: PdfColors.grey700,
-                  ),
-                ),
-              ],
-        ),
+      final pdf = _buildInvoicePdf(
+        order: order,
+        storeName: storeName,
+        storeAddress: storeAddress,
+        storeLocation: storeLocation,
+        storePhone: storePhone,
+        logoBytes: logoBytes,
+        hasDiscount: hasDiscount,
+        originalTotal: originalTotal,
+        finalTotal: finalTotal,
+        saved: saved,
+        discountLabel: discountLabel,
+        items: items,
+        ingredientsByProduct: ingredientsByProduct,
       );
 
       final output = await getTemporaryDirectory();
@@ -4620,6 +4340,201 @@ class _OrdersScreenState extends State<OrdersScreen> {
         });
       }
     }
+  }
+
+  pw.Document _buildInvoicePdf({
+    required Order order,
+    required String storeName,
+    required String storeAddress,
+    required String storeLocation,
+    required String storePhone,
+    required Uint8List? logoBytes,
+    required bool hasDiscount,
+    required double originalTotal,
+    required double finalTotal,
+    required double saved,
+    required String discountLabel,
+    required List items,
+    required Map<int, List<Map<String, dynamic>>> ingredientsByProduct,
+  }) {
+    final pdf = pw.Document();
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        build: (context) => [
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              if (logoBytes != null)
+                pw.Container(
+                  width: 72,
+                  height: 72,
+                  decoration: pw.BoxDecoration(
+                    borderRadius: pw.BorderRadius.circular(12),
+                    border: pw.Border.all(color: PdfColors.grey300, width: 1),
+                  ),
+                  child: pw.ClipRRect(
+                    horizontalRadius: 12,
+                    verticalRadius: 12,
+                    child: pw.Image(pw.MemoryImage(logoBytes), fit: pw.BoxFit.cover),
+                  ),
+                ),
+              if (logoBytes != null) pw.SizedBox(width: 16),
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(storeName, style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
+                    if (storeAddress.isNotEmpty || storeLocation.isNotEmpty)
+                      pw.Text([if (storeAddress.isNotEmpty) storeAddress, if (storeLocation.isNotEmpty) storeLocation].join(' · '), style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
+                    if (storePhone.isNotEmpty)
+                      pw.Text('Tel: $storePhone', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
+                  ],
+                ),
+              ),
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  pw.Text('Factura Cliente', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0F172A'))),
+                  pw.SizedBox(height: 4),
+                  pw.Text('Orden: ${order.id}', style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
+                  pw.Text(_formatInvoiceDate(order.fechaCreacion), style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
+                ],
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 24),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: PdfColor.fromHex('#F8FAFC'),
+              borderRadius: pw.BorderRadius.circular(12),
+              border: pw.Border.all(color: PdfColors.grey300, width: 1),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text('Cliente', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#334155'))),
+                    pw.Text(
+                      order.buyerName?.isNotEmpty == true ? order.buyerName! : 'Cliente Final',
+                      style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
+                    ),
+                    if (order.buyerPhone != null && order.buyerPhone!.isNotEmpty)
+                      pw.Text(order.buyerPhone!, style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
+                  ],
+                ),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Text('Estado', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#334155'))),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: pw.BoxDecoration(color: PdfColor.fromHex('#DCFCE7'), borderRadius: pw.BorderRadius.circular(8)),
+                      child: pw.Text('Completada', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#15803D'))),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 20),
+          pw.Text('Productos', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0F172A'))),
+          pw.SizedBox(height: 8),
+          pw.Table(
+            border: pw.TableBorder(
+              horizontalInside: pw.BorderSide(color: PdfColors.grey300, width: 0.4),
+              bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.6),
+            ),
+            columnWidths: {0: const pw.FlexColumnWidth(4), 1: const pw.FlexColumnWidth(1.3), 2: const pw.FlexColumnWidth(1.5), 3: const pw.FlexColumnWidth(1.7)},
+            children: [
+              pw.TableRow(children: [_pdfHeaderCell('Producto'), _pdfHeaderCell('Cant.'), _pdfHeaderCell('Precio'), _pdfHeaderCell('Subtotal')]),
+              ...items.expand((item) {
+                final List<pw.TableRow> rows = [
+                  pw.TableRow(children: [
+                    _pdfBodyCell(item.nombre),
+                    _pdfBodyCell(PriceUtils.formatQuantity(item.cantidad)),
+                    _pdfBodyCell('\$${item.displayPrice.toStringAsFixed(2)}'),
+                    _pdfBodyCell('\$${item.subtotal.toStringAsFixed(2)}', isBold: true),
+                  ]),
+                ];
+                final ingredientes = ingredientsByProduct[item.producto.id] ?? item.ingredientes;
+                if (ingredientes != null && ingredientes.isNotEmpty) {
+                  rows.add(pw.TableRow(children: [
+                    _pdfBodyCell('    Aditamentos', isBold: true, isIngredient: true),
+                    _pdfBodyCell('', isIngredient: true),
+                    _pdfBodyCell('', isIngredient: true),
+                    _pdfBodyCell('', isIngredient: true),
+                  ]));
+                  rows.addAll(ingredientes.map<pw.TableRow>((ingrediente) {
+                    final nombreIngrediente = (ingrediente['nombre_ingrediente'] ?? 'Ingrediente').toString();
+                    final double cantidadBase = (ingrediente['cantidad_necesaria'] ?? ingrediente['cantidad_vendida'] ?? 0) is num
+                        ? (ingrediente['cantidad_necesaria'] ?? ingrediente['cantidad_vendida']).toDouble()
+                        : 0;
+                    final unidad = (ingrediente['unidad_medida'] ?? 'unid').toString();
+                    final double cantidadTotal = (ingrediente['cantidad_vendida'] is num)
+                        ? (ingrediente['cantidad_vendida'] as num).toDouble()
+                        : (cantidadBase * item.cantidad);
+                    return pw.TableRow(children: [
+                      _pdfBodyCell('    $nombreIngrediente', isIngredient: true),
+                      _pdfBodyCell('${cantidadTotal.toStringAsFixed(2)} $unidad', isIngredient: true),
+                      _pdfBodyCell('', isIngredient: true),
+                      _pdfBodyCell('', isIngredient: true),
+                    ]);
+                  }));
+                }
+                return rows;
+              }),
+            ],
+          ),
+          pw.SizedBox(height: 18),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: PdfColor.fromHex('#F1F5F9'),
+              borderRadius: pw.BorderRadius.circular(12),
+              border: pw.Border.all(color: PdfColors.grey300, width: 1),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    _pdfSummaryLabel('Total sin descuento'),
+                    _pdfSummaryValue('\$${originalTotal.toStringAsFixed(2)}'),
+                  ],
+                ),
+                if (hasDiscount) ...[  
+                  pw.SizedBox(height: 4),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      _pdfSummaryLabel(discountLabel.isNotEmpty ? discountLabel : 'Descuento aplicado'),
+                      _pdfSummaryValue('- \$${saved.toStringAsFixed(2)}', color: PdfColor.fromHex('#DC2626')),
+                    ],
+                  ),
+                ],
+                pw.Divider(color: PdfColors.grey400, height: 14, thickness: 0.6),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    _pdfSummaryLabel('Total a pagar', fontSize: 13, isBold: true),
+                    _pdfSummaryValue('\$${finalTotal.toStringAsFixed(2)}', fontSize: 14, isBold: true, color: PdfColor.fromHex('#0F172A')),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 16),
+          pw.Text('Gracias por su compra.', style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
+        ],
+      ),
+    );
+    return pdf;
   }
 
   pw.Widget _pdfHeaderCell(String text) {
