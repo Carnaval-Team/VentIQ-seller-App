@@ -13,6 +13,10 @@ class CargaModel {
   final String? ciudadOrigen;
   final String? estadoOrigen;
   final String? paisOrigen;
+  final String? nombreUbicacionOrigen;
+  final String? cpOrigen;
+  final String? contactoOrigenNombre;
+  final String? contactoOrigenTel;
 
   // Destino
   final String dirDestino;
@@ -21,6 +25,10 @@ class CargaModel {
   final String? ciudadDestino;
   final String? estadoDestino;
   final String? paisDestino;
+  final String? nombreUbicacionDestino;
+  final String? cpDestino;
+  final String? contactoDestinoNombre;
+  final String? contactoDestinoTel;
 
   // Mercancía
   final String? descripcion;
@@ -36,6 +44,10 @@ class CargaModel {
   final double? temperaturaMax;
   final bool requiereSeguro;
   final String? instrucciones;
+
+  // Mercancía / equipo
+  final int? commodityId;
+  final List<String> opcionesEquipo;
 
   // Equipo
   final String? tipoEquipo;
@@ -54,10 +66,15 @@ class CargaModel {
   final double? precioFinal;
   final String moneda;
 
+  // Comercial
+  final List<String> numerosReferencia;
+
   // Visibilidad
   final bool destacada;
   final DateTime? destacadaHasta;
   final DateTime? exclusivaHasta;
+  final bool esPrivada;
+  final int? horasAnticipacionPublica;
 
   // Distancia
   final double? distanciaKm;
@@ -124,6 +141,17 @@ class CargaModel {
     this.temperaturaMax,
     this.requiereSeguro = false,
     this.instrucciones,
+    this.nombreUbicacionOrigen,
+    this.cpOrigen,
+    this.contactoOrigenNombre,
+    this.contactoOrigenTel,
+    this.nombreUbicacionDestino,
+    this.cpDestino,
+    this.contactoDestinoNombre,
+    this.contactoDestinoTel,
+    this.commodityId,
+    this.opcionesEquipo = const [],
+    this.numerosReferencia = const [],
     this.tipoEquipo,
     this.idTipoVehiculo,
     this.fechaRecogida,
@@ -138,6 +166,8 @@ class CargaModel {
     this.destacada = false,
     this.destacadaHasta,
     this.exclusivaHasta,
+    this.esPrivada = false,
+    this.horasAnticipacionPublica,
     this.distanciaKm,
     this.distanciaMillas,
     this.esLtl = false,
@@ -191,6 +221,17 @@ class CargaModel {
       temperaturaMax: (json['temperatura_max'] as num?)?.toDouble(),
       requiereSeguro: json['requiere_seguro'] as bool? ?? false,
       instrucciones: json['instrucciones'] as String?,
+      nombreUbicacionOrigen: json['nombre_ubicacion_origen'] as String?,
+      cpOrigen: json['cp_origen'] as String?,
+      contactoOrigenNombre: json['contacto_origen_nombre'] as String?,
+      contactoOrigenTel: json['contacto_origen_tel'] as String?,
+      nombreUbicacionDestino: json['nombre_ubicacion_destino'] as String?,
+      cpDestino: json['cp_destino'] as String?,
+      contactoDestinoNombre: json['contacto_destino_nombre'] as String?,
+      contactoDestinoTel: json['contacto_destino_tel'] as String?,
+      commodityId: json['commodity_id'] as int?,
+      opcionesEquipo: (json['opciones_equipo'] as List<dynamic>?)?.cast<String>() ?? [],
+      numerosReferencia: (json['numeros_referencia'] as List<dynamic>?)?.cast<String>() ?? [],
       tipoEquipo: json['tipo_equipo'] as String?,
       idTipoVehiculo: json['id_tipo_vehiculo'] as int?,
       fechaRecogida: json['fecha_recogida'] != null
@@ -213,6 +254,8 @@ class CargaModel {
       exclusivaHasta: json['exclusiva_hasta'] != null
           ? DateTime.tryParse(json['exclusiva_hasta'] as String)
           : null,
+      esPrivada: json['es_privada'] as bool? ?? false,
+      horasAnticipacionPublica: json['horas_anticipacion_publica'] as int?,
       distanciaKm: (json['distancia_km'] as num?)?.toDouble(),
       distanciaMillas: (json['distancia_millas'] as num?)?.toDouble(),
       esLtl: json['es_ltl'] as bool? ?? false,
@@ -271,6 +314,19 @@ class CargaModel {
       if (temperaturaMax != null) 'temperatura_max': temperaturaMax,
       'requiere_seguro': requiereSeguro,
       if (instrucciones != null) 'instrucciones': instrucciones,
+      if (nombreUbicacionOrigen != null) 'nombre_ubicacion_origen': nombreUbicacionOrigen,
+      if (cpOrigen != null) 'cp_origen': cpOrigen,
+      if (contactoOrigenNombre != null) 'contacto_origen_nombre': contactoOrigenNombre,
+      if (contactoOrigenTel != null) 'contacto_origen_tel': contactoOrigenTel,
+      if (nombreUbicacionDestino != null) 'nombre_ubicacion_destino': nombreUbicacionDestino,
+      if (cpDestino != null) 'cp_destino': cpDestino,
+      if (contactoDestinoNombre != null) 'contacto_destino_nombre': contactoDestinoNombre,
+      if (contactoDestinoTel != null) 'contacto_destino_tel': contactoDestinoTel,
+      if (commodityId != null) 'commodity_id': commodityId,
+      if (opcionesEquipo.isNotEmpty) 'opciones_equipo': opcionesEquipo,
+      if (numerosReferencia.isNotEmpty) 'numeros_referencia': numerosReferencia,
+      'es_privada': esPrivada,
+      if (horasAnticipacionPublica != null) 'horas_anticipacion_publica': horasAnticipacionPublica,
       if (tipoEquipo != null) 'tipo_equipo': tipoEquipo,
       if (idTipoVehiculo != null) 'id_tipo_vehiculo': idTipoVehiculo,
       if (fechaRecogida != null)

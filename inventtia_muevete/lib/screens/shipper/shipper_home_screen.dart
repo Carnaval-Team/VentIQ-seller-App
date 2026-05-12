@@ -198,6 +198,23 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
   final _horasCargaCtrl = TextEditingController();
   final _horasDescargaCtrl = TextEditingController();
 
+  // Nuevos campos Truckstop — ubicación detallada
+  final _nombreUbicOrigenCtrl = TextEditingController();
+  final _cpOrigenCtrl = TextEditingController();
+  final _contactoOrigenNombreCtrl = TextEditingController();
+  final _contactoOrigenTelCtrl = TextEditingController();
+  final _nombreUbicDestinoCtrl = TextEditingController();
+  final _cpDestinoCtrl = TextEditingController();
+  final _contactoDestinoNombreCtrl = TextEditingController();
+  final _contactoDestinoTelCtrl = TextEditingController();
+
+  // Nuevos campos Truckstop — comercial / equipo
+  final _refNumCtrl = TextEditingController();
+  int? _commodityId;
+  final List<String> _opcionesEquipoSel = [];
+  bool _esPrivada = false;
+  int? _horasAnticipacionPublica;
+
   String _tipo = 'ftl';
   String _unidadPeso = 'kg';
   double? _distanciaKm;
@@ -227,6 +244,28 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
     'curtain',
   ];
 
+  static const _opcionesEquipoExtra = [
+    'liftgate',
+    'pallet_return',
+    'team_driver',
+    'blanket_wrap',
+    'tarps',
+    'straps',
+  ];
+
+  static const _commodityOpciones = <Map<String, dynamic>>[
+    {'id': 1,  'label': 'Alimentos y bebidas'},
+    {'id': 2,  'label': 'Materiales peligrosos'},
+    {'id': 3,  'label': 'Maquinaria / equipos'},
+    {'id': 4,  'label': 'Productos químicos'},
+    {'id': 5,  'label': 'Vehículos'},
+    {'id': 6,  'label': 'Electrónica'},
+    {'id': 7,  'label': 'Textiles / ropa'},
+    {'id': 8,  'label': 'Materiales de construcción'},
+    {'id': 9,  'label': 'Productos farmacéuticos'},
+    {'id': 99, 'label': 'Otros'},
+  ];
+
   @override
   void dispose() {
     _descripcionCtrl.dispose();
@@ -235,6 +274,15 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
     _instruccionesCtrl.dispose();
     _horasCargaCtrl.dispose();
     _horasDescargaCtrl.dispose();
+    _nombreUbicOrigenCtrl.dispose();
+    _cpOrigenCtrl.dispose();
+    _contactoOrigenNombreCtrl.dispose();
+    _contactoOrigenTelCtrl.dispose();
+    _nombreUbicDestinoCtrl.dispose();
+    _cpDestinoCtrl.dispose();
+    _contactoDestinoNombreCtrl.dispose();
+    _contactoDestinoTelCtrl.dispose();
+    _refNumCtrl.dispose();
     super.dispose();
   }
 
@@ -338,9 +386,27 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
           ? null
           : _instruccionesCtrl.text.trim(),
       tipoEquipo: _tipoEquipo,
+      opcionesEquipo: List.from(_opcionesEquipoSel),
       fechaRecogida: _fechaRecogida,
       fechaEntrega: _fechaEntrega,
       precioOfertado: double.tryParse(_precioCtrl.text),
+      // Ubicación detallada
+      nombreUbicacionOrigen: _nombreUbicOrigenCtrl.text.trim().isEmpty ? null : _nombreUbicOrigenCtrl.text.trim(),
+      cpOrigen: _cpOrigenCtrl.text.trim().isEmpty ? null : _cpOrigenCtrl.text.trim(),
+      contactoOrigenNombre: _contactoOrigenNombreCtrl.text.trim().isEmpty ? null : _contactoOrigenNombreCtrl.text.trim(),
+      contactoOrigenTel: _contactoOrigenTelCtrl.text.trim().isEmpty ? null : _contactoOrigenTelCtrl.text.trim(),
+      nombreUbicacionDestino: _nombreUbicDestinoCtrl.text.trim().isEmpty ? null : _nombreUbicDestinoCtrl.text.trim(),
+      cpDestino: _cpDestinoCtrl.text.trim().isEmpty ? null : _cpDestinoCtrl.text.trim(),
+      contactoDestinoNombre: _contactoDestinoNombreCtrl.text.trim().isEmpty ? null : _contactoDestinoNombreCtrl.text.trim(),
+      contactoDestinoTel: _contactoDestinoTelCtrl.text.trim().isEmpty ? null : _contactoDestinoTelCtrl.text.trim(),
+      // Comercial
+      commodityId: _commodityId,
+      numerosReferencia: _refNumCtrl.text.trim().isEmpty
+          ? []
+          : _refNumCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList(),
+      // Privacidad
+      esPrivada: _esPrivada,
+      horasAnticipacionPublica: _horasAnticipacionPublica,
       createdAt: DateTime.now(),
     );
 
@@ -369,9 +435,22 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
         _ciudadOrigen = null; _provinciaOrigen = null; _paisOrigen = null;
         _latDestino = null; _lonDestino = null; _dirDestino = null;
         _ciudadDestino = null; _provinciaDestino = null; _paisDestino = null;
+        _commodityId = null;
+        _opcionesEquipoSel.clear();
+        _esPrivada = false;
+        _horasAnticipacionPublica = null;
       });
       _horasCargaCtrl.clear();
       _horasDescargaCtrl.clear();
+      _nombreUbicOrigenCtrl.clear();
+      _cpOrigenCtrl.clear();
+      _contactoOrigenNombreCtrl.clear();
+      _contactoOrigenTelCtrl.clear();
+      _nombreUbicDestinoCtrl.clear();
+      _cpDestinoCtrl.clear();
+      _contactoDestinoNombreCtrl.clear();
+      _contactoDestinoTelCtrl.clear();
+      _refNumCtrl.clear();
       widget.onPublished();
     } else {
       final err = context.read<CargaProvider>().error ?? 'Error desconocido';
@@ -600,6 +679,216 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
               isDark: isDark,
               maxLines: 3,
             ),
+
+            // ── Ubicación detallada ──────────────────────────────────────
+            const SizedBox(height: 24),
+            _SectionLabel('Detalle de Origen', isDark),
+            const SizedBox(height: 8),
+            _Field(
+              controller: _nombreUbicOrigenCtrl,
+              hint: 'Nombre del lugar (ej: Almacén Central)',
+              icon: Icons.business_outlined,
+              isDark: isDark,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _Field(
+                    controller: _cpOrigenCtrl,
+                    hint: 'Código postal',
+                    icon: Icons.markunread_mailbox_outlined,
+                    isDark: isDark,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _Field(
+                    controller: _contactoOrigenNombreCtrl,
+                    hint: 'Contacto (nombre)',
+                    icon: Icons.person_outline,
+                    isDark: isDark,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _Field(
+                    controller: _contactoOrigenTelCtrl,
+                    hint: 'Teléfono',
+                    icon: Icons.phone_outlined,
+                    isDark: isDark,
+                    keyboardType: TextInputType.phone,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+            _SectionLabel('Detalle de Destino', isDark),
+            const SizedBox(height: 8),
+            _Field(
+              controller: _nombreUbicDestinoCtrl,
+              hint: 'Nombre del lugar (ej: Centro de Distribución)',
+              icon: Icons.business_outlined,
+              isDark: isDark,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _Field(
+                    controller: _cpDestinoCtrl,
+                    hint: 'Código postal',
+                    icon: Icons.markunread_mailbox_outlined,
+                    isDark: isDark,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _Field(
+                    controller: _contactoDestinoNombreCtrl,
+                    hint: 'Contacto (nombre)',
+                    icon: Icons.person_outline,
+                    isDark: isDark,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _Field(
+                    controller: _contactoDestinoTelCtrl,
+                    hint: 'Teléfono',
+                    icon: Icons.phone_outlined,
+                    isDark: isDark,
+                    keyboardType: TextInputType.phone,
+                  ),
+                ),
+              ],
+            ),
+
+            // ── Opciones de equipo ───────────────────────────────────────
+            const SizedBox(height: 24),
+            _SectionLabel('Opciones de Equipo', isDark),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _opcionesEquipoExtra.map((op) {
+                final sel = _opcionesEquipoSel.contains(op);
+                return FilterChip(
+                  label: Text(op,
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: sel
+                              ? Colors.white
+                              : (isDark ? Colors.white70 : Colors.grey[700]))),
+                  selected: sel,
+                  selectedColor: AppTheme.primaryColor,
+                  backgroundColor: isDark
+                      ? Colors.white.withValues(alpha: 0.06)
+                      : Colors.grey.withValues(alpha: 0.1),
+                  checkmarkColor: Colors.white,
+                  onSelected: (v) => setState(() {
+                    if (v) {
+                      _opcionesEquipoSel.add(op);
+                    } else {
+                      _opcionesEquipoSel.remove(op);
+                    }
+                  }),
+                );
+              }).toList(),
+            ),
+
+            // ── Clasificación de mercancía (Commodity) ───────────────────
+            const SizedBox(height: 24),
+            _SectionLabel('Clasificación de Mercancía', isDark),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<int>(
+              value: _commodityId,
+              decoration: InputDecoration(
+                hintText: 'Tipo de producto (commodity)',
+                prefixIcon: const Icon(Icons.category_outlined, size: 18),
+                hintStyle: TextStyle(
+                    color: isDark ? Colors.white38 : Colors.grey[500]),
+              ),
+              dropdownColor: isDark ? const Color(0xFF2A2D3E) : Colors.white,
+              style: TextStyle(
+                  color: isDark ? Colors.white : const Color(0xFF1A1D27),
+                  fontSize: 14),
+              items: _commodityOpciones
+                  .map((c) => DropdownMenuItem<int>(
+                        value: c['id'] as int,
+                        child: Text(c['label'] as String),
+                      ))
+                  .toList(),
+              onChanged: (v) => setState(() => _commodityId = v),
+            ),
+
+            // ── Números de referencia ────────────────────────────────────
+            const SizedBox(height: 24),
+            _SectionLabel('Números de Referencia', isDark),
+            const SizedBox(height: 8),
+            _Field(
+              controller: _refNumCtrl,
+              hint: 'Ej: REF-001, PO-4521 (separados por coma)',
+              icon: Icons.tag_outlined,
+              isDark: isDark,
+            ),
+
+            // ── Privacidad ───────────────────────────────────────────────
+            const SizedBox(height: 24),
+            _SectionLabel('Visibilidad de la Carga', isDark),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              value: _esPrivada,
+              onChanged: (v) => setState(() {
+                _esPrivada = v;
+                if (!v) _horasAnticipacionPublica = null;
+              }),
+              title: Text('Carga privada',
+                  style: TextStyle(color: textPrimary, fontSize: 14)),
+              subtitle: Text(
+                'Solo visible para carriers de tu red',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white38 : Colors.grey[500]),
+              ),
+              activeColor: AppTheme.primaryColor,
+              contentPadding: EdgeInsets.zero,
+            ),
+            if (_esPrivada) ...
+              [
+                const SizedBox(height: 8),
+                DropdownButtonFormField<int>(
+                  value: _horasAnticipacionPublica,
+                  decoration: InputDecoration(
+                    hintText: 'Horas antes de hacer pública automáticamente',
+                    prefixIcon: const Icon(Icons.timer_outlined, size: 18),
+                    hintStyle: TextStyle(
+                        color: isDark ? Colors.white38 : Colors.grey[500]),
+                  ),
+                  dropdownColor:
+                      isDark ? const Color(0xFF2A2D3E) : Colors.white,
+                  style: TextStyle(
+                      color: isDark ? Colors.white : const Color(0xFF1A1D27),
+                      fontSize: 14),
+                  items: const [
+                    DropdownMenuItem(value: 24, child: Text('24 horas')),
+                    DropdownMenuItem(value: 48, child: Text('48 horas')),
+                    DropdownMenuItem(value: 72, child: Text('72 horas')),
+                    DropdownMenuItem(value: 0,  child: Text('Siempre privada')),
+                  ],
+                  onChanged: (v) =>
+                      setState(() => _horasAnticipacionPublica = v),
+                ),
+              ],
 
             const SizedBox(height: 28),
             ElevatedButton(

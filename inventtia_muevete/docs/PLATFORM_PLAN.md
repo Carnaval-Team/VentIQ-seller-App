@@ -1259,12 +1259,14 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
 **Schema**: 
 - ✅ `planes` — migración SQL creada (`docs/migrations/013_planes.sql`) con seed de 7 planes + RLS
 - ✅ `cargas` — **confirmado en Supabase** (`muevete.cargas`)
+  - ✅ Campos Truckstop agregados (`docs/migrations/014_cargas_truckstop_fields.sql`): `nombre_ubicacion_origen/destino`, `cp_origen/destino`, `contacto_origen/destino_nombre/tel`, `commodity_id`, `opciones_equipo[]`, `numeros_referencia[]`, `es_privada`, `horas_anticipacion_publica`
+  - 🚫 **Paradas intermedias (`carga_paradas`) — fuera de scope**. Solo se soportan origen + destino en Fase 1 y 2. Paradas múltiples diferidas a integración con Truckstop API (Fase 3+).
 - ✅ `ofertas_carga` — **confirmado en Supabase** (`muevete.ofertas_carga`) — solo INSERT/SELECT en Fase 1, gestión diferida a Fase 2
 - ❌ `valoraciones_carga` — diferida a Fase 2
 - ❌ `kyc_documentos` — diferida a Fase 2
 
 **Modelos**: 
-- ✅ `CargaModel` → `lib/models/carga_model.dart`
+- ✅ `CargaModel` → `lib/models/carga_model.dart` — incluye campos Truckstop: contactos, CP, `commodityId`, `opcionesEquipo`, `numerosReferencia`, `esPrivada`, `horasAnticipacionPublica`
 - ✅ `OfertaCargaModel` → `lib/models/oferta_carga_model.dart`
 - ✅ `PlanModel` → `lib/models/plan_model.dart`
 - 🔜 `ValoracionCargaModel` — diferido a Fase 2
@@ -1300,7 +1302,8 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
 - ✅ Modelos `UserModel` y `DriverModel` extendidos con `tipoUsuario`, campos shipper/carrier/dispatcher
 
 **Pendiente para CERRAR FASE 1:**
-- ⚠️ Ejecutar `docs/migrations/013_planes.sql` en Supabase (no ejecutado aún)
+- ⚠️ Ejecutar `docs/migrations/014_cargas_truckstop_fields.sql` en Supabase
+- ⚠️ Actualizar formulario de publicación en `shipper_home_screen.dart` con los nuevos campos Truckstop (contactos, CP, commodity, opciones equipo, privacidad)
 - ⚠️ Actualizar `VehicleModel` con campos de camión de carga (`tipoCarroceria`, `capacidadTon`, `tieneGps`, etc.)
 - ⚠️ Verificar flujo completo: shipper publica → carrier ve carga → carrier envía oferta → shipper ve ofertas recibidas (sin aceptar/rechazar aún)
 
@@ -1309,6 +1312,9 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
 - 🔜 `ValoracionCargaModel` + `ValoracionCargaService`
 - 🔜 `kyc_documentos` — tabla y flujo KYC
 - 🔜 `WalletTransactionModel` — nuevos tipos de transacción (no aplica sin escrow)
+
+**Fuera de scope permanente (decisión de diseño):**
+- 🚫 **Paradas intermedias (`carga_paradas`)** — el sistema solo soporta origen + destino. La gestión de rutas multi-parada es responsabilidad de la integración con Truckstop/broker externo (Fase 3+) y no será implementada en la app.
 
 ---
 
