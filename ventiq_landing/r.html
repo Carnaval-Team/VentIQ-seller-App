@@ -115,14 +115,23 @@
         <p>Lo copiamos a tu portapapeles. Instala la app y al registrarte se aplicara automaticamente.</p>
         <div id="code" class="code-box">--------</div>
         <div id="status" class="status">Preparando...</div>
-        <a id="goPlay" class="btn" href="https://play.google.com/store/apps/details?id=com.carnaval24&hl=es_419" rel="noopener">Abrir Google Play</a>
+        <a id="goStore" class="btn" href="#" rel="noopener">Abrir tienda</a>
         <button id="copyBtn" class="btn secondary" type="button">Copiar codigo otra vez</button>
-        <p class="small">Si tienes iPhone, copia el codigo manualmente y aplicalo dentro de la app despues de instalarla.</p>
+        <p class="small">Te llevamos a Google Play o App Store segun tu dispositivo. Al abrir la app por primera vez se aplica solo.</p>
     </main>
     <script>
         (function () {
             var PLAY_URL = "https://play.google.com/store/apps/details?id=com.carnaval24&hl=es_419";
+            var APPSTORE_URL = "https://apps.apple.com/es/app/carnaval-tienda/id6742862060";
             var CLIPBOARD_PREFIX = "CARNAVAL-REF:";
+
+            // Deteccion simple iOS vs Android. En iPadOS 13+ el UA dice "Mac"
+            // pero hay touch, asi que lo cubrimos con la heuristica de maxTouchPoints.
+            var ua = navigator.userAgent || "";
+            var isIOS = /iPad|iPhone|iPod/.test(ua) ||
+                (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+            var STORE_URL = isIOS ? APPSTORE_URL : PLAY_URL;
+            var STORE_LABEL = isIOS ? "App Store" : "Google Play";
 
             var params = new URLSearchParams(window.location.search);
             var raw = (params.get("code") || "").trim().toUpperCase();
@@ -131,14 +140,17 @@
 
             var codeEl = document.getElementById("code");
             var statusEl = document.getElementById("status");
-            var goPlayBtn = document.getElementById("goPlay");
+            var goStoreBtn = document.getElementById("goStore");
             var copyBtn = document.getElementById("copyBtn");
+
+            goStoreBtn.href = STORE_URL;
 
             if (!code) {
                 codeEl.textContent = "(sin codigo)";
                 statusEl.textContent = "No se detecto codigo. Aun puedes descargar la app.";
                 statusEl.classList.add("error");
                 copyBtn.style.display = "none";
+                goStoreBtn.textContent = "Abrir " + STORE_LABEL;
                 return;
             }
             codeEl.textContent = code;
@@ -167,12 +179,12 @@
             }
 
             function markCopied() {
-                statusEl.textContent = "Codigo copiado. Te llevamos a Google Play...";
+                statusEl.textContent = "Codigo copiado. Te llevamos a " + STORE_LABEL + "...";
                 statusEl.classList.remove("error");
             }
 
             function markFailed() {
-                statusEl.textContent = "No pudimos copiar automaticamente. Toca 'Copiar codigo' antes de continuar.";
+                statusEl.textContent = "No pudimos copiar automaticamente. Toca 'Copiar codigo' antes de abrir " + STORE_LABEL + ".";
                 statusEl.classList.add("error");
             }
 
@@ -185,17 +197,17 @@
                 }).catch(markFailed);
             });
 
-            // Redirige automaticamente a Play despues de unos segundos para
+            // Redirige automaticamente a la tienda despues de unos segundos para
             // dar tiempo al portapapeles. El usuario puede tocar el boton antes.
             var seconds = 3;
             function tick() {
                 if (seconds > 0) {
-                    goPlayBtn.textContent = "Abrir Google Play (" + seconds + ")";
+                    goStoreBtn.textContent = "Abrir " + STORE_LABEL + " (" + seconds + ")";
                     seconds--;
                     setTimeout(tick, 1000);
                 } else {
-                    goPlayBtn.textContent = "Abrir Google Play";
-                    window.location.href = PLAY_URL;
+                    goStoreBtn.textContent = "Abrir " + STORE_LABEL;
+                    window.location.href = STORE_URL;
                 }
             }
             tick();
