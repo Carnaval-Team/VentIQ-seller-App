@@ -15,5 +15,8 @@
       "Bash(xargs wc:*)",
       "Bash(xargs -I {} basename {})"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "supabase"
+  ]
 }
