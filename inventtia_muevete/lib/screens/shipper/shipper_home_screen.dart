@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/app_theme.dart';
@@ -10,7 +8,7 @@ import '../../models/oferta_carga_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/carga_provider.dart';
 import '../../providers/theme_provider.dart';
-import '../../widgets/map_widget.dart';
+import '../../widgets/route_map_widget.dart';
 import 'cargo_location_picker_screen.dart';
 import 'carrier_directory_screen.dart';
 
@@ -136,28 +134,111 @@ class _MisCargasTab extends StatelessWidget {
 
     return RefreshIndicator(
       onRefresh: () {
-        final uid =
-            context.read<AuthProvider>().user?.id;
+        final uid = context.read<AuthProvider>().user?.id;
         if (uid != null) {
           return context.read<CargaProvider>().loadMisCargas(uid);
         }
         return Future.value();
       },
-      child: ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemCount: provider.misCargas.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, i) {
-          final carga = provider.misCargas[i];
-          return _CargaCard(
-            carga: carga,
-            isDark: isDark,
-            onTap: () => _showDetalle(context, carga, isDark),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final tableWidth = constraints.maxWidth;
+          return SingleChildScrollView(
+            child: SizedBox(
+              width: tableWidth,
+              child: DataTable(
+                showCheckboxColumn: false,
+                columnSpacing: 10,
+                horizontalMargin: 12,
+                headingRowHeight: 38,
+                dataRowMinHeight: 44,
+                dataRowMaxHeight: 56,
+                headingRowColor: WidgetStateProperty.all(
+                  isDark ? AppTheme.darkCard : Colors.grey[100],
+                ),
+                columns: [
+                  DataColumn(label: _hdr('Origen', isDark)),
+                  DataColumn(label: _hdr('Destino', isDark)),
+                  DataColumn(label: _hdr('Tipo', isDark)),
+                  DataColumn(label: _hdr('Equipo', isDark)),
+                  DataColumn(label: _hdr('Mercancía', isDark)),
+                  DataColumn(label: _hdr('Peso', isDark)),
+                  DataColumn(label: _hdr('Dist.', isDark)),
+                  DataColumn(label: _hdr('Precio', isDark)),
+                  DataColumn(label: _hdr('Recogida', isDark)),
+                  DataColumn(label: _hdr('Ofertas', isDark)),
+                  DataColumn(label: _hdr('Estado', isDark)),
+                ],
+                rows: provider.misCargas.map((c) {
+                  final peso = c.pesoKg != null
+                      ? '${c.pesoKg!.toStringAsFixed(0)} ${c.unidadPeso}'
+                      : '—';
+                  final dist = c.distanciaKm != null
+                      ? '${c.distanciaKm!.toStringAsFixed(0)} km'
+                      : '—';
+                  final precio = c.precioOfertado != null
+                      ? '\$${c.precioOfertado!.toStringAsFixed(0)} ${c.moneda}'
+                      : '—';
+                  final recogida = c.fechaRecogida != null
+                      ? '${c.fechaRecogida!.day.toString().padLeft(2, '0')}/'
+                          '${c.fechaRecogida!.month.toString().padLeft(2, '0')}/'
+                          '${c.fechaRecogida!.year}'
+                      : '—';
+                  final ofertas = c.ofertasCount != null && c.ofertasCount! > 0
+                      ? '${c.ofertasCount}'
+                      : '—';
+                  return DataRow(
+                    onSelectChanged: (_) => _showDetalle(context, c, isDark),
+                    cells: [
+                      DataCell(_cel(c.ciudadOrigen ?? c.dirOrigen, isDark, bold: true)),
+                      DataCell(_cel(c.ciudadDestino ?? c.dirDestino, isDark, bold: true)),
+                      DataCell(_EstadoBadge(estado: c.tipoLabel, color: AppTheme.primaryColor)),
+                      DataCell(_cel(c.tipoEquipo?.toUpperCase() ?? '—', isDark)),
+                      DataCell(_cel(c.tipoMercancia ?? '—', isDark)),
+                      DataCell(_cel(peso, isDark)),
+                      DataCell(_cel(dist, isDark)),
+                      DataCell(Text(
+                        precio,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.primaryColor,
+                        ),
+                      )),
+                      DataCell(_cel(recogida, isDark)),
+                      DataCell(ofertas == '—'
+                          ? _cel('—', isDark)
+                          : _EstadoBadge(
+                              estado: '$ofertas oferta(s)',
+                              color: Colors.amber[800]!)),
+                      DataCell(_EstadoBadge(estado: c.estadoLabel)),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
           );
         },
       ),
     );
   }
+
+  static Widget _hdr(String t, bool isDark) => Text(t,
+      style: TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 11,
+          color: isDark ? Colors.white70 : Colors.grey[700]));
+
+  static Widget _cel(String t, bool isDark, {bool bold = false}) => Text(
+        t,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: bold ? FontWeight.w600 : FontWeight.normal,
+          color: isDark ? Colors.white : const Color(0xFF1A1D27),
+        ),
+      );
 
   void _showDetalle(
       BuildContext context, CargaModel carga, bool isDark) {
@@ -942,31 +1023,12 @@ class _DetalleCargaScreen extends StatefulWidget {
 }
 
 class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
-  final MapController _mapController = MapController();
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<CargaProvider>().loadOfertasCarga(widget.carga.id);
-      _fitMapToRoute();
     });
-  }
-
-  void _fitMapToRoute() {
-    final c = widget.carga;
-    if (c.latOrigen == 0 && c.latDestino == 0) return;
-    try {
-      _mapController.fitCamera(
-        CameraFit.bounds(
-          bounds: LatLngBounds.fromPoints([
-            LatLng(c.latOrigen, c.lonOrigen),
-            LatLng(c.latDestino, c.lonDestino),
-          ]),
-          padding: const EdgeInsets.all(40),
-        ),
-      );
-    } catch (_) {}
   }
 
   @override
@@ -996,59 +1058,13 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
       body: ListView(
         padding: EdgeInsets.zero,
         children: [
-          // Route map
-          SizedBox(
-            height: 200,
-            child: MapWidget(
-              isDark: isDark,
-              mapController: _mapController,
-              center: LatLng(
-                (carga.latOrigen + carga.latDestino) / 2,
-                (carga.lonOrigen + carga.lonDestino) / 2,
-              ),
-              zoom: 7.0,
-              markers: [
-                if (carga.latOrigen != 0)
-                  Marker(
-                    point: LatLng(carga.latOrigen, carga.lonOrigen),
-                    width: 36,
-                    height: 36,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppTheme.success,
-                        border:
-                            Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: const Icon(Icons.local_shipping,
-                          color: Colors.white, size: 18),
-                    ),
-                  ),
-                if (carga.latDestino != 0)
-                  Marker(
-                    point: LatLng(carga.latDestino, carga.lonDestino),
-                    width: 36,
-                    height: 44,
-                    alignment: Alignment.topCenter,
-                    child: Icon(Icons.location_on,
-                        color: AppTheme.error, size: 32),
-                  ),
-              ],
-              polylines: (
-                      carga.latOrigen != 0 && carga.latDestino != 0)
-                  ? [
-                      Polyline(
-                        points: [
-                          LatLng(carga.latOrigen, carga.lonOrigen),
-                          LatLng(carga.latDestino, carga.lonDestino),
-                        ],
-                        color: AppTheme.primaryColor
-                            .withValues(alpha: 0.65),
-                        strokeWidth: 2.5,
-                      )
-                    ]
-                  : const [],
-            ),
+          RouteMapWidget(
+            isDark: isDark,
+            latOrigen: carga.latOrigen,
+            lonOrigen: carga.lonOrigen,
+            latDestino: carga.latDestino,
+            lonDestino: carga.lonDestino,
+            height: 220,
           ),
           Padding(
             padding: const EdgeInsets.all(16),
@@ -1101,7 +1117,7 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
           ),
 
           const SizedBox(height: 12),
-          // Detalles mercancía
+          // ── Mercancía y equipo ─────────────────────────────────────
           _InfoCard(
             isDark: isDark,
             children: [
@@ -1113,53 +1129,256 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
                   textPrimary: textPrimary,
                   textSecondary: textSecondary,
                 ),
-              if (carga.tipoMercancia != null) ...
-                [
-                  const Divider(height: 1),
-                  _InfoRow(
-                    icon: Icons.category_outlined,
-                    label: 'Mercancía',
-                    value: carga.tipoMercancia!,
-                    textPrimary: textPrimary,
-                    textSecondary: textSecondary,
-                  ),
-                ],
-              if (carga.pesoKg != null) ...
-                [
-                  const Divider(height: 1),
-                  _InfoRow(
-                    icon: Icons.scale_outlined,
-                    label: 'Peso',
-                    value: '${carga.pesoKg!.toStringAsFixed(1)} kg',
-                    textPrimary: textPrimary,
-                    textSecondary: textSecondary,
-                  ),
-                ],
-              if (carga.precioOfertado != null) ...
-                [
-                  const Divider(height: 1),
-                  _InfoRow(
-                    icon: Icons.attach_money_outlined,
-                    label: 'Precio ofertado',
-                    value:
-                        '\$${carga.precioOfertado!.toStringAsFixed(2)} ${carga.moneda}',
-                    textPrimary: textPrimary,
-                    textSecondary: textSecondary,
-                  ),
-                ],
-              if (carga.tipoEquipo != null) ...
-                [
-                  const Divider(height: 1),
-                  _InfoRow(
-                    icon: Icons.local_shipping_outlined,
-                    label: 'Equipo',
-                    value: carga.tipoEquipo!.toUpperCase(),
-                    textPrimary: textPrimary,
-                    textSecondary: textSecondary,
-                  ),
-                ],
+              if (carga.tipoMercancia != null) ...[
+                const Divider(height: 1),
+                _InfoRow(
+                  icon: Icons.category_outlined,
+                  label: 'Mercancía',
+                  value: carga.tipoMercancia!,
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                ),
+              ],
+              if (carga.commodityId != null) ...[
+                const Divider(height: 1),
+                _InfoRow(
+                  icon: Icons.inventory_2_outlined,
+                  label: 'Commodity ID',
+                  value: '${carga.commodityId}',
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                ),
+              ],
+              if (carga.pesoKg != null) ...[
+                const Divider(height: 1),
+                _InfoRow(
+                  icon: Icons.scale_outlined,
+                  label: 'Peso',
+                  value:
+                      '${carga.pesoKg!.toStringAsFixed(1)} ${carga.unidadPeso}',
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                ),
+              ],
+              if (carga.precioOfertado != null) ...[
+                const Divider(height: 1),
+                _InfoRow(
+                  icon: Icons.attach_money_outlined,
+                  label: 'Precio ofertado',
+                  value:
+                      '\$${carga.precioOfertado!.toStringAsFixed(2)} ${carga.moneda}',
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                ),
+              ],
+              if (carga.tipoEquipo != null) ...[
+                const Divider(height: 1),
+                _InfoRow(
+                  icon: Icons.local_shipping_outlined,
+                  label: 'Equipo',
+                  value: carga.tipoEquipo!.toUpperCase(),
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                ),
+              ],
+              if (carga.opcionesEquipo.isNotEmpty) ...[
+                const Divider(height: 1),
+                _InfoRow(
+                  icon: Icons.build_outlined,
+                  label: 'Opciones equipo',
+                  value: carga.opcionesEquipo.join(', '),
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                ),
+              ],
+              if (carga.requiereRefrigeracion) ...[
+                const Divider(height: 1),
+                _InfoRow(
+                  icon: Icons.ac_unit_outlined,
+                  label: 'Refrigeración',
+                  value: 'Requerida',
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                ),
+              ],
+              if (carga.requiereSeguro) ...[
+                const Divider(height: 1),
+                _InfoRow(
+                  icon: Icons.shield_outlined,
+                  label: 'Seguro',
+                  value: 'Requerido',
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                ),
+              ],
+              if (carga.horasCarga != null) ...[
+                const Divider(height: 1),
+                _InfoRow(
+                  icon: Icons.timer_outlined,
+                  label: 'Horas de carga',
+                  value: '${carga.horasCarga!.toStringAsFixed(1)} h',
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                ),
+              ],
+              if (carga.horasDescarga != null) ...[
+                const Divider(height: 1),
+                _InfoRow(
+                  icon: Icons.timer_off_outlined,
+                  label: 'Horas de descarga',
+                  value: '${carga.horasDescarga!.toStringAsFixed(1)} h',
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                ),
+              ],
+              if (carga.instrucciones != null) ...[
+                const Divider(height: 1),
+                _InfoRow(
+                  icon: Icons.note_outlined,
+                  label: 'Instrucciones',
+                  value: carga.instrucciones!,
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                ),
+              ],
             ],
           ),
+
+          // ── Contacto en origen ─────────────────────────────────────────
+          if (carga.nombreUbicacionOrigen != null ||
+              carga.cpOrigen != null ||
+              carga.contactoOrigenNombre != null ||
+              carga.contactoOrigenTel != null) ...[
+            const SizedBox(height: 12),
+            _InfoCard(
+              isDark: isDark,
+              children: [
+                _InfoRow(
+                  icon: Icons.location_city_outlined,
+                  label: 'Lugar de origen',
+                  value: [
+                    if (carga.nombreUbicacionOrigen != null)
+                      carga.nombreUbicacionOrigen!,
+                    if (carga.cpOrigen != null) 'CP: ${carga.cpOrigen}',
+                  ].join(' · '),
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                ),
+                if (carga.contactoOrigenNombre != null) ...[
+                  const Divider(height: 1),
+                  _InfoRow(
+                    icon: Icons.person_outline,
+                    label: 'Contacto origen',
+                    value: [
+                      carga.contactoOrigenNombre!,
+                      if (carga.contactoOrigenTel != null)
+                        carga.contactoOrigenTel!,
+                    ].join(' · '),
+                    textPrimary: textPrimary,
+                    textSecondary: textSecondary,
+                  ),
+                ],
+              ],
+            ),
+          ],
+
+          // ── Contacto en destino ────────────────────────────────────────
+          if (carga.nombreUbicacionDestino != null ||
+              carga.cpDestino != null ||
+              carga.contactoDestinoNombre != null ||
+              carga.contactoDestinoTel != null) ...[
+            const SizedBox(height: 12),
+            _InfoCard(
+              isDark: isDark,
+              children: [
+                _InfoRow(
+                  icon: Icons.location_city_outlined,
+                  label: 'Lugar de destino',
+                  value: [
+                    if (carga.nombreUbicacionDestino != null)
+                      carga.nombreUbicacionDestino!,
+                    if (carga.cpDestino != null) 'CP: ${carga.cpDestino}',
+                  ].join(' · '),
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                ),
+                if (carga.contactoDestinoNombre != null) ...[
+                  const Divider(height: 1),
+                  _InfoRow(
+                    icon: Icons.person_outline,
+                    label: 'Contacto destino',
+                    value: [
+                      carga.contactoDestinoNombre!,
+                      if (carga.contactoDestinoTel != null)
+                        carga.contactoDestinoTel!,
+                    ].join(' · '),
+                    textPrimary: textPrimary,
+                    textSecondary: textSecondary,
+                  ),
+                ],
+              ],
+            ),
+          ],
+
+          // ── Fechas ─────────────────────────────────────────────────────
+          if (carga.fechaRecogida != null || carga.fechaEntrega != null) ...[
+            const SizedBox(height: 12),
+            _InfoCard(
+              isDark: isDark,
+              children: [
+                if (carga.fechaRecogida != null)
+                  _InfoRow(
+                    icon: Icons.calendar_today_outlined,
+                    label: 'Recogida',
+                    value: _fmtDetalle(carga.fechaRecogida!),
+                    textPrimary: textPrimary,
+                    textSecondary: textSecondary,
+                  ),
+                if (carga.fechaEntrega != null) ...[
+                  const Divider(height: 1),
+                  _InfoRow(
+                    icon: Icons.event_available_outlined,
+                    label: 'Entrega',
+                    value: _fmtDetalle(carga.fechaEntrega!),
+                    textPrimary: textPrimary,
+                    textSecondary: textSecondary,
+                  ),
+                ],
+              ],
+            ),
+          ],
+
+          // ── Referencia y privacidad ────────────────────────────────────
+          if (carga.numerosReferencia.isNotEmpty || carga.esPrivada) ...[
+            const SizedBox(height: 12),
+            _InfoCard(
+              isDark: isDark,
+              children: [
+                if (carga.numerosReferencia.isNotEmpty)
+                  _InfoRow(
+                    icon: Icons.tag_outlined,
+                    label: 'Referencia',
+                    value: carga.numerosReferencia.join(', '),
+                    textPrimary: textPrimary,
+                    textSecondary: textSecondary,
+                  ),
+                if (carga.esPrivada) ...[
+                  if (carga.numerosReferencia.isNotEmpty)
+                    const Divider(height: 1),
+                  _InfoRow(
+                    icon: Icons.lock_outline,
+                    label: 'Visibilidad',
+                    value: carga.horasAnticipacionPublica != null &&
+                            carga.horasAnticipacionPublica! > 0
+                        ? 'Privada · pública en ${carga.horasAnticipacionPublica}h'
+                        : 'Privada (solo red)',
+                    textPrimary: textPrimary,
+                    textSecondary: textSecondary,
+                  ),
+                ],
+              ],
+            ),
+          ],
 
           const SizedBox(height: 20),
           Text(
@@ -1278,6 +1497,9 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
       backgroundColor: ok ? Colors.green[700] : AppTheme.error,
     ));
   }
+
+  String _fmtDetalle(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 }
 
 Future<bool> _confirm(
@@ -1315,100 +1537,6 @@ Future<bool> _confirm(
 // ──────────────────────────────────────────────────────────────────────────────
 // Shared small widgets
 // ──────────────────────────────────────────────────────────────────────────────
-
-class _CargaCard extends StatelessWidget {
-  final CargaModel carga;
-  final bool isDark;
-  final VoidCallback onTap;
-  const _CargaCard(
-      {required this.carga,
-      required this.isDark,
-      required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final cardColor = isDark ? AppTheme.darkCard : Colors.white;
-    final textPrimary =
-        isDark ? Colors.white : const Color(0xFF1A1D27);
-    final textSecondary =
-        isDark ? Colors.white60 : Colors.grey[600]!;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: isDark
-                  ? AppTheme.darkBorder
-                  : Colors.grey[200]!),
-        ),
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    carga.rutaCorta,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                      color: textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _EstadoBadge(estado: carga.estadoLabel),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Icon(Icons.local_shipping_outlined,
-                    size: 14, color: textSecondary),
-                const SizedBox(width: 4),
-                Text(
-                  carga.tipoLabel,
-                  style: TextStyle(
-                      fontSize: 12, color: textSecondary),
-                ),
-                if (carga.pesoKg != null) ...
-                  [
-                    const SizedBox(width: 12),
-                    Icon(Icons.scale_outlined,
-                        size: 14, color: textSecondary),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${carga.pesoKg!.toStringAsFixed(0)} kg',
-                      style: TextStyle(
-                          fontSize: 12, color: textSecondary),
-                    ),
-                  ],
-                if (carga.precioOfertado != null) ...
-                  [
-                    const SizedBox(width: 12),
-                    Icon(Icons.attach_money_outlined,
-                        size: 14, color: textSecondary),
-                    Text(
-                      '\$${carga.precioOfertado!.toStringAsFixed(0)}',
-                      style: TextStyle(
-                          fontSize: 12, color: textSecondary),
-                    ),
-                  ],
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _OfertaCard extends StatelessWidget {
   final OfertaCargaModel oferta;

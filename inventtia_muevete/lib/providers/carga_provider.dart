@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/carga_model.dart';
+import '../models/estado_carga_model.dart';
 import '../models/oferta_carga_model.dart';
 import '../services/carga_service.dart';
 import '../services/oferta_carga_service.dart';
@@ -17,9 +18,13 @@ class CargaProvider extends ChangeNotifier {
   List<OfertaCargaModel> _ofertasCarga = []; // shipper: ofertas recibidas
   CargaModel? _cargaDetalle;
 
+  List<EstadoCargaModel> _historialEstados = [];
+  List<NomEstadoModel> _nomEstados = [];
+
   bool _loadingMisCargas = false;
   bool _loadingDisponibles = false;
   bool _loadingOfertas = false;
+  bool _loadingHistorial = false;
   bool _actionLoading = false;
   String? _error;
 
@@ -36,9 +41,13 @@ class CargaProvider extends ChangeNotifier {
   List<OfertaCargaModel> get ofertasCarga => _ofertasCarga;
   CargaModel? get cargaDetalle => _cargaDetalle;
 
+  List<EstadoCargaModel> get historialEstados => _historialEstados;
+  List<NomEstadoModel> get nomEstados => _nomEstados;
+
   bool get loadingMisCargas => _loadingMisCargas;
   bool get loadingDisponibles => _loadingDisponibles;
   bool get loadingOfertas => _loadingOfertas;
+  bool get loadingHistorial => _loadingHistorial;
   bool get actionLoading => _actionLoading;
   String? get error => _error;
 
@@ -126,18 +135,13 @@ class CargaProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> cancelarCarga(int cargaId) async {
+  Future<bool> cancelarCarga(int cargaId, {String? usuarioUuid}) async {
     _actionLoading = true;
     _error = null;
     notifyListeners();
     try {
-      await _cargaService.cancelarCarga(cargaId);
-      _misCargas = _misCargas
-          .map((c) => c.id == cargaId
-              ? CargaModel.fromJson(
-                  {..._cargaJsonMap(c), 'estado': 'cancelada'})
-              : c)
-          .toList();
+      await _cargaService.cancelarCarga(cargaId, usuarioUuid: usuarioUuid);
+      _refreshCargaEstado(cargaId, 'cancelada');
       return true;
     } catch (e) {
       _error = e.toString();
@@ -237,12 +241,12 @@ class CargaProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> confirmarRecogida(int cargaId) async {
+  Future<bool> confirmarRecogida(int cargaId, {int? driverId}) async {
     _actionLoading = true;
     _error = null;
     notifyListeners();
     try {
-      await _cargaService.confirmarRecogida(cargaId);
+      await _cargaService.confirmarRecogida(cargaId, driverId: driverId);
       _refreshCargaEstado(cargaId, 'en_transito');
       return true;
     } catch (e) {
@@ -254,12 +258,12 @@ class CargaProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> confirmarEntrega(int cargaId) async {
+  Future<bool> confirmarEntrega(int cargaId, {int? driverId}) async {
     _actionLoading = true;
     _error = null;
     notifyListeners();
     try {
-      await _cargaService.confirmarEntrega(cargaId);
+      await _cargaService.confirmarEntrega(cargaId, driverId: driverId);
       _refreshCargaEstado(cargaId, 'entregada');
       return true;
     } catch (e) {
@@ -289,20 +293,42 @@ class CargaProvider extends ChangeNotifier {
   }
 
   Future<bool> asignarCargaACarrier(
-      int cargaId, int carrierDriverId) async {
+      int cargaId, int carrierDriverId, {String? usuarioUuid}) async {
     _actionLoading = true;
     _error = null;
     notifyListeners();
     try {
-      await _cargaService.asignarCargaACarrier(cargaId, carrierDriverId);
+      await _cargaService.asignarCargaACarrier(
+          cargaId, carrierDriverId, usuarioUuid: usuarioUuid);
       _cargasDisponibles =
           _cargasDisponibles.where((c) => c.id != cargaId).toList();
+      _refreshCargaEstado(cargaId, 'aceptada');
       return true;
     } catch (e) {
       _error = e.toString();
       return false;
     } finally {
       _actionLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // ── Historial de estados ──────────────────────────────────────────────────
+
+  Future<void> loadHistorialEstados(int cargaId) async {
+    _loadingHistorial = true;
+    _error = null;
+    notifyListeners();
+    try {
+      _historialEstados =
+          await _cargaService.getHistorialEstados(cargaId);
+      if (_nomEstados.isEmpty) {
+        _nomEstados = await _cargaService.getNomEstados();
+      }
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _loadingHistorial = false;
       notifyListeners();
     }
   }

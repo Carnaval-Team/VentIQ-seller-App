@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/carga_model.dart';
+import '../models/estado_carga_model.dart';
 
 class CargaService {
   final _supabase = Supabase.instance.client;
@@ -19,7 +20,15 @@ class CargaService {
           .insert(carga.toInsertJson())
           .select()
           .single();
-      debugPrint('[CargaService] Carga publicada id=${data['id']}');
+      final int newId = data['id'] as int;
+      debugPrint('[CargaService] Carga publicada id=$newId');
+      // Registrar estado inicial en la bitácora
+      await _registrarEstado(
+        cargaId: newId,
+        estadoCodigo: 'publicada',
+        usuarioUuid: carga.shipperId,
+        motivo: 'Carga creada',
+      );
       return CargaModel.fromJson(data);
     } catch (e) {
       debugPrint('[CargaService] Error publicarCarga: $e');
@@ -61,13 +70,14 @@ class CargaService {
     }
   }
 
-  Future<void> cancelarCarga(int id) async {
+  Future<void> cancelarCarga(int id, {String? usuarioUuid}) async {
     try {
-      await _supabase
-          .schema('muevete')
-          .from('cargas')
-          .update({'estado': 'cancelada', 'updated_at': DateTime.now().toIso8601String()})
-          .eq('id', id);
+      await _registrarEstado(
+        cargaId: id,
+        estadoCodigo: 'cancelada',
+        usuarioUuid: usuarioUuid,
+        motivo: 'Cancelada por el shipper',
+      );
       debugPrint('[CargaService] Carga $id cancelada');
     } catch (e) {
       debugPrint('[CargaService] Error cancelarCarga: $e');
@@ -75,17 +85,75 @@ class CargaService {
     }
   }
 
-  Future<void> actualizarEstado(int id, String nuevoEstado) async {
+  /// Cambia el estado de una carga insertando en la bitácora [app_dat_estado_carga].
+  /// La columna `estado` de [cargas] se mantiene sincronizada automáticamente
+  /// por la función SQL [fn_cambiar_estado_carga].
+  Future<void> actualizarEstado(
+    int id,
+    String nuevoEstado, {
+    String? usuarioUuid,
+    int? driverId,
+    String? motivo,
+    Map<String, dynamic>? metadata,
+  }) async {
     try {
-      await _supabase
-          .schema('muevete')
-          .from('cargas')
-          .update({'estado': nuevoEstado, 'updated_at': DateTime.now().toIso8601String()})
-          .eq('id', id);
+      await _registrarEstado(
+        cargaId: id,
+        estadoCodigo: nuevoEstado,
+        usuarioUuid: usuarioUuid,
+        driverId: driverId,
+        motivo: motivo,
+        metadata: metadata,
+      );
       debugPrint('[CargaService] Carga $id → estado=$nuevoEstado');
     } catch (e) {
       debugPrint('[CargaService] Error actualizarEstado: $e');
       rethrow;
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // HISTORIAL DE ESTADOS
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /// Devuelve la bitácora completa de cambios de estado para una carga,
+  /// ordenada de más reciente a más antigua.
+  Future<List<EstadoCargaModel>> getHistorialEstados(int cargaId) async {
+    try {
+      final data = await _supabase
+          .schema('muevete')
+          .from('app_dat_estado_carga')
+          .select('*, app_nom_estado(nombre)')
+          .eq('carga_id', cargaId)
+          .order('created_at', ascending: false);
+      return (data as List).map((e) {
+        final row = Map<String, dynamic>.from(e as Map);
+        // Aplanar el join anidado
+        final nomMap = row['app_nom_estado'];
+        if (nomMap is Map) {
+          row['estado_nombre'] = nomMap['nombre'];
+        }
+        return EstadoCargaModel.fromJson(row);
+      }).toList();
+    } catch (e) {
+      debugPrint('[CargaService] Error getHistorialEstados: $e');
+      return [];
+    }
+  }
+
+  /// Devuelve el catálogo completo de estados activos.
+  Future<List<NomEstadoModel>> getNomEstados() async {
+    try {
+      final data = await _supabase
+          .schema('muevete')
+          .from('app_nom_estado')
+          .select()
+          .eq('activo', true)
+          .order('orden');
+      return (data as List).map((e) => NomEstadoModel.fromJson(e)).toList();
+    } catch (e) {
+      debugPrint('[CargaService] Error getNomEstados: $e');
+      return [];
     }
   }
 
@@ -143,7 +211,6 @@ class CargaService {
   // DISPATCHER: cargas gestionadas por su flota
   // ──────────────────────────────────────────────────────────────────────────
 
-  /// Obtiene todas las cargas asignadas a transportistas del dispatcher.
   Future<List<CargaModel>> getCargasDispatcher(
       List<int> carrierDriverIds) async {
     try {
@@ -166,14 +233,20 @@ class CargaService {
     }
   }
 
-  /// Asigna una carga disponible a un transportista de la flota del dispatcher.
-  Future<void> asignarCargaACarrier(int cargaId, int carrierDriverId) async {
+  Future<void> asignarCargaACarrier(int cargaId, int carrierDriverId,
+      {String? usuarioUuid}) async {
     try {
       await _supabase.schema('muevete').from('cargas').update({
         'carrier_driver_id': carrierDriverId,
-        'estado': 'aceptada',
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', cargaId);
+      await _registrarEstado(
+        cargaId: cargaId,
+        estadoCodigo: 'aceptada',
+        usuarioUuid: usuarioUuid,
+        driverId: carrierDriverId,
+        motivo: 'Asignado por dispatcher',
+      );
       debugPrint(
           '[CargaService] Carga $cargaId asignada a carrier $carrierDriverId');
     } catch (e) {
@@ -205,9 +278,41 @@ class CargaService {
   // CARRIER: confirmar recogida y entrega
   // ──────────────────────────────────────────────────────────────────────────
 
-  Future<void> confirmarRecogida(int cargaId) =>
-      actualizarEstado(cargaId, 'en_transito');
+  Future<void> confirmarRecogida(int cargaId, {int? driverId}) =>
+      actualizarEstado(
+        cargaId,
+        'en_transito',
+        driverId: driverId,
+        motivo: 'Recogida confirmada por carrier',
+      );
 
-  Future<void> confirmarEntrega(int cargaId) =>
-      actualizarEstado(cargaId, 'entregada');
+  Future<void> confirmarEntrega(int cargaId, {int? driverId}) =>
+      actualizarEstado(
+        cargaId,
+        'entregada',
+        driverId: driverId,
+        motivo: 'Entrega confirmada por carrier',
+      );
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Helper privado: inserta en la bitácora vía RPC
+  // ──────────────────────────────────────────────────────────────────────────
+
+  Future<void> _registrarEstado({
+    required int cargaId,
+    required String estadoCodigo,
+    String? usuarioUuid,
+    int? driverId,
+    String? motivo,
+    Map<String, dynamic>? metadata,
+  }) async {
+    await _supabase.schema('muevete').rpc('fn_cambiar_estado_carga', params: {
+      'p_carga_id':      cargaId,
+      'p_estado_codigo': estadoCodigo,
+      if (usuarioUuid != null) 'p_usuario_uuid': usuarioUuid,
+      if (driverId != null)    'p_driver_id':    driverId,
+      if (motivo != null)      'p_motivo':       motivo,
+      if (metadata != null)    'p_metadata':     metadata,
+    });
+  }
 }

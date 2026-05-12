@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/app_theme.dart';
@@ -9,7 +7,7 @@ import '../../models/carga_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/carga_provider.dart';
 import '../../providers/theme_provider.dart';
-import '../../widgets/map_widget.dart';
+import '../../widgets/route_map_widget.dart';
 
 class CarrierHomeScreen extends StatefulWidget {
   const CarrierHomeScreen({super.key});
@@ -98,8 +96,11 @@ class _CargasDisponiblesTabState extends State<_CargasDisponiblesTab> {
   String? _tipoFiltro;
   String? _tipoEquipoFiltro;
   String? _tipoMercanciaFiltro;
+  String? _opcionEquipoExtraFiltro;
   bool _soloRefrigeracion = false;
   bool _soloSeguro = false;
+  bool _soloPrivadas = false;
+  DateTime? _fechaRecogidaDesde;
 
   @override
   void dispose() {
@@ -109,6 +110,13 @@ class _CargasDisponiblesTabState extends State<_CargasDisponiblesTab> {
     _precioMaxCtrl.dispose();
     _distMaxCtrl.dispose();
     super.dispose();
+  }
+
+  void _swapOrigenDestino() {
+    final tmpO = _ciudadOrigenCtrl.text;
+    _ciudadOrigenCtrl.text = _ciudadDestinoCtrl.text;
+    _ciudadDestinoCtrl.text = tmpO;
+    setState(() => _page = 0);
   }
 
   bool _applyFilter(CargaModel c) {
@@ -145,6 +153,11 @@ class _CargasDisponiblesTabState extends State<_CargasDisponiblesTab> {
     }
     if (_soloRefrigeracion && !c.requiereRefrigeracion) return false;
     if (_soloSeguro && !c.requiereSeguro) return false;
+    if (_soloPrivadas && !c.esPrivada) return false;
+    if (_opcionEquipoExtraFiltro != null &&
+        !c.opcionesEquipo.contains(_opcionEquipoExtraFiltro)) return false;
+    if (_fechaRecogidaDesde != null && c.fechaRecogida != null &&
+        c.fechaRecogida!.isBefore(_fechaRecogidaDesde!)) return false;
     return true;
   }
 
@@ -237,10 +250,23 @@ class _CargasDisponiblesTabState extends State<_CargasDisponiblesTab> {
                     _soloSeguro = v;
                     _page = 0;
                   }),
-                  onApply: () => setState(() {
+                  opcionEquipoExtraFiltro: _opcionEquipoExtraFiltro,
+                  soloPrivadas: _soloPrivadas,
+                  fechaRecogidaDesde: _fechaRecogidaDesde,
+                  onOpcionEquipoExtraChanged: (v) => setState(() {
+                    _opcionEquipoExtraFiltro = v;
                     _page = 0;
-                    _showFiltros = false;
                   }),
+                  onSoloPrivadasChanged: (v) => setState(() {
+                    _soloPrivadas = v;
+                    _page = 0;
+                  }),
+                  onFechaRecogidaDesdeChanged: (v) => setState(() {
+                    _fechaRecogidaDesde = v;
+                    _page = 0;
+                  }),
+                  onSwapOrigenDestino: _swapOrigenDestino,
+                  onApply: () => setState(() => _page = 0),
                   onClear: () {
                     _ciudadOrigenCtrl.clear();
                     _ciudadDestinoCtrl.clear();
@@ -251,10 +277,12 @@ class _CargasDisponiblesTabState extends State<_CargasDisponiblesTab> {
                       _tipoFiltro = null;
                       _tipoEquipoFiltro = null;
                       _tipoMercanciaFiltro = null;
+                      _opcionEquipoExtraFiltro = null;
                       _soloRefrigeracion = false;
                       _soloSeguro = false;
+                      _soloPrivadas = false;
+                      _fechaRecogidaDesde = null;
                       _page = 0;
-                      _showFiltros = false;
                     });
                   },
                 )
@@ -273,64 +301,88 @@ class _CargasDisponiblesTabState extends State<_CargasDisponiblesTab> {
                   : 'Ninguna carga coincide con los filtros.',
             ),
           )
-        else ...[  
+        else ...[
           Expanded(
-            child: SingleChildScrollView(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  showCheckboxColumn: false,
-                  columnSpacing: 16,
-                  headingRowHeight: 40,
-                  dataRowMinHeight: 48,
-                  dataRowMaxHeight: 48,
-                  headingRowColor: WidgetStateProperty.all(
-                    isDark ? AppTheme.darkCard : Colors.grey[100],
-                  ),
-                  columns: [
-                    DataColumn(label: _headerCell('Cliente', isDark)),
-                    DataColumn(label: _headerCell('Origen', isDark)),
-                    DataColumn(label: _headerCell('Destino', isDark)),
-                    DataColumn(label: _headerCell('Tipo', isDark)),
-                    DataColumn(label: _headerCell('Peso', isDark)),
-                    DataColumn(label: _headerCell('Precio', isDark)),
-                  ],
-                  rows: pageItems.map((c) {
-                    final cliente = c.shipperNombre ??
-                        (c.shipperId.length > 8
-                            ? '${c.shipperId.substring(0, 8)}…'
-                            : c.shipperId);
-                    final peso = c.pesoKg != null
-                        ? '${c.pesoKg!.toStringAsFixed(0)} ${c.unidadPeso}'
-                        : '—';
-                    final precio = c.precioOfertado != null
-                        ? '\$${c.precioOfertado!.toStringAsFixed(0)}'
-                        : '—';
-                    return DataRow(
-                      onSelectChanged: (_) => _openDetalle(context, c),
-                      cells: [
-                        DataCell(_cell(cliente, isDark)),
-                        DataCell(
-                            _cell(c.ciudadOrigen ?? c.dirOrigen, isDark)),
-                        DataCell(_cell(
-                            c.ciudadDestino ?? c.dirDestino, isDark)),
-                        DataCell(_Badge(
-                            estado: c.tipoLabel,
-                            color: AppTheme.primaryColor)),
-                        DataCell(_cell(peso, isDark)),
-                        DataCell(Text(
-                          precio,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.primaryColor,
-                          ),
-                        )),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final tableWidth = constraints.maxWidth;
+                return SingleChildScrollView(
+                  child: SizedBox(
+                    width: tableWidth,
+                    child: DataTable(
+                      showCheckboxColumn: false,
+                      columnSpacing: 10,
+                      horizontalMargin: 12,
+                      headingRowHeight: 38,
+                      dataRowMinHeight: 44,
+                      dataRowMaxHeight: 56,
+                      headingRowColor: WidgetStateProperty.all(
+                        isDark ? AppTheme.darkCard : Colors.grey[100],
+                      ),
+                      columns: [
+                        DataColumn(label: _headerCell('Origen', isDark)),
+                        DataColumn(label: _headerCell('Destino', isDark)),
+                        DataColumn(label: _headerCell('Tipo', isDark)),
+                        DataColumn(label: _headerCell('Equipo', isDark)),
+                        DataColumn(label: _headerCell('Mercancía', isDark)),
+                        DataColumn(label: _headerCell('Peso', isDark)),
+                        DataColumn(label: _headerCell('Dist.', isDark)),
+                        DataColumn(label: _headerCell('Precio', isDark)),
+                        DataColumn(label: _headerCell('Recogida', isDark)),
+                        DataColumn(label: _headerCell('Estado', isDark)),
                       ],
-                    );
-                  }).toList(),
-                ),
-              ),
+                      rows: pageItems.map((c) {
+                        final peso = c.pesoKg != null
+                            ? '${c.pesoKg!.toStringAsFixed(0)} ${c.unidadPeso}'
+                            : '—';
+                        final dist = c.distanciaKm != null
+                            ? '${c.distanciaKm!.toStringAsFixed(0)} km'
+                            : '—';
+                        final precio = c.precioOfertado != null
+                            ? '\$${c.precioOfertado!.toStringAsFixed(0)}'
+                            : '—';
+                        final recogida = c.fechaRecogida != null
+                            ? '${c.fechaRecogida!.day.toString().padLeft(2, '0')}/'
+                              '${c.fechaRecogida!.month.toString().padLeft(2, '0')}/'
+                              '${c.fechaRecogida!.year}'
+                            : '—';
+                        return DataRow(
+                          onSelectChanged: (_) => _openDetalle(context, c),
+                          cells: [
+                            DataCell(_cell(
+                                c.ciudadOrigen ?? c.dirOrigen, isDark,
+                                bold: true)),
+                            DataCell(_cell(
+                                c.ciudadDestino ?? c.dirDestino, isDark,
+                                bold: true)),
+                            DataCell(_Badge(
+                                estado: c.tipoLabel,
+                                color: AppTheme.primaryColor)),
+                            DataCell(_cell(
+                                c.tipoEquipo?.toUpperCase() ?? '—', isDark)),
+                            DataCell(_cell(
+                                c.tipoMercancia ?? '—', isDark)),
+                            DataCell(_cell(peso, isDark)),
+                            DataCell(_cell(dist, isDark)),
+                            DataCell(Text(
+                              precio,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.primaryColor,
+                              ),
+                            )),
+                            DataCell(_cell(recogida, isDark)),
+                            DataCell(_Badge(
+                                estado: c.estadoLabel,
+                                color: _colorForEstado(c.estado))),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
           // ── Pagination ──────────────────────────────────────────────────
@@ -384,27 +436,6 @@ class _CargasDisponiblesTabState extends State<_CargasDisponiblesTab> {
     );
   }
 
-  Widget _headerCell(String text, bool isDark) => Text(
-        text,
-        style: TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 12,
-            color: isDark ? Colors.white70 : Colors.grey[700]),
-      );
-
-  Widget _cell(String text, bool isDark) => SizedBox(
-        width: 110,
-        child: Text(
-          text,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 12,
-            color: isDark ? Colors.white : const Color(0xFF1A1D27),
-          ),
-        ),
-      );
-
   void _openDetalle(BuildContext context, CargaModel carga) {
     Navigator.push(
       context,
@@ -412,6 +443,41 @@ class _CargasDisponiblesTabState extends State<_CargasDisponiblesTab> {
         builder: (_) => _DetalleCargaCarrierScreen(carga: carga),
       ),
     );
+  }
+
+  Widget _headerCell(String text, bool isDark) => Text(
+        text,
+        style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 11,
+            color: isDark ? Colors.white70 : Colors.grey[700]),
+      );
+
+  Widget _cell(String text, bool isDark, {bool bold = false}) => Text(
+        text,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: bold ? FontWeight.w600 : FontWeight.normal,
+          color: isDark ? Colors.white : const Color(0xFF1A1D27),
+        ),
+      );
+
+  Color _colorForEstado(String estado) {
+    switch (estado) {
+      case 'publicada':
+        return Colors.blue;
+      case 'ofertada':
+        return Colors.orange;
+      case 'en_matching':
+        return Colors.deepOrange;
+      case 'aceptada':
+      case 'en_transito':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
   }
 }
 
@@ -431,30 +497,6 @@ class _DetalleCargaCarrierScreen extends StatefulWidget {
 
 class _DetalleCargaCarrierScreenState
     extends State<_DetalleCargaCarrierScreen> {
-  final MapController _mapController = MapController();
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _fitMapToRoute());
-  }
-
-  void _fitMapToRoute() {
-    final c = widget.carga;
-    if (c.latOrigen == 0 && c.latDestino == 0) return;
-    try {
-      _mapController.fitCamera(
-        CameraFit.bounds(
-          bounds: LatLngBounds.fromPoints([
-            LatLng(c.latOrigen, c.lonOrigen),
-            LatLng(c.latDestino, c.lonDestino),
-          ]),
-          padding: const EdgeInsets.all(40),
-        ),
-      );
-    } catch (_) {}
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -479,57 +521,13 @@ class _DetalleCargaCarrierScreenState
       body: ListView(
         padding: EdgeInsets.zero,
         children: [
-          SizedBox(
-            height: 200,
-            child: MapWidget(
-              isDark: isDark,
-              mapController: _mapController,
-              center: LatLng(
-                (carga.latOrigen + carga.latDestino) / 2,
-                (carga.lonOrigen + carga.lonDestino) / 2,
-              ),
-              zoom: 7.0,
-              markers: [
-                if (carga.latOrigen != 0)
-                  Marker(
-                    point: LatLng(carga.latOrigen, carga.lonOrigen),
-                    width: 36,
-                    height: 36,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppTheme.success,
-                        border:
-                            Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: const Icon(Icons.local_shipping,
-                          color: Colors.white, size: 18),
-                    ),
-                  ),
-                if (carga.latDestino != 0)
-                  Marker(
-                    point: LatLng(carga.latDestino, carga.lonDestino),
-                    width: 36,
-                    height: 44,
-                    alignment: Alignment.topCenter,
-                    child: Icon(Icons.location_on,
-                        color: AppTheme.error, size: 32),
-                  ),
-              ],
-              polylines: (carga.latOrigen != 0 && carga.latDestino != 0)
-                  ? [
-                      Polyline(
-                        points: [
-                          LatLng(carga.latOrigen, carga.lonOrigen),
-                          LatLng(carga.latDestino, carga.lonDestino),
-                        ],
-                        color: AppTheme.primaryColor
-                            .withValues(alpha: 0.65),
-                        strokeWidth: 2.5,
-                      )
-                    ]
-                  : const [],
-            ),
+          RouteMapWidget(
+            isDark: isDark,
+            latOrigen: carga.latOrigen,
+            lonOrigen: carga.lonOrigen,
+            latDestino: carga.latDestino,
+            lonDestino: carga.lonDestino,
+            height: 220,
           ),
           Padding(
             padding: const EdgeInsets.all(16),
@@ -581,6 +579,7 @@ class _DetalleCargaCarrierScreenState
                   ],
                 ),
                 const SizedBox(height: 12),
+                // ── Mercancía y equipo ──────────────────────────────────
                 _InfoCard(
                   isDark: isDark,
                   children: [
@@ -592,6 +591,16 @@ class _DetalleCargaCarrierScreenState
                         textPrimary: textPrimary,
                         textSecondary: textSecondary,
                       ),
+                    if (carga.commodityId != null) ...[
+                      const Divider(height: 1),
+                      _InfoRow(
+                        icon: Icons.inventory_2_outlined,
+                        label: 'Commodity ID',
+                        value: '${carga.commodityId}',
+                        textPrimary: textPrimary,
+                        textSecondary: textSecondary,
+                      ),
+                    ],
                     if (carga.pesoKg != null) ...[
                       const Divider(height: 1),
                       _InfoRow(
@@ -607,8 +616,18 @@ class _DetalleCargaCarrierScreenState
                       const Divider(height: 1),
                       _InfoRow(
                         icon: Icons.local_shipping_outlined,
-                        label: 'Equipo requerido',
+                        label: 'Equipo',
                         value: carga.tipoEquipo!.toUpperCase(),
+                        textPrimary: textPrimary,
+                        textSecondary: textSecondary,
+                      ),
+                    ],
+                    if (carga.opcionesEquipo.isNotEmpty) ...[
+                      const Divider(height: 1),
+                      _InfoRow(
+                        icon: Icons.build_outlined,
+                        label: 'Opciones equipo',
+                        value: carga.opcionesEquipo.join(', '),
                         textPrimary: textPrimary,
                         textSecondary: textSecondary,
                       ),
@@ -628,8 +647,18 @@ class _DetalleCargaCarrierScreenState
                       const Divider(height: 1),
                       _InfoRow(
                         icon: Icons.ac_unit_outlined,
-                        label: 'Requiere refrigeración',
-                        value: 'Sí',
+                        label: 'Refrigeración',
+                        value: 'Requerida',
+                        textPrimary: textPrimary,
+                        textSecondary: textSecondary,
+                      ),
+                    ],
+                    if (carga.requiereSeguro) ...[
+                      const Divider(height: 1),
+                      _InfoRow(
+                        icon: Icons.shield_outlined,
+                        label: 'Seguro',
+                        value: 'Requerido',
                         textPrimary: textPrimary,
                         textSecondary: textSecondary,
                       ),
@@ -639,8 +668,7 @@ class _DetalleCargaCarrierScreenState
                       _InfoRow(
                         icon: Icons.timer_outlined,
                         label: 'Horas de carga',
-                        value:
-                            '${carga.horasCarga!.toStringAsFixed(1)} h',
+                        value: '${carga.horasCarga!.toStringAsFixed(1)} h',
                         textPrimary: textPrimary,
                         textSecondary: textSecondary,
                       ),
@@ -660,14 +688,163 @@ class _DetalleCargaCarrierScreenState
                       const Divider(height: 1),
                       _InfoRow(
                         icon: Icons.description_outlined,
-                        label: 'Notas del shipper',
+                        label: 'Notas',
                         value: carga.descripcion!,
+                        textPrimary: textPrimary,
+                        textSecondary: textSecondary,
+                      ),
+                    ],
+                    if (carga.instrucciones != null) ...[
+                      const Divider(height: 1),
+                      _InfoRow(
+                        icon: Icons.note_outlined,
+                        label: 'Instrucciones',
+                        value: carga.instrucciones!,
                         textPrimary: textPrimary,
                         textSecondary: textSecondary,
                       ),
                     ],
                   ],
                 ),
+
+                // ── Contacto en origen ───────────────────────────────────
+                if (carga.nombreUbicacionOrigen != null ||
+                    carga.cpOrigen != null ||
+                    carga.contactoOrigenNombre != null ||
+                    carga.contactoOrigenTel != null) ...[
+                  const SizedBox(height: 12),
+                  _InfoCard(
+                    isDark: isDark,
+                    children: [
+                      _InfoRow(
+                        icon: Icons.location_city_outlined,
+                        label: 'Lugar de origen',
+                        value: [
+                          if (carga.nombreUbicacionOrigen != null)
+                            carga.nombreUbicacionOrigen!,
+                          if (carga.cpOrigen != null) 'CP: ${carga.cpOrigen}',
+                        ].join(' · '),
+                        textPrimary: textPrimary,
+                        textSecondary: textSecondary,
+                      ),
+                      if (carga.contactoOrigenNombre != null) ...[
+                        const Divider(height: 1),
+                        _InfoRow(
+                          icon: Icons.person_outline,
+                          label: 'Contacto origen',
+                          value: [
+                            carga.contactoOrigenNombre!,
+                            if (carga.contactoOrigenTel != null)
+                              carga.contactoOrigenTel!,
+                          ].join(' · '),
+                          textPrimary: textPrimary,
+                          textSecondary: textSecondary,
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+
+                // ── Contacto en destino ──────────────────────────────────
+                if (carga.nombreUbicacionDestino != null ||
+                    carga.cpDestino != null ||
+                    carga.contactoDestinoNombre != null ||
+                    carga.contactoDestinoTel != null) ...[
+                  const SizedBox(height: 12),
+                  _InfoCard(
+                    isDark: isDark,
+                    children: [
+                      _InfoRow(
+                        icon: Icons.location_city_outlined,
+                        label: 'Lugar de destino',
+                        value: [
+                          if (carga.nombreUbicacionDestino != null)
+                            carga.nombreUbicacionDestino!,
+                          if (carga.cpDestino != null)
+                            'CP: ${carga.cpDestino}',
+                        ].join(' · '),
+                        textPrimary: textPrimary,
+                        textSecondary: textSecondary,
+                      ),
+                      if (carga.contactoDestinoNombre != null) ...[
+                        const Divider(height: 1),
+                        _InfoRow(
+                          icon: Icons.person_outline,
+                          label: 'Contacto destino',
+                          value: [
+                            carga.contactoDestinoNombre!,
+                            if (carga.contactoDestinoTel != null)
+                              carga.contactoDestinoTel!,
+                          ].join(' · '),
+                          textPrimary: textPrimary,
+                          textSecondary: textSecondary,
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+
+                // ── Fechas ───────────────────────────────────────────────
+                if (carga.fechaRecogida != null ||
+                    carga.fechaEntrega != null) ...[
+                  const SizedBox(height: 12),
+                  _InfoCard(
+                    isDark: isDark,
+                    children: [
+                      if (carga.fechaRecogida != null)
+                        _InfoRow(
+                          icon: Icons.calendar_today_outlined,
+                          label: 'Recogida',
+                          value: _fmtDate(carga.fechaRecogida!),
+                          textPrimary: textPrimary,
+                          textSecondary: textSecondary,
+                        ),
+                      if (carga.fechaEntrega != null) ...[
+                        const Divider(height: 1),
+                        _InfoRow(
+                          icon: Icons.event_available_outlined,
+                          label: 'Entrega',
+                          value: _fmtDate(carga.fechaEntrega!),
+                          textPrimary: textPrimary,
+                          textSecondary: textSecondary,
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+
+                // ── Referencia y privacidad ──────────────────────────────
+                if (carga.numerosReferencia.isNotEmpty || carga.esPrivada) ...[
+                  const SizedBox(height: 12),
+                  _InfoCard(
+                    isDark: isDark,
+                    children: [
+                      if (carga.numerosReferencia.isNotEmpty)
+                        _InfoRow(
+                          icon: Icons.tag_outlined,
+                          label: 'Referencia',
+                          value: carga.numerosReferencia.join(', '),
+                          textPrimary: textPrimary,
+                          textSecondary: textSecondary,
+                        ),
+                      if (carga.esPrivada) ...[
+                        if (carga.numerosReferencia.isNotEmpty)
+                          const Divider(height: 1),
+                        _InfoRow(
+                          icon: Icons.lock_outline,
+                          label: 'Visibilidad',
+                          value: carga.horasAnticipacionPublica != null &&
+                                  carga.horasAnticipacionPublica! > 0
+                              ? 'Privada · pública en ${carga.horasAnticipacionPublica}h'
+                              : 'Privada (solo red)',
+                          textPrimary: textPrimary,
+                          textSecondary: textSecondary,
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+
                 const SizedBox(height: 32),
               ],
             ),
@@ -676,6 +853,9 @@ class _DetalleCargaCarrierScreenState
       ),
     );
   }
+
+  String _fmtDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
   Color _colorFor(String estado) {
     switch (estado) {
@@ -706,13 +886,20 @@ class _FilterPanel extends StatelessWidget {
   final String? tipoFiltro;
   final String? tipoEquipoFiltro;
   final String? tipoMercanciaFiltro;
+  final String? opcionEquipoExtraFiltro;
   final bool soloRefrigeracion;
   final bool soloSeguro;
+  final bool soloPrivadas;
+  final DateTime? fechaRecogidaDesde;
   final ValueChanged<String?> onTipoChanged;
   final ValueChanged<String?> onEquipoChanged;
   final ValueChanged<String?> onMercanciaChanged;
+  final ValueChanged<String?> onOpcionEquipoExtraChanged;
   final ValueChanged<bool> onRefChanged;
   final ValueChanged<bool> onSeguroChanged;
+  final ValueChanged<bool> onSoloPrivadasChanged;
+  final ValueChanged<DateTime?> onFechaRecogidaDesdeChanged;
+  final VoidCallback onSwapOrigenDestino;
   final VoidCallback onApply;
   final VoidCallback onClear;
 
@@ -726,23 +913,34 @@ class _FilterPanel extends StatelessWidget {
     required this.tipoFiltro,
     required this.tipoEquipoFiltro,
     required this.tipoMercanciaFiltro,
+    required this.opcionEquipoExtraFiltro,
     required this.soloRefrigeracion,
     required this.soloSeguro,
+    required this.soloPrivadas,
+    required this.fechaRecogidaDesde,
     required this.onTipoChanged,
     required this.onEquipoChanged,
     required this.onMercanciaChanged,
+    required this.onOpcionEquipoExtraChanged,
     required this.onRefChanged,
     required this.onSeguroChanged,
+    required this.onSoloPrivadasChanged,
+    required this.onFechaRecogidaDesdeChanged,
+    required this.onSwapOrigenDestino,
     required this.onApply,
     required this.onClear,
   });
 
   static const _equipoOpciones = [
-    'flatbed', 'van', 'reefer', 'dryvan', 'tanker', 'curtain'
+    'flatbed', 'van', 'reefer', 'dryvan', 'tanker', 'curtain',
+  ];
+  static const _equipoExtraOpciones = [
+    'liftgate', 'pallet_return', 'team_driver',
+    'blanket_wrap', 'tarps', 'straps',
   ];
   static const _mercanciaOpciones = [
     'General', 'Refrigerada', 'Peligrosa', 'Sobredimensionada',
-    'Vehículos', 'Electrónica', 'Otros'
+    'Vehículos', 'Electrónica', 'Otros',
   ];
 
   @override
@@ -751,8 +949,7 @@ class _FilterPanel extends StatelessWidget {
     final bg = isDark ? AppTheme.darkCard : Colors.grey[50]!;
     const fieldDeco = InputDecoration(
       isDense: true,
-      contentPadding:
-          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
     );
 
     return Material(
@@ -762,28 +959,36 @@ class _FilterPanel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Origen / Destino con botón swap ──────────────────────────
             Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: ciudadOrigenCtrl,
                     style: TextStyle(color: textPrimary, fontSize: 13),
-                    decoration:
-                        fieldDeco.copyWith(hintText: 'Ciudad origen'),
+                    decoration: fieldDeco.copyWith(hintText: 'Ciudad origen'),
                   ),
                 ),
-                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Intercambiar origen y destino',
+                  icon: const Icon(Icons.swap_horiz_outlined),
+                  color: AppTheme.primaryColor,
+                  iconSize: 22,
+                  onPressed: onSwapOrigenDestino,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  padding: EdgeInsets.zero,
+                ),
                 Expanded(
                   child: TextField(
                     controller: ciudadDestinoCtrl,
                     style: TextStyle(color: textPrimary, fontSize: 13),
-                    decoration:
-                        fieldDeco.copyWith(hintText: 'Ciudad destino'),
+                    decoration: fieldDeco.copyWith(hintText: 'Ciudad destino'),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
+            // ── Tipo FTL / LTL ────────────────────────────────────────────
             DropdownButtonFormField<String>(
               value: tipoFiltro,
               dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
@@ -797,18 +1002,17 @@ class _FilterPanel extends StatelessWidget {
               onChanged: onTipoChanged,
             ),
             const SizedBox(height: 8),
+            // ── Equipo principal / Mercancía ──────────────────────────────
             Row(
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     value: tipoEquipoFiltro,
-                    dropdownColor:
-                        isDark ? AppTheme.darkCard : Colors.white,
+                    dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
                     style: TextStyle(color: textPrimary, fontSize: 13),
                     decoration: fieldDeco.copyWith(hintText: 'Equipo'),
                     items: [
-                      const DropdownMenuItem(
-                          value: null, child: Text('Todos')),
+                      const DropdownMenuItem(value: null, child: Text('Todos')),
                       ..._equipoOpciones.map((e) =>
                           DropdownMenuItem(value: e, child: Text(e))),
                     ],
@@ -819,14 +1023,11 @@ class _FilterPanel extends StatelessWidget {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     value: tipoMercanciaFiltro,
-                    dropdownColor:
-                        isDark ? AppTheme.darkCard : Colors.white,
+                    dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
                     style: TextStyle(color: textPrimary, fontSize: 13),
-                    decoration:
-                        fieldDeco.copyWith(hintText: 'Mercancía'),
+                    decoration: fieldDeco.copyWith(hintText: 'Mercancía'),
                     items: [
-                      const DropdownMenuItem(
-                          value: null, child: Text('Todas')),
+                      const DropdownMenuItem(value: null, child: Text('Todas')),
                       ..._mercanciaOpciones.map((e) =>
                           DropdownMenuItem(value: e, child: Text(e))),
                     ],
@@ -836,6 +1037,21 @@ class _FilterPanel extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
+            // ── Opción equipo extra ───────────────────────────────────────
+            DropdownButtonFormField<String>(
+              value: opcionEquipoExtraFiltro,
+              dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
+              style: TextStyle(color: textPrimary, fontSize: 13),
+              decoration: fieldDeco.copyWith(hintText: 'Opción equipo extra'),
+              items: [
+                const DropdownMenuItem(value: null, child: Text('Cualquiera')),
+                ..._equipoExtraOpciones.map((e) =>
+                    DropdownMenuItem(value: e, child: Text(e))),
+              ],
+              onChanged: onOpcionEquipoExtraChanged,
+            ),
+            const SizedBox(height: 8),
+            // ── Numéricos ─────────────────────────────────────────────────
             Row(
               children: [
                 Expanded(
@@ -843,8 +1059,7 @@ class _FilterPanel extends StatelessWidget {
                     controller: pesoMaxCtrl,
                     keyboardType: TextInputType.number,
                     style: TextStyle(color: textPrimary, fontSize: 13),
-                    decoration:
-                        fieldDeco.copyWith(hintText: 'Peso máx (kg)'),
+                    decoration: fieldDeco.copyWith(hintText: 'Peso máx (kg)'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -853,8 +1068,7 @@ class _FilterPanel extends StatelessWidget {
                     controller: precioMaxCtrl,
                     keyboardType: TextInputType.number,
                     style: TextStyle(color: textPrimary, fontSize: 13),
-                    decoration:
-                        fieldDeco.copyWith(hintText: 'Precio máx'),
+                    decoration: fieldDeco.copyWith(hintText: 'Precio máx'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -863,13 +1077,46 @@ class _FilterPanel extends StatelessWidget {
                     controller: distMaxCtrl,
                     keyboardType: TextInputType.number,
                     style: TextStyle(color: textPrimary, fontSize: 13),
-                    decoration:
-                        fieldDeco.copyWith(hintText: 'Dist. máx (km)'),
+                    decoration: fieldDeco.copyWith(hintText: 'Dist. máx (km)'),
                   ),
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            // ── Fecha recogida desde ──────────────────────────────────────
+            InkWell(
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: fechaRecogidaDesde ?? DateTime.now(),
+                  firstDate: DateTime.now().subtract(const Duration(days: 1)),
+                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                );
+                onFechaRecogidaDesdeChanged(picked);
+              },
+              child: InputDecorator(
+                decoration: fieldDeco.copyWith(
+                  hintText: 'Recogida desde',
+                  prefixIcon: const Icon(Icons.calendar_today_outlined, size: 16),
+                  suffixIcon: fechaRecogidaDesde != null
+                      ? GestureDetector(
+                          onTap: () => onFechaRecogidaDesdeChanged(null),
+                          child: const Icon(Icons.clear, size: 16),
+                        )
+                      : null,
+                ),
+                child: Text(
+                  fechaRecogidaDesde != null
+                      ? '${fechaRecogidaDesde!.day.toString().padLeft(2, '0')}/'
+                          '${fechaRecogidaDesde!.month.toString().padLeft(2, '0')}/'
+                          '${fechaRecogidaDesde!.year}'
+                      : '',
+                  style: TextStyle(color: textPrimary, fontSize: 13),
+                ),
+              ),
+            ),
             const SizedBox(height: 4),
+            // ── Checkboxes ────────────────────────────────────────────────
             Row(
               children: [
                 Expanded(
@@ -877,8 +1124,7 @@ class _FilterPanel extends StatelessWidget {
                     value: soloRefrigeracion,
                     onChanged: (v) => onRefChanged(v ?? false),
                     title: Text('Refrigeración',
-                        style: TextStyle(
-                            color: textPrimary, fontSize: 12)),
+                        style: TextStyle(color: textPrimary, fontSize: 12)),
                     activeColor: AppTheme.primaryColor,
                     controlAffinity: ListTileControlAffinity.leading,
                     contentPadding: EdgeInsets.zero,
@@ -890,8 +1136,19 @@ class _FilterPanel extends StatelessWidget {
                     value: soloSeguro,
                     onChanged: (v) => onSeguroChanged(v ?? false),
                     title: Text('Seguro',
-                        style: TextStyle(
-                            color: textPrimary, fontSize: 12)),
+                        style: TextStyle(color: textPrimary, fontSize: 12)),
+                    activeColor: AppTheme.primaryColor,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ),
+                Expanded(
+                  child: CheckboxListTile(
+                    value: soloPrivadas,
+                    onChanged: (v) => onSoloPrivadasChanged(v ?? false),
+                    title: Text('Privadas',
+                        style: TextStyle(color: textPrimary, fontSize: 12)),
                     activeColor: AppTheme.primaryColor,
                     controlAffinity: ListTileControlAffinity.leading,
                     contentPadding: EdgeInsets.zero,
@@ -900,6 +1157,7 @@ class _FilterPanel extends StatelessWidget {
                 ),
               ],
             ),
+            // ── Botones ───────────────────────────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -908,13 +1166,14 @@ class _FilterPanel extends StatelessWidget {
                   child: const Text('Limpiar'),
                 ),
                 const SizedBox(width: 8),
-                ElevatedButton(
+                ElevatedButton.icon(
                   onPressed: onApply,
+                  icon: const Icon(Icons.search, size: 16),
+                  label: const Text('Buscar'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryColor,
                     foregroundColor: Colors.white,
                   ),
-                  child: const Text('Aplicar'),
                 ),
               ],
             ),
