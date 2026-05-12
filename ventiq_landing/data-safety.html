@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resumen de Seguridad de Datos - Carnaval Tienda (Google Play)</title>
+    <meta name="description" content="Resumen del Formulario de Seguridad de Datos declarado en Google Play Console para la app Carnaval Tienda.">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://inventtia.com/data-safety.html">
+    <link rel="icon" type="image/png" href="assets/images/ic.png">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.6;
+            color: #2c3e50;
+            background: #f8f9fa;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 50px 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+        header { border-bottom: 3px solid #27ae60; padding-bottom: 20px; margin-bottom: 30px; }
+        h1 { color: #1e8449; font-size: 2em; margin-bottom: 8px; }
+        h2 { color: #1e8449; margin: 30px 0 15px; font-size: 1.4em; border-left: 4px solid #27ae60; padding-left: 12px; }
+        h3 { color: #2c3e50; margin: 20px 0 10px; font-size: 1.1em; }
+        p, li { margin-bottom: 10px; }
+        ul { margin-left: 25px; margin-bottom: 15px; }
+        table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 0.9em; }
+        th, td { border: 1px solid #ddd; padding: 9px; text-align: left; vertical-align: top; }
+        th { background: #1e8449; color: white; font-size: 0.85em; }
+        tr:nth-child(even) { background: #f4faf6; }
+        .meta { color: #7f8c8d; font-size: 0.9em; }
+        .check { color: #27ae60; font-weight: bold; }
+        .cross { color: #c0392b; font-weight: bold; }
+        .box {
+            background: #eafaf1; border-left: 4px solid #27ae60;
+            padding: 15px; margin: 20px 0; border-radius: 4px;
+        }
+        .warning {
+            background: #fff3cd; border-left: 4px solid #f39c12;
+            padding: 15px; margin: 20px 0; border-radius: 4px;
+        }
+        a { color: #1e8449; }
+        code { background: #eef; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+        footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #7f8c8d; font-size: 0.9em; }
+        .back { display: inline-block; margin-bottom: 20px; color: #1e8449; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back">&larr; Volver al inicio</a>
+        <header>
+            <h1>Resumen de Seguridad de Datos</h1>
+            <p class="meta">Aplicación: <strong>Carnaval Tienda</strong> &middot; Versión 1.1.49 (build 49) &middot; Última actualización: 12 de mayo de 2026</p>
+        </header>
+
+        <p>Esta página resume las declaraciones del <strong>Formulario de Seguridad de Datos</strong> presentado en Google Play Console para la app <em>Carnaval Tienda</em>, conforme a la Política de Datos de Usuario de Google Play.</p>
+
+        <div class="box">
+            <strong>Política de Privacidad completa:</strong> <a href="privacy.html">https://inventtia.com/privacy.html</a>
+        </div>
+
+        <h2>1. Declaraciones generales</h2>
+        <ul>
+            <li><span class="check">&#10003;</span> La app recopila datos del usuario.</li>
+            <li><span class="check">&#10003;</span> La app comparte datos con terceros (procesadores de pago y backend).</li>
+            <li><span class="check">&#10003;</span> Todos los datos se cifran en tránsito mediante <strong>HTTPS/TLS</strong>.</li>
+            <li><span class="check">&#10003;</span> Los usuarios pueden solicitar la eliminación de sus datos.</li>
+            <li><span class="check">&#10003;</span> La app cumple con la Política para Familias (no dirigida a menores de 13 años).</li>
+        </ul>
+
+        <h2>2. Tipos de datos recopilados y compartidos</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Categoría</th>
+                    <th>Tipo de dato</th>
+                    <th>Recopilado</th>
+                    <th>Compartido</th>
+                    <th>Opcional</th>
+                    <th>Finalidad</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td rowspan="2"><strong>Información personal</strong></td>
+                    <td>Nombre</td>
+                    <td class="check">Sí</td>
+                    <td class="cross">No</td>
+                    <td>Requerido</td>
+                    <td>Funcionalidad de la app, gestión de cuentas</td>
+                </tr>
+                <tr>
+                    <td>Dirección de correo electrónico</td>
+                    <td class="check">Sí</td>
+                    <td class="cross">No</td>
+                    <td>Requerido</td>
+                    <td>Funcionalidad de la app, gestión de cuentas, comunicaciones</td>
+                </tr>
+                <tr>
+                    <td><strong>Información financiera</strong></td>
+                    <td>Información de pago (tokenizada por Stripe)</td>
+                    <td class="check">Sí</td>
+                    <td class="check">Sí (Stripe)</td>
+                    <td>Requerido para compras</td>
+                    <td>Compras dentro de la app</td>
+                </tr>
+                <tr>
+                    <td rowspan="2"><strong>Ubicación</strong></td>
+                    <td>Ubicación aproximada</td>
+                    <td class="check">Sí</td>
+                    <td class="cross">No</td>
+                    <td>Opcional</td>
+                    <td>Funcionalidad de la app (tiendas cercanas)</td>
+                </tr>
+                <tr>
+                    <td>Ubicación precisa</td>
+                    <td class="check">Sí</td>
+                    <td class="cross">No</td>
+                    <td>Opcional</td>
+                    <td>Funcionalidad de la app (envío y entrega)</td>
+                </tr>
+                <tr>
+                    <td><strong>Fotos y videos</strong></td>
+                    <td>Fotos</td>
+                    <td class="check">Sí</td>
+                    <td class="cross">No</td>
+                    <td>Opcional</td>
+                    <td>Funcionalidad (fotos de perfil, productos, comprobantes)</td>
+                </tr>
+                <tr>
+                    <td><strong>Archivos y documentos</strong></td>
+                    <td>Archivos seleccionados por el usuario</td>
+                    <td class="check">Sí</td>
+                    <td class="cross">No</td>
+                    <td>Opcional</td>
+                    <td>Funcionalidad (adjuntos)</td>
+                </tr>
+                <tr>
+                    <td rowspan="2" style="background:#fff3cd;"><strong>ID del dispositivo u otros IDs</strong></td>
+                    <td>ID del dispositivo / instalación</td>
+                    <td class="check">Sí</td>
+                    <td class="check">Sí (Supabase, Stripe)</td>
+                    <td>Requerido</td>
+                    <td>Funcionalidad de la app, autenticación, prevención de fraude</td>
+                </tr>
+                <tr>
+                    <td>Otros IDs (sesión, token)</td>
+                    <td class="check">Sí</td>
+                    <td class="check">Sí (Supabase)</td>
+                    <td>Requerido</td>
+                    <td>Funcionalidad de la app, seguridad</td>
+                </tr>
+                <tr>
+                    <td rowspan="3"><strong>Actividad de la app</strong></td>
+                    <td>Interacciones con la app</td>
+                    <td class="check">Sí</td>
+                    <td class="cross">No</td>
+                    <td>Requerido</td>
+                    <td>Analíticas, funcionalidad principal</td>
+                </tr>
+                <tr>
+                    <td>Historial de búsquedas en la app</td>
+                    <td class="check">Sí</td>
+                    <td class="cross">No</td>
+                    <td>Requerido</td>
+                    <td>Funcionalidad, personalización</td>
+                </tr>
+                <tr>
+                    <td>Otras acciones del usuario (pedidos)</td>
+                    <td class="check">Sí</td>
+                    <td class="cross">No</td>
+                    <td>Requerido</td>
+                    <td>Procesamiento de pedidos</td>
+                </tr>
+                <tr>
+                    <td rowspan="2"><strong>Diagnóstico</strong></td>
+                    <td>Registros de fallos</td>
+                    <td class="check">Sí</td>
+                    <td class="cross">No</td>
+                    <td>Requerido</td>
+                    <td>Rendimiento y estabilidad</td>
+                </tr>
+                <tr>
+                    <td>Diagnóstico de rendimiento</td>
+                    <td class="check">Sí</td>
+                    <td class="cross">No</td>
+                    <td>Requerido</td>
+                    <td>Rendimiento y estabilidad</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="warning">
+            <strong>Categoría clave que faltaba declarar (motivo del rechazo de Google):</strong><br>
+            La categoría <strong>&laquo;ID del dispositivo u otros IDs&raquo;</strong> debe marcarse como <span class="check">Recopilado</span> y <span class="check">Compartido</span> porque la app utiliza <em>Supabase</em> (autenticación con tokens y session IDs) y <em>Stripe</em> (SDK de pagos que envía identificadores del dispositivo para prevención de fraude).
+        </div>
+
+        <h2>3. Prácticas de seguridad</h2>
+        <ul>
+            <li><span class="check">&#10003;</span> Los datos se cifran en tránsito (HTTPS/TLS).</li>
+            <li><span class="check">&#10003;</span> Los tokens de sesión se guardan con <code>flutter_secure_storage</code> (Keystore/Keychain).</li>
+            <li><span class="check">&#10003;</span> La app sigue las <a href="https://play.google/developer-content-policy/" target="_blank" rel="noopener">Mejores Prácticas para Familias de Google Play</a>.</li>
+            <li><span class="check">&#10003;</span> Mecanismo de solicitud de eliminación de datos: <a href="delete-account.html">https://inventtia.com/delete-account.html</a></li>
+            <li><span class="check">&#10003;</span> No se venden datos a terceros.</li>
+            <li><span class="check">&#10003;</span> Los datos no se utilizan para publicidad de terceros.</li>
+        </ul>
+
+        <h2>4. Permisos solicitados por la app</h2>
+        <table>
+            <thead>
+                <tr><th>Permiso</th><th>Uso</th><th>Obligatorio</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>INTERNET</td><td>Comunicación con el backend</td><td>Sí</td></tr>
+                <tr><td>ACCESS_FINE_LOCATION / COARSE_LOCATION</td><td>Tiendas cercanas, envíos</td><td>Opcional</td></tr>
+                <tr><td>CAMERA</td><td>Escaneo de códigos QR, fotos de productos</td><td>Opcional</td></tr>
+                <tr><td>RECORD_AUDIO</td><td>Funciones de mensajes de voz (si aplica)</td><td>Opcional</td></tr>
+                <tr><td>READ/WRITE_EXTERNAL_STORAGE</td><td>Adjuntar archivos o imágenes (Android &le; 12)</td><td>Opcional</td></tr>
+            </tbody>
+        </table>
+
+        <h2>5. Terceros con los que se comparten datos</h2>
+        <ul>
+            <li><strong>Supabase</strong> &mdash; backend/autenticación. <a href="https://supabase.com/privacy" target="_blank" rel="noopener">Política</a></li>
+            <li><strong>Stripe</strong> &mdash; procesamiento de pagos y prevención de fraude. <a href="https://stripe.com/privacy" target="_blank" rel="noopener">Política</a></li>
+            <li><strong>Apple</strong> &mdash; Sign in with Apple (opcional). <a href="https://www.apple.com/legal/privacy/" target="_blank" rel="noopener">Política</a></li>
+            <li><strong>Google Play Services</strong> &mdash; servicios del sistema y distribución. <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Política</a></li>
+        </ul>
+
+        <h2>6. Cómo solicitar eliminación de datos</h2>
+        <p>Los usuarios pueden eliminar su cuenta y los datos asociados a través de los siguientes métodos:</p>
+        <ol>
+            <li>
+                <strong>Por correo electrónico (recomendado):</strong> El usuario debe enviar la solicitud desde
+                <strong>el mismo correo electrónico con el que se registró en la cuenta</strong> a
+                <a href="mailto:soporteinventtia@gmail.com">soporteinventtia@gmail.com</a>, con el asunto
+                <em>&laquo;Solicitud de eliminación de cuenta &mdash; Carnaval Tienda&raquo;</em>.
+                Esto permite verificar la identidad del titular sin necesidad de credenciales adicionales.
+            </li>
+            <li>
+                <strong>Desde la app:</strong> Menú &laquo;Cuenta &rarr; Eliminar cuenta&raquo;.
+            </li>
+            <li>
+                <strong>Página pública con instrucciones detalladas:</strong>
+                <a href="delete-account.html">https://inventtia.com/delete-account.html</a>
+            </li>
+        </ol>
+        <div class="warning">
+            <strong>Verificación:</strong> Solo se procesarán solicitudes enviadas desde la dirección de correo
+            asociada a la cuenta. Si el usuario no tiene acceso a ese correo, se solicitarán datos adicionales
+            (último pedido, datos parciales del método de pago) para confirmar la identidad antes de eliminar
+            la cuenta. El proceso se completa en un máximo de 30 días.
+        </div>
+
+        <footer>
+            &copy; 2026 Carnaval Tienda / Inventtia &mdash; <a href="privacy.html">Política de Privacidad</a> &middot; <a href="index.html">Inicio</a> &middot; <a href="contact.html">Contacto</a>
+        </footer>
+    </div>
+</body>
+</html>
