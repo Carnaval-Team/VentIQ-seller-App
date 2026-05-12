@@ -308,7 +308,7 @@ BEGIN
     ORDER BY est.id DESC
     LIMIT 1
   ) eo ON TRUE
-  ORDER BY COALESCE(t.rp_created_at, t.ep_created_at, t.cp_created_at, t.inv_created_at) DESC
+  ORDER BY t.inv_id ASC
   LIMIT  p_limit
   OFFSET p_offset;
 

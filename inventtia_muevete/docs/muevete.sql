@@ -1,6 +1,31 @@
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
 
+CREATE TABLE muevete.app_dat_estado_carga (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  carga_id bigint NOT NULL,
+  estado_codigo text NOT NULL,
+  usuario_uuid uuid,
+  driver_id bigint,
+  motivo text,
+  metadata jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_dat_estado_carga_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_estado_carga_carga_id_fkey FOREIGN KEY (carga_id) REFERENCES muevete.cargas(id),
+  CONSTRAINT app_dat_estado_carga_estado_codigo_fkey FOREIGN KEY (estado_codigo) REFERENCES muevete.app_nom_estado(codigo),
+  CONSTRAINT app_dat_estado_carga_usuario_uuid_fkey FOREIGN KEY (usuario_uuid) REFERENCES auth.users(id),
+  CONSTRAINT app_dat_estado_carga_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id)
+);
+CREATE TABLE muevete.app_nom_estado (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  codigo text NOT NULL UNIQUE,
+  nombre text NOT NULL,
+  descripcion text,
+  orden integer NOT NULL DEFAULT 0,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_nom_estado_pkey PRIMARY KEY (id)
+);
 CREATE TABLE muevete.cargas (
   id bigint NOT NULL DEFAULT nextval('muevete.cargas_id_seq'::regclass),
   shipper_id uuid NOT NULL,
@@ -61,6 +86,19 @@ CREATE TABLE muevete.cargas (
   unidad_peso text DEFAULT 'kg'::text CHECK (unidad_peso = ANY (ARRAY['kg'::text, 'tonelada'::text])),
   horas_carga numeric,
   horas_descarga numeric,
+  nombre_ubicacion_origen text,
+  cp_origen text,
+  contacto_origen_nombre text,
+  contacto_origen_tel text,
+  nombre_ubicacion_destino text,
+  cp_destino text,
+  contacto_destino_nombre text,
+  contacto_destino_tel text,
+  commodity_id integer,
+  opciones_equipo ARRAY DEFAULT '{}'::text[],
+  numeros_referencia ARRAY DEFAULT '{}'::text[],
+  es_privada boolean NOT NULL DEFAULT false,
+  horas_anticipacion_publica integer,
   CONSTRAINT cargas_pkey PRIMARY KEY (id),
   CONSTRAINT cargas_shipper_id_fkey FOREIGN KEY (shipper_id) REFERENCES auth.users(id),
   CONSTRAINT cargas_id_tipo_vehiculo_fkey FOREIGN KEY (id_tipo_vehiculo) REFERENCES muevete.vehiculos(id),
@@ -222,6 +260,34 @@ CREATE TABLE muevete.place (
   CONSTRAINT place_pkey PRIMARY KEY (id, driver),
   CONSTRAINT place_driver_fkey FOREIGN KEY (driver) REFERENCES muevete.drivers(id),
   CONSTRAINT place_vehiculo_id_fkey FOREIGN KEY (vehiculo_id) REFERENCES muevete.vehiculos(id)
+);
+CREATE TABLE muevete.planes (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  codigo text NOT NULL UNIQUE,
+  tipo_usuario text NOT NULL CHECK (tipo_usuario = ANY (ARRAY['shipper'::text, 'carrier'::text, 'dispatcher'::text])),
+  nombre text NOT NULL,
+  precio_mensual numeric NOT NULL DEFAULT 0,
+  cargas_mes_max integer,
+  contactos_mes_max integer,
+  matching_auto boolean NOT NULL DEFAULT false,
+  matching_diario_max integer,
+  escrow_comision numeric,
+  escrow_incluido boolean NOT NULL DEFAULT false,
+  verificacion_mc boolean NOT NULL DEFAULT false,
+  alertas_push boolean NOT NULL DEFAULT false,
+  ventana_exclusiva_horas integer,
+  gps_basico boolean NOT NULL DEFAULT false,
+  gps_avanzado boolean NOT NULL DEFAULT false,
+  eld_integrado boolean NOT NULL DEFAULT false,
+  multi_usuarios integer NOT NULL DEFAULT 1,
+  api_acceso boolean NOT NULL DEFAULT false,
+  factoraje boolean NOT NULL DEFAULT false,
+  dashboard_nivel text NOT NULL DEFAULT 'ninguno'::text CHECK (dashboard_nivel = ANY (ARRAY['ninguno'::text, 'basico'::text, 'avanzado'::text])),
+  soporte_nivel text NOT NULL DEFAULT 'email'::text CHECK (soporte_nivel = ANY (ARRAY['email'::text, 'chat'::text, 'telefono'::text])),
+  soporte_sla_h integer,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT planes_pkey PRIMARY KEY (id)
 );
 CREATE TABLE muevete.push_tokens (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,

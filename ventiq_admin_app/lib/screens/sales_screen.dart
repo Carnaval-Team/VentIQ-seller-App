@@ -2635,7 +2635,6 @@ class _SalesScreenState extends State<SalesScreen>
             'sku_ubicacion': ext['sku_ubicacion'] ?? skuUbicacionInv,
             'origen_cambio': 2,
             'id_extraccion': idExtraccion,
-            'created_at': DateTime.now().toIso8601String(),
           });
           exitos++;
         } catch (e) {

@@ -1261,57 +1261,75 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
 - ✅ `cargas` — **confirmado en Supabase** (`muevete.cargas`)
   - ✅ Campos Truckstop agregados (`docs/migrations/014_cargas_truckstop_fields.sql`): `nombre_ubicacion_origen/destino`, `cp_origen/destino`, `contacto_origen/destino_nombre/tel`, `commodity_id`, `opciones_equipo[]`, `numeros_referencia[]`, `es_privada`, `horas_anticipacion_publica`
   - 🚫 **Paradas intermedias (`carga_paradas`) — fuera de scope**. Solo se soportan origen + destino en Fase 1 y 2. Paradas múltiples diferidas a integración con Truckstop API (Fase 3+).
-- ✅ `ofertas_carga` — **confirmado en Supabase** (`muevete.ofertas_carga`) — solo INSERT/SELECT en Fase 1, gestión diferida a Fase 2
+- ✅ `ofertas_carga` — **confirmado en Supabase** (`muevete.ofertas_carga`)
+- ✅ `app_nom_estado` + `app_dat_estado_carga` — **nuevo sistema de estados auditado** (`docs/migrations/015_estados_carga_nomenclador.sql`)
+  - ✅ Catálogo de estados con `codigo`, `nombre`, `orden`, `activo`
+  - ✅ Bitácora de cambios: quién (`usuario_uuid`, `driver_id`), cuándo, motivo, metadata
+  - ✅ Vista `v_cargas_estado_actual` — estado vigente por carga
+  - ✅ Función RPC `fn_cambiar_estado_carga` — toda transición pasa por aquí y sincroniza `cargas.estado`
+  - ✅ RLS: lectura para participantes (shipper + carrier asignado por `drivers.uuid`), escritura solo `service_role`
 - ❌ `valoraciones_carga` — diferida a Fase 2
 - ❌ `kyc_documentos` — diferida a Fase 2
 
 **Modelos**: 
-- ✅ `CargaModel` → `lib/models/carga_model.dart` — incluye campos Truckstop: contactos, CP, `commodityId`, `opcionesEquipo`, `numerosReferencia`, `esPrivada`, `horasAnticipacionPublica`
+- ✅ `CargaModel` → `lib/models/carga_model.dart` — incluye campos Truckstop: contactos, CP, `commodityId`, `opcionesEquipo`, `numerosReferencia`, `esPrivada`, `horasAnticipacionPublica`; lee campo `estado` sincronizado por RPC
 - ✅ `OfertaCargaModel` → `lib/models/oferta_carga_model.dart`
 - ✅ `PlanModel` → `lib/models/plan_model.dart`
+- ✅ `EstadoCargaModel` + `NomEstadoModel` → `lib/models/estado_carga_model.dart` — fila de bitácora y entrada del nomenclador
 - 🔜 `ValoracionCargaModel` — diferido a Fase 2
 
 **Servicios**: 
-- ✅ `CargaService` (CRUD básico) → `lib/services/carga_service.dart` (`publicarCarga`, `getCargasShipper`, `getCargasDisponibles`)
-- ⚠️ `OfertaCargaService` → `lib/services/oferta_carga_service.dart` — solo `hacerOferta()` y `getOfertasCarga()` en Fase 1; aceptar/rechazar/negociar diferido a Fase 2
+- ✅ `CargaService` → `lib/services/carga_service.dart`
+  - ✅ `publicarCarga()`, `getCargasShipper()`, `getCargasDisponibles()`, `getCargaById()`
+  - ✅ `cancelarCarga()`, `actualizarEstado()`, `confirmarRecogida()`, `confirmarEntrega()`, `asignarCargaACarrier()` — todos vía RPC `fn_cambiar_estado_carga`
+  - ✅ `getHistorialEstados()` — bitácora completa con JOIN a nomenclador
+  - ✅ `getNomEstados()` — catálogo de estados activos
+- ✅ `OfertaCargaService` → `lib/services/oferta_carga_service.dart`
+  - ✅ `hacerOferta()` — cambia estado a `ofertada` vía RPC
+  - ✅ `aceptarOferta()` — asigna carrier y cambia estado a `aceptada` vía RPC
+  - ✅ `rechazarOferta()`, `retirarOferta()`, `getOfertasCarga()`, `getOfertasCarrier()`
 - ❌ `ValoracionCargaService` — diferido a Fase 2
 - ✅ `PlanService` → `lib/services/plan_service.dart` (`getPlanes`, `getTodosLosPlanes`, `getPlanPorCodigo`)
 
 **Providers**: 
 - ✅ `CargaProvider` → `lib/providers/carga_provider.dart`
+  - ✅ `loadHistorialEstados()`, getters `historialEstados`, `nomEstados`, `loadingHistorial`
+  - ✅ `cancelarCarga(usuarioUuid)`, `confirmarRecogida(driverId)`, `confirmarEntrega(driverId)`, `asignarCargaACarrier(usuarioUuid)` — propagan contexto del actor al RPC
 - ✅ `PlanProvider` → `lib/providers/plan_provider.dart`
 
 **Pantallas**: 
-- ✅ `PublicarCargaScreen` → implementado como tab `_PublicarCargaTab` dentro de `shipper_home_screen.dart`
-- ✅ `MisCargasScreen` → implementado como tab `_MisCargasTab` dentro de `shipper_home_screen.dart`
-- ✅ `DetalleCargaScreen` (sin tracking) → implementado como `_DetalleCargaScreen` dentro de `shipper_home_screen.dart`
-- ✅ `CargasDisponiblesScreen` → `lib/screens/carrier/carrier_home_screen.dart`
-- ⚠️ `DetalleCargaCarrierScreen` → pendiente verificar detalle dentro de `carrier_home_screen.dart`; en Fase 1 solo muestra info de la carga y permite enviar oferta (sin ver estado ni negociar)
-- ✅ `PlanesScreen` → `lib/screens/common/planes_screen.dart` (ruta `/planes`, recibe `tipoUsuario` como argumento)
-- ✅ `RegisterScreen` modificado para tipo shipper/carrier/dispatcher → `lib/screens/register_screen.dart`
-- ⚠️ `ProfileScreen` básico → existe `profile_screen.dart` pero sin secciones de plan/KYC
-- ⚠️ `DriverProfileScreen` básico → existe `driver_profile_screen.dart` pero sin MC/DOT ni plan
+- ✅ `PublicarCargaScreen` → tab `_PublicarCargaTab` dentro de `shipper_home_screen.dart` — incluye campos Truckstop
+- ✅ `MisCargasScreen` → tab `_MisCargasTab` dentro de `shipper_home_screen.dart` — tabla responsiva con todos los campos
+- ✅ `DetalleCargaScreen` → `_DetalleCargaScreen` dentro de `shipper_home_screen.dart` — mapa OSRM, campos Truckstop, gestión de ofertas (aceptar/rechazar/cancelar)
+- ✅ `CargasDisponiblesScreen` → `lib/screens/carrier/carrier_home_screen.dart` — tabla responsiva con filtros avanzados
+- ✅ `DetalleCargaCarrierScreen` → `_DetalleCargaCarrierScreen` dentro de `carrier_home_screen.dart` — mapa OSRM, campos Truckstop, envío de oferta
+- ✅ `PlanesScreen` → `lib/screens/common/planes_screen.dart`
+- ✅ `RegisterScreen` modificado → `lib/screens/register_screen.dart`
+- ⚠️ `ProfileScreen` básico → existe pero sin plan/KYC
+- ⚠️ `DriverProfileScreen` básico → existe pero sin MC/DOT ni plan
 
 **Extras FASE 1 ya implementados (por delante del plan):**
 - ✅ `DispatcherService` → `lib/services/dispatcher_service.dart`
 - ✅ `DispatcherHomeScreen` → `lib/screens/dispatcher/dispatcher_home_screen.dart`
 - ✅ `CarrierDirectoryScreen` → `lib/screens/shipper/carrier_directory_screen.dart`
 - ✅ `CargoLocationPickerScreen` → `lib/screens/shipper/cargo_location_picker_screen.dart`
+- ✅ `RouteMapWidget` → `lib/widgets/route_map_widget.dart` — mapa de ruta OSRM reutilizable
 - ✅ `AuthProvider` con 5 tipos de usuario y rutas diferenciadas
 - ✅ `LoginScreen` redirige a ruta correcta según `tipo_usuario`
+- ✅ `LandingScreen` redirige a `homeRoute` si el usuario ya está autenticado
 - ✅ Modelos `UserModel` y `DriverModel` extendidos con `tipoUsuario`, campos shipper/carrier/dispatcher
 
 **Pendiente para CERRAR FASE 1:**
-- ⚠️ Ejecutar `docs/migrations/014_cargas_truckstop_fields.sql` en Supabase
-- ⚠️ Actualizar formulario de publicación en `shipper_home_screen.dart` con los nuevos campos Truckstop (contactos, CP, commodity, opciones equipo, privacidad)
+- ⚠️ **Ejecutar en Supabase**: `014_cargas_truckstop_fields.sql` y `015_estados_carga_nomenclador.sql`
 - ⚠️ Actualizar `VehicleModel` con campos de camión de carga (`tipoCarroceria`, `capacidadTon`, `tieneGps`, etc.)
-- ⚠️ Verificar flujo completo: shipper publica → carrier ve carga → carrier envía oferta → shipper ve ofertas recibidas (sin aceptar/rechazar aún)
+- ⚠️ Mostrar historial de estados en `DetalleCargaScreen` (shipper) y `DetalleCargaCarrierScreen` (carrier) usando `CargaProvider.loadHistorialEstados()`
+- ⚠️ Verificar flujo completo E2E: shipper publica → carrier ve carga → carrier oferta → shipper acepta oferta → carrier confirma recogida → carrier confirma entrega
 
 **Diferido a Fase 2 (fuera de scope Fase 1):**
-- 🔜 Aceptar / rechazar / negociar ofertas (`OfertaCargaService.aceptarOferta`, `rechazarOferta`)
 - 🔜 `ValoracionCargaModel` + `ValoracionCargaService`
 - 🔜 `kyc_documentos` — tabla y flujo KYC
 - 🔜 `WalletTransactionModel` — nuevos tipos de transacción (no aplica sin escrow)
+- 🔜 Verificación de límites de plan en `publicarCarga()`
 
 **Fuera de scope permanente (decisión de diseño):**
 - 🚫 **Paradas intermedias (`carga_paradas`)** — el sistema solo soporta origen + destino. La gestión de rutas multi-parada es responsabilidad de la integración con Truckstop/broker externo (Fase 3+) y no será implementada en la app.
@@ -1486,100 +1504,107 @@ Si disputa → escrow.estado='disputa', fondos congelados
 
 ## 11. RESUMEN DE ARCHIVOS A CREAR/MODIFICAR
 
-### Nuevos archivos SQL (migraciones)
+### Archivos SQL (migraciones) — estado real
 ```
 docs/migrations/
-  013_planes_suscripciones.sql
-  014_cargas_y_ofertas.sql
-  015_escrow.sql
-  016_tracking_geocercas.sql
-  017_chat.sql
-  018_valoraciones_carga.sql
-  019_matching_scores.sql
-  020_consolidacion_ltl.sql
-  021_contratos_alertas.sql
-  022_kyc_antifraude.sql
-  023_sub_usuarios_facturas.sql
-  024_alter_users_drivers_vehicles.sql
+  013_planes.sql                        ✅ creado — planes con seed
+  014_cargas_truckstop_fields.sql       ✅ creado — campos Truckstop en cargas
+  015_estados_carga_nomenclador.sql     ✅ creado — app_nom_estado + app_dat_estado_carga + RPC
+  016_escrow.sql                        ❌ pendiente Fase 2
+  017_tracking_geocercas.sql            ❌ pendiente Fase 3
+  018_chat.sql                          ❌ pendiente Fase 3
+  019_valoraciones_carga.sql            ❌ pendiente Fase 2
+  020_matching_scores.sql               ❌ pendiente Fase 2
+  021_consolidacion_ltl.sql             ❌ pendiente Fase 3
+  022_contratos_alertas.sql             ❌ pendiente Fase 4
+  023_kyc_antifraude.sql                ❌ pendiente Fase 2
+  024_sub_usuarios_facturas.sql         ❌ pendiente Fase 4
+  025_alter_users_drivers_vehicles.sql  ❌ pendiente (campos extras drivers/vehicles)
 ```
 
-### Nuevos modelos (14)
+### Modelos — estado real
 ```
 lib/models/
-  carga_model.dart
-  oferta_carga_model.dart
-  escrow_model.dart
-  tracking_carga_model.dart
-  valoracion_carga_model.dart
-  chat_conversacion_model.dart
-  chat_mensaje_model.dart
-  matching_score_model.dart
-  consolidacion_ltl_model.dart
-  contrato_carga_model.dart
-  plan_model.dart
-  suscripcion_model.dart
-  alerta_usuario_model.dart
-  kyc_documento_model.dart
+  carga_model.dart              ✅ completo + campos Truckstop
+  oferta_carga_model.dart       ✅ completo
+  plan_model.dart               ✅ completo
+  estado_carga_model.dart       ✅ nuevo — EstadoCargaModel + NomEstadoModel
+  escrow_model.dart             ❌ pendiente Fase 2
+  tracking_carga_model.dart     ❌ pendiente Fase 3
+  valoracion_carga_model.dart   ❌ pendiente Fase 2
+  chat_conversacion_model.dart  ❌ pendiente Fase 3
+  chat_mensaje_model.dart       ❌ pendiente Fase 3
+  matching_score_model.dart     ❌ pendiente Fase 2
+  consolidacion_ltl_model.dart  ❌ pendiente Fase 3
+  contrato_carga_model.dart     ❌ pendiente Fase 4
+  suscripcion_model.dart        ❌ pendiente Fase 2
+  alerta_usuario_model.dart     ❌ pendiente Fase 2
+  kyc_documento_model.dart      ❌ pendiente Fase 2
 ```
 
-### Nuevos servicios (13)
+### Servicios — estado real
 ```
 lib/services/
-  carga_service.dart
-  oferta_carga_service.dart
-  escrow_service.dart
-  tracking_service.dart
-  matching_service.dart
-  chat_service.dart
-  valoracion_carga_service.dart
-  plan_service.dart
-  alerta_service.dart
-  kyc_service.dart
-  consolidacion_ltl_service.dart
-  contrato_carga_service.dart
-  antifraude_service.dart
+  carga_service.dart              ✅ completo — CRUD + cambios de estado vía RPC + historial
+  oferta_carga_service.dart       ✅ completo — hacer/aceptar/rechazar/retirar ofertas
+  plan_service.dart               ✅ completo — getPlanes, getTodosLosPlanes, getPlanPorCodigo
+  dispatcher_service.dart         ✅ completo (adelantado desde Fase 4)
+  escrow_service.dart             ❌ pendiente Fase 2
+  tracking_service.dart           ❌ pendiente Fase 3
+  matching_service.dart           ❌ pendiente Fase 2
+  chat_service.dart               ❌ pendiente Fase 3
+  valoracion_carga_service.dart   ❌ pendiente Fase 2
+  alerta_service.dart             ❌ pendiente Fase 2
+  kyc_service.dart                ❌ pendiente Fase 2
+  consolidacion_ltl_service.dart  ❌ pendiente Fase 3
+  contrato_carga_service.dart     ❌ pendiente Fase 4
+  antifraude_service.dart         ❌ pendiente Fase 4
 ```
 
-### Nuevos providers (6)
+### Providers — estado real
 ```
 lib/providers/
-  carga_provider.dart
-  escrow_provider.dart
-  tracking_provider.dart
-  chat_provider.dart
-  plan_provider.dart
-  matching_provider.dart
+  carga_provider.dart     ✅ completo — misCargas, cargasDisponibles, historialEstados, nomEstados
+  plan_provider.dart      ✅ completo
+  escrow_provider.dart    ❌ pendiente Fase 2
+  tracking_provider.dart  ❌ pendiente Fase 3
+  chat_provider.dart      ❌ pendiente Fase 3
+  matching_provider.dart  ❌ pendiente Fase 2
 ```
 
-### Nuevas pantallas (22)
+### Pantallas — estado real
 ```
 lib/screens/
   shipper/
-    publicar_carga_screen.dart
-    mis_cargas_screen.dart
-    detalle_carga_screen.dart
-    buscar_carriers_screen.dart
-    perfil_carrier_screen.dart
-    dashboard_analitico_screen.dart
-    cargas_recurrentes_screen.dart
+    shipper_home_screen.dart            ✅ completo — tabs: publicar, mis cargas (tabla), detalle+ofertas
+    cargo_location_picker_screen.dart   ✅ completo — mapa OSRM para selección de ruta
+    carrier_directory_screen.dart       ✅ completo (adelantado)
+    perfil_carrier_screen.dart          ❌ pendiente Fase 4
+    dashboard_analitico_screen.dart     ❌ pendiente Fase 4
+    cargas_recurrentes_screen.dart      ❌ pendiente Fase 4
   carrier/
-    cargas_disponibles_screen.dart
-    detalle_carga_carrier_screen.dart
-    mis_ofertas_screen.dart
-    carga_activa_screen.dart
-    dashboard_carrier_screen.dart
-    gestionar_choferes_screen.dart
-    perfil_shipper_screen.dart
+    carrier_home_screen.dart            ✅ completo — tabla responsiva + filtros + detalle + oferta
+    mis_ofertas_screen.dart             ❌ pendiente Fase 1 (post-cierre)
+    carga_activa_screen.dart            ❌ pendiente Fase 3
+    dashboard_carrier_screen.dart       ❌ pendiente Fase 4
+    perfil_shipper_screen.dart          ❌ pendiente Fase 4
+  dispatcher/
+    dispatcher_home_screen.dart         ✅ completo (adelantado desde Fase 4)
+    gestionar_choferes_screen.dart      ❌ pendiente Fase 4
+    asignar_carga_screen.dart           ❌ pendiente Fase 4
+    flota_mapa_screen.dart              ❌ pendiente Fase 4
   common/
-    chat_screen.dart
-    chat_lista_screen.dart
-    escrow_detalle_screen.dart
-    tracking_mapa_screen.dart
-    valorar_carga_screen.dart
-    planes_screen.dart
-    mis_alertas_screen.dart
-    kyc_flow_screen.dart
-    disputa_screen.dart
+    planes_screen.dart                  ✅ completo
+    chat_screen.dart                    ❌ pendiente Fase 3
+    chat_lista_screen.dart              ❌ pendiente Fase 3
+    escrow_detalle_screen.dart          ❌ pendiente Fase 2
+    tracking_mapa_screen.dart           ❌ pendiente Fase 3
+    valorar_carga_screen.dart           ❌ pendiente Fase 2
+    mis_alertas_screen.dart             ❌ pendiente Fase 2
+    kyc_flow_screen.dart                ❌ pendiente Fase 2
+    disputa_screen.dart                 ❌ pendiente Fase 2
+  widgets/
+    route_map_widget.dart               ✅ nuevo — mapa OSRM reutilizable (carrier + shipper)
 ```
 
 ### Archivos modificados

@@ -48,7 +48,23 @@ class ProductMovementsService {
         };
       }).toList();
 
-      print('Movimientos obtenidos: ${movements.length} de $totalCount total');
+      print('Movimientos obtenidos: ' + movements.toString());
+
+      print('[ProductMovements] Total: ${movements.length} filas (total_count=$totalCount, offset=$offset, limit=$limit)');
+      for (int i = 0; i < movements.length; i++) {
+        final m = movements[i];
+        print(
+          '[ProductMovements] #${i + 1} '
+          'inv_id=${m["id"]} '
+          'id_op=${m["id_operacion"]} '
+          'tipo_mov=${m["tipo_movimiento"]} '
+          'tipo_op=${m["tipo_operacion"]} '
+          'cantidad=${m["cantidad"]} '
+          'fecha=${m["fecha"]} '
+          'almacen=${m["almacen"]} '
+          'estado=${m["estado_operacion_nombre"]}',
+        );
+      }
       return {
         'movements': movements,
         'total_count': totalCount,

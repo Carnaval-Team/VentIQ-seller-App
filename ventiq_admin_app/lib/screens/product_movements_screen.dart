@@ -239,11 +239,11 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       return true;
     }).toList();
 
-    // Ordenar por fecha ascendente (más antiguos primero)
+    // Ordenar por id ascendente (más viejos primero)
     _filteredMovements.sort((a, b) {
-      final dateA = DateTime.tryParse(a['fecha'] as String? ?? '') ?? DateTime(2000);
-      final dateB = DateTime.tryParse(b['fecha'] as String? ?? '') ?? DateTime(2000);
-      return dateA.compareTo(dateB);
+      final idA = (a['id'] as num?)?.toInt() ?? 0;
+      final idB = (b['id'] as num?)?.toInt() ?? 0;
+      return idA.compareTo(idB);
     });
 
     setState(() {});

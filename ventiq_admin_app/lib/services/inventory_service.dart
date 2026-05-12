@@ -2778,7 +2778,6 @@ class InventoryService {
             'origen_cambio':      1, // 1 = recepción
             'id_recepcion':       idRP,
             'id_proveedor':       rp['id_proveedor'],
-            'created_at':         DateTime.now().toIso8601String(),
           });
           print('   ✅ Recepción: producto $idProducto  +$cantidad  (${cantidadInicial} → ${cantidadInicial + cantidad})');
         }
@@ -2835,7 +2834,6 @@ class InventoryService {
             'sku_ubicacion':      ep['sku_ubicacion'],
             'origen_cambio':      2, // 2 = extracción
             'id_extraccion':      idEP,
-            'created_at':         DateTime.now().toIso8601String(),
           });
           print('   ✅ Extracción: producto $idProducto  -$cantidad  (${cantidadInicial} → ${cantidadInicial - cantidad})');
         }
