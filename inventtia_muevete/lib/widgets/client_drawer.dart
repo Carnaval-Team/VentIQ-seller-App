@@ -186,16 +186,19 @@ class _ClientDrawerState extends State<ClientDrawer> {
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
-                  if (kIsWeb)
+                  if (authProvider.isShipper ||
+                      authProvider.isCarrierCarga ||
+                      authProvider.isDispatcher)
                     _DrawerItem(
                       icon: Icons.inventory_2_outlined,
-                      label: 'Ir a cargas',
-                      subtitle: 'Ver planes y servicios',
+                      label: 'Mis Cargas',
+                      subtitle: 'Gestiona tus cargas',
                       isDark: isDark,
                       cardColor: cardColor,
                       onTap: () {
                         Navigator.pop(context);
-                        Navigator.pushNamed(context, '/landing');
+                        Navigator.pushReplacementNamed(
+                            context, authProvider.homeRoute);
                       },
                     ),
                   _DrawerItem(

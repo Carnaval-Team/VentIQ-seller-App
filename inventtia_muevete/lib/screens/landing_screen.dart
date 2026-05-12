@@ -6,11 +6,41 @@ import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 
-class LandingScreen extends StatelessWidget {
+class LandingScreen extends StatefulWidget {
   const LandingScreen({super.key});
 
   // Brand accent — kept as orange highlight from the design reference
   static const Color kAccent = Color(0xFFFE6B00);
+
+  @override
+  State<LandingScreen> createState() => _LandingScreenState();
+}
+
+class _LandingScreenState extends State<LandingScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _redirectIfLoggedIn());
+  }
+
+  Future<void> _redirectIfLoggedIn() async {
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAuthenticated) return;
+
+    // Wait for tipoUsuario to resolve (may still be loading)
+    int attempts = 0;
+    while (auth.tipoUsuario == null && attempts < 15) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      attempts++;
+      if (!mounted) return;
+    }
+    if (!mounted) return;
+    if (auth.tipoUsuario != null) {
+      Navigator.pushNamedAndRemoveUntil(
+          context, auth.homeRoute, (_) => false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -356,8 +386,8 @@ class _UserAvatarMenu extends StatelessWidget {
       elevation: 8,
       onSelected: (value) async {
         if (value == 'viajes') {
-          final route = auth.isDriver ? '/driver/home' : '/client/home';
-          Navigator.pushNamed(context, route);
+          Navigator.pushNamedAndRemoveUntil(
+              context, auth.homeRoute, (_) => false);
         } else if (value == 'logout') {
           await auth.signOut();
           if (context.mounted) {
@@ -385,7 +415,7 @@ class _UserAvatarMenu extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Text(
-                'Viajes',
+                'Ir a mi panel',
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,

@@ -1251,90 +1251,174 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
 
 ## 9. PRIORIZACIÓN POR FASES (Roadmap)
 
-### FASE 1 – MVP de Carga (≈ 6 semanas)
+> **Leyenda**: ✅ Implementado | ⚠️ Parcial / pendiente completar | ❌ No implementado
+
+### FASE 1 – MVP de Carga (≈ 6 semanas) — 🟡 EN PROGRESO
 **Objetivo**: Publicar cargas FTL y recibir ofertas. Sin escrow ni matching.
 
 **Schema**: 
-- `planes` (básico), `cargas`, `ofertas_carga`, `valoraciones_carga`, `kyc_documentos`
+- ✅ `planes` — migración SQL creada (`docs/migrations/013_planes.sql`) con seed de 7 planes + RLS
+- ✅ `cargas` — **confirmado en Supabase** (`muevete.cargas`)
+- ✅ `ofertas_carga` — **confirmado en Supabase** (`muevete.ofertas_carga`) — solo INSERT/SELECT en Fase 1, gestión diferida a Fase 2
+- ❌ `valoraciones_carga` — diferida a Fase 2
+- ❌ `kyc_documentos` — diferida a Fase 2
 
 **Modelos**: 
-- `CargaModel`, `OfertaCargaModel`, `ValoracionCargaModel`, `PlanModel`
+- ✅ `CargaModel` → `lib/models/carga_model.dart`
+- ✅ `OfertaCargaModel` → `lib/models/oferta_carga_model.dart`
+- ✅ `PlanModel` → `lib/models/plan_model.dart`
+- 🔜 `ValoracionCargaModel` — diferido a Fase 2
 
 **Servicios**: 
-- `CargaService` (CRUD básico), `OfertaCargaService`, `ValoracionCargaService`, `PlanService`
+- ✅ `CargaService` (CRUD básico) → `lib/services/carga_service.dart` (`publicarCarga`, `getCargasShipper`, `getCargasDisponibles`)
+- ⚠️ `OfertaCargaService` → `lib/services/oferta_carga_service.dart` — solo `hacerOferta()` y `getOfertasCarga()` en Fase 1; aceptar/rechazar/negociar diferido a Fase 2
+- ❌ `ValoracionCargaService` — diferido a Fase 2
+- ✅ `PlanService` → `lib/services/plan_service.dart` (`getPlanes`, `getTodosLosPlanes`, `getPlanPorCodigo`)
 
 **Providers**: 
-- `CargaProvider`, `PlanProvider`
+- ✅ `CargaProvider` → `lib/providers/carga_provider.dart`
+- ✅ `PlanProvider` → `lib/providers/plan_provider.dart`
 
 **Pantallas**: 
-- `PublicarCargaScreen`, `MisCargasScreen`, `DetalleCargaScreen` (sin tracking)
-- `CargasDisponiblesScreen`, `DetalleCargaCarrierScreen` (sin matching)
-- `PlanesScreen`
-- Modificar `RegisterScreen` para tipo shipper/carrier
-- Modificar `ProfileScreen` y `DriverProfileScreen` básico
+- ✅ `PublicarCargaScreen` → implementado como tab `_PublicarCargaTab` dentro de `shipper_home_screen.dart`
+- ✅ `MisCargasScreen` → implementado como tab `_MisCargasTab` dentro de `shipper_home_screen.dart`
+- ✅ `DetalleCargaScreen` (sin tracking) → implementado como `_DetalleCargaScreen` dentro de `shipper_home_screen.dart`
+- ✅ `CargasDisponiblesScreen` → `lib/screens/carrier/carrier_home_screen.dart`
+- ⚠️ `DetalleCargaCarrierScreen` → pendiente verificar detalle dentro de `carrier_home_screen.dart`; en Fase 1 solo muestra info de la carga y permite enviar oferta (sin ver estado ni negociar)
+- ✅ `PlanesScreen` → `lib/screens/common/planes_screen.dart` (ruta `/planes`, recibe `tipoUsuario` como argumento)
+- ✅ `RegisterScreen` modificado para tipo shipper/carrier/dispatcher → `lib/screens/register_screen.dart`
+- ⚠️ `ProfileScreen` básico → existe `profile_screen.dart` pero sin secciones de plan/KYC
+- ⚠️ `DriverProfileScreen` básico → existe `driver_profile_screen.dart` pero sin MC/DOT ni plan
+
+**Extras FASE 1 ya implementados (por delante del plan):**
+- ✅ `DispatcherService` → `lib/services/dispatcher_service.dart`
+- ✅ `DispatcherHomeScreen` → `lib/screens/dispatcher/dispatcher_home_screen.dart`
+- ✅ `CarrierDirectoryScreen` → `lib/screens/shipper/carrier_directory_screen.dart`
+- ✅ `CargoLocationPickerScreen` → `lib/screens/shipper/cargo_location_picker_screen.dart`
+- ✅ `AuthProvider` con 5 tipos de usuario y rutas diferenciadas
+- ✅ `LoginScreen` redirige a ruta correcta según `tipo_usuario`
+- ✅ Modelos `UserModel` y `DriverModel` extendidos con `tipoUsuario`, campos shipper/carrier/dispatcher
+
+**Pendiente para CERRAR FASE 1:**
+- ⚠️ Ejecutar `docs/migrations/013_planes.sql` en Supabase (no ejecutado aún)
+- ⚠️ Actualizar `VehicleModel` con campos de camión de carga (`tipoCarroceria`, `capacidadTon`, `tieneGps`, etc.)
+- ⚠️ Verificar flujo completo: shipper publica → carrier ve carga → carrier envía oferta → shipper ve ofertas recibidas (sin aceptar/rechazar aún)
+
+**Diferido a Fase 2 (fuera de scope Fase 1):**
+- 🔜 Aceptar / rechazar / negociar ofertas (`OfertaCargaService.aceptarOferta`, `rechazarOferta`)
+- 🔜 `ValoracionCargaModel` + `ValoracionCargaService`
+- 🔜 `kyc_documentos` — tabla y flujo KYC
+- 🔜 `WalletTransactionModel` — nuevos tipos de transacción (no aplica sin escrow)
 
 ---
 
-### FASE 2 – Escrow + Matching básico (≈ 6 semanas)
-**Objetivo**: Pagos seguros y sugerencias automáticas.
+### FASE 2 – Gestión de Ofertas + Escrow + Matching básico (≈ 6 semanas) — ❌ NO INICIADA
+**Objetivo**: Cerrar el ciclo oferta→aceptación→pago seguro y sugerencias automáticas.
+
+> **Incorporado desde Fase 1:** gestión completa de ofertas (aceptar, rechazar, negociar), valoraciones de carga, KYC.
 
 **Schema**: 
-- `escrow_transacciones`, `matching_scores`, `suscripciones_usuario`, `alertas_usuario`
+- ❌ `escrow_transacciones`
+- ❌ `matching_scores`
+- ❌ `suscripciones_usuario`
+- ❌ `alertas_usuario`
+- ❌ `valoraciones_carga` — movida desde Fase 1
+- ❌ `kyc_documentos` — movida desde Fase 1
 
 **Modelos**: 
-- `EscrowModel`, `MatchingScoreModel`, `SuscripcionModel`, `AlertaUsuarioModel`
+- ❌ `EscrowModel`
+- ❌ `MatchingScoreModel`
+- ❌ `SuscripcionModel`
+- ❌ `AlertaUsuarioModel`
+- ❌ `ValoracionCargaModel` — movido desde Fase 1
+- ❌ `KycDocumentoModel` — movido desde Fase 1
 
 **Servicios**: 
-- `EscrowService`, `MatchingService`, `AlertaService`
+- ❌ `EscrowService`
+- ❌ `MatchingService`
+- ❌ `AlertaService`
+- ❌ `ValoracionCargaService` — movido desde Fase 1
+- ❌ `KycService` — movido desde Fase 1
+- ❌ Completar `OfertaCargaService` con `aceptarOferta()`, `rechazarOferta()`, `negociarPrecio()`
 
 **Providers**: 
-- `EscrowProvider`, `MatchingProvider`
+- ❌ `EscrowProvider`
+- ❌ `MatchingProvider`
 
 **Pantallas**: 
-- `EscrowDetalleScreen`, `DisputaScreen`
-- `MisAlertasScreen`
-- Modificar `DetalleCargaScreen` para incluir escrow
+- ❌ `EscrowDetalleScreen`
+- ❌ `DisputaScreen`
+- ❌ `MisAlertasScreen`
+- ❌ `KycFlowScreen`
+- ❌ `ValorarCargaScreen`
+- ❌ Modificar `DetalleCargaScreen` para incluir gestión de ofertas y escrow
 
 ---
 
-### FASE 3 – Tracking GPS + Chat + LTL (≈ 6 semanas)
+### FASE 3 – Tracking GPS + Chat + LTL (≈ 6 semanas) — ❌ NO INICIADA
 **Objetivo**: Rastreo en tiempo real, comunicación interna y consolidación de cargas.
 
 **Schema**: 
-- `tracking_carga`, `geocercas`, `chat_conversaciones`, `chat_mensajes`, `consolidaciones_ltl`
+- ❌ `tracking_carga`
+- ❌ `geocercas`
+- ❌ `chat_conversaciones`
+- ❌ `chat_mensajes`
+- ❌ `consolidaciones_ltl`
 
 **Modelos**: 
-- `TrackingCargaModel`, `ChatConversacionModel`, `ChatMensajeModel`, `ConsolidacionLtlModel`
+- ❌ `TrackingCargaModel`
+- ❌ `ChatConversacionModel`
+- ❌ `ChatMensajeModel`
+- ❌ `ConsolidacionLtlModel`
 
 **Servicios**: 
-- `TrackingService`, `ChatService`, `ConsolidacionLtlService`
+- ❌ `TrackingService`
+- ❌ `ChatService`
+- ❌ `ConsolidacionLtlService`
 
 **Providers**: 
-- `TrackingProvider`, `ChatProvider`
+- ❌ `TrackingProvider`
+- ❌ `ChatProvider`
 
 **Pantallas**: 
-- `TrackingMapaScreen`, `ChatScreen`, `ChatListaScreen`
-- `CargaActivaScreen` (carrier)
-- Modificar `DetalleCargaScreen` para incluir tracking
+- ❌ `TrackingMapaScreen`
+- ❌ `ChatScreen`
+- ❌ `ChatListaScreen`
+- ❌ `CargaActivaScreen` (carrier)
+- ❌ Modificar `DetalleCargaScreen` para incluir tracking
 
 ---
 
-### FASE 4 – Multi-usuario + Contratos + Antifraude (≈ 6 semanas)
+### FASE 4 – Multi-usuario + Contratos + Antifraude (≈ 6 semanas) — 🟡 PARCIALMENTE ADELANTADA
 **Objetivo**: Dispatcher con múltiples choferes, contratos recurrentes, seguridad avanzada.
 
 **Schema**: 
-- `sub_usuarios`, `contratos_carga`, `antifraude_eventos`, `facturas_plataforma`
+- ❌ `sub_usuarios`
+- ❌ `contratos_carga`
+- ❌ `antifraude_eventos`
+- ❌ `facturas_plataforma`
 
 **Modelos**: 
-- `SubUsuarioModel`, `ContratoCargaModel`, `AntiFraudeEventoModel`, `FacturaPlatformaModel`
+- ❌ `SubUsuarioModel`
+- ❌ `ContratoCargaModel`
+- ❌ `AntiFraudeEventoModel`
+- ❌ `FacturaPlatformaModel`
 
 **Servicios**: 
-- `SubUsuarioService`, `ContratoCargaService`, `AntiFraudeService`
+- ✅ `DispatcherService` → `lib/services/dispatcher_service.dart` (adelantado desde Fase 1)
+- ❌ `SubUsuarioService`
+- ❌ `ContratoCargaService`
+- ❌ `AntiFraudeService`
 
 **Pantallas**: 
-- `GestionarChoferesScreen`, `CargasRecurrentesScreen`
-- `DashboardCarrierScreen`, `DashboardAnaliticoScreen` (shipper)
-- `BuscarCarriersScreen`, `PerfilCarrierScreen`, `PerfilShipperScreen`
+- ✅ `DispatcherHomeScreen` → `lib/screens/dispatcher/dispatcher_home_screen.dart` (adelantado)
+- ❌ `GestionarChoferesScreen`
+- ❌ `CargasRecurrentesScreen`
+- ❌ `DashboardCarrierScreen`
+- ❌ `DashboardAnaliticoScreen` (shipper)
+- ✅ `BuscarCarriersScreen` → `lib/screens/shipper/carrier_directory_screen.dart` (adelantado)
+- ❌ `PerfilCarrierScreen`
+- ❌ `PerfilShipperScreen`
 
 ---
 
