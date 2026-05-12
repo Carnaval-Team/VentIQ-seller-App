@@ -635,7 +635,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
             (s, m) => s + ((m['cantidad'] as num?)?.toDouble() ?? 0),
           );
 
-      // Anchos de columna: Fecha, Almacén, N° Op., Tipo Mov., Tipo Op., Estado, Entrada, Salida, Saldo
+      // Anchos de columna: Fecha, Almacén, N° Op., Tipo Mov., Tipo Op., Estado, Entrada, Salida, Saldo, Observaciones
       final colWidths = {
         0: const pw.FixedColumnWidth(58),
         1: const pw.FlexColumnWidth(1.2),
@@ -646,6 +646,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         6: const pw.FixedColumnWidth(44),
         7: const pw.FixedColumnWidth(44),
         8: const pw.FixedColumnWidth(44),
+        9: const pw.FlexColumnWidth(1.5),
       };
 
       pw.Widget headerCell(String text) => pw.Container(
@@ -829,6 +830,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                     headerCell('Entrada'),
                     headerCell('Salida'),
                     headerCell('Saldo'),
+                    headerCell('Observaciones'),
                   ],
                 ),
                 // Filas de datos
@@ -845,6 +847,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                   final estadoVal = m['estado_operacion_nombre'] as String? ?? 'Completada';
                   final cantidad = (m['cantidad'] as num?)?.toStringAsFixed(2) ?? '-';
                   final cantFinal = (m['cantidad_final'] as num?)?.toStringAsFixed(2) ?? '-';
+                  final observaciones = (m['observaciones'] as String?)?.trim() ?? '';
                   final fechaStr = m['fecha'] as String? ?? '';
                   String fechaFmt = '-';
                   try {
@@ -937,6 +940,13 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                             : PdfColors.white,
                       ),
                       dataCell(cantFinal, bold: true),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                        child: pw.Text(
+                          observaciones,
+                          style: pw.TextStyle(font: regularFont, fontSize: 7, color: PdfColors.grey800),
+                        ),
+                      ),
                     ],
                   );
                 }),
