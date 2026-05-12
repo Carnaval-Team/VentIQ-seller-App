@@ -129,6 +129,11 @@ class AppDrawer extends StatelessWidget {
                       title: 'Control de Flota',
                       route: '/control-flota',
                     ),
+                    _DrawerItem(
+                      icon: Icons.swap_vert,
+                      title: 'Movimientos en tiempo real',
+                      route: '/movimientos',
+                    ),
                   ],
                 ),
                 _buildMenuSection(
@@ -343,6 +348,7 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/productos-carnaval-inventtia' ||
                 item.route == '/pago-proveedores' ||
                 item.route == '/control-flota' ||
+                item.route == '/movimientos' ||
                 item.route.startsWith('/muevete/') ||
                 item.route == '/agentes' ||
                 item.route == '/ingresos-distribucion' ||
