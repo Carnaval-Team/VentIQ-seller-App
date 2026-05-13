@@ -330,6 +330,8 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         return Colors.blue;
       case 'Reajuste':
         return Colors.purple;
+      case 'Ajuste':
+        return Colors.teal;
       default:
         return Colors.grey;
     }
@@ -345,6 +347,8 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         return Icons.assignment_turned_in;
       case 'Reajuste':
         return Icons.swap_horiz;
+      case 'Ajuste':
+        return Icons.tune;
       default:
         return Icons.info;
     }
@@ -622,17 +626,28 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       final movimientosExport = _displayMovements;
 
       // Totales calculados sobre los datos a exportar
+      // Reajuste y Ajuste con cantidad positiva son entradas, con negativa son salidas
       final totalRecepciones = movimientosExport
-          .where((m) => m['tipo_movimiento'] == 'Recepción')
+          .where((m) {
+            final tipo = m['tipo_movimiento'] as String? ?? '';
+            final cant = (m['cantidad'] as num?)?.toDouble() ?? 0;
+            return tipo == 'Recepción' ||
+                ((tipo == 'Reajuste' || tipo == 'Ajuste') && cant > 0);
+          })
           .fold<double>(
             0,
-            (s, m) => s + ((m['cantidad'] as num?)?.toDouble() ?? 0),
+            (s, m) => s + ((m['cantidad'] as num?)?.toDouble().abs() ?? 0),
           );
       final totalExtracciones = movimientosExport
-          .where((m) => m['tipo_movimiento'] == 'Extracción')
+          .where((m) {
+            final tipo = m['tipo_movimiento'] as String? ?? '';
+            final cant = (m['cantidad'] as num?)?.toDouble() ?? 0;
+            return tipo == 'Extracción' ||
+                ((tipo == 'Reajuste' || tipo == 'Ajuste') && cant < 0);
+          })
           .fold<double>(
             0,
-            (s, m) => s + ((m['cantidad'] as num?)?.toDouble() ?? 0),
+            (s, m) => s + ((m['cantidad'] as num?)?.toDouble().abs() ?? 0),
           );
 
       // Anchos de columna: Fecha, Almacén, N° Op., Tipo Mov., Tipo Op., Estado, Entrada, Salida, Saldo, Observaciones
@@ -845,7 +860,6 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                   final nOp = m['id_operacion']?.toString() ?? '-';
                   final tipoOpVal = m['tipo_operacion'] as String? ?? '-';
                   final estadoVal = m['estado_operacion_nombre'] as String? ?? 'Completada';
-                  final cantidad = (m['cantidad'] as num?)?.toStringAsFixed(2) ?? '-';
                   final cantFinal = (m['cantidad_final'] as num?)?.toStringAsFixed(2) ?? '-';
                   final observaciones = (m['observaciones'] as String?)?.trim() ?? '';
                   final fechaStr = m['fecha'] as String? ?? '';
@@ -854,13 +868,17 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                     fechaFmt = DateFormat('dd/MM/yy\nHH:mm').format(DateTime.parse(fechaStr));
                   } catch (_) {}
 
-                  final isEntrada = tipoMov == 'Recepción';
+                  final cantidadNum = (m['cantidad'] as num?)?.toDouble() ?? 0;
+                  final isReajuste = tipoMov == 'Reajuste' || tipoMov == 'Ajuste';
+                  final isEntrada = tipoMov == 'Recepción' || (isReajuste && cantidadNum > 0);
                   final isControl = tipoMov == 'Control';
 
                   PdfColor tipoColor = PdfColors.black;
                   if (tipoMov == 'Recepción') tipoColor = PdfColors.green800;
                   if (tipoMov == 'Extracción') tipoColor = PdfColors.orange800;
                   if (isControl) tipoColor = PdfColors.blue800;
+                  if (tipoMov == 'Reajuste') tipoColor = cantidadNum > 0 ? PdfColors.green700 : PdfColors.red700;
+                  if (tipoMov == 'Ajuste') tipoColor = cantidadNum > 0 ? PdfColors.teal : PdfColors.deepOrange800;
 
                   PdfColor estadoColor = PdfColors.grey700;
                   PdfColor estadoBgPdf = PdfColors.grey100;
@@ -928,15 +946,15 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                         ),
                       ),
                       dataCell(
-                        isEntrada ? cantidad : '',
+                        isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
                         bold: true,
                         color: isEntrada ? PdfColors.green800 : PdfColors.white,
                       ),
                       dataCell(
-                        !isEntrada ? cantidad : '',
+                        !isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
                         bold: true,
                         color: !isEntrada
-                            ? (isControl ? PdfColors.blue800 : PdfColors.orange800)
+                            ? (isControl ? PdfColors.blue800 : (isReajuste ? PdfColors.red700 : PdfColors.orange800))
                             : PdfColors.white,
                       ),
                       dataCell(cantFinal, bold: true),
@@ -1345,12 +1363,12 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     }
 
     final nOp = movement['id_operacion']?.toString() ?? '-';
-    final cantidad =
-        (movement['cantidad'] as num?)?.toStringAsFixed(2) ?? '';
     final cantFinal =
         (movement['cantidad_final'] as num?)?.toStringAsFixed(2) ?? '-';
 
-    final isEntrada = tipoMovimiento == 'Recepción';
+    final cantidadNum = (movement['cantidad'] as num?)?.toDouble() ?? 0;
+    final isReajuste = tipoMovimiento == 'Reajuste' || tipoMovimiento == 'Ajuste';
+    final isEntrada = tipoMovimiento == 'Recepción' || (isReajuste && cantidadNum > 0);
     final isControl = tipoMovimiento == 'Control';
 
     final almacen = movement['almacen'] as String? ?? '-';
@@ -1477,7 +1495,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 4, vertical: 8),
                   child: Text(
-                    isEntrada ? cantidad : '',
+                    isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
                     style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -1493,11 +1511,11 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 4, vertical: 8),
                   child: Text(
-                    !isEntrada ? cantidad : '',
+                    !isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: isControl ? Colors.blue : Colors.orange,
+                      color: isControl ? Colors.blue : (isReajuste ? Colors.red : Colors.orange),
                     ),
                     textAlign: TextAlign.right,
                   ),

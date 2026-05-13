@@ -91,6 +91,7 @@ BEGIN
       inv.cantidad_inicial,
       inv.cantidad_final,
       inv.id_proveedor        AS inv_id_proveedor,
+      inv.id_ubicacion        AS inv_id_ubicacion,
       inv.created_at          AS inv_created_at,
 
       -- Tipo de movimiento
@@ -156,13 +157,74 @@ BEGIN
     FROM base b
     WHERE COALESCE(b.rp_id_operacion, b.ep_id_operacion, b.cp_id_operacion) IS NOT NULL
   ),
-  reajustes AS (
-    -- Registros sin ninguna FK: reajustes por cancelación de operación
-    SELECT b.*
+  -- Separar en dos: ajustes (con registro en app_dat_ajuste_inventario) y cancelaciones
+  reajustes_reales AS (
+    SELECT
+      b.inv_id, b.id_producto, b.cantidad_inicial, b.cantidad_final,
+      b.inv_id_proveedor, b.inv_created_at,
+      b.tipo_movimiento,
+      b.id_recepcion, b.id_extraccion, b.id_control,
+      b.rp_id, b.ep_id, b.cp_id,
+      b.rp_cantidad, b.ep_cantidad, b.cp_cantidad,
+      b.rp_precio_unitario, b.ep_precio_unitario,
+      b.rp_costo_real, b.ep_importe_real,
+      b.rp_created_at, b.ep_created_at, b.cp_created_at,
+      b.rp_id_operacion, b.ep_id_operacion, b.cp_id_operacion,
+      -- Intentar encontrar ajuste por id_producto + created_at (misma transacción)
+      aj.id_operacion        AS aj_id_operacion,
+      aj.id                  AS aj_id,
+      op_aj.observaciones    AS aj_observaciones,
+      nto_aj.denominacion    AS aj_tipo_op_nombre,
+      op_aj.id_tipo_operacion  AS aj_id_tipo_operacion,
+      aj.id_ubicacion          AS aj_id_ubicacion,
+      aj_la.denominacion       AS aj_la_nombre,
+      aj_la.id_almacen         AS aj_la_id_almacen,
+      aj_alm.denominacion      AS aj_alm_nombre,
+      -- ubicación del registro inventario (para cancelaciones)
+      b.inv_id_ubicacion       AS canc_id_ubicacion,
+      inv_la.denominacion      AS canc_la_nombre,
+      inv_la.id_almacen        AS canc_la_id_almacen,
+      inv_alm.denominacion     AS canc_alm_nombre
     FROM base b
+    LEFT JOIN LATERAL (
+      SELECT aj2.id, aj2.id_operacion, aj2.id_ubicacion
+      FROM app_dat_ajuste_inventario aj2
+      WHERE aj2.id_producto  = b.id_producto
+        AND aj2.id_ubicacion = b.inv_id_ubicacion
+        -- mismo segundo de creación (misma transacción SQL)
+        AND date_trunc('second', aj2.created_at) = date_trunc('second', b.inv_created_at)
+      ORDER BY aj2.id DESC
+      LIMIT 1
+    ) aj ON TRUE
+    LEFT JOIN app_dat_operaciones    op_aj  ON op_aj.id  = aj.id_operacion
+    LEFT JOIN app_nom_tipo_operacion nto_aj ON nto_aj.id = op_aj.id_tipo_operacion
+    -- Resolver ubicación del ajuste → almacén
+    LEFT JOIN app_dat_layout_almacen aj_la  ON aj_la.id  = aj.id_ubicacion
+    LEFT JOIN app_dat_almacen        aj_alm ON aj_alm.id = aj_la.id_almacen
+    -- Resolver ubicación del inventario (cancelaciones) → almacén
+    LEFT JOIN app_dat_layout_almacen inv_la  ON inv_la.id  = b.inv_id_ubicacion
+    LEFT JOIN app_dat_almacen        inv_alm ON inv_alm.id = inv_la.id_almacen
     WHERE b.id_recepcion IS NULL
       AND b.id_extraccion IS NULL
       AND b.id_control    IS NULL
+  ),
+  -- Marcador de ajuste vs cancelacion (para usar en UNION)
+  solo_reajustes AS (
+    SELECT *
+    FROM reajustes_reales
+    WHERE aj_id IS NULL  -- sin registro en ajuste = cancelación de operación
+  ),
+  solo_ajustes AS (
+    SELECT *
+    FROM reajustes_reales
+    WHERE aj_id IS NOT NULL  -- con registro en ajuste = ajuste de inventario
+  ),
+  -- Dummy para compatibilidad de nombre
+  reajustes AS (
+    SELECT * FROM solo_reajustes
+  ),
+  ajustes AS (
+    SELECT * FROM solo_ajustes
   ),
   con_tipo AS (
     -- Unir con app_dat_operaciones y app_nom_tipo_operacion
@@ -241,10 +303,11 @@ BEGIN
 
     UNION ALL
 
+    -- Cancelaciones de operación (sin ajuste en app_dat_ajuste_inventario)
     SELECT
       r.inv_id,
       NULL::BIGINT                            AS id_op,
-      r.tipo_movimiento,
+      'Reajuste'::VARCHAR                     AS tipo_movimiento,
       NULL::BIGINT                            AS id_tipo_operacion,
       'Reajuste de cancelación'::VARCHAR      AS tipo_op_nombre,
       NULL::BIGINT AS rp_id, NULL::BIGINT AS ep_id, NULL::BIGINT AS cp_id,
@@ -256,18 +319,47 @@ BEGIN
       NULL::TIMESTAMP WITH TIME ZONE AS cp_created_at,
       r.inv_created_at,
       NULL::UUID                              AS op_uuid,
-      NULL::BIGINT                            AS id_ubicacion_detalle,
-      NULL::VARCHAR AS la_nombre,
-      NULL::BIGINT  AS la_id_almacen,
-      NULL::VARCHAR AS alm_nombre,
-      NULL::BIGINT  AS prov_id,
-      NULL::VARCHAR AS prov_nombre,
-      NULL::VARCHAR AS op_observaciones,
+      r.canc_id_ubicacion                    AS id_ubicacion_detalle,
+      r.canc_la_nombre::VARCHAR               AS la_nombre,
+      r.canc_la_id_almacen                    AS la_id_almacen,
+      r.canc_alm_nombre::VARCHAR              AS alm_nombre,
+      NULL::BIGINT                            AS prov_id,
+      NULL::VARCHAR                           AS prov_nombre,
+      NULL::VARCHAR                           AS op_observaciones,
       r.cantidad_inicial, r.cantidad_final
     FROM reajustes r
-    -- Si hay filtro de tipo_operacion o almacén, los reajustes no se incluyen
     WHERE p_tipo_operacion_id IS NULL
-      AND p_id_almacen        IS NULL
+      AND (p_id_almacen IS NULL OR r.canc_la_id_almacen = p_id_almacen)
+
+    UNION ALL
+
+    -- Ajustes de inventario (con registro en app_dat_ajuste_inventario)
+    SELECT
+      a.inv_id,
+      a.aj_id_operacion                       AS id_op,
+      'Ajuste'::VARCHAR                       AS tipo_movimiento,
+      a.aj_id_tipo_operacion                  AS id_tipo_operacion,
+      COALESCE(a.aj_tipo_op_nombre, 'Ajuste de inventario')::VARCHAR AS tipo_op_nombre,
+      NULL::BIGINT AS rp_id, NULL::BIGINT AS ep_id, NULL::BIGINT AS cp_id,
+      NULL::NUMERIC AS rp_cantidad, NULL::NUMERIC AS ep_cantidad, NULL::NUMERIC AS cp_cantidad,
+      NULL::NUMERIC AS rp_precio_unitario, NULL::NUMERIC AS ep_precio_unitario,
+      NULL::NUMERIC AS rp_costo_real, NULL::NUMERIC AS ep_importe_real,
+      NULL::TIMESTAMP WITH TIME ZONE AS rp_created_at,
+      NULL::TIMESTAMP WITH TIME ZONE AS ep_created_at,
+      NULL::TIMESTAMP WITH TIME ZONE AS cp_created_at,
+      a.inv_created_at,
+      NULL::UUID                              AS op_uuid,
+      a.aj_id_ubicacion                       AS id_ubicacion_detalle,
+      a.aj_la_nombre::VARCHAR                 AS la_nombre,
+      a.aj_la_id_almacen                      AS la_id_almacen,
+      a.aj_alm_nombre::VARCHAR                AS alm_nombre,
+      NULL::BIGINT                            AS prov_id,
+      NULL::VARCHAR                           AS prov_nombre,
+      a.aj_observaciones::VARCHAR             AS op_observaciones,
+      a.cantidad_inicial, a.cantidad_final
+    FROM ajustes a
+    WHERE (p_tipo_operacion_id IS NULL OR a.aj_id_tipo_operacion = p_tipo_operacion_id)
+      AND (p_id_almacen IS NULL OR a.aj_la_id_almacen = p_id_almacen)
   )
   SELECT
     t.inv_id::BIGINT,
