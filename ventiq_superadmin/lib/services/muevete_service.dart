@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class MueveteService {
@@ -412,5 +413,146 @@ class MueveteService {
       'total_users': users.count,
       'pending_kyc': pendingKyc.count,
     };
+  }
+
+  // ─── SOLICITUDES DE PLAN (CARGA) ─────────────────────────────────────────
+
+  /// Lista todas las solicitudes de activación de plan.
+  /// [estado] puede ser null (todas), 'pendiente', 'aprobada' o 'rechazada'.
+  static Future<List<Map<String, dynamic>>> getSolicitudesPlan(
+      {String? estado}) async {
+    debugPrint('[MueveteService.getSolicitudesPlan] iniciando query estado=$estado');
+
+    // Query explícita por caso para evitar problemas de encadenamiento inmutable
+    final List rows;
+    if (estado != null) {
+      rows = await _supabase
+          .schema('muevete')
+          .from('solicitudes_plan')
+          .select('*')
+          .eq('estado', estado)
+          .order('created_at', ascending: false);
+    } else {
+      rows = await _supabase
+          .schema('muevete')
+          .from('solicitudes_plan')
+          .select('*')
+          .order('created_at', ascending: false);
+    }
+    final List<Map<String, dynamic>> result =
+        List<Map<String, dynamic>>.from(rows);
+
+    debugPrint('[MueveteService.getSolicitudesPlan] filas obtenidas: ${result.length}');
+    for (final r in result) {
+      debugPrint('[MueveteService.getSolicitudesPlan]  row → id=${r['id']} usuario_uuid=${r['usuario_uuid']} plan=${r['plan_codigo']} estado=${r['estado']} evidencia=${r['evidencia_url']}');
+    }
+
+    // Enriquecer con datos de usuario (muevete.users) y plan (muevete.planes)
+    for (final row in result) {
+      // Datos del usuario
+      try {
+        final uid = row['usuario_uuid'] as String?;
+        debugPrint('[MueveteService.getSolicitudesPlan] buscando user uuid=$uid');
+        if (uid != null) {
+          final userRow = await _supabase
+              .schema('muevete')
+              .from('users')
+              .select('name, email')
+              .eq('uuid', uid)
+              .maybeSingle();
+          debugPrint('[MueveteService.getSolicitudesPlan] user result: $userRow');
+          if (userRow != null) {
+            row['usuario_nombre'] = userRow['name'];
+            row['usuario_email'] = userRow['email'];
+          }
+        }
+      } catch (e) {
+        debugPrint('[MueveteService.getSolicitudesPlan] ERROR enrich user: $e');
+      }
+
+      // Datos del plan
+      try {
+        final planCodigo = row['plan_codigo'] as String?;
+        debugPrint('[MueveteService.getSolicitudesPlan] buscando plan codigo=$planCodigo');
+        if (planCodigo != null) {
+          final planRow = await _supabase
+              .schema('muevete')
+              .from('planes')
+              .select('nombre, precio_mensual')
+              .eq('codigo', planCodigo)
+              .maybeSingle();
+          debugPrint('[MueveteService.getSolicitudesPlan] plan result: $planRow');
+          if (planRow != null) {
+            row['planes'] = planRow;
+          }
+        }
+      } catch (e) {
+        debugPrint('[MueveteService.getSolicitudesPlan] ERROR enrich plan: $e');
+      }
+    }
+
+    debugPrint('[MueveteService.getSolicitudesPlan] resultado final: ${result.length} solicitudes');
+    return result;
+  }
+
+  /// Cuenta solicitudes pendientes de plan.
+  static Future<int> countSolicitudesPlanPendientes() async {
+    final res = await _supabase
+        .schema('muevete')
+        .from('solicitudes_plan')
+        .select('id')
+        .eq('estado', 'pendiente')
+        .count(CountOption.exact);
+    return res.count;
+  }
+
+  /// Aprueba una solicitud de plan: verifica que el código de transferencia
+  /// no esté duplicado, activa la suscripción vía RPC SECURITY DEFINER.
+  /// [fechaVencimiento] debe ser el día 2 de un mes futuro. Si es null usa
+  /// el próximo día 2 después de 1 mes desde hoy.
+  static Future<void> aprobarSolicitudPlan({
+    required int solicitudId,
+    required String adminUuid,
+    required String codigoTransferencia,
+    String? observaciones,
+    DateTime? fechaVencimiento,
+  }) async {
+    // Verificar unicidad del código de transferencia antes de llamar al RPC
+    final existente = await _supabase
+        .schema('muevete')
+        .from('solicitudes_plan')
+        .select('id')
+        .eq('codigo_transferencia', codigoTransferencia)
+        .maybeSingle();
+
+    if (existente != null) {
+      throw Exception(
+          'El código de transferencia "$codigoTransferencia" ya fue utilizado. Verifique el comprobante.');
+    }
+
+    final fechaStr = fechaVencimiento != null
+        ? '${fechaVencimiento.year}-${fechaVencimiento.month.toString().padLeft(2, '0')}-02'
+        : null;
+
+    await _supabase.schema('muevete').rpc('fn_aprobar_solicitud_plan', params: {
+      'p_solicitud_id': solicitudId,
+      'p_admin_uuid': adminUuid,
+      'p_codigo_transferencia': codigoTransferencia,
+      'p_observaciones': observaciones,
+      if (fechaStr != null) 'p_fecha_vencimiento': fechaStr,
+    });
+  }
+
+  /// Rechaza una solicitud de plan con observaciones.
+  static Future<void> rechazarSolicitudPlan({
+    required int solicitudId,
+    required String adminUuid,
+    required String observaciones,
+  }) async {
+    await _supabase.schema('muevete').rpc('fn_rechazar_solicitud_plan', params: {
+      'p_solicitud_id': solicitudId,
+      'p_admin_uuid': adminUuid,
+      'p_observaciones': observaciones,
+    });
   }
 }

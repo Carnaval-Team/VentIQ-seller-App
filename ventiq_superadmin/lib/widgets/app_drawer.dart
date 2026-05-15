@@ -180,6 +180,11 @@ class AppDrawer extends StatelessWidget {
                       title: 'Verificación KYC',
                       route: '/muevete/kyc',
                     ),
+                    _DrawerItem(
+                      icon: Icons.workspace_premium_rounded,
+                      title: 'Solicitudes de Plan',
+                      route: '/muevete/planes',
+                    ),
                   ],
                 ),
                 _buildMenuSection(

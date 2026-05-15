@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 
 import '../../config/app_theme.dart';
 import '../../models/carga_model.dart';
+import '../../models/estado_carga_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/carga_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/route_map_widget.dart';
+import 'carrier_carga_profile_screen.dart';
 
 class CarrierHomeScreen extends StatefulWidget {
   const CarrierHomeScreen({super.key});
@@ -24,7 +26,14 @@ class _CarrierHomeScreenState extends State<CarrierHomeScreen> {
   }
 
   void _load() {
-    context.read<CargaProvider>().loadCargasDisponibles();
+    final p = context.read<CargaProvider>();
+    p.loadCargasDisponibles();
+    // Load loads assigned directly to this carrier by UUID
+    final carrierUuid =
+        context.read<AuthProvider>().user?.id;
+    if (carrierUuid != null) {
+      p.loadCargasCarrierByUuid(carrierUuid);
+    }
   }
 
   @override
@@ -50,6 +59,15 @@ class _CarrierHomeScreenState extends State<CarrierHomeScreen> {
         ),
         actions: [
           IconButton(
+            icon: Icon(Icons.person_outline, color: textPrimary),
+            tooltip: 'Mi Perfil',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const CarrierCargaProfileScreen()),
+            ),
+          ),
+          IconButton(
             icon: Icon(Icons.refresh_outlined, color: textPrimary),
             onPressed: _load,
             tooltip: 'Actualizar',
@@ -59,7 +77,7 @@ class _CarrierHomeScreenState extends State<CarrierHomeScreen> {
             onPressed: () async {
               await context.read<AuthProvider>().signOut();
               if (context.mounted) {
-                Navigator.pushReplacementNamed(context, '/login');
+                Navigator.pushReplacementNamed(context, '/landing');
               }
             },
           ),
@@ -168,7 +186,13 @@ class _CargasDisponiblesTabState extends State<_CargasDisponiblesTab> {
     final textSecondary = isDark ? Colors.white60 : Colors.grey[600]!;
     final cardBg = isDark ? AppTheme.darkCard : Colors.white;
 
-    final all = provider.cargasDisponibles.where(_applyFilter).toList();
+    final all = provider.cargasDisponibles.where(_applyFilter).toList()
+      ..sort((a, b) {
+        if (a.fechaRecogida == null && b.fechaRecogida == null) return 0;
+        if (a.fechaRecogida == null) return 1;
+        if (b.fechaRecogida == null) return -1;
+        return a.fechaRecogida!.compareTo(b.fechaRecogida!);
+      });
     final totalPages = all.isEmpty ? 1 : (all.length / _perPage).ceil();
     final start = (_page * _perPage).clamp(0, all.length);
     final end = (start + _perPage).clamp(0, all.length);
@@ -320,23 +344,23 @@ class _CargasDisponiblesTabState extends State<_CargasDisponiblesTab> {
                         isDark ? AppTheme.darkCard : Colors.grey[100],
                       ),
                       columns: [
+                        DataColumn(label: _headerCell('Prioridad', isDark)),
                         DataColumn(label: _headerCell('Origen', isDark)),
                         DataColumn(label: _headerCell('Destino', isDark)),
                         DataColumn(label: _headerCell('Tipo', isDark)),
                         DataColumn(label: _headerCell('Equipo', isDark)),
-                        DataColumn(label: _headerCell('Mercancía', isDark)),
                         DataColumn(label: _headerCell('Peso', isDark)),
-                        DataColumn(label: _headerCell('Dist.', isDark)),
                         DataColumn(label: _headerCell('Precio', isDark)),
                         DataColumn(label: _headerCell('Recogida', isDark)),
                         DataColumn(label: _headerCell('Estado', isDark)),
                       ],
                       rows: pageItems.map((c) {
+                        final now = DateTime.now();
+                        final vencida = c.fechaRecogida != null &&
+                            c.fechaRecogida!.isBefore(DateTime(now.year, now.month, now.day)) &&
+                            !['tomada','en_transito','completada_carrier','entregada','completada'].contains(c.estado);
                         final peso = c.pesoKg != null
                             ? '${c.pesoKg!.toStringAsFixed(0)} ${c.unidadPeso}'
-                            : '—';
-                        final dist = c.distanciaKm != null
-                            ? '${c.distanciaKm!.toStringAsFixed(0)} km'
                             : '—';
                         final precio = c.precioOfertado != null
                             ? '\$${c.precioOfertado!.toStringAsFixed(0)}'
@@ -347,8 +371,13 @@ class _CargasDisponiblesTabState extends State<_CargasDisponiblesTab> {
                               '${c.fechaRecogida!.year}'
                             : '—';
                         return DataRow(
+                          color: vencida
+                              ? WidgetStateProperty.all(
+                                  Colors.red.withValues(alpha: isDark ? 0.18 : 0.07))
+                              : null,
                           onSelectChanged: (_) => _openDetalle(context, c),
                           cells: [
+                            DataCell(_PrioridadBadge(prioridad: c.prioridad)),
                             DataCell(_cell(
                                 c.ciudadOrigen ?? c.dirOrigen, isDark,
                                 bold: true)),
@@ -360,10 +389,7 @@ class _CargasDisponiblesTabState extends State<_CargasDisponiblesTab> {
                                 color: AppTheme.primaryColor)),
                             DataCell(_cell(
                                 c.tipoEquipo?.toUpperCase() ?? '—', isDark)),
-                            DataCell(_cell(
-                                c.tipoMercancia ?? '—', isDark)),
                             DataCell(_cell(peso, isDark)),
-                            DataCell(_cell(dist, isDark)),
                             DataCell(Text(
                               precio,
                               style: TextStyle(
@@ -372,7 +398,25 @@ class _CargasDisponiblesTabState extends State<_CargasDisponiblesTab> {
                                 color: AppTheme.primaryColor,
                               ),
                             )),
-                            DataCell(_cell(recogida, isDark)),
+                            DataCell(Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (vencida)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 4),
+                                    child: Icon(Icons.warning_amber_rounded,
+                                        size: 14, color: Colors.red[700]),
+                                  ),
+                                Text(recogida,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: vencida
+                                          ? Colors.red[700]
+                                          : (isDark ? Colors.white : const Color(0xFF1A1D27)),
+                                      fontWeight: vencida ? FontWeight.w700 : FontWeight.normal,
+                                    )),
+                              ],
+                            )),
                             DataCell(_Badge(
                                 estado: c.estadoLabel,
                                 color: _colorForEstado(c.estado))),
@@ -499,8 +543,17 @@ class _DetalleCargaCarrierScreenState
     extends State<_DetalleCargaCarrierScreen> {
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<CargaProvider>().loadHistorialEstados(widget.carga.id);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDark = context.watch<ThemeProvider>().isDark;
+    final provider = context.watch<CargaProvider>();
     final carga = widget.carga;
     final textPrimary = isDark ? Colors.white : const Color(0xFF1A1D27);
     final textSecondary = isDark ? Colors.white60 : Colors.grey[600]!;
@@ -543,6 +596,8 @@ class _DetalleCargaCarrierScreenState
                     _Badge(
                         estado: carga.tipoLabel,
                         color: AppTheme.primaryColor),
+                    const SizedBox(width: 8),
+                    _PrioridadBadge(prioridad: carga.prioridad),
                     if (carga.distanciaKm != null) ...[
                       const SizedBox(width: 8),
                       _Badge(
@@ -845,6 +900,55 @@ class _DetalleCargaCarrierScreenState
                   ),
                 ],
 
+                // ── Acciones del carrier ──────────────────────────────────
+                if (carga.estado == 'tomada') ...
+                  [
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      onPressed: provider.actionLoading
+                          ? null
+                          : () => _marcarCompletada(context, carga),
+                      icon: const Icon(Icons.check_circle_outlined),
+                      label: const Text('Marcar como Completada'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green[700],
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ],
+
+                // ── Historial de estados ────────────────────────────────
+                const SizedBox(height: 24),
+                Text(
+                  'Historial de estados',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (provider.loadingHistorial)
+                  const Center(child: CircularProgressIndicator())
+                else if (provider.historialEstados.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(
+                      'Sin historial registrado.',
+                      style: TextStyle(color: textSecondary),
+                    ),
+                  )
+                else
+                  _HistorialTimelineCarrier(
+                    historial: provider.historialEstados,
+                    isDark: isDark,
+                    textPrimary: textPrimary,
+                    textSecondary: textSecondary,
+                  ),
+
                 const SizedBox(height: 32),
               ],
             ),
@@ -854,21 +958,186 @@ class _DetalleCargaCarrierScreenState
     );
   }
 
+  Future<void> _marcarCompletada(
+      BuildContext context, CargaModel carga) async {
+    final confirmed = await _confirmCarrier(
+      context,
+      '¿Marcar carga como Completada?',
+      'Confirmas que la entrega fue realizada. El shipper deberá confirmar para cerrar el ciclo.',
+    );
+    if (!confirmed || !mounted) return;
+    final auth = context.read<AuthProvider>();
+    final driverId = auth.driverProfile?['id'] as int?;
+    final ok = await context
+        .read<CargaProvider>()
+        .completarCargaCarrier(carga.id, driverId: driverId);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(ok
+          ? 'Carga marcada como completada'
+          : context.read<CargaProvider>().error ?? 'Error'),
+      backgroundColor: ok ? Colors.green[700] : Colors.red,
+    ));
+    if (ok) Navigator.pop(context);
+  }
+
+  Future<bool> _confirmCarrier(
+      BuildContext context, String title, String subtitle) async {
+    final isDark = context.read<ThemeProvider>().isDark;
+    return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            title: Text(title,
+                style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w700)),
+            content: Text(subtitle),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green[700],
+                    foregroundColor: Colors.white),
+                child: const Text('Confirmar'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   String _fmtDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
   Color _colorFor(String estado) {
     switch (estado) {
-      case 'publicada':
-        return Colors.blue;
-      case 'ofertada':
-        return Colors.orange;
-      case 'aceptada':
-      case 'en_transito':
-        return Colors.green;
-      default:
-        return Colors.grey;
+      case 'publicada':          return Colors.blue;
+      case 'en_matching':        return Colors.orange;
+      case 'ofertada':           return Colors.amber[700]!;
+      case 'aceptada':           return Colors.green;
+      case 'tomada':             return Colors.indigo;
+      case 'en_transito':        return Colors.teal;
+      case 'completada_carrier': return Colors.cyan[700]!;
+      case 'entregada':          return Colors.green[700]!;
+      case 'completada':         return Colors.green[900]!;
+      case 'cancelada':          return Colors.red;
+      default:                   return Colors.grey;
     }
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Historial de estados – timeline (carrier)
+// ──────────────────────────────────────────────────────────────────────────────
+
+class _HistorialTimelineCarrier extends StatelessWidget {
+  final List<EstadoCargaModel> historial;
+  final bool isDark;
+  final Color textPrimary;
+  final Color textSecondary;
+
+  const _HistorialTimelineCarrier({
+    required this.historial,
+    required this.isDark,
+    required this.textPrimary,
+    required this.textSecondary,
+  });
+
+  static Color _colorFor(String codigo) {
+    switch (codigo) {
+      case 'publicada':          return Colors.blue;
+      case 'en_matching':        return Colors.orange;
+      case 'ofertada':           return Colors.amber[700]!;
+      case 'aceptada':           return Colors.green;
+      case 'tomada':             return Colors.indigo;
+      case 'en_transito':        return Colors.teal;
+      case 'completada_carrier': return Colors.cyan[700]!;
+      case 'entregada':          return Colors.green[700]!;
+      case 'completada':         return Colors.green[900]!;
+      case 'cancelada':          return Colors.red;
+      default:                   return Colors.grey;
+    }
+  }
+
+  String _fmt(DateTime dt) {
+    final d = dt.toLocal();
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}  '
+        '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: List.generate(historial.length, (i) {
+        final e = historial[i];
+        final isLast = i == historial.length - 1;
+        final color = _colorFor(e.estadoCodigo);
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 28,
+                child: Column(
+                  children: [
+                    Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                          color: color, shape: BoxShape.circle),
+                    ),
+                    if (!isLast)
+                      Expanded(
+                        child: Container(
+                          width: 2,
+                          color: isDark
+                              ? Colors.white12
+                              : Colors.grey[300],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        e.estadoNombre ?? e.estadoCodigo,
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: textPrimary),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(_fmt(e.createdAt),
+                          style: TextStyle(
+                              fontSize: 11, color: textSecondary)),
+                      if (e.motivo != null && e.motivo!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(e.motivo!,
+                              style: TextStyle(
+                                  fontSize: 11, color: textSecondary)),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
   }
 }
 
@@ -1246,6 +1515,46 @@ class _Badge extends StatelessWidget {
             fontSize: 11,
             fontWeight: FontWeight.w600,
             color: color),
+      ),
+    );
+  }
+}
+
+class _PrioridadBadge extends StatelessWidget {
+  final String prioridad;
+  const _PrioridadBadge({required this.prioridad});
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color;
+    final String label;
+    switch (prioridad) {
+      case 'urgente':
+        color = Colors.red;
+        label = 'Urgente';
+        break;
+      case 'alta':
+        color = Colors.orange;
+        label = 'Alta';
+        break;
+      default:
+        color = Colors.blueGrey;
+        label = 'Normal';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
       ),
     );
   }

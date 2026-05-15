@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 
 import '../../config/app_theme.dart';
 import '../../models/plan_model.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/plan_provider.dart';
+import '../../providers/suscripcion_provider.dart';
 import '../../providers/theme_provider.dart';
 
 class PlanesScreen extends StatefulWidget {
@@ -22,6 +24,13 @@ class _PlanesScreenState extends State<PlanesScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<PlanProvider>().cargarPlanes(widget.tipoUsuario);
+      // Cargar suscripción activa para marcar el plan actual
+      final uid = context.read<AuthProvider>().user?.id;
+      if (uid != null) {
+        context
+            .read<SuscripcionProvider>()
+            .cargarSuscripcion(uid, widget.tipoUsuario);
+      }
     });
   }
 
@@ -55,7 +64,9 @@ class _PlanesScreenState extends State<PlanesScreen> {
   Widget build(BuildContext context) {
     final isDark = context.watch<ThemeProvider>().isDark;
     final provider = context.watch<PlanProvider>();
+    final susProvider = context.watch<SuscripcionProvider>();
     final planes = provider.planesParaTipo(widget.tipoUsuario);
+    final planActualCodigo = susProvider.suscripcion?.planCodigo;
 
     final bg = AppTheme.bg(isDark);
     final textPrimary = AppTheme.textPrimary(isDark);
@@ -97,6 +108,7 @@ class _PlanesScreenState extends State<PlanesScreen> {
                       isDark: isDark,
                       textPrimary: textPrimary,
                       textSecondary: textSecondary,
+                      planActualCodigo: planActualCodigo,
                     ),
     );
   }
@@ -112,6 +124,7 @@ class _PlanesContent extends StatelessWidget {
   final bool isDark;
   final Color textPrimary;
   final Color textSecondary;
+  final String? planActualCodigo;
 
   const _PlanesContent({
     required this.planes,
@@ -121,6 +134,7 @@ class _PlanesContent extends StatelessWidget {
     required this.isDark,
     required this.textPrimary,
     required this.textSecondary,
+    this.planActualCodigo,
   });
 
   // El plan "más popular" es el de precio medio (índice 1 si hay ≥2)
@@ -150,10 +164,37 @@ class _PlanesContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 24),
+        // Banner "primer mes gratis"
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppTheme.success.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.success.withValues(alpha: 0.4)),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.card_giftcard_outlined, color: AppTheme.success, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'El primer mes es completamente gratis para todos los usuarios nuevos.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    color: AppTheme.success,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
         // Tarjetas de planes
         ...planes.asMap().entries.map((entry) {
           final index = entry.key;
           final plan = entry.value;
+          final esActual = plan.codigo == planActualCodigo;
           return Padding(
             padding: const EdgeInsets.only(bottom: 16),
             child: _PlanCard(
@@ -162,6 +203,7 @@ class _PlanesContent extends StatelessWidget {
               isDark: isDark,
               textPrimary: textPrimary,
               textSecondary: textSecondary,
+              esActual: esActual,
             ),
           );
         }),
@@ -181,6 +223,7 @@ class _PlanCard extends StatelessWidget {
   final bool isDark;
   final Color textPrimary;
   final Color textSecondary;
+  final bool esActual;
 
   const _PlanCard({
     required this.plan,
@@ -188,6 +231,7 @@ class _PlanCard extends StatelessWidget {
     required this.isDark,
     required this.textPrimary,
     required this.textSecondary,
+    this.esActual = false,
   });
 
   @override
@@ -294,32 +338,35 @@ class _PlanCard extends StatelessWidget {
                 // Botón
                 SizedBox(
                   width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: null, // Suscripción diferida a Fase 2
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: isPopular
-                          ? AppTheme.primaryColor
-                          : AppTheme.border(isDark),
-                      foregroundColor: isPopular ? Colors.white : textPrimary,
-                      disabledBackgroundColor: isPopular
-                          ? AppTheme.primaryColor.withValues(alpha: 0.5)
-                          : AppTheme.border(isDark),
-                      disabledForegroundColor: isPopular
-                          ? Colors.white70
-                          : textSecondary,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: Text(
-                      plan.esGratis ? 'Plan actual' : 'Próximamente',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ),
+                  child: esActual
+                      ? ElevatedButton(
+                          onPressed: null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.success,
+                            disabledBackgroundColor:
+                                AppTheme.success.withValues(alpha: 0.7),
+                            disabledForegroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: Text(
+                            'Tu plan actual',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
+                          ),
+                        )
+                      : _ContratarButton(
+                          plan: plan,
+                          isPopular: isPopular,
+                          isDark: isDark,
+                          textPrimary: textPrimary,
+                          textSecondary: textSecondary,
+                        ),
                 ),
               ],
             ),
@@ -433,6 +480,100 @@ class _PlanCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+class _ContratarButton extends StatelessWidget {
+  final PlanModel plan;
+  final bool isPopular;
+  final bool isDark;
+  final Color textPrimary;
+  final Color textSecondary;
+
+  const _ContratarButton({
+    required this.plan,
+    required this.isPopular,
+    required this.isDark,
+    required this.textPrimary,
+    required this.textSecondary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final susProvider = context.watch<SuscripcionProvider>();
+    final auth = context.read<AuthProvider>();
+
+    return ElevatedButton(
+      onPressed: susProvider.actionLoading
+          ? null
+          : () async {
+              final uid = auth.user?.id;
+              if (uid == null) return;
+              // Confirmación antes de contratar
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: Text('Contratar ${plan.nombre}'),
+                  content: Text(
+                    plan.esGratis
+                        ? 'Activarás el plan gratuito.'
+                        : 'Se activará el plan ${plan.nombre} por \$${plan.precioMensual.toStringAsFixed(0)}/mes.\n\nEl ciclo de facturación cierra el día 2 de cada mes.',
+                  ),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancelar')),
+                    ElevatedButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryColor),
+                        child: const Text('Confirmar',
+                            style: TextStyle(color: Colors.white))),
+                  ],
+                ),
+              );
+              if (confirm != true) return;
+              if (!context.mounted) return;
+              final ok = await context
+                  .read<SuscripcionProvider>()
+                  .cambiarPlan(uid, plan.codigo);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(ok
+                      ? 'Plan ${plan.nombre} activado'
+                      : 'No se pudo activar el plan'),
+                  backgroundColor: ok ? Colors.green[700] : AppTheme.error,
+                ));
+              }
+            },
+      style: ElevatedButton.styleFrom(
+        backgroundColor:
+            isPopular ? AppTheme.primaryColor : AppTheme.border(isDark),
+        foregroundColor: isPopular ? Colors.white : textPrimary,
+        disabledBackgroundColor: isPopular
+            ? AppTheme.primaryColor.withValues(alpha: 0.5)
+            : AppTheme.border(isDark),
+        disabledForegroundColor:
+            isPopular ? Colors.white70 : textSecondary,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+      ),
+      child: susProvider.actionLoading
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2.5, color: Colors.white))
+          : Text(
+              plan.esGratis ? 'Activar plan gratis' : 'Contratar',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+              ),
+            ),
+    );
+  }
+}
 
 class _Feature extends StatelessWidget {
   final IconData icon;
