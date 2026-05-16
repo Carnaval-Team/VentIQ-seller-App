@@ -1373,11 +1373,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                               'Items:',
                               '${_calculateTotalItems(operation)}',
                             ),
-                            if (operation['observaciones']?.isNotEmpty == true)
-                              _buildModalDetailRow(
-                                'Observaciones:',
-                                operation['observaciones'],
-                              ),
+                            ..._buildOperationMetaSection(operation),
 
                             // Show specific details based on operation type
                             if (operation['detalles'] != null) ...[
@@ -1493,11 +1489,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                         DateTime.parse(operation['created_at']),
                       ),
                     ),
-                    if (operation['observaciones']?.isNotEmpty == true)
-                      _buildModalDetailRow(
-                        'Observaciones:',
-                        operation['observaciones'],
-                      ),
+                    ..._buildOperationMetaSection(operation),
 
                     // Detalles del ajuste
                     const SizedBox(height: 16),
@@ -1971,7 +1963,17 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ...especificos.entries.where((e) => e.key != 'cliente_info' && e.key != 'extraccion' && e.key != 'recepcion').map((entry) {
+            ...especificos.entries.where((e) {
+              const hiddenKeys = {
+                'cliente_info', 'extraccion', 'recepcion',
+                'entregado_por', 'recibido_por', 'autorizado_por',
+                'motivo', 'comentario_completado', 'observaciones',
+                'origen', 'destino', 'estado_extraccion', 'estado_recepcion',
+                'id_extraccion', 'id_recepcion', 'ids_operaciones',
+                'tipo_ajuste', 'monto_total',
+              };
+              return !hiddenKeys.contains(e.key);
+            }).map((entry) {
               String label = _formatFieldLabel(entry.key);
               String value = _formatFieldValue(entry.value);
               return Padding(
@@ -2206,6 +2208,98 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     );
   }
 
+  bool _hasDetailText(dynamic value) {
+    if (value == null) return false;
+    return value.toString().trim().isNotEmpty;
+  }
+
+  Map<String, dynamic>? _extractDetallesEspecificos(
+      Map<String, dynamic> operation) {
+    final detalles = operation['detalles'];
+    if (detalles is Map<String, dynamic>) {
+      final esp = detalles['detalles_especificos'];
+      if (esp is Map<String, dynamic>) return esp;
+      if (esp is Map) return Map<String, dynamic>.from(esp);
+    }
+    return null;
+  }
+
+  List<Widget> _buildOperationMetaSection(Map<String, dynamic> operation) {
+    final esp = _extractDetallesEspecificos(operation);
+    final rows = <Widget>[];
+
+    void addRow(String label, dynamic value) {
+      if (!_hasDetailText(value)) return;
+      rows.add(_buildModalDetailRow(label, value.toString()));
+    }
+
+    void addTextBlock(String label, dynamic value) {
+      if (!_hasDetailText(value)) return;
+      rows.add(const SizedBox(height: 4));
+      rows.add(Text(
+        label,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: Colors.grey[700],
+        ),
+      ));
+      rows.add(const SizedBox(height: 4));
+      rows.add(Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: Text(
+          value.toString(),
+          style: const TextStyle(fontSize: 13, color: Color(0xFF374151)),
+        ),
+      ));
+      rows.add(const SizedBox(height: 8));
+    }
+
+    addRow('Operador:', operation['usuario_nombre']);
+    addRow('Entregado por:', esp?['entregado_por']);
+    addRow('Recibido por:', esp?['recibido_por']);
+    addRow('Autorizado por:', esp?['autorizado_por']);
+    addRow('Motivo:', esp?['motivo']);
+    addRow('Tipo de ajuste:', esp?['tipo_ajuste']);
+    addRow('Origen:', esp?['origen']);
+    addRow('Destino:', esp?['destino']);
+    addRow('Estado extracción:', esp?['estado_extraccion']);
+    addRow('Estado recepción:', esp?['estado_recepcion']);
+
+    addTextBlock('Observaciones:', operation['observaciones']);
+
+    final obsDetalle = esp?['observaciones'];
+    if (_hasDetailText(obsDetalle) &&
+        obsDetalle.toString().trim() !=
+            (operation['observaciones']?.toString().trim() ?? '')) {
+      addTextBlock('Observaciones adicionales:', obsDetalle);
+    }
+
+    addTextBlock('Comentario al completar:', esp?['comentario_completado']);
+
+    if (rows.isEmpty) return [];
+
+    return [
+      const Text(
+        'Información de la operación',
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF1F2937),
+        ),
+      ),
+      const SizedBox(height: 8),
+      ...rows,
+      const SizedBox(height: 8),
+    ];
+  }
+
   String _formatFieldLabel(String key) {
     switch (key) {
       case 'id_tpv':
@@ -2228,6 +2322,20 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         return 'Autorizado por';
       case 'entregado_por':
         return 'Entregado por';
+      case 'comentario_completado':
+        return 'Comentario al completar';
+      case 'observaciones':
+        return 'Observaciones';
+      case 'estado_extraccion':
+        return 'Estado extracción';
+      case 'estado_recepcion':
+        return 'Estado recepción';
+      case 'origen':
+        return 'Origen';
+      case 'destino':
+        return 'Destino';
+      case 'tipo_ajuste':
+        return 'Tipo de ajuste';
       case 'id_recepcion':
         return 'ID Recepción';
       case 'id_extraccion':

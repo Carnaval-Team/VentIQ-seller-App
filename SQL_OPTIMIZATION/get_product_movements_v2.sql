@@ -26,6 +26,12 @@ RETURNS TABLE (
   proveedor_id           BIGINT,
   proveedor_nombre       VARCHAR,
   observaciones          VARCHAR,
+  entregado_por          VARCHAR,
+  recibido_por           VARCHAR,
+  autorizado_por         VARCHAR,
+  motivo                 VARCHAR,
+  observaciones_extraccion VARCHAR,
+  comentario_completado  VARCHAR,
   cantidad_inicial       NUMERIC,
   cantidad_final         NUMERIC,
   estado_operacion       SMALLINT,
@@ -180,6 +186,7 @@ BEGIN
       aj_la.denominacion       AS aj_la_nombre,
       aj_la.id_almacen         AS aj_la_id_almacen,
       aj_alm.denominacion      AS aj_alm_nombre,
+      est_aj.comentario        AS aj_comentario_completado,
       -- ubicación del registro inventario (para cancelaciones)
       b.inv_id_ubicacion       AS canc_id_ubicacion,
       inv_la.denominacion      AS canc_la_nombre,
@@ -204,6 +211,15 @@ BEGIN
     -- Resolver ubicación del inventario (cancelaciones) → almacén
     LEFT JOIN app_dat_layout_almacen inv_la  ON inv_la.id  = b.inv_id_ubicacion
     LEFT JOIN app_dat_almacen        inv_alm ON inv_alm.id = inv_la.id_almacen
+    LEFT JOIN LATERAL (
+      SELECT e.comentario
+      FROM app_dat_estado_operacion e
+      WHERE e.id_operacion = aj.id_operacion
+        AND e.comentario IS NOT NULL
+        AND TRIM(e.comentario) <> ''
+      ORDER BY e.id DESC
+      LIMIT 1
+    ) est_aj ON aj.id_operacion IS NOT NULL
     WHERE b.id_recepcion IS NULL
       AND b.id_extraccion IS NULL
       AND b.id_control    IS NULL
@@ -235,6 +251,14 @@ BEGIN
       op.observaciones    AS op_observaciones,
       nto.denominacion    AS tipo_op_nombre,
 
+      -- Detalle de recepción / extracción
+      orec.entregado_por  AS entregado_por,
+      orec.recibido_por   AS recibido_por,
+      oe.autorizado_por   AS autorizado_por,
+      nme.denominacion    AS motivo,
+      oe.observaciones    AS observaciones_extraccion,
+      est_comp.comentario AS comentario_completado,
+
       -- Almacén: prioridad → ubicación del detalle → TPV de venta
       COALESCE(co.rp_id_ubicacion, co.ep_id_ubicacion, co.cp_id_ubicacion) AS id_ubicacion_detalle,
 
@@ -244,6 +268,19 @@ BEGIN
     FROM con_operacion co
     INNER JOIN app_dat_operaciones    op  ON op.id  = co.id_op
     INNER JOIN app_nom_tipo_operacion nto ON nto.id = op.id_tipo_operacion
+
+    LEFT JOIN app_dat_operacion_recepcion  orec ON orec.id_operacion = co.id_op
+    LEFT JOIN app_dat_operacion_extraccion  oe   ON oe.id_operacion   = co.id_op
+    LEFT JOIN app_nom_motivo_extraccion     nme  ON nme.id            = oe.id_motivo_operacion
+    LEFT JOIN LATERAL (
+      SELECT e.comentario
+      FROM app_dat_estado_operacion e
+      WHERE e.id_operacion = co.id_op
+        AND e.comentario IS NOT NULL
+        AND TRIM(e.comentario) <> ''
+      ORDER BY e.id DESC
+      LIMIT 1
+    ) est_comp ON TRUE
 
     -- Venta: op → app_dat_operacion_venta → app_dat_tpv
     LEFT JOIN app_dat_operacion_venta  ov  ON ov.id_operacion = co.id_op
@@ -298,6 +335,8 @@ BEGIN
       f.la_nombre, f.la_id_almacen, f.alm_nombre,
       f.prov_id, f.prov_nombre,
       f.op_observaciones,
+      f.entregado_por, f.recibido_por, f.autorizado_por,
+      f.motivo, f.observaciones_extraccion, f.comentario_completado,
       f.cantidad_inicial, f.cantidad_final
     FROM filtrado f
 
@@ -326,6 +365,9 @@ BEGIN
       NULL::BIGINT                            AS prov_id,
       NULL::VARCHAR                           AS prov_nombre,
       NULL::VARCHAR                           AS op_observaciones,
+      NULL::VARCHAR AS entregado_por, NULL::VARCHAR AS recibido_por,
+      NULL::VARCHAR AS autorizado_por, NULL::VARCHAR AS motivo,
+      NULL::VARCHAR AS observaciones_extraccion, NULL::VARCHAR AS comentario_completado,
       r.cantidad_inicial, r.cantidad_final
     FROM reajustes r
     WHERE p_tipo_operacion_id IS NULL
@@ -356,6 +398,10 @@ BEGIN
       NULL::BIGINT                            AS prov_id,
       NULL::VARCHAR                           AS prov_nombre,
       a.aj_observaciones::VARCHAR             AS op_observaciones,
+      NULL::VARCHAR AS entregado_por, NULL::VARCHAR AS recibido_por,
+      NULL::VARCHAR AS autorizado_por, NULL::VARCHAR AS motivo,
+      NULL::VARCHAR AS observaciones_extraccion,
+      a.aj_comentario_completado::VARCHAR     AS comentario_completado,
       a.cantidad_inicial, a.cantidad_final
     FROM ajustes a
     WHERE (p_tipo_operacion_id IS NULL OR a.aj_id_tipo_operacion = p_tipo_operacion_id)
@@ -380,6 +426,12 @@ BEGIN
     t.prov_id::BIGINT,
     t.prov_nombre::VARCHAR,
     t.op_observaciones::VARCHAR,
+    t.entregado_por::VARCHAR,
+    t.recibido_por::VARCHAR,
+    t.autorizado_por::VARCHAR,
+    t.motivo::VARCHAR,
+    t.observaciones_extraccion::VARCHAR,
+    t.comentario_completado::VARCHAR,
     t.cantidad_inicial::NUMERIC,
     t.cantidad_final::NUMERIC,
     eo.estado::SMALLINT,

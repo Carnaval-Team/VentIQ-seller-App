@@ -5,6 +5,7 @@ import '../models/warehouse.dart';
 import '../services/warehouse_service.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
+import '../widgets/presentacion_equivalencia_widget.dart';
 
 class InventoryTransferScreen extends StatefulWidget {
   const InventoryTransferScreen({super.key});
@@ -1048,6 +1049,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     final presNombre = product['presentacion_nombre']?.toString() ?? '';
     final varNombre = product['variante_nombre']?.toString() ?? '';
     final hasVariant = varNombre.isNotEmpty && varNombre != 'Sin variante';
+    final idProducto = (product['id_producto'] as num?)?.toInt();
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1088,6 +1090,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               ),
             ),
           ),
+          if (idProducto != null)
+            PresentacionEquivalenciaIconButton(
+              productId: idProducto,
+              productName: nombre,
+              iconSize: 18,
+            ),
           // Qty input
           SizedBox(
             width: 72,

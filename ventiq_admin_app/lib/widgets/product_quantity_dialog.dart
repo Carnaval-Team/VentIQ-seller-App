@@ -5,6 +5,7 @@ import '../models/product.dart';
 import '../models/warehouse.dart';
 import '../utils/presentation_converter.dart';
 import 'price_currency_converter_widget.dart';
+import 'presentacion_equivalencia_widget.dart';
 
 class ProductQuantityDialog extends StatefulWidget {
   final Product product;
@@ -402,6 +403,12 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                     children: [
                       // Product Information
                       _buildProductInfo(),
+                      if (int.tryParse(widget.product.id) != null)
+                        PresentacionEquivalenciaBanner(
+                          productId: int.parse(widget.product.id),
+                          productPresentaciones: widget.product.presentaciones,
+                          unidadMedida: widget.product.um,
+                        ),
                       SizedBox(height: 24),
 
                       // Input Data

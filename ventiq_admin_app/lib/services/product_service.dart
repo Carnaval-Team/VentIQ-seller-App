@@ -2682,4 +2682,124 @@ class ProductService {
       return false;
     }
   }
+
+  // ── Equivalencia informativa de presentaciones (app_inf_presentacion_producto) ──
+
+  static Future<List<Map<String, dynamic>>> getEquivalenciasPresentacion(
+    int productId,
+  ) async {
+    try {
+      final response = await _supabase
+          .from('app_inf_presentacion_producto')
+          .select('''
+            id,
+            id_producto,
+            id_presentacion,
+            cantidad,
+            observaciones,
+            created_at,
+            updated_at,
+            app_nom_presentacion!inner(id, denominacion, descripcion)
+          ''')
+          .eq('id_producto', productId)
+          .order('cantidad', ascending: true);
+
+      return (response as List).map((item) {
+        final map = Map<String, dynamic>.from(item as Map);
+        final nom = map['app_nom_presentacion'] as Map<String, dynamic>?;
+        return {
+          'id': map['id'],
+          'id_producto': map['id_producto'],
+          'id_presentacion': map['id_presentacion'],
+          'cantidad': (map['cantidad'] as num?)?.toDouble() ?? 0,
+          'observaciones': map['observaciones'] as String?,
+          'presentacion': nom?['denominacion'] ?? 'Presentación',
+          'presentacion_descripcion': nom?['descripcion'],
+        };
+      }).toList();
+    } catch (e) {
+      print('❌ Error obteniendo equivalencias de presentación: $e');
+      return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>?> upsertEquivalenciaPresentacion({
+    required int idProducto,
+    required int idPresentacion,
+    required double cantidad,
+    String? observaciones,
+    int? id,
+  }) async {
+    try {
+      if (cantidad <= 0) {
+        throw Exception('La cantidad debe ser mayor que cero');
+      }
+
+      final data = <String, dynamic>{
+        'id_producto': idProducto,
+        'id_presentacion': idPresentacion,
+        'cantidad': cantidad,
+        'observaciones': observaciones,
+      };
+
+      if (id != null) {
+        final response = await _supabase
+            .from('app_inf_presentacion_producto')
+            .update(data)
+            .eq('id', id)
+            .select('''
+              id,
+              id_producto,
+              id_presentacion,
+              cantidad,
+              observaciones,
+              app_nom_presentacion!inner(denominacion)
+            ''')
+            .single();
+        return Map<String, dynamic>.from(response);
+      }
+
+      final response = await _supabase
+          .from('app_inf_presentacion_producto')
+          .insert(data)
+          .select('''
+            id,
+            id_producto,
+            id_presentacion,
+            cantidad,
+            observaciones,
+            app_nom_presentacion!inner(denominacion)
+          ''')
+          .single();
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      print('❌ Error guardando equivalencia de presentación: $e');
+      rethrow;
+    }
+  }
+
+  static Future<bool> deleteEquivalenciaPresentacion(int id) async {
+    try {
+      await _supabase
+          .from('app_inf_presentacion_producto')
+          .delete()
+          .eq('id', id);
+      return true;
+    } catch (e) {
+      print('❌ Error eliminando equivalencia de presentación: $e');
+      return false;
+    }
+  }
+
+  /// Texto informativo: "1 Caja = 12 Unidades"
+  static String formatEquivalenciaLine({
+    required String presentacionNombre,
+    required double cantidad,
+    required String unidadBaseNombre,
+  }) {
+    final qty = cantidad == cantidad.roundToDouble()
+        ? cantidad.toInt().toString()
+        : cantidad.toStringAsFixed(2);
+    return '1 $presentacionNombre = $qty $unidadBaseNombre';
+  }
 }
