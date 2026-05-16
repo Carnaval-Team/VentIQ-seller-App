@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/store.dart';
 import 'consignacion_duplicacion_service.dart';
+import 'currency_service.dart';
 
 class ConsignacionService {
   static final _supabase = Supabase.instance.client;
@@ -1793,10 +1794,19 @@ class ConsignacionService {
               
               debugPrint('✅ Precios anteriores cerrados para producto $idProductoDuplicado');
               
-              // ✅ PASO 2: Crear nuevo precio de venta
+              // ✅ PASO 2: Crear nuevo precio de venta (CUP + USD con tasa de la tienda)
+              final tasaUsdCup =
+                  await CurrencyService.getEffectiveUsdToCupRate();
+              final precioVentaUsd = tasaUsdCup > 0
+                  ? double.parse(
+                      (precioVenta / tasaUsdCup).toStringAsFixed(4),
+                    )
+                  : 0.0;
+
               final precioVentaData = {
                 'id_producto': idProductoDuplicado,
                 'precio_venta_cup': precioVenta,
+                if (precioVentaUsd > 0) 'precio_venta_usd': precioVentaUsd,
                 'fecha_desde': hoy,
               };
               
@@ -1809,7 +1819,10 @@ class ConsignacionService {
                   .from('app_dat_precio_venta')
                   .insert(precioVentaData);
 
-              debugPrint('✅ Precio de venta creado: Producto $idProductoDuplicado = \$$precioVenta CUP (desde $hoy)');
+              debugPrint(
+                '✅ Precio de venta creado: Producto $idProductoDuplicado = '
+                '\$$precioVenta CUP / \$$precioVentaUsd USD (tasa $tasaUsdCup, desde $hoy)',
+              );
             } catch (e) {
               debugPrint('⚠️ Error configurando precio de venta: $e');
             }
