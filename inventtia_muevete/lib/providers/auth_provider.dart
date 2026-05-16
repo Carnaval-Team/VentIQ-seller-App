@@ -7,10 +7,12 @@ import '../services/notification_service.dart';
 import '../services/background_service.dart';
 import '../services/pushy_service.dart';
 import '../services/vehicle_service.dart';
+import '../services/suscripcion_service.dart';
 import '../utils/battery_optimizer.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
+  final SuscripcionService _suscripcionService = SuscripcionService();
 
   User? _user;
   Map<String, dynamic>? _userProfile;
@@ -350,6 +352,17 @@ class AuthProvider extends ChangeNotifier {
         debugPrint('[signUp] Cargando perfil local...');
         await _loadProfile();
         debugPrint('[signUp] Perfil local cargado OK');
+
+        // Crear suscripción gratuita del primer mes
+        // Solo para tipos de usuario de la plataforma de carga
+        final tiposConPlan = ['shipper', 'carrier_carga', 'dispatcher'];
+        if (tiposConPlan.contains(tipoUsuario)) {
+          debugPrint('[signUp] Creando suscripción gratis para tipo=$tipoUsuario...');
+          // Normalizar: 'carrier_carga' → 'carrier' para el plan
+          final tipoPlan = tipoUsuario == 'carrier_carga' ? 'carrier' : tipoUsuario;
+          await _suscripcionService.crearSuscripcionGratis(_user!.id, tipoPlan);
+          debugPrint('[signUp] Suscripción gratis creada OK');
+        }
       }
 
       _isLoading = false;

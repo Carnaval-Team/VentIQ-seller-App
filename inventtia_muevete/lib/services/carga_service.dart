@@ -196,7 +196,10 @@ class CargaService {
         query = query.lte('precio_ofertado', precioMax);
       }
 
-      final data = await query.order('created_at', ascending: false);
+      final data = await query
+          .order('fecha_recogida', ascending: true, nullsFirst: false)
+          .order('prioridad', ascending: false)
+          .order('created_at', ascending: true);
       final list =
           (data as List).map((e) => CargaModel.fromJson(e)).toList();
       debugPrint('[CargaService] ${list.length} cargas disponibles');
@@ -266,6 +269,7 @@ class CargaService {
           .from('cargas')
           .select()
           .eq('carrier_driver_id', driverId)
+          .inFilter('estado', ['tomada', 'en_transito', 'completada_carrier'])
           .order('created_at', ascending: false);
       return (data as List).map((e) => CargaModel.fromJson(e)).toList();
     } catch (e) {
@@ -274,8 +278,51 @@ class CargaService {
     }
   }
 
+  /// Carrier también puede consultar cargas por su UUID (asignadas sin oferta)
+  Future<List<CargaModel>> getCargasCarrierByUuid(String carrierUuid) async {
+    try {
+      final data = await _supabase
+          .schema('muevete')
+          .from('cargas')
+          .select()
+          .eq('carrier_uuid', carrierUuid)
+          .inFilter('estado', ['tomada', 'en_transito', 'completada_carrier'])
+          .order('created_at', ascending: false);
+      return (data as List).map((e) => CargaModel.fromJson(e)).toList();
+    } catch (e) {
+      debugPrint('[CargaService] Error getCargasCarrierByUuid: $e');
+      rethrow;
+    }
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
-  // CARRIER: confirmar recogida y entrega
+  // SHIPPER: marcar carga como tomada (asignar carrier)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /// El shipper selecciona un carrier del directorio y marca la carga como tomada.
+  /// La carga queda oculta de [getCargasDisponibles] y visible en el panel del carrier.
+  Future<void> marcarComoTomada(
+    int cargaId, {
+    required int carrierDriverId,
+    required String carrierUuid,
+    String? shipperUuid,
+  }) async {
+    try {
+      await _supabase.schema('muevete').rpc('fn_marcar_carga_tomada', params: {
+        'p_carga_id':           cargaId,
+        'p_carrier_driver_id':  carrierDriverId,
+        'p_carrier_uuid':       carrierUuid,
+        if (shipperUuid != null) 'p_usuario_uuid': shipperUuid,
+      });
+      debugPrint('[CargaService] Carga $cargaId marcada como tomada por carrier $carrierDriverId');
+    } catch (e) {
+      debugPrint('[CargaService] Error marcarComoTomada: $e');
+      rethrow;
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // CARRIER: confirmar recogida y completar
   // ──────────────────────────────────────────────────────────────────────────
 
   Future<void> confirmarRecogida(int cargaId, {int? driverId}) =>
@@ -286,13 +333,31 @@ class CargaService {
         motivo: 'Recogida confirmada por carrier',
       );
 
-  Future<void> confirmarEntrega(int cargaId, {int? driverId}) =>
+  /// Carrier marca la carga como completada (entregada por su parte).
+  Future<void> completarCargaCarrier(int cargaId, {int? driverId}) =>
       actualizarEstado(
         cargaId,
-        'entregada',
+        'completada_carrier',
         driverId: driverId,
         motivo: 'Entrega confirmada por carrier',
       );
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // SHIPPER: confirmar completación final
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /// Shipper confirma que la carga fue completada. Cierra el ciclo.
+  Future<void> completarCargaShipper(int cargaId, {String? shipperUuid}) =>
+      actualizarEstado(
+        cargaId,
+        'completada',
+        usuarioUuid: shipperUuid,
+        motivo: 'Completación confirmada por shipper',
+      );
+
+  /// Mantener por compatibilidad – redirige a completarCargaCarrier
+  Future<void> confirmarEntrega(int cargaId, {int? driverId}) =>
+      completarCargaCarrier(cargaId, driverId: driverId);
 
   // ──────────────────────────────────────────────────────────────────────────
   // Helper privado: inserta en la bitácora vía RPC

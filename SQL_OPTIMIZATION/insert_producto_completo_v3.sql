@@ -338,12 +338,20 @@ BEGIN
                         id_producto,
                         id_variante,
                         precio_venta_cup,
+                        precio_venta_usd,
                         fecha_desde,
                         fecha_hasta
                     ) VALUES (
                         new_product_id,
                         variante_id_actual,
                         precio_valor,
+                        CASE 
+                            WHEN precio_item->>'precio_venta_usd' IS NOT NULL 
+                                 AND precio_item->>'precio_venta_usd' != 'null'
+                                 AND (precio_item->>'precio_venta_usd')::NUMERIC > 0
+                            THEN (precio_item->>'precio_venta_usd')::NUMERIC
+                            ELSE NULL
+                        END,
                         fecha_desde_valor,
                         fecha_hasta_valor
                     );
@@ -361,12 +369,20 @@ BEGIN
                         id_producto,
                         id_variante,
                         precio_venta_cup,
+                        precio_venta_usd,
                         fecha_desde,
                         fecha_hasta
                     ) VALUES (
                         new_product_id,
                         NULL,
                         precio_valor,
+                        CASE 
+                            WHEN precio_item->>'precio_venta_usd' IS NOT NULL 
+                                 AND precio_item->>'precio_venta_usd' != 'null'
+                                 AND (precio_item->>'precio_venta_usd')::NUMERIC > 0
+                            THEN (precio_item->>'precio_venta_usd')::NUMERIC
+                            ELSE NULL
+                        END,
                         COALESCE((precio_item->>'fecha_desde')::DATE, CURRENT_DATE),
                         (precio_item->>'fecha_hasta')::DATE
                     );

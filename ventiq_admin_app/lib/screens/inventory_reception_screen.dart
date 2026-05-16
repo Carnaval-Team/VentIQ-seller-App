@@ -286,7 +286,28 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
             exchangeRate: null,
             onProductAdded: (productData) {
               setState(() {
-                _selectedProducts.add(productData);
+                // Identify the incoming product by its numeric ID and presentation
+                final incomingId = productData['id_producto'] ?? productData['id'];
+                final incomingPresId = productData['id_presentacion'];
+
+                final existingIndex = _selectedProducts.indexWhere((p) {
+                  final existingId = p['id_producto'] ?? p['id'];
+                  final existingPresId = p['id_presentacion'];
+                  return existingId != null &&
+                      existingId == incomingId &&
+                      existingPresId == incomingPresId;
+                });
+
+                if (existingIndex != -1) {
+                  // Merge: sum quantity, keep higher unit price (or the new one)
+                  final existing = Map<String, dynamic>.from(_selectedProducts[existingIndex]);
+                  final prevQty = (existing['cantidad'] as num?)?.toDouble() ?? 0.0;
+                  final newQty = (productData['cantidad'] as num?)?.toDouble() ?? 0.0;
+                  existing['cantidad'] = prevQty + newQty;
+                  _selectedProducts[existingIndex] = existing;
+                } else {
+                  _selectedProducts.add(productData);
+                }
               });
             },
           ),

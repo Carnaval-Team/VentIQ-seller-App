@@ -264,13 +264,93 @@ class CargaProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await _cargaService.confirmarEntrega(cargaId, driverId: driverId);
-      _refreshCargaEstado(cargaId, 'entregada');
+      _refreshCargaEstado(cargaId, 'completada_carrier');
       return true;
     } catch (e) {
       _error = e.toString();
       return false;
     } finally {
       _actionLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> marcarComoTomada(
+    int cargaId, {
+    required int carrierDriverId,
+    required String carrierUuid,
+    String? shipperUuid,
+  }) async {
+    _actionLoading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await _cargaService.marcarComoTomada(
+        cargaId,
+        carrierDriverId: carrierDriverId,
+        carrierUuid: carrierUuid,
+        shipperUuid: shipperUuid,
+      );
+      _refreshCargaEstado(cargaId, 'tomada');
+      // Remove from available loads list
+      _cargasDisponibles =
+          _cargasDisponibles.where((c) => c.id != cargaId).toList();
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      return false;
+    } finally {
+      _actionLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> completarCargaCarrier(int cargaId, {int? driverId}) async {
+    _actionLoading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await _cargaService.completarCargaCarrier(cargaId, driverId: driverId);
+      _refreshCargaEstado(cargaId, 'completada_carrier');
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      return false;
+    } finally {
+      _actionLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> completarCargaShipper(int cargaId, {String? shipperUuid}) async {
+    _actionLoading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await _cargaService.completarCargaShipper(cargaId,
+          shipperUuid: shipperUuid);
+      _refreshCargaEstado(cargaId, 'completada');
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      return false;
+    } finally {
+      _actionLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loadCargasCarrierByUuid(String carrierUuid) async {
+    _loadingMisCargas = true;
+    _error = null;
+    notifyListeners();
+    try {
+      _cargasActivas =
+          await _cargaService.getCargasCarrierByUuid(carrierUuid);
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _loadingMisCargas = false;
       notifyListeners();
     }
   }
@@ -416,7 +496,10 @@ class CargaProvider extends ChangeNotifier {
         'es_ltl': c.esLtl,
         'es_recurrente': c.esRecurrente,
         'carrier_driver_id': c.carrierDriverId,
+        'carrier_uuid': c.carrierUuid,
         'oferta_aceptada_id': c.ofertaAceptadaId,
+        'ultima_lat': c.ultimaLat,
+        'ultima_lon': c.ultimaLon,
         'distancia_km': c.distanciaKm,
         'distancia_millas': c.distanciaMillas,
         'unidad_peso': c.unidadPeso,

@@ -8,6 +8,7 @@ import '../../models/carga_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/carga_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../widgets/plan_suscripcion_widget.dart';
 
 class DispatcherHomeScreen extends StatefulWidget {
   const DispatcherHomeScreen({super.key});
@@ -28,7 +29,7 @@ class _DispatcherHomeScreenState extends State<DispatcherHomeScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 4, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
@@ -111,7 +112,7 @@ class _DispatcherHomeScreenState extends State<DispatcherHomeScreen>
             onPressed: () async {
               await context.read<AuthProvider>().signOut();
               if (context.mounted) {
-                Navigator.pushReplacementNamed(context, '/login');
+                Navigator.pushReplacementNamed(context, '/landing');
               }
             },
           ),
@@ -122,14 +123,12 @@ class _DispatcherHomeScreenState extends State<DispatcherHomeScreen>
           unselectedLabelColor:
               isDark ? Colors.white54 : Colors.grey[500],
           indicatorColor: AppTheme.primaryColor,
+          isScrollable: true,
           tabs: const [
             Tab(icon: Icon(Icons.groups_outlined), text: 'Mi Flota'),
-            Tab(
-                icon: Icon(Icons.search_outlined),
-                text: 'Asignar'),
-            Tab(
-                icon: Icon(Icons.track_changes_outlined),
-                text: 'En Curso'),
+            Tab(icon: Icon(Icons.search_outlined), text: 'Asignar'),
+            Tab(icon: Icon(Icons.track_changes_outlined), text: 'En Curso'),
+            Tab(icon: Icon(Icons.workspace_premium_outlined), text: 'Mi Plan'),
           ],
         ),
       ),
@@ -142,6 +141,7 @@ class _DispatcherHomeScreenState extends State<DispatcherHomeScreen>
               onRefresh: _loadFlota),
           _AsignarCargaTab(flota: _flota),
           _CargasEnCursoTab(),
+          const _DispatcherPlanTab(),
         ],
       ),
     );
@@ -345,7 +345,7 @@ class _AsignarCargaTabState extends State<_AsignarCargaTab> {
                     padding: EdgeInsets.all(16),
                     child: CircularProgressIndicator(),
                   ))
-              : provider.cargasDisponibles.isEmpty
+                  : provider.cargasDisponibles.isEmpty
                   ? Padding(
                       padding:
                           const EdgeInsets.symmetric(vertical: 12),
@@ -370,7 +370,19 @@ class _AsignarCargaTabState extends State<_AsignarCargaTab> {
                         ),
                         columns: [
                           DataColumn(
+                              label: Text('Prioridad',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                      color: textSecondary))),
+                          DataColumn(
                               label: Text('Ruta',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                      color: textSecondary))),
+                          DataColumn(
+                              label: Text('Recogida',
                                   style: TextStyle(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 12,
@@ -388,67 +400,89 @@ class _AsignarCargaTabState extends State<_AsignarCargaTab> {
                                       fontSize: 12,
                                       color: textSecondary))),
                         ],
-                        rows: provider.cargasDisponibles.map((c) {
-                          final sel =
-                              _cargaSeleccionada?.id == c.id;
-                          return DataRow(
-                            selected: sel,
-                            onSelectChanged: (_) =>
-                                setState(() =>
-                                    _cargaSeleccionada = c),
-                            color:
-                                WidgetStateProperty.resolveWith(
-                                    (states) {
-                              if (states.contains(
-                                  WidgetState.selected)) {
-                                return AppTheme.primaryColor
-                                    .withValues(alpha: 0.1);
-                              }
-                              return null;
-                            }),
-                            cells: [
-                              DataCell(SizedBox(
-                                width: 160,
-                                child: Text(
-                                  c.rutaCorta,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
+                        rows: (provider.cargasDisponibles.toList()
+                              ..sort((a, b) {
+                                if (a.fechaRecogida == null && b.fechaRecogida == null) return 0;
+                                if (a.fechaRecogida == null) return 1;
+                                if (b.fechaRecogida == null) return -1;
+                                return a.fechaRecogida!.compareTo(b.fechaRecogida!);
+                              }))
+                            .map((c) {
+                              final now = DateTime.now();
+                              final vencida = c.fechaRecogida != null &&
+                                  c.fechaRecogida!.isBefore(DateTime(now.year, now.month, now.day)) &&
+                                  !['tomada','en_transito','completada_carrier','entregada','completada'].contains(c.estado);
+                              final sel = _cargaSeleccionada?.id == c.id;
+                              final recogida = c.fechaRecogida != null
+                                  ? '${c.fechaRecogida!.day.toString().padLeft(2, '0')}/${c.fechaRecogida!.month.toString().padLeft(2, '0')}/${c.fechaRecogida!.year}'
+                                  : '—';
+                              return DataRow(
+                                selected: sel,
+                                onSelectChanged: (_) => setState(() => _cargaSeleccionada = c),
+                                color: WidgetStateProperty.resolveWith((states) {
+                                  if (vencida) return Colors.red.withValues(alpha: isDark ? 0.18 : 0.07);
+                                  if (states.contains(WidgetState.selected)) {
+                                    return AppTheme.primaryColor.withValues(alpha: 0.1);
+                                  }
+                                  return null;
+                                }),
+                                cells: [
+                                  DataCell(_DispatcherPrioridadBadge(prioridad: c.prioridad)),
+                                  DataCell(SizedBox(
+                                    width: 160,
+                                    child: Text(
+                                      c.rutaCorta,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(fontSize: 12, color: textPrimary),
+                                    ),
+                                  )),
+                                  DataCell(Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (vencida)
+                                        Padding(
+                                          padding: const EdgeInsets.only(right: 3),
+                                          child: Icon(Icons.warning_amber_rounded, size: 13, color: Colors.red[700]),
+                                        ),
+                                      Text(
+                                        recogida,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: vencida ? Colors.red[700] : textSecondary,
+                                          fontWeight: vencida ? FontWeight.w700 : FontWeight.normal,
+                                        ),
+                                      ),
+                                    ],
+                                  )),
+                                  DataCell(Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primaryColor.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      c.tipoLabel,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppTheme.primaryColor,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  )),
+                                  DataCell(Text(
+                                    c.precioOfertado != null
+                                        ? '\$${c.precioOfertado!.toStringAsFixed(0)}'
+                                        : '—',
+                                    style: TextStyle(
                                       fontSize: 12,
-                                      color: textPrimary),
-                                ),
-                              )),
-                              DataCell(Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.primaryColor
-                                      .withValues(alpha: 0.12),
-                                  borderRadius:
-                                      BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  c.tipoLabel,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppTheme.primaryColor,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              )),
-                              DataCell(Text(
-                                c.precioOfertado != null
-                                    ? '\$${c.precioOfertado!.toStringAsFixed(0)}'
-                                    : '—',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppTheme.primaryColor,
-                                ),
-                              )),
-                            ],
-                          );
-                        }).toList(),
+                                      fontWeight: FontWeight.w700,
+                                      color: AppTheme.primaryColor,
+                                    ),
+                                  )),
+                                ],
+                              );
+                            }).toList(),
                       ),
                     ),
         ),
@@ -610,15 +644,21 @@ class _CargasEnCursoTab extends StatelessWidget {
       );
     }
 
-    // Group by estado
-    final enCurso = cargas
-        .where((c) =>
-            c.estado == 'aceptada' || c.estado == 'en_transito')
-        .toList();
-    final entregadas = cargas
-        .where((c) =>
-            c.estado == 'entregada' || c.estado == 'completada')
-        .toList();
+    // Group by estado, sorted by fecha_recogida asc
+    int sortByFecha(a, b) {
+      if (a.fechaRecogida == null && b.fechaRecogida == null) return 0;
+      if (a.fechaRecogida == null) return 1;
+      if (b.fechaRecogida == null) return -1;
+      return a.fechaRecogida!.compareTo(b.fechaRecogida!);
+    }
+    final enCurso = (cargas
+        .where((c) => c.estado == 'aceptada' || c.estado == 'en_transito')
+        .toList()
+      ..sort(sortByFecha));
+    final entregadas = (cargas
+        .where((c) => c.estado == 'entregada' || c.estado == 'completada')
+        .toList()
+      ..sort(sortByFecha));
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -800,6 +840,12 @@ class _DispatcherCargaCard extends StatelessWidget {
     final textSecondary =
         isDark ? Colors.white60 : Colors.grey[600]!;
 
+    final now = DateTime.now();
+    final vencida = carga.fechaRecogida != null &&
+        carga.fechaRecogida!.isBefore(DateTime(now.year, now.month, now.day)) &&
+        !['tomada', 'en_transito', 'completada_carrier', 'entregada', 'completada']
+            .contains(carga.estado);
+
     Color badgeColor;
     switch (carga.estado) {
       case 'aceptada':
@@ -819,11 +865,14 @@ class _DispatcherCargaCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: cardColor,
+        color: vencida
+            ? Colors.red.withValues(alpha: isDark ? 0.12 : 0.05)
+            : cardColor,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-            color:
-                isDark ? AppTheme.darkBorder : Colors.grey[200]!),
+            color: vencida
+                ? Colors.red.withValues(alpha: 0.35)
+                : (isDark ? AppTheme.darkBorder : Colors.grey[200]!)),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -831,6 +880,8 @@ class _DispatcherCargaCard extends StatelessWidget {
         children: [
           Row(
             children: [
+              _DispatcherPrioridadBadge(prioridad: carga.prioridad),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   carga.rutaCorta,
@@ -870,6 +921,20 @@ class _DispatcherCargaCard extends StatelessWidget {
               Text(carga.tipoLabel,
                   style: TextStyle(
                       fontSize: 12, color: textSecondary)),
+              if (carga.fechaRecogida != null) ...[
+                const SizedBox(width: 12),
+                if (vencida)
+                  Icon(Icons.warning_amber_rounded,
+                      size: 13, color: Colors.red[700]),
+                if (vencida) const SizedBox(width: 3),
+                Text(
+                  '${carga.fechaRecogida!.day.toString().padLeft(2, '0')}/${carga.fechaRecogida!.month.toString().padLeft(2, '0')}/${carga.fechaRecogida!.year}',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: vencida ? Colors.red[700] : textSecondary,
+                      fontWeight: vencida ? FontWeight.w700 : FontWeight.normal),
+                ),
+              ],
               if (carga.precioFinal != null ||
                   carga.precioOfertado != null) ...[
                 const SizedBox(width: 12),
@@ -910,6 +975,85 @@ class _SectionHeader extends StatelessWidget {
         fontSize: 13,
         fontWeight: FontWeight.w700,
         color: isDark ? Colors.white70 : Colors.grey[700],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tab Plan
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DispatcherPlanTab extends StatelessWidget {
+  const _DispatcherPlanTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.watch<ThemeProvider>().isDark;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Suscripción y Facturación',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : const Color(0xFF1A1D27),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'El ciclo de facturación cierra el día 2 de cada mes.',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              color: isDark ? Colors.white60 : Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const PlanSuscripcionTile(),
+        ],
+      ),
+    );
+  }
+}
+
+class _DispatcherPrioridadBadge extends StatelessWidget {
+  final String prioridad;
+  const _DispatcherPrioridadBadge({required this.prioridad});
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color;
+    final String label;
+    switch (prioridad) {
+      case 'urgente':
+        color = Colors.red;
+        label = 'Urgente';
+        break;
+      case 'alta':
+        color = Colors.orange;
+        label = 'Alta';
+        break;
+      default:
+        color = Colors.blueGrey;
+        label = 'Normal';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
       ),
     );
   }

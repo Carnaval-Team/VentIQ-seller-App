@@ -62,7 +62,7 @@ class _CarrierDirectoryScreenState extends State<CarrierDirectoryScreen> {
           .schema('muevete')
           .from('drivers')
           .select(
-            'id, name, email, telefono, estado, kyc, image, categoria, '
+            'id, uuid, name, email, telefono, estado, kyc, image, categoria, '
             'mc_number, dot_number, pais, province, municipality, '
             'carrocerias(id, marca, modelo, matricula)',
           )

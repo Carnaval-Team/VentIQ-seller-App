@@ -235,6 +235,33 @@ BEGIN
           AND (v_fecha_desde_ts IS NULL OR i.created_at >= v_fecha_desde_ts)
         GROUP BY ep.id_producto, COALESCE(ep.id_presentacion, 0), ep.id_ubicacion
     ),
+    -- Ajustes e inventario (origen_cambio=3): positivos son entradas, negativos son salidas
+    ajustes_entrada_periodo AS (
+        SELECT i.id_producto, COALESCE(i.id_presentacion, 0) as id_presentacion,
+            i.id_ubicacion, SUM(i.cantidad_final - i.cantidad_inicial) as cantidad_ajuste_entrada
+        FROM app_dat_inventario_productos i
+        INNER JOIN ubicaciones_filtro uf ON i.id_ubicacion = uf.id_ubicacion
+        WHERE i.id_recepcion IS NULL
+          AND i.id_extraccion IS NULL
+          AND i.id_control IS NULL
+          AND (i.cantidad_final - i.cantidad_inicial) > 0  -- Solo ajustes que suman
+          AND (v_fecha_hasta_ts IS NULL OR i.created_at <= v_fecha_hasta_ts)
+          AND (v_fecha_desde_ts IS NULL OR i.created_at >= v_fecha_desde_ts)
+        GROUP BY i.id_producto, COALESCE(i.id_presentacion, 0), i.id_ubicacion
+    ),
+    ajustes_salida_periodo AS (
+        SELECT i.id_producto, COALESCE(i.id_presentacion, 0) as id_presentacion,
+            i.id_ubicacion, SUM(ABS(i.cantidad_final - i.cantidad_inicial)) as cantidad_ajuste_salida
+        FROM app_dat_inventario_productos i
+        INNER JOIN ubicaciones_filtro uf ON i.id_ubicacion = uf.id_ubicacion
+        WHERE i.id_recepcion IS NULL
+          AND i.id_extraccion IS NULL
+          AND i.id_control IS NULL
+          AND (i.cantidad_final - i.cantidad_inicial) < 0  -- Solo ajustes que restan
+          AND (v_fecha_hasta_ts IS NULL OR i.created_at <= v_fecha_hasta_ts)
+          AND (v_fecha_desde_ts IS NULL OR i.created_at >= v_fecha_desde_ts)
+        GROUP BY i.id_producto, COALESCE(i.id_presentacion, 0), i.id_ubicacion
+    ),
     costo_promedio_productos AS (
         SELECT rp.id_producto, COALESCE(rp.id_presentacion, 0) as id_presentacion,
             CASE WHEN SUM(rp.cantidad) > 0 THEN
@@ -276,6 +303,10 @@ BEGIN
         SELECT ex_comb.id_producto, ex_comb.id_presentacion, ex_comb.id_ubicacion FROM extracciones_periodo ex_comb
         UNION
         SELECT vp_comb.id_producto, vp_comb.id_presentacion, vp_comb.id_ubicacion FROM ventas_periodo vp_comb
+        UNION
+        SELECT ae_comb.id_producto, ae_comb.id_presentacion, ae_comb.id_ubicacion FROM ajustes_entrada_periodo ae_comb
+        UNION
+        SELECT as_comb.id_producto, as_comb.id_presentacion, as_comb.id_ubicacion FROM ajustes_salida_periodo as_comb
     ),
     productos_inventario_completo AS (
         SELECT 
@@ -302,8 +333,12 @@ BEGIN
         pic.codigo::TEXT, pic.categoria::TEXT,
         GREATEST(COALESCE(pic.cantidad_final, 0) - COALESCE(sr.reservado, 0), 0)::NUMERIC,
         COALESCE(sr.reservado, 0)::NUMERIC, COALESCE(pic.cantidad_inicial, 0)::NUMERIC,
-        COALESCE(pic.cantidad_final, 0)::NUMERIC, COALESCE(ent.cantidad_entradas, 0)::NUMERIC,
-        COALESCE(ext.cantidad_extracciones, 0)::NUMERIC, COALESCE(vent.cantidad_ventas, 0)::NUMERIC,
+        COALESCE(pic.cantidad_final, 0)::NUMERIC,
+        -- Entradas: recepciones + ajustes/cancelaciones que suman inventario
+        (COALESCE(ent.cantidad_entradas, 0) + COALESCE(ajent.cantidad_ajuste_entrada, 0))::NUMERIC,
+        -- Extracciones: extracciones directas + ajustes/cancelaciones que restan inventario
+        (COALESCE(ext.cantidad_extracciones, 0) + COALESCE(ajsal.cantidad_ajuste_salida, 0))::NUMERIC,
+        COALESCE(vent.cantidad_ventas, 0)::NUMERIC,
         ROUND(COALESCE(vent.cantidad_ventas, 0) * pic.precio_venta, 2)::NUMERIC,
         pic.precio_venta::NUMERIC, COALESCE(cp.costo_promedio_usd, 0)::NUMERIC,
         ROUND(COALESCE(cp.costo_promedio_usd, 0) * COALESCE(tc.tasa, 1), 2)::NUMERIC,
@@ -339,6 +374,12 @@ BEGIN
     LEFT JOIN ventas_periodo vent ON (pic.id = vent.id_producto 
         AND pic.inv_id_presentacion = vent.id_presentacion
         AND pic.actividad_id_ubicacion = vent.id_ubicacion)
+    LEFT JOIN ajustes_entrada_periodo ajent ON (pic.id = ajent.id_producto
+        AND pic.inv_id_presentacion = ajent.id_presentacion
+        AND pic.actividad_id_ubicacion = ajent.id_ubicacion)
+    LEFT JOIN ajustes_salida_periodo ajsal ON (pic.id = ajsal.id_producto
+        AND pic.inv_id_presentacion = ajsal.id_presentacion
+        AND pic.actividad_id_ubicacion = ajsal.id_ubicacion)
     LEFT JOIN costo_promedio_productos cp ON (pic.id = cp.id_producto 
         AND pic.inv_id_presentacion = cp.id_presentacion)
     LEFT JOIN presentacion_info pres ON pic.inv_id_presentacion = pres.id

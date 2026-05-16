@@ -32,6 +32,7 @@ import 'screens/muevete/muevete_map_screen.dart';
 import 'screens/muevete/muevete_ratings_screen.dart';
 import 'screens/muevete/muevete_wallets_screen.dart';
 import 'screens/muevete/muevete_kyc_screen.dart';
+import 'screens/muevete/muevete_planes_screen.dart';
 import 'screens/agentes_screen.dart';
 import 'screens/ingresos_distribucion_screen.dart';
 import 'screens/carnaval_dashboard_screen.dart';
@@ -104,6 +105,7 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/muevete/valoraciones': (context) => const MueveteRatingsScreen(),
         '/muevete/billeteras': (context) => const MueveteWalletsScreen(),
         '/muevete/kyc': (context) => const MueveteKycScreen(),
+        '/muevete/planes': (context) => const MuevetesPlanesScreen(),
         '/agentes': (context) => const AgentesScreen(),
         '/ingresos-distribucion': (context) => const IngresosDistribucionScreen(),
         '/carnaval-dashboard': (context) => const CarnavalDashboardScreen(),

@@ -89,12 +89,16 @@ class CargaModel {
 
   // Carrier asignado
   final int? carrierDriverId;
+  final String? carrierUuid;     // UUID directo del carrier (asignado por shipper)
   final int? ofertaAceptadaId;
 
   // Tracking
   final double? ultimaLat;
   final double? ultimaLon;
   final DateTime? ultimaUbicacionAt;
+
+  // Prioridad asignada por el shipper
+  final String prioridad; // 'normal' | 'alta' | 'urgente'
 
   // Metadata
   final DateTime createdAt;
@@ -174,6 +178,7 @@ class CargaModel {
     this.ltlEspacioOcupado,
     this.esRecurrente = false,
     this.carrierDriverId,
+    this.carrierUuid,
     this.ofertaAceptadaId,
     this.ultimaLat,
     this.ultimaLon,
@@ -187,6 +192,7 @@ class CargaModel {
     this.shipperNombre,
     this.carrierNombre,
     this.ofertasCount,
+    this.prioridad = 'normal',
   });
 
   factory CargaModel.fromJson(Map<String, dynamic> json) {
@@ -262,6 +268,7 @@ class CargaModel {
       ltlEspacioOcupado: (json['ltl_espacio_ocupado'] as num?)?.toDouble(),
       esRecurrente: json['es_recurrente'] as bool? ?? false,
       carrierDriverId: json['carrier_driver_id'] as int?,
+      carrierUuid: json['carrier_uuid'] as String?,
       ofertaAceptadaId: json['oferta_aceptada_id'] as int?,
       ultimaLat: (json['ultima_lat'] as num?)?.toDouble(),
       ultimaLon: (json['ultima_lon'] as num?)?.toDouble(),
@@ -281,6 +288,7 @@ class CargaModel {
       shipperNombre: json['shipper_nombre'] as String?,
       carrierNombre: json['carrier_nombre'] as String?,
       ofertasCount: json['ofertas_count'] as int?,
+      prioridad: json['prioridad'] as String? ?? 'normal',
     );
   }
 
@@ -350,25 +358,32 @@ class CargaModel {
       if (horasCarga != null) 'horas_carga': horasCarga,
       if (horasDescarga != null) 'horas_descarga': horasDescarga,
       if (distanciaKm != null) 'distancia_km': distanciaKm,
+      'prioridad': prioridad,
     };
   }
 
   String get estadoLabel {
     const labels = {
-      'publicada': 'Publicada',
-      'en_matching': 'En Matching',
-      'ofertada': 'Con Ofertas',
-      'aceptada': 'Aceptada',
-      'en_transito': 'En Tránsito',
-      'entregada': 'Entregada',
-      'completada': 'Completada',
-      'cancelada': 'Cancelada',
-      'disputa': 'En Disputa',
+      'publicada':            'Publicada',
+      'en_matching':          'En Matching',
+      'ofertada':             'Con Ofertas',
+      'aceptada':             'Aceptada',
+      'tomada':               'Tomada',
+      'en_transito':          'En Tránsito',
+      'completada_carrier':   'Completada (Carrier)',
+      'entregada':            'Entregada',
+      'completada':           'Completada',
+      'cancelada':            'Cancelada',
     };
     return labels[estado] ?? estado;
   }
 
   String get tipoLabel => tipo == 'ftl' ? 'FTL' : 'LTL';
+
+  String get prioridadLabel {
+    const labels = {'normal': 'Normal', 'alta': 'Alta', 'urgente': 'Urgente'};
+    return labels[prioridad] ?? prioridad;
+  }
 
   String get rutaCorta {
     final origen = ciudadOrigen ?? dirOrigen;

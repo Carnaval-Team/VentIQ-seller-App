@@ -20,6 +20,7 @@ import 'providers/transport_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/address_provider.dart';
 import 'providers/plan_provider.dart';
+import 'providers/suscripcion_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/landing_screen.dart';
 import 'screens/login_screen.dart';
@@ -38,7 +39,9 @@ import 'screens/driver/active_ride_screen.dart';
 import 'screens/driver/driver_wallet_screen.dart';
 import 'screens/shipper/shipper_home_screen.dart';
 import 'screens/shipper/carrier_directory_screen.dart';
+import 'screens/shipper/shipper_profile_screen.dart';
 import 'screens/carrier/carrier_home_screen.dart';
+import 'screens/carrier/carrier_carga_profile_screen.dart';
 import 'screens/dispatcher/dispatcher_home_screen.dart';
 import 'screens/common/planes_screen.dart';
 import 'widgets/notification_overlay.dart';
@@ -106,6 +109,7 @@ class MueveteApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AddressProvider()),
         ChangeNotifierProvider(create: (_) => CargaProvider()),
         ChangeNotifierProvider(create: (_) => PlanProvider()),
+        ChangeNotifierProvider(create: (_) => SuscripcionProvider()),
         ChangeNotifierProvider.value(value: MbTilesService.instance),
       ],
       child: Consumer<ThemeProvider>(
@@ -146,8 +150,10 @@ class MueveteApp extends StatelessWidget {
               '/driver/active-ride': (context) => const ActiveRideScreen(),
               '/driver/wallet': (context) => const DriverWalletScreen(),
               '/shipper/home': (context) => const ShipperHomeScreen(),
+              '/shipper/profile': (context) => const ShipperProfileScreen(),
               '/carrier-directory': (context) => const CarrierDirectoryScreen(),
               '/carrier/home': (context) => const CarrierHomeScreen(),
+              '/carrier/profile': (context) => const CarrierCargaProfileScreen(),
               '/dispatcher/home': (context) => const DispatcherHomeScreen(),
               '/planes': (context) {
                 final args = ModalRoute.of(context)!.settings.arguments

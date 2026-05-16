@@ -16,7 +16,7 @@
 | `valoraciones_viaje` | Rating único por viaje (1 dimensión) |
 | `suscription_plan/user` | Wallet de recarga, sin planes reales |
 | `transacciones_wallet` | Pagos de viaje + recargas |
-| Escrow | **No existe** |
+| Escrow | **Fuera de scope permanente** |
 | Matching automático | **No existe** |
 | Carga (FTL/LTL) | **No existe** |
 | Verificación MC/DOT | **No existe** |
@@ -74,8 +74,6 @@ Este aislamiento se implementa a nivel de:
 - **Carga (load)**: lo que el shipper publica (FTL o LTL)
 - **Oferta de carrier**: respuesta al load publicado
 - **Matching score**: algoritmo de compatibilidad carga↔carrier
-- **Escrow**: custodia de pago hasta entrega confirmada
-- **Liquidación**: liberación de fondos del escrow al carrier
 - **Suscripción real**: plan con límites funcionales según tipo de usuario
 - **Reputación multidimensional**: 4 categorías × 5 estrellas por lado
 - **Dispatcher**: gestor de flota que opera cargas para múltiples choferes registrados
@@ -266,7 +264,7 @@ Los clientes de taxi no tienen planes. Acceden directamente con su wallet. Esta 
 | **Cargas/mes** | 5 | 30 | Ilimitadas |
 | **Contactos/mes** | 10 | Ilimitados | Ilimitados |
 | **Matching automático** | No | Sí (5/día) | Sí (ilimitado) |
-| **Escrow incluido** | No (comisión 3%) | Sí (comisión 2%) | Sí (comisión 1.5%) |
+| **Comisión plataforma** | 3% | 2% | 1.5% |
 | **Ventana exclusiva** | No | 2h antes | 6h antes |
 | **Cargas destacadas** | No | 2/mes | 10/mes |
 | **Dashboard analítico** | No | Básico | Avanzado |
@@ -280,7 +278,7 @@ Los clientes de taxi no tienen planes. Acceden directamente con su wallet. Esta 
 | **Ofertas/mes** | 10 | Ilimitadas | |
 | **Matching recibido** | Aleatorio | Priorizado | |
 | **Verificación MC/DOT** | No | Incluida | |
-| **Escrow disponible** | No | Sí | |
+| **Prioridad en listado** | Normal | Alta | |
 | **GPS tracking avanzado** | No | Sí | |
 | **Dashboard ingresos** | Básico | Avanzado | |
 | **Alertas de carga** | 1 alerta | Ilimitadas | |
@@ -318,7 +316,7 @@ class PlanesScreen extends StatelessWidget {
   //    - Botón "Gestionar" en plan actual
   
   // 4. Preguntas frecuentes: distintas por tipo
-  //    - shipper: "¿Qué es el escrow?", "¿Puedo cancelar en cualquier momento?"
+  //    - shipper: "¿Cuántas cargas puedo publicar?", "¿Puedo cancelar en cualquier momento?"
   //    - carrier:  "¿Cómo funciona la verificación MC/DOT?"
   //    - dispatcher: "¿Cómo invito a mis choferes?"
 }
@@ -431,8 +429,6 @@ ALTER TABLE muevete.solicitudes_transporte ADD COLUMN IF NOT EXISTS
   ventana_recogida_hasta time,
   ventana_entrega_desde  time,
   ventana_entrega_hasta  time,
-  -- Escrow
-  escrow_id            bigint REFERENCES muevete.escrow_transacciones(id),
   -- Visibilidad (ventana exclusiva plan Profesional/Dispatcher)
   exclusiva_hasta      timestamptz,
   -- LTL
@@ -467,8 +463,7 @@ ALTER TABLE muevete.ofertas_chofer ADD COLUMN IF NOT EXISTS
 #### `muevete.transacciones_wallet` — ampliar tipos
 ```sql
 -- Agregar nuevos tipos al CHECK constraint:
--- 'escrow_deposito', 'escrow_liberacion', 'escrow_devolucion',
--- 'escrow_comision', 'factoraje_adelanto', 'factoraje_devolucion',
+-- 'factoraje_adelanto', 'factoraje_devolucion',
 -- 'suscripcion', 'seguro_prima', 'carga_destacada'
 ```
 
@@ -598,9 +593,6 @@ CREATE TABLE muevete.cargas (
   recurrencia_patron    jsonb,
   contrato_id           bigint,           -- FK a muevete.contratos_carga
   
-  -- Escrow
-  escrow_id             bigint,           -- FK a muevete.escrow_transacciones
-  
   -- Matching
   matching_score_max    numeric DEFAULT 0,
   matching_ejecutado_at timestamptz,
@@ -641,49 +633,6 @@ CREATE TABLE muevete.ofertas_carga (
   created_at          timestamptz DEFAULT now(),
   updated_at          timestamptz DEFAULT now(),
   CONSTRAINT uq_oferta_carga_driver UNIQUE (carga_id, driver_id)
-);
-```
-
-#### `muevete.escrow_transacciones`
-```sql
-CREATE TABLE muevete.escrow_transacciones (
-  id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  carga_id            bigint NOT NULL,   -- FK cargas
-  shipper_uuid        uuid NOT NULL REFERENCES auth.users(id),
-  carrier_driver_id   bigint NOT NULL REFERENCES muevete.drivers(id),
-  monto_total         numeric NOT NULL,
-  comision_plataforma numeric NOT NULL,
-  monto_carrier       numeric NOT NULL,  -- monto_total - comision_plataforma
-  moneda              text DEFAULT 'USD',
-  estado              text DEFAULT 'pendiente',
-  -- 'pendiente','depositado','liberado','devuelto','disputa','congelado'
-  
-  -- Depósito
-  depositado_at       timestamptz,
-  metodo_pago         text,
-  referencia_pago     text,
-  
-  -- Confirmación de entrega
-  geocerca_confirmada  boolean DEFAULT false,
-  geocerca_confirmada_at timestamptz,
-  pod_url              text,             -- Proof of Delivery (imagen/PDF)
-  qr_token             text,             -- token para escaneo QR
-  entrega_confirmada_at timestamptz,
-  shipper_confirmo     boolean DEFAULT false,
-  shipper_confirmo_at  timestamptz,
-  
-  -- Liberación automática
-  liberar_auto_at      timestamptz,     -- si shipper no confirma en 48-72h
-  liberado_at          timestamptz,
-  
-  -- Disputa
-  disputa_abierta      boolean DEFAULT false,
-  disputa_motivo       text,
-  disputa_evidencias   jsonb DEFAULT '[]',
-  disputa_resolucion   text,
-  disputa_resuelta_at  timestamptz,
-  
-  created_at           timestamptz DEFAULT now()
 );
 ```
 
@@ -989,7 +938,6 @@ CREATE TABLE muevete.facturas_plataforma (
 |---|---|
 | `models/carga_model.dart` | Carga FTL/LTL completa |
 | `models/oferta_carga_model.dart` | Oferta de carrier para una carga |
-| `models/escrow_model.dart` | Transacción de escrow |
 | `models/tracking_carga_model.dart` | Punto de rastreo GPS/ELD |
 | `models/valoracion_carga_model.dart` | Valoración multidimensional |
 | `models/chat_conversacion_model.dart` | Conversación de chat |
@@ -1022,8 +970,6 @@ CREATE TABLE muevete.facturas_plataforma (
 
 #### `wallet_service.dart`
 - Agregar soporte para nuevos tipos de transacción
-- `holdClientFunds()`: usar para depósito en escrow también
-- Agregar: `depositarEscrow()`, `liberarEscrow()`, `devolverEscrow()`
 
 #### `auth_service.dart`
 - `isDriver()`: mantener lógica
@@ -1035,7 +981,6 @@ CREATE TABLE muevete.facturas_plataforma (
 |---|---|---|
 | `services/carga_service.dart` | CRUD de cargas | `publicarCarga()`, `getCargasShipper()`, `getCargasDisponibles()`, `actualizarEstado()`, `buscarCarriers()`, `destacarCarga()` |
 | `services/oferta_carga_service.dart` | Ofertas de carga | `hacerOferta()`, `aceptarOferta()`, `rechazarOferta()`, `getOfertasCarga()`, `getOfertasCarrier()` |
-| `services/escrow_service.dart` | Escrow completo | `crearEscrow()`, `depositarFondos()`, `confirmarEntrega()`, `liberarFondos()`, `abrirDisputa()`, `resolverDisputa()`, `programarLiberacionAuto()` |
 | `services/tracking_service.dart` | Rastreo GPS/ELD | `enviarUbicacion()`, `getHistorialTracking()`, `verificarGeocerca()`, `getUltimaUbicacion()`, `conectarELD()` |
 | `services/matching_service.dart` | Motor de matching | `calcularScore()`, `getSugerenciasCarrier()`, `getSugerenciasShipper()`, `ejecutarMatchingBatch()` |
 | `services/chat_service.dart` | Chat interno | `crearConversacion()`, `enviarMensaje()`, `getConversaciones()`, `getMensajes()`, `marcarLeido()`, `suscribirMensajes()` |
@@ -1066,14 +1011,12 @@ CREATE TABLE muevete.facturas_plataforma (
 
 #### `wallet_provider.dart`
 - Agregar soporte para nuevos tipos de transacción
-- Agregar: `getEscrowActivo()`, `getSaldo()`
 
 ### 6.2 Providers NUEVOS a crear
 
 | Archivo | Descripción |
 |---|---|
 | `providers/carga_provider.dart` | Estado global de publicación y búsqueda de cargas, ofertas activas, filtros |
-| `providers/escrow_provider.dart` | Estado del escrow activo, flujo de confirmación |
 | `providers/tracking_provider.dart` | Estado del tracking en tiempo real, suscripción a canales Realtime |
 | `providers/chat_provider.dart` | Lista de conversaciones, mensajes no leídos, suscripción Realtime |
 | `providers/plan_provider.dart` | Plan activo, límites disponibles, verificación de features |
@@ -1188,13 +1131,11 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
 |---|---|
 | `screens/common/chat_screen.dart` | Chat interno por carga |
 | `screens/common/chat_lista_screen.dart` | Lista de todas las conversaciones |
-| `screens/common/escrow_detalle_screen.dart` | Estado del escrow: depósito, entrega, liberación |
 | `screens/common/tracking_mapa_screen.dart` | Mapa en tiempo real de la carga |
 | `screens/common/valorar_carga_screen.dart` | Formulario de valoración multidimensional (4 dimensiones × tipo de evaluador) |
 | `screens/common/planes_screen.dart` | Comparativo de planes — renderizado distinto según `tipo_usuario` (shipper/carrier/dispatcher) |
 | `screens/common/mis_alertas_screen.dart` | Crear/editar/eliminar alertas personalizadas |
 | `screens/common/kyc_flow_screen.dart` | Flujo guiado de verificación de identidad |
-| `screens/common/disputa_screen.dart` | Abrir y seguir disputas de escrow |
 
 ---
 
@@ -1323,59 +1264,57 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
 - ⚠️ **Ejecutar en Supabase**: `014_cargas_truckstop_fields.sql` y `015_estados_carga_nomenclador.sql`
 - ⚠️ Actualizar `VehicleModel` con campos de camión de carga (`tipoCarroceria`, `capacidadTon`, `tieneGps`, etc.)
 - ⚠️ Mostrar historial de estados en `DetalleCargaScreen` (shipper) y `DetalleCargaCarrierScreen` (carrier) usando `CargaProvider.loadHistorialEstados()`
-- ⚠️ Verificar flujo completo E2E: shipper publica → carrier ve carga → carrier oferta → shipper acepta oferta → carrier confirma recogida → carrier confirma entrega
+- ⚠️ Actualizar `app_nom_estado` con estados del nuevo flujo simplificado (`tomada`, `completada_carrier`)
+- ⚠️ Implementar `marcarComoTomada()` en `CargaService` + `CargaProvider` (shipper asigna carrier desde directorio)
+- ⚠️ Implementar `completarCargaCarrier()` y `completarCargaShipper()` en `CargaService` + `CargaProvider`
+- ⚠️ Mostrar historial de estados en `DetalleCargaScreen` (shipper) y `DetalleCargaCarrierScreen` (carrier)
+- ⚠️ Verificar flujo E2E: shipper publica → carrier ve carga → shipper asigna carrier → shipper marca tomada → carrier marca completada → shipper confirma completada
 
 **Diferido a Fase 2 (fuera de scope Fase 1):**
 - 🔜 `ValoracionCargaModel` + `ValoracionCargaService`
 - 🔜 `kyc_documentos` — tabla y flujo KYC
-- 🔜 `WalletTransactionModel` — nuevos tipos de transacción (no aplica sin escrow)
+- 🔜 `WalletTransactionModel` — nuevos tipos de transacción
 - 🔜 Verificación de límites de plan en `publicarCarga()`
+
+**Fuera de scope permanente (decisión de diseño):**
+- 🚫 **Escrow / custodia de pagos** — no se implementará en ninguna fase. El flujo de pago es externo a la plataforma.
+- 🚫 **Sistema de disputas** — depende del escrow, también fuera de scope.
 
 **Fuera de scope permanente (decisión de diseño):**
 - 🚫 **Paradas intermedias (`carga_paradas`)** — el sistema solo soporta origen + destino. La gestión de rutas multi-parada es responsabilidad de la integración con Truckstop/broker externo (Fase 3+) y no será implementada en la app.
 
 ---
 
-### FASE 2 – Gestión de Ofertas + Escrow + Matching básico (≈ 6 semanas) — ❌ NO INICIADA
-**Objetivo**: Cerrar el ciclo oferta→aceptación→pago seguro y sugerencias automáticas.
-
-> **Incorporado desde Fase 1:** gestión completa de ofertas (aceptar, rechazar, negociar), valoraciones de carga, KYC.
+### FASE 2 – Valoraciones + Matching básico + KYC (≈ 6 semanas) — ❌ NO INICIADA
+**Objetivo**: Reputación multidimensional, matching automático y verificación de identidad.
 
 **Schema**: 
-- ❌ `escrow_transacciones`
 - ❌ `matching_scores`
 - ❌ `suscripciones_usuario`
 - ❌ `alertas_usuario`
-- ❌ `valoraciones_carga` — movida desde Fase 1
-- ❌ `kyc_documentos` — movida desde Fase 1
+- ❌ `valoraciones_carga`
+- ❌ `kyc_documentos`
 
 **Modelos**: 
-- ❌ `EscrowModel`
 - ❌ `MatchingScoreModel`
 - ❌ `SuscripcionModel`
 - ❌ `AlertaUsuarioModel`
-- ❌ `ValoracionCargaModel` — movido desde Fase 1
-- ❌ `KycDocumentoModel` — movido desde Fase 1
+- ❌ `ValoracionCargaModel`
+- ❌ `KycDocumentoModel`
 
 **Servicios**: 
-- ❌ `EscrowService`
 - ❌ `MatchingService`
 - ❌ `AlertaService`
-- ❌ `ValoracionCargaService` — movido desde Fase 1
-- ❌ `KycService` — movido desde Fase 1
-- ❌ Completar `OfertaCargaService` con `aceptarOferta()`, `rechazarOferta()`, `negociarPrecio()`
+- ❌ `ValoracionCargaService`
+- ❌ `KycService`
 
 **Providers**: 
-- ❌ `EscrowProvider`
 - ❌ `MatchingProvider`
 
 **Pantallas**: 
-- ❌ `EscrowDetalleScreen`
-- ❌ `DisputaScreen`
 - ❌ `MisAlertasScreen`
 - ❌ `KycFlowScreen`
 - ❌ `ValorarCargaScreen`
-- ❌ Modificar `DetalleCargaScreen` para incluir gestión de ofertas y escrow
 
 ---
 
@@ -1470,21 +1409,21 @@ if (plan.cargasMesMax != null) {
 }
 ```
 
-### 10.4 Escrow - Flujo de fondos
+### 10.4 Flujo de carga simplificado
 ```
-Shipper deposita → escrow.estado='depositado'
+Shipper publica → carga.estado='publicada'
   ↓
-Carrier confirma recogida → tracking INSERT
+Carriers y dispatchers ven la carga en su pantalla de disponibles
   ↓
-GPS entra en geocerca destino → geocerca.disparada_at SET
+Shipper selecciona un carrier del directorio y marca como tomada
+  → carga.estado='tomada', carrier_driver_id SET, oculta de disponibles
   ↓
-Carrier confirma entrega (QR/manual) → escrow.qr_token verificado
+Carrier marca la carga como completada
+  → carga.estado='completada_carrier'
   ↓
-Shipper tiene 1h para objetar → timer programado
-  ↓
-Sin objeción → escrow.liberado_at SET, fondos → wallet_drivers
-  ↓
-Si disputa → escrow.estado='disputa', fondos congelados
+Shipper confirma finalización
+  → carga.estado='completada'
+  (ciclo cerrado)
 ```
 
 ### 10.5 Matching Score - Implementación simplificada (servidor)
@@ -1510,7 +1449,7 @@ docs/migrations/
   013_planes.sql                        ✅ creado — planes con seed
   014_cargas_truckstop_fields.sql       ✅ creado — campos Truckstop en cargas
   015_estados_carga_nomenclador.sql     ✅ creado — app_nom_estado + app_dat_estado_carga + RPC
-  016_escrow.sql                        ❌ pendiente Fase 2
+  016_escrow.sql                        🚫 fuera de scope permanente
   017_tracking_geocercas.sql            ❌ pendiente Fase 3
   018_chat.sql                          ❌ pendiente Fase 3
   019_valoraciones_carga.sql            ❌ pendiente Fase 2
@@ -1529,7 +1468,7 @@ lib/models/
   oferta_carga_model.dart       ✅ completo
   plan_model.dart               ✅ completo
   estado_carga_model.dart       ✅ nuevo — EstadoCargaModel + NomEstadoModel
-  escrow_model.dart             ❌ pendiente Fase 2
+  escrow_model.dart             🚫 fuera de scope permanente
   tracking_carga_model.dart     ❌ pendiente Fase 3
   valoracion_carga_model.dart   ❌ pendiente Fase 2
   chat_conversacion_model.dart  ❌ pendiente Fase 3
@@ -1549,7 +1488,7 @@ lib/services/
   oferta_carga_service.dart       ✅ completo — hacer/aceptar/rechazar/retirar ofertas
   plan_service.dart               ✅ completo — getPlanes, getTodosLosPlanes, getPlanPorCodigo
   dispatcher_service.dart         ✅ completo (adelantado desde Fase 4)
-  escrow_service.dart             ❌ pendiente Fase 2
+  escrow_service.dart             🚫 fuera de scope permanente
   tracking_service.dart           ❌ pendiente Fase 3
   matching_service.dart           ❌ pendiente Fase 2
   chat_service.dart               ❌ pendiente Fase 3
@@ -1566,7 +1505,7 @@ lib/services/
 lib/providers/
   carga_provider.dart     ✅ completo — misCargas, cargasDisponibles, historialEstados, nomEstados
   plan_provider.dart      ✅ completo
-  escrow_provider.dart    ❌ pendiente Fase 2
+  escrow_provider.dart    🚫 fuera de scope permanente
   tracking_provider.dart  ❌ pendiente Fase 3
   chat_provider.dart      ❌ pendiente Fase 3
   matching_provider.dart  ❌ pendiente Fase 2
@@ -1597,12 +1536,12 @@ lib/screens/
     planes_screen.dart                  ✅ completo
     chat_screen.dart                    ❌ pendiente Fase 3
     chat_lista_screen.dart              ❌ pendiente Fase 3
-    escrow_detalle_screen.dart          ❌ pendiente Fase 2
+    escrow_detalle_screen.dart          🚫 fuera de scope permanente
     tracking_mapa_screen.dart           ❌ pendiente Fase 3
     valorar_carga_screen.dart           ❌ pendiente Fase 2
     mis_alertas_screen.dart             ❌ pendiente Fase 2
     kyc_flow_screen.dart                ❌ pendiente Fase 2
-    disputa_screen.dart                 ❌ pendiente Fase 2
+    disputa_screen.dart                 🚫 fuera de scope permanente
   widgets/
     route_map_widget.dart               ✅ nuevo — mapa OSRM reutilizable (carrier + shipper)
 ```

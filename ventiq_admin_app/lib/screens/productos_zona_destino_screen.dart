@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../config/app_colors.dart';
 import '../services/consignacion_service.dart';
+import '../services/inventory_service.dart';
+import '../services/user_preferences_service.dart';
 
 class ProductosZonaDestinoScreen extends StatefulWidget {
   final int idContrato;
@@ -170,7 +173,7 @@ class _ProductosZonaDestinoScreenState extends State<ProductosZonaDestinoScreen>
         final item = _stockFinalList[index];
         final prod = item['app_dat_producto'];
         final stock = (item['cantidad_final'] as num).toDouble();
-        
+
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
           elevation: 2,
@@ -190,27 +193,472 @@ class _ProductosZonaDestinoScreenState extends State<ProductosZonaDestinoScreen>
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             subtitle: Text('SKU: ${prod['sku'] ?? 'N/A'}'),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  stock.toStringAsFixed(0),
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: stock > 0 ? Colors.green[700] : Colors.red[700],
-                  ),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      stock.toStringAsFixed(0),
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: stock > 0 ? Colors.green[700] : Colors.red[700],
+                      ),
+                    ),
+                    const Text(
+                      'Disponible',
+                      style: TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ],
                 ),
-                const Text(
-                  'Disponible',
-                  style: TextStyle(fontSize: 10, color: Colors.grey),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.tune, color: AppColors.primary),
+                  tooltip: 'Ajustar cantidad',
+                  onPressed: () => _showAjusteDialog(item, prod, stock),
                 ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  Future<void> _showAjusteDialog(
+    Map<String, dynamic> item,
+    Map<String, dynamic> prod,
+    double stockActual,
+  ) async {
+    final cantidadModController = TextEditingController();
+    final motivoController = TextEditingController();
+    final observacionesController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _AjusteDialogContent(
+        prod: prod,
+        stockActual: stockActual,
+        cantidadModController: cantidadModController,
+        motivoController: motivoController,
+        observacionesController: observacionesController,
+        formKey: formKey,
+        onConfirm: (esAdd, cantidadMod, motivo, obs) async {
+          final cantidadNueva = esAdd
+              ? stockActual + cantidadMod
+              : stockActual - cantidadMod;
+          await _ejecutarAjuste(
+            ctx: ctx,
+            item: item,
+            stockActual: stockActual,
+            cantidadNueva: cantidadNueva,
+            motivo: motivo,
+            observaciones: obs,
+          );
+        },
+      ),
+    );
+
+    cantidadModController.dispose();
+    motivoController.dispose();
+    observacionesController.dispose();
+  }
+
+  Future<void> _ejecutarAjuste({
+    required BuildContext ctx,
+    required Map<String, dynamic> item,
+    required double stockActual,
+    required double cantidadNueva,
+    required String motivo,
+    required String observaciones,
+  }) async {
+    try {
+      final userUuid = await UserPreferencesService().getUserId();
+      if (userUuid == null || userUuid.isEmpty) {
+        throw Exception('No se pudo obtener el usuario autenticado');
+      }
+
+      final idProducto = item['id_producto'] as int;
+      final idPresentacion = item['id_presentacion'] as int?;
+      final idUbicacion = widget.idZonaDestino!;
+
+      // Tipo 3 = faltante (incremento), tipo 4 = exceso (decremento)
+      final idTipoOperacion = cantidadNueva >= stockActual ? 3 : 4;
+
+      final result = await InventoryService.insertInventoryAdjustment(
+        idProducto: idProducto,
+        idUbicacion: idUbicacion,
+        idPresentacion: idPresentacion ?? 0,
+        cantidadAnterior: stockActual,
+        cantidadNueva: cantidadNueva,
+        motivo: motivo,
+        observaciones: observaciones.isNotEmpty
+            ? observaciones
+            : 'Ajuste de inventario en zona de consignación - ${widget.tituloContrato}',
+        uuid: userUuid,
+        idTipoOperacion: idTipoOperacion,
+      );
+
+      if (!mounted) return;
+
+      if (result['status'] == 'success') {
+        Navigator.of(ctx).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Ajuste registrado. Diferencia: ${(cantidadNueva - stockActual) >= 0 ? '+' : ''}${(cantidadNueva - stockActual).toStringAsFixed(0)}',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${result['message'] ?? 'Error desconocido'}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al registrar ajuste: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Diálogo de ajuste: elige adicionar / restar y cantidad a modificar
+// ─────────────────────────────────────────────────────────────────────────────
+class _AjusteDialogContent extends StatefulWidget {
+  final Map<String, dynamic> prod;
+  final double stockActual;
+  final TextEditingController cantidadModController;
+  final TextEditingController motivoController;
+  final TextEditingController observacionesController;
+  final GlobalKey<FormState> formKey;
+  final Future<void> Function(
+    bool esAdicionar,
+    double cantidadMod,
+    String motivo,
+    String observaciones,
+  ) onConfirm;
+
+  const _AjusteDialogContent({
+    required this.prod,
+    required this.stockActual,
+    required this.cantidadModController,
+    required this.motivoController,
+    required this.observacionesController,
+    required this.formKey,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_AjusteDialogContent> createState() => _AjusteDialogContentState();
+}
+
+class _AjusteDialogContentState extends State<_AjusteDialogContent> {
+  bool _esAdicionar = true;
+  bool _isSubmitting = false;
+
+  double get _cantidadMod =>
+      double.tryParse(widget.cantidadModController.text.trim()) ?? 0.0;
+
+  double get _cantidadResultante =>
+      _esAdicionar
+          ? widget.stockActual + _cantidadMod
+          : widget.stockActual - _cantidadMod;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.cantidadModController.addListener(_rebuild);
+  }
+
+  void _rebuild() => setState(() {});
+
+  @override
+  void dispose() {
+    widget.cantidadModController.removeListener(_rebuild);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final resultante = _cantidadResultante;
+    final resultanteNegativa = resultante < 0;
+    final diferencia = resultante - widget.stockActual;
+
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.tune, color: AppColors.primary),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text('Ajuste de Inventario', style: TextStyle(fontSize: 16)),
+          ),
+        ],
+      ),
+      content: Form(
+        key: widget.formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.prod['denominacion'] ?? 'Producto',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              Text(
+                'SKU: ${widget.prod['sku'] ?? 'N/A'}',
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              // Chip de stock actual
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.inventory_2_outlined, size: 15, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Stock actual: ${widget.stockActual.toStringAsFixed(0)}',
+                      style: const TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              // Toggle Adicionar / Restar
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _esAdicionar = true),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: _esAdicionar ? Colors.green[600] : Colors.grey[200],
+                          borderRadius: const BorderRadius.horizontal(
+                            left: Radius.circular(8),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.add_circle_outline,
+                              size: 18,
+                              color: _esAdicionar ? Colors.white : Colors.grey[600],
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Adicionar',
+                              style: TextStyle(
+                                color: _esAdicionar ? Colors.white : Colors.grey[700],
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _esAdicionar = false),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: !_esAdicionar ? Colors.red[600] : Colors.grey[200],
+                          borderRadius: const BorderRadius.horizontal(
+                            right: Radius.circular(8),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.remove_circle_outline,
+                              size: 18,
+                              color: !_esAdicionar ? Colors.white : Colors.grey[600],
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Restar',
+                              style: TextStyle(
+                                color: !_esAdicionar ? Colors.white : Colors.grey[700],
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Campo cantidad a modificar
+              TextFormField(
+                controller: widget.cantidadModController,
+                decoration: InputDecoration(
+                  labelText: 'Cantidad a ${_esAdicionar ? 'adicionar' : 'restar'} *',
+                  border: const OutlineInputBorder(),
+                  prefixIcon: Icon(
+                    _esAdicionar ? Icons.add : Icons.remove,
+                    color: _esAdicionar ? Colors.green[700] : Colors.red[700],
+                  ),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                ],
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return 'Ingrese la cantidad';
+                  final n = double.tryParse(v.trim());
+                  if (n == null || n <= 0) return 'Ingrese una cantidad mayor a 0';
+                  if (!_esAdicionar && n > widget.stockActual) {
+                    return 'No puede restar más de ${widget.stockActual.toStringAsFixed(0)}';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 10),
+              // Preview de resultado
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: resultanteNegativa
+                      ? Colors.red[50]
+                      : (_esAdicionar ? Colors.green[50] : Colors.orange[50]),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: resultanteNegativa
+                        ? Colors.red[300]!
+                        : (_esAdicionar ? Colors.green[300]! : Colors.orange[300]!),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Quedará en stock:',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        if (_cantidadMod > 0)
+                          Text(
+                            '(${diferencia >= 0 ? '+' : ''}${diferencia.toStringAsFixed(0)})  ',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: diferencia >= 0 ? Colors.green[700] : Colors.red[700],
+                            ),
+                          ),
+                        Text(
+                          resultante.toStringAsFixed(0),
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: resultanteNegativa
+                                ? Colors.red[700]
+                                : (_esAdicionar ? Colors.green[700] : Colors.orange[700]),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: widget.motivoController,
+                decoration: const InputDecoration(
+                  labelText: 'Motivo *',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.edit_note),
+                  hintText: 'Ej: Conteo físico, diferencia, etc.',
+                ),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return 'Ingrese el motivo';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: widget.observacionesController,
+                decoration: const InputDecoration(
+                  labelText: 'Observaciones',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.comment_outlined),
+                ),
+                maxLines: 2,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        _isSubmitting
+            ? const Padding(
+                padding: EdgeInsets.all(8),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            : ElevatedButton.icon(
+                icon: const Icon(Icons.check),
+                label: const Text('Confirmar'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () async {
+                  if (!widget.formKey.currentState!.validate()) return;
+                  setState(() => _isSubmitting = true);
+                  await widget.onConfirm(
+                    _esAdicionar,
+                    _cantidadMod,
+                    widget.motivoController.text.trim(),
+                    widget.observacionesController.text.trim(),
+                  );
+                  if (mounted) setState(() => _isSubmitting = false);
+                },
+              ),
+      ],
     );
   }
 }
