@@ -12,6 +12,7 @@ import 'screens/usuarios_screen.dart';
 import 'screens/administradores_screen.dart';
 import 'screens/almacenes_screen.dart';
 import 'screens/tpvs_screen.dart';
+import 'screens/referral_payments_screen.dart';
 import 'screens/trabajadores_screen.dart';
 import 'screens/licencias_screen.dart';
 import 'screens/renovaciones_screen.dart';
@@ -93,6 +94,7 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/eliminacion-tiendas': (context) => const EliminacionTiendasScreen(),
         '/control-flota': (context) => const FleetControlScreen(),
         '/movimientos': (context) => const MovimientosScreen(),
+        '/referral-payments': (context) => const ReferralPaymentsScreen(),
         // Muévete
         '/muevete/dashboard': (context) => const MueveteDashboardScreen(),
         '/muevete/conductores': (context) => const MueveteDriversScreen(),
