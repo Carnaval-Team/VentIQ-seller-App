@@ -1167,6 +1167,70 @@ class UserPreferencesService {
     return pendingOrders.length;
   }
 
+  /// Marcar una orden pendiente como fallida tras un intento de sincronización
+  /// Guarda el mensaje de error, timestamp y conteo acumulado de intentos
+  Future<void> markPendingOrderSyncFailure(
+    String orderId,
+    String errorMessage,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final pendingOrdersJson = prefs.getString(_pendingOrdersKey);
+    if (pendingOrdersJson == null) return;
+
+    final decoded = jsonDecode(pendingOrdersJson) as List<dynamic>;
+    final pendingOrders =
+        decoded.map((item) => item as Map<String, dynamic>).toList();
+
+    var changed = false;
+    for (final order in pendingOrders) {
+      if (order['id']?.toString() == orderId) {
+        final previousAttempts = (order['sync_attempts'] as num?)?.toInt() ?? 0;
+        order['last_sync_error'] = errorMessage;
+        order['last_sync_attempt_at'] = DateTime.now().toIso8601String();
+        order['sync_attempts'] = previousAttempts + 1;
+        changed = true;
+        break;
+      }
+    }
+
+    if (changed) {
+      await prefs.setString(_pendingOrdersKey, jsonEncode(pendingOrders));
+      print('⚠️ Error registrado en orden pendiente $orderId');
+    }
+  }
+
+  /// Limpiar el estado de error de una orden pendiente antes de reintentar
+  Future<void> clearPendingOrderError(String orderId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final pendingOrdersJson = prefs.getString(_pendingOrdersKey);
+    if (pendingOrdersJson == null) return;
+
+    final decoded = jsonDecode(pendingOrdersJson) as List<dynamic>;
+    final pendingOrders =
+        decoded.map((item) => item as Map<String, dynamic>).toList();
+
+    var changed = false;
+    for (final order in pendingOrders) {
+      if (order['id']?.toString() == orderId) {
+        if (order.containsKey('last_sync_error')) {
+          order.remove('last_sync_error');
+          changed = true;
+        }
+        break;
+      }
+    }
+
+    if (changed) {
+      await prefs.setString(_pendingOrdersKey, jsonEncode(pendingOrders));
+    }
+  }
+
+  /// Descartar manualmente una orden pendiente (alias semántico de removePendingOrder)
+  Future<void> discardPendingOrder(String orderId) async {
+    await removePendingOrder(orderId);
+    print('🗑️ Orden pendiente descartada manualmente: $orderId');
+  }
+
   // ==================== ACTUALIZACIÓN DE CACHE DE PRODUCTOS ====================
 
   /// Actualizar inventario de productos en cache (descontar cantidades)

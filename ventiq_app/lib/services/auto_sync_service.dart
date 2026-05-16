@@ -1115,13 +1115,16 @@ class AutoSyncService {
     final syncedOrderIds = <String>[];
 
     for (var orderData in pendingOrders) {
+      final orderId = orderData['id']?.toString();
       try {
-        final orderId = orderData['id']?.toString();
         if (orderId == null || orderId.isEmpty) {
           throw Exception('Orden offline sin ID');
         }
 
         print('    - Procesando venta offline: $orderId');
+
+        // Limpiar error previo para reflejar solo el resultado de este intento
+        await _userPreferencesService.clearPendingOrderError(orderId);
 
         // 1. Registrar cliente si hay datos
         await _registerClientFromOfflineData(orderData);
@@ -1138,6 +1141,12 @@ class AutoSyncService {
         print('    ✅ Venta offline sincronizada: $orderId');
       } catch (e) {
         print('    ❌ Error sincronizando venta offline ${orderData['id']}: $e');
+        if (orderId != null && orderId.isNotEmpty) {
+          await _userPreferencesService.markPendingOrderSyncFailure(
+            orderId,
+            e.toString(),
+          );
+        }
         // Continúa con la siguiente venta sin interrumpir el proceso
       }
     }
@@ -1148,6 +1157,49 @@ class AutoSyncService {
     }
 
     return syncedCount;
+  }
+
+  /// Sincronizar una sola orden pendiente (para reintentos manuales desde la UI)
+  /// Retorna true si la sincronización fue exitosa
+  Future<bool> syncSinglePendingOrder(String orderId) async {
+    try {
+      // Verificar autenticación antes de intentar
+      final isAuthenticated = await _reauthService.ensureAuthenticated();
+      if (!isAuthenticated) {
+        throw Exception('No se pudo autenticar al usuario');
+      }
+
+      final pendingOrders = await _userPreferencesService.getPendingOrders();
+      final orderData = pendingOrders.firstWhere(
+        (o) => o['id']?.toString() == orderId,
+        orElse: () => <String, dynamic>{},
+      );
+
+      if (orderData.isEmpty) {
+        print('⚠️ Orden $orderId no encontrada en pendientes');
+        return false;
+      }
+
+      print('🔁 Reintento manual de orden offline: $orderId');
+      await _userPreferencesService.clearPendingOrderError(orderId);
+
+      await _registerClientFromOfflineData(orderData);
+      await _registerSaleInSupabase(orderData);
+
+      final estado = (orderData['estado'] ?? 'completada').toString();
+      await _completeOrderWithStatus(orderId, estado);
+
+      await _cleanupSyncedOrders([orderId]);
+      print('✅ Reintento manual exitoso: $orderId');
+      return true;
+    } catch (e) {
+      print('❌ Reintento manual falló para $orderId: $e');
+      await _userPreferencesService.markPendingOrderSyncFailure(
+        orderId,
+        e.toString(),
+      );
+      return false;
+    }
   }
 
   /// Registrar cliente desde datos offline

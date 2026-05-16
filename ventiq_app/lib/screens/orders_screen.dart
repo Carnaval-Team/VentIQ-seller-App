@@ -25,6 +25,7 @@ import '../utils/connection_error_handler.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/sales_monitor_fab.dart';
+import '../widgets/pending_orders_fab.dart';
 import '../widgets/notification_widget.dart';
 import '../widgets/sync_status_chip.dart';
 import '../widgets/bill_count_dialog.dart';
@@ -903,7 +904,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
         currentIndex: 2, // Órdenes tab
         onTap: _onBottomNavTap,
       ),
-      floatingActionButton: const SalesMonitorFAB(),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          PendingOrdersFAB(onSyncCompleted: _refreshOrders),
+          const SizedBox(height: 12),
+          const SalesMonitorFAB(),
+        ],
+      ),
     );
   }
 

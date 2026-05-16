@@ -296,6 +296,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
         ),
         // Botón flotante
         FloatingActionButton(
+          heroTag: 'salesMonitorFab',
           onPressed: _toggleExpansion,
           backgroundColor: const Color(0xFF4A90E2),
           child: AnimatedRotation(
