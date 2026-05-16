@@ -1690,51 +1690,69 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
               if (movement['importe_real'] != null)
                 _buildDetailRow('Importe Real',
                     '\$${(movement['importe_real'] as num).toStringAsFixed(2)}'),
-              if (tipoMovimiento == 'Recepción') ...[
-                if (movement['entregado_por'] != null)
-                  _buildDetailRow(
-                      'Entregado Por', movement['entregado_por'] as String),
-                if (movement['recibido_por'] != null)
-                  _buildDetailRow(
-                      'Recibido Por', movement['recibido_por'] as String),
-              ],
-              if (tipoMovimiento == 'Extracción' &&
-                  movement['autorizado_por'] != null)
+              if (_hasText(movement['entregado_por']))
                 _buildDetailRow(
-                    'Autorizado Por', movement['autorizado_por'] as String),
+                    'Entregado por', movement['entregado_por'] as String),
+              if (_hasText(movement['recibido_por']))
+                _buildDetailRow(
+                    'Recibido por', movement['recibido_por'] as String),
+              if (_hasText(movement['autorizado_por']))
+                _buildDetailRow(
+                    'Autorizado por', movement['autorizado_por'] as String),
+              if (_hasText(movement['motivo']))
+                _buildDetailRow('Motivo', movement['motivo'] as String),
               if (movement['almacen'] != null)
                 _buildDetailRow('Almacén', movement['almacen'] as String),
               if (movement['zona'] != null)
                 _buildDetailRow('Zona', movement['zona'] as String),
               if (movement['proveedor'] != null)
                 _buildDetailRow('Proveedor', movement['proveedor'] as String),
-              if (movement['observaciones'] != null &&
-                  (movement['observaciones'] as String).isNotEmpty) ...[
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 4),
-                  child: Divider(height: 1),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    'Observaciones',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  movement['observaciones'] as String,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-              ],
+              if (_hasText(movement['observaciones']))
+                _buildDetailTextBlock(
+                    'Observaciones', movement['observaciones'] as String),
+              if (_hasText(movement['observaciones_extraccion']))
+                _buildDetailTextBlock(
+                    'Observaciones de extracción',
+                    movement['observaciones_extraccion'] as String),
+              if (_hasText(movement['comentario_completado']))
+                _buildDetailTextBlock(
+                    'Comentario al completar',
+                    movement['comentario_completado'] as String),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  bool _hasText(dynamic value) {
+    if (value == null) return false;
+    return value.toString().trim().isNotEmpty;
+  }
+
+  Widget _buildDetailTextBlock(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(height: 1),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1751,12 +1769,15 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
               color: Colors.grey.shade600,
             ),
           ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: color ?? Colors.black,
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: color ?? Colors.black,
+              ),
             ),
           ),
         ],

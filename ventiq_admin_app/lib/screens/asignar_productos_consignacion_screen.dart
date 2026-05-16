@@ -5,6 +5,7 @@ import '../config/app_colors.dart';
 import '../services/consignacion_service.dart';
 import '../services/consignacion_envio_service.dart';
 import '../services/currency_service.dart';
+import '../widgets/presentacion_equivalencia_widget.dart';
 
 class AsignarProductosConsignacionScreen extends StatefulWidget {
   final int idContrato;
@@ -1212,6 +1213,9 @@ class _AsignarProductosConsignacionScreenState
 
   Widget _buildProductoTile(Map<String, dynamic> producto) {
     final idInv = producto['id'] as int;
+    final idProducto = (producto['id_producto'] as num?)?.toInt();
+    final nombreProducto =
+        producto['denominacion_producto']?.toString() ?? 'Producto';
     final isSelected = _productosSeleccionados[idInv]?['seleccionado'] == true;
     final cantidadDisponible =
         (producto['cantidad_final'] as num?)?.toDouble() ?? 0.0;
@@ -1239,7 +1243,7 @@ class _AsignarProductosConsignacionScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  producto['denominacion_producto'] ?? 'Producto',
+                  nombreProducto,
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -1271,6 +1275,12 @@ class _AsignarProductosConsignacionScreenState
               ],
             ),
           ),
+          if (idProducto != null)
+            PresentacionEquivalenciaIconButton(
+              productId: idProducto,
+              productName: nombreProducto,
+              iconSize: 18,
+            ),
           if (isSelected)
             SizedBox(
               width: 110,

@@ -52,7 +52,7 @@ BEGIN
     ),
     -- Último estado de cada operación
     ultimo_estado AS (
-        SELECT DISTINCT ON (e.id_operacion) e.id_operacion, e.estado
+        SELECT DISTINCT ON (e.id_operacion) e.id_operacion, e.estado, e.comentario
         FROM app_dat_estado_operacion e
         ORDER BY e.id_operacion, e.id DESC
     ),
@@ -171,6 +171,9 @@ BEGIN
                       WHERE ep.id_operacion = ot.id_extraccion), 0),
             jsonb_build_object(
                 'autorizado_por', ot.autorizado_por,
+                'entregado_por',  orec_hijo.entregado_por,
+                'recibido_por',   orec_hijo.recibido_por,
+                'comentario_completado', NULLIF(TRIM(ue.comentario), ''),
                 'id_extraccion',  ot.id_extraccion,
                 'id_recepcion',   ot.id_recepcion,
                 -- Origen: ALMACEN - ZONA de la extracción hija
@@ -236,6 +239,7 @@ BEGIN
         JOIN app_dat_operaciones             o   ON ot.id_operacion    = o.id
         JOIN app_nom_tipo_operacion          top ON o.id_tipo_operacion = top.id
         JOIN app_dat_tienda                  t   ON o.id_tienda        = t.id
+        LEFT JOIN app_dat_operacion_recepcion orec_hijo ON orec_hijo.id_operacion = ot.id_recepcion
         LEFT JOIN ultimo_estado              ue     ON o.id              = ue.id_operacion
         LEFT JOIN app_nom_estado_operacion   neo    ON ue.estado         = neo.id
         -- Estados de las operaciones hijo
@@ -282,7 +286,8 @@ BEGIN
             jsonb_build_object(
                 'motivo',         nme.denominacion,
                 'observaciones',  oe.observaciones,
-                'autorizado_por', oe.autorizado_por
+                'autorizado_por', oe.autorizado_por,
+                'comentario_completado', NULLIF(TRIM(ue.comentario), '')
             ),
             (SELECT jsonb_agg(jsonb_build_object(
                  'id_producto',    ep.id_producto,
@@ -341,7 +346,8 @@ BEGIN
             jsonb_build_object(
                 'entregado_por', orec.entregado_por,
                 'recibido_por',  orec.recibido_por,
-                'monto_total',   orec.monto_total
+                'monto_total',   orec.monto_total,
+                'comentario_completado', NULLIF(TRIM(ue.comentario), '')
             ),
             (SELECT jsonb_agg(jsonb_build_object(
                  'id_producto',    rp.id_producto,
@@ -401,6 +407,7 @@ BEGIN
             jsonb_build_object(
                 'motivo',         COALESCE(o.observaciones, ''),
                 'tipo_ajuste',    top.denominacion,
+                'comentario_completado', NULLIF(TRIM(MAX(ue.comentario)), ''),
                 -- Todos los IDs de operación del grupo (uno por producto ajustado).
                 -- Se obtienen directamente con jsonb_agg sin subquery correlacionado,
                 -- así no hay conflicto con columnas no agrupadas en el GROUP BY.

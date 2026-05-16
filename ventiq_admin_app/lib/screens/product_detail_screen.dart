@@ -44,6 +44,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   bool _isLoadingPromotions = false; // ✅ AGREGAR ESTA LÍNEA
   List<Map<String, dynamic>> _productsUsingThisIngredient = [];
   bool _isLoadingProductsUsingIngredient = false;
+  List<Map<String, dynamic>> _equivalenciasPresentacion = [];
+  bool _isLoadingEquivalencias = false;
   final PermissionsService _permissionsService = PermissionsService();
   bool _canEditProduct = false;
   bool _canDeleteProduct = false;
@@ -137,6 +139,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       _loadStockHistory(),
       if (_product.esElaborado) _loadIngredients(),
       _loadProductsUsingThisIngredient(),
+      _loadEquivalenciasPresentacion(),
     ]);
 
     print('✅ Carga de datos adicionales completada');
@@ -425,6 +428,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     _buildSubcategoriesSection(),
                     const SizedBox(height: 20),
                     _buildPresentationsSection(),
+                    const SizedBox(height: 20),
+                    _buildEquivalenciaCantidadesSection(),
                     const SizedBox(height: 20),
                     _buildMultimediaSection(),
                     const SizedBox(height: 20),
@@ -2091,6 +2096,392 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   .toList(),
         ),
       ],
+    );
+  }
+
+  Future<void> _loadEquivalenciasPresentacion() async {
+    if (mounted) setState(() => _isLoadingEquivalencias = true);
+    try {
+      _equivalenciasPresentacion =
+          await ProductService.getEquivalenciasPresentacion(
+        int.parse(_product.id),
+      );
+    } catch (e) {
+      debugPrint('Error cargando equivalencias: $e');
+      _equivalenciasPresentacion = [];
+    } finally {
+      if (mounted) setState(() => _isLoadingEquivalencias = false);
+    }
+  }
+
+  String get _nombrePresentacionBase {
+    for (final pres in _product.presentaciones) {
+      if (pres['es_base'] == true) {
+        return pres['presentacion']?.toString() ?? 'unidad base';
+      }
+    }
+    if (_product.presentaciones.isNotEmpty) {
+      return _product.presentaciones.first['presentacion']?.toString() ??
+          'unidad base';
+    }
+    return _product.um?.isNotEmpty == true ? _product.um! : 'unidad base';
+  }
+
+  Widget _buildEquivalenciaCantidadesSection() {
+    return _buildInfoCard(
+      title: 'Equivalencia de cantidades',
+      icon: Icons.swap_horiz,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withOpacity(0.06),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, size: 18, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Define cuántas unidades de "$_nombrePresentacionBase" equivale cada presentación. '
+                  'Esta información es referencial para inventario, ventas y reportes.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_canEditProduct)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _showEquivalenciaDialog,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Agregar equivalencia'),
+            ),
+          ),
+        if (_isLoadingEquivalencias)
+          const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_equivalenciasPresentacion.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.compare_arrows, size: 40, color: Colors.grey[400]),
+                const SizedBox(height: 8),
+                Text(
+                  'No hay equivalencias configuradas',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                ),
+                if (_canEditProduct) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Ejemplo: 1 Caja = 12 $_nombrePresentacionBase',
+                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+          )
+        else
+          ..._equivalenciasPresentacion.map((eq) {
+            final nombre = eq['presentacion'] as String? ?? 'Presentación';
+            final cantidad = (eq['cantidad'] as num?)?.toDouble() ?? 0;
+            final linea = ProductService.formatEquivalenciaLine(
+              presentacionNombre: nombre,
+              cantidad: cantidad,
+              unidadBaseNombre: _nombrePresentacionBase,
+            );
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(
+                      Icons.inventory_2_outlined,
+                      size: 20,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          linea,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                        if ((eq['observaciones'] as String?)?.isNotEmpty ==
+                            true)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              eq['observaciones'] as String,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (_canEditProduct) ...[
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 20),
+                      tooltip: 'Editar',
+                      onPressed: () => _showEquivalenciaDialog(equivalencia: eq),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.delete_outline, size: 20, color: Colors.red[400]),
+                      tooltip: 'Eliminar',
+                      onPressed: () => _confirmDeleteEquivalencia(eq),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  Future<void> _showEquivalenciaDialog({Map<String, dynamic>? equivalencia}) async {
+    final isEdit = equivalencia != null;
+    final productId = int.parse(_product.id);
+
+    List<Map<String, dynamic>> presentacionesNom =
+        await ProductService.getPresentaciones();
+
+    final idsUsados = _equivalenciasPresentacion
+        .where((e) => e['id'] != equivalencia?['id'])
+        .map((e) => e['id_presentacion'] as int)
+        .toSet();
+
+    presentacionesNom = presentacionesNom
+        .where((p) {
+          final id = (p['id'] as num).toInt();
+          if (isEdit && id == equivalencia!['id_presentacion']) return true;
+          return !idsUsados.contains(id);
+        })
+        .toList();
+
+    if (presentacionesNom.isEmpty && !isEdit) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay presentaciones disponibles para agregar'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    int? selectedPresentacionId = isEdit
+        ? (equivalencia!['id_presentacion'] as num?)?.toInt()
+        : (presentacionesNom.isNotEmpty
+            ? (presentacionesNom.first['id'] as num).toInt()
+            : null);
+
+    final cantidadController = TextEditingController(
+      text: isEdit
+          ? (equivalencia!['cantidad'] as num?)?.toString() ?? ''
+          : '',
+    );
+    final observacionesController = TextEditingController(
+      text: equivalencia?['observaciones'] as String? ?? '',
+    );
+    final formKey = GlobalKey<FormState>();
+
+    if (!mounted) return;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(isEdit ? 'Editar equivalencia' : 'Nueva equivalencia'),
+          content: SizedBox(
+            width: 400,
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Unidad base: $_nombrePresentacionBase',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 16),
+                  if (presentacionesNom.isNotEmpty)
+                    DropdownButtonFormField<int>(
+                      value: selectedPresentacionId,
+                      decoration: const InputDecoration(
+                        labelText: 'Presentación',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: presentacionesNom.map((p) {
+                        final id = (p['id'] as num).toInt();
+                        return DropdownMenuItem(
+                          value: id,
+                          child: Text(p['denominacion'] as String? ?? ''),
+                        );
+                      }).toList(),
+                      onChanged: isEdit
+                          ? null
+                          : (v) => setDialogState(() => selectedPresentacionId = v),
+                    ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: cantidadController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: 'Cantidad equivalente',
+                      hintText: 'Ej: 12',
+                      suffixText: _nombrePresentacionBase,
+                      border: const OutlineInputBorder(),
+                    ),
+                    validator: (v) {
+                      final n = double.tryParse(v?.replaceAll(',', '.') ?? '');
+                      if (n == null || n <= 0) {
+                        return 'Ingrese una cantidad válida mayor que 0';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: observacionesController,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Observaciones (opcional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (formKey.currentState?.validate() != true) return;
+                if (selectedPresentacionId == null) return;
+                Navigator.pop(ctx, true);
+              },
+              child: Text(isEdit ? 'Guardar' : 'Agregar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved != true || !mounted) {
+      cantidadController.dispose();
+      observacionesController.dispose();
+      return;
+    }
+
+    try {
+      final cantidad =
+          double.parse(cantidadController.text.replaceAll(',', '.'));
+      await ProductService.upsertEquivalenciaPresentacion(
+        idProducto: productId,
+        idPresentacion: selectedPresentacionId!,
+        cantidad: cantidad,
+        observaciones: observacionesController.text.trim().isEmpty
+            ? null
+            : observacionesController.text.trim(),
+        id: isEdit ? (equivalencia!['id'] as int?) : null,
+      );
+      await _loadEquivalenciasPresentacion();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isEdit ? 'Equivalencia actualizada' : 'Equivalencia agregada'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al guardar: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      cantidadController.dispose();
+      observacionesController.dispose();
+    }
+  }
+
+  Future<void> _confirmDeleteEquivalencia(Map<String, dynamic> eq) async {
+    final nombre = eq['presentacion'] as String? ?? 'esta presentación';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar equivalencia'),
+        content: Text('¿Eliminar la equivalencia de "$nombre"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    final ok = await ProductService.deleteEquivalenciaPresentacion(eq['id'] as int);
+    await _loadEquivalenciasPresentacion();
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? 'Equivalencia eliminada' : 'No se pudo eliminar'),
+        backgroundColor: ok ? AppColors.success : AppColors.error,
+      ),
     );
   }
 
