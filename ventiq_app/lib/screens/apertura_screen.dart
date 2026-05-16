@@ -2164,7 +2164,9 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                                 ),
                                                 const SizedBox(height: 4),
                                                 // Mostrar cantidad total del sistema
-                                                Row(
+                                                Wrap(
+                                                  spacing: 6,
+                                                  runSpacing: 4,
                                                   children: [
                                                     Container(
                                                       padding:
@@ -2192,8 +2194,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                                         ),
                                                       ),
                                                     ),
-                                                    if (totalReservadoCarnaval > 0) ...[
-                                                      const SizedBox(width: 6),
+                                                    if (totalReservadoCarnaval > 0)
                                                       Container(
                                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                                                         decoration: BoxDecoration(
@@ -2210,9 +2211,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                                           ),
                                                         ),
                                                       ),
-                                                    ],
-                                                    if (totalPendienteCarnaval > 0) ...[
-                                                      const SizedBox(width: 6),
+                                                    if (totalPendienteCarnaval > 0)
                                                       Container(
                                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                                                         decoration: BoxDecoration(
@@ -2229,7 +2228,6 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                                           ),
                                                         ),
                                                       ),
-                                                    ],
                                                   ],
                                                 ),
                                               ],

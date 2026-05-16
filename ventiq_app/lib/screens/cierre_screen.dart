@@ -1022,7 +1022,9 @@ class _CierreScreenState extends State<CierreScreen> {
                                                 ),
                                                 const SizedBox(height: 4),
                                                 // Mostrar cantidad total del sistema
-                                                Row(
+                                                Wrap(
+                                                  spacing: 6,
+                                                  runSpacing: 4,
                                                   children: [
                                                     Container(
                                                       padding:
@@ -1050,8 +1052,7 @@ class _CierreScreenState extends State<CierreScreen> {
                                                         ),
                                                       ),
                                                     ),
-                                                    if (totalReservadoCarnaval > 0) ...[
-                                                      const SizedBox(width: 6),
+                                                    if (totalReservadoCarnaval > 0)
                                                       Container(
                                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                                                         decoration: BoxDecoration(
@@ -1068,9 +1069,7 @@ class _CierreScreenState extends State<CierreScreen> {
                                                           ),
                                                         ),
                                                       ),
-                                                    ],
-                                                    if (totalPendienteCarnaval > 0) ...[
-                                                      const SizedBox(width: 6),
+                                                    if (totalPendienteCarnaval > 0)
                                                       Container(
                                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                                                         decoration: BoxDecoration(
@@ -1087,7 +1086,6 @@ class _CierreScreenState extends State<CierreScreen> {
                                                           ),
                                                         ),
                                                       ),
-                                                    ],
                                                   ],
                                                 ),
                                               ],
