@@ -198,6 +198,35 @@ BEGIN
         WHERE rpc.id_producto IN (SELECT base.id_producto FROM base)
         GROUP BY rpc.id_producto, rpc.id_ubicacion
     ),
+    pc AS (
+        -- Pendientes Carnaval: partimos de app_dat_inventario_productos (filas con id_extraccion),
+        -- vamos a app_dat_extraccion_productos para obtener id_operacion, y nos quedamos solo
+        -- con las operaciones cuyo histórico en app_dat_estado_operacion tiene ÚNICAMENTE estado = 1
+        -- (nunca transitaron a otro estado). Esto garantiza no descuadrar el inventario real.
+        SELECT
+            inv.id_producto,
+            inv.id_ubicacion,
+            la.id_almacen,
+            SUM(ABS(inv.cantidad_final - inv.cantidad_inicial)) AS cantidad
+        FROM public.app_dat_inventario_productos inv
+        INNER JOIN public.app_dat_extraccion_productos ep ON inv.id_extraccion = ep.id
+        INNER JOIN public.app_dat_layout_almacen la       ON inv.id_ubicacion  = la.id
+        WHERE inv.id_extraccion IS NOT NULL
+          AND inv.id_producto IN (SELECT base.id_producto FROM base)
+          AND EXISTS (
+                SELECT 1
+                FROM public.app_dat_estado_operacion eo
+                WHERE eo.id_operacion = ep.id_operacion
+                  AND eo.estado = 1
+              )
+          AND NOT EXISTS (
+                SELECT 1
+                FROM public.app_dat_estado_operacion eo
+                WHERE eo.id_operacion = ep.id_operacion
+                  AND eo.estado <> 1
+              )
+        GROUP BY inv.id_producto, inv.id_ubicacion, la.id_almacen
+    ),
     enriched AS (
         SELECT
             b.*,
@@ -206,6 +235,8 @@ BEGIN
             pa.precio_venta_cup,
             COALESCE(sr.reservado, 0) AS stock_reservado_val,
             COALESCE(rc.reservado, 0) AS reservado_carnaval_val,
+            COALESCE(pc.cantidad, 0)  AS pendiente_carnaval_val,
+            pc.id_almacen             AS pendiente_carnaval_almacen,
             COUNT(*) OVER ()                                              AS total_count,
             COUNT(*) FILTER (WHERE b.cantidad_final < 10) OVER ()         AS total_baja,
             COUNT(*) FILTER (WHERE b.cantidad_final = 0)  OVER ()         AS total_cero,
@@ -223,6 +254,8 @@ BEGIN
                      AND sr.id_ubicacion = b.id_ubicacion
         LEFT JOIN rc  ON rc.id_producto = b.id_producto
                      AND rc.id_ubicacion = b.id_ubicacion
+        LEFT JOIN pc  ON pc.id_producto = b.id_producto
+                     AND pc.id_ubicacion = b.id_ubicacion
         WHERE (p_id_subcategoria IS NULL OR psc.id_subcategoria = p_id_subcategoria)
     )
     SELECT
@@ -287,6 +320,12 @@ BEGIN
                 'id_producto',  e.id_producto,
                 'id_ubicacion', e.id_ubicacion,
                 'cantidad',     e.reservado_carnaval_val
+            ),
+            'pendiente_carnaval', jsonb_build_object(
+                'id_producto',  e.id_producto,
+                'id_ubicacion', e.id_ubicacion,
+                'id_almacen',   e.pendiente_carnaval_almacen,
+                'cantidad',     e.pendiente_carnaval_val
             )
         )::JSONB AS resumen_inventario,
         jsonb_build_object(

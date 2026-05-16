@@ -65,6 +65,12 @@ class AppDrawer extends StatelessWidget {
                       title: 'Pago a Proveedores',
                       route: '/pago-proveedores',
                     ),
+
+                     _DrawerItem(
+                      icon: Icons.payment,
+                      title: 'Pago a Referidos',
+                      route: '/referral-payments',
+                    ),
                     _DrawerItem(
                       icon: Icons.delete,
                       title: 'Eliminacion de tiendas',
@@ -348,6 +354,7 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/trabajadores' ||
                 item.route == '/licencias' ||
                 item.route == '/renovaciones' ||
+                item.route == '/referral-payments' ||
                 item.route == '/configuracion' ||
                 item.route == '/carnaval-tiendas' ||
                 item.route == '/productos-carnaval-inventtia' ||

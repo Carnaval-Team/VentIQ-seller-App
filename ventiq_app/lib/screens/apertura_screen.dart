@@ -909,6 +909,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
                 'almacen': almacen['denominacion'] ?? 'Almacén',
                 'cantidad': cantidad,
                 'reservado_carnaval': 0.0,
+                'pendiente_carnaval': 0.0,
               };
             }
           }
@@ -957,6 +958,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
                 'almacen': product.almacen,
                 'cantidad': product.cantidadFinal,
                 'reservado_carnaval': product.reservadoCarnaval,
+                'pendiente_carnaval': product.pendienteCarnaval,
               };
             }
           } catch (e) {
@@ -2116,7 +2118,12 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                   (sum, loc) =>
                                       sum + ((loc['reservado_carnaval'] as num?)?.toDouble() ?? 0.0),
                                 );
-                                final totalReal = (totalQuantity - totalReservadoCarnaval).clamp(0.0, double.infinity);
+                                final totalPendienteCarnaval = locations.fold<double>(
+                                  0.0,
+                                  (sum, loc) =>
+                                      sum + ((loc['pendiente_carnaval'] as num?)?.toDouble() ?? 0.0),
+                                );
+                                final totalReal = (totalQuantity - totalReservadoCarnaval - totalPendienteCarnaval).clamp(0.0, double.infinity);
 
                                 if (snapshot.connectionState ==
                                         ConnectionState.done &&
@@ -2204,6 +2211,25 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                                         ),
                                                       ),
                                                     ],
+                                                    if (totalPendienteCarnaval > 0) ...[
+                                                      const SizedBox(width: 6),
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.green[50],
+                                                          borderRadius: BorderRadius.circular(4),
+                                                          border: Border.all(color: Colors.green[300]!),
+                                                        ),
+                                                        child: Text(
+                                                          'Pendiente: ${totalPendienteCarnaval.toStringAsFixed(0)}',
+                                                          style: TextStyle(
+                                                            fontSize: 10,
+                                                            fontWeight: FontWeight.w600,
+                                                            color: Colors.green[800],
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ],
                                                 ),
                                               ],
@@ -2273,7 +2299,8 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                                     (loc) {
                                                       final locCantidad = loc['cantidad'] as double;
                                                       final locReservado = ((loc['reservado_carnaval'] as num?)?.toDouble() ?? 0.0);
-                                                      final locReal = (locCantidad - locReservado).clamp(0.0, double.infinity);
+                                                      final locPendiente = ((loc['pendiente_carnaval'] as num?)?.toDouble() ?? 0.0);
+                                                      final locReal = (locCantidad - locReservado - locPendiente).clamp(0.0, double.infinity);
                                                       return Padding(
                                                         padding:
                                                             const EdgeInsets.only(
@@ -2321,6 +2348,17 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                                                       fontSize: 10,
                                                                       fontWeight: FontWeight.w600,
                                                                       color: Colors.orange[700],
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                                if (locPendiente > 0) ...[
+                                                                  const SizedBox(width: 3),
+                                                                  Text(
+                                                                    '(pend: +${locPendiente.toStringAsFixed(0)})',
+                                                                    style: TextStyle(
+                                                                      fontSize: 10,
+                                                                      fontWeight: FontWeight.w600,
+                                                                      color: Colors.green[700],
                                                                     ),
                                                                   ),
                                                                 ],
