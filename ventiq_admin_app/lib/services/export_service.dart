@@ -953,13 +953,13 @@ class ExportService {
   }
 
   /// Construye una celda de datos para la tabla PDF
-  pw.Widget _buildTableCell(String text, {pw.Font? font}) {
+  pw.Widget _buildTableCell(String text, {pw.Font? font, pw.TextAlign align = pw.TextAlign.center}) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(6),
       child: pw.Text(
         text,
         style: pw.TextStyle(fontSize: 9, font: font),
-        textAlign: pw.TextAlign.center,
+        textAlign: align,
       ),
     );
   }
@@ -2438,6 +2438,346 @@ class ExportService {
                 ],
               ),
             ],
+          ),
+        ],
+      ),
+    );
+
+    return pdf.save();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // EXPORTAR ENVÍO DE CONSIGNACIÓN A PDF
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Exporta el detalle completo de un envío de consignación en PDF.
+  Future<void> exportConsignacionEnvioPdf({
+    required BuildContext context,
+    required Map<String, dynamic> detalles,
+    required List<Map<String, dynamic>> productos,
+  }) async {
+    try {
+      final numero = detalles['numero_envio']?.toString() ?? 'envio';
+      final fileName =
+          'Consignacion_${_cleanFileName(numero)}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf';
+
+      final fileBytes = await _generateConsignacionEnvioPdf(
+        detalles: detalles,
+        productos: productos,
+      );
+
+      const mimeType = 'application/pdf';
+
+      if (kIsWeb) {
+        try {
+          _downloadFileWeb(fileBytes, fileName, mimeType);
+        } catch (webError) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Problema de compatibilidad del navegador. Prueba con Edge o Chrome.',
+                ),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 5),
+              ),
+            );
+          }
+          return;
+        }
+      } else {
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/$fileName');
+        await file.writeAsBytes(fileBytes);
+        await Share.shareXFiles(
+          [XFile(file.path, mimeType: mimeType)],
+          subject: 'Envío de Consignación #$numero',
+          text:
+              'Detalle del envío de consignación generado el ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+        );
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PDF generado exitosamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error al exportar envío de consignación a PDF: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar el PDF: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<Uint8List> _generateConsignacionEnvioPdf({
+    required Map<String, dynamic> detalles,
+    required List<Map<String, dynamic>> productos,
+  }) async {
+    final pdf = pw.Document();
+    final regularFont = await _getRegularFont();
+    final boldFont = await _getBoldFont();
+    final now = DateTime.now();
+    final dateFormatter = DateFormat('dd/MM/yyyy HH:mm');
+    final numFormatter = NumberFormat('#,##0.00');
+
+    String _fmt(dynamic v, {int decimals = 2}) {
+      final n = (v is num) ? v.toDouble() : double.tryParse(v?.toString() ?? '') ?? 0.0;
+      return numFormatter.format(n);
+    }
+
+    String _fmtFecha(dynamic raw) {
+      if (raw == null) return 'N/A';
+      try {
+        return DateFormat('dd/MM/yyyy').format(DateTime.parse(raw.toString()));
+      } catch (_) {
+        return raw.toString();
+      }
+    }
+
+    // ── Totales ─────────────────────────────────────────────────────────────
+    double totalCantidad = 0;
+    double totalCostoUsd = 0;
+    double totalVentaCup = 0;
+    for (final p in productos) {
+      final qty = (p['cantidad_propuesta'] as num?)?.toDouble() ?? 0;
+      final costo = (p['precio_costo_usd'] as num?)?.toDouble() ?? 0;
+      final venta = (p['precio_venta_cup'] as num?)?.toDouble() ?? 0;
+      totalCantidad += qty;
+      totalCostoUsd += costo * qty;
+      totalVentaCup += venta * qty;
+    }
+
+    // ── Filas de la tabla de productos ───────────────────────────────────────
+    final tableRows = productos.map((p) {
+      final nombre = p['producto_denominacion'] as String? ??
+          p['denominacion'] as String? ??
+          'N/A';
+      final sku = p['producto_sku'] as String? ?? p['sku'] as String? ?? '';
+      final qty = (p['cantidad_propuesta'] as num?)?.toDouble() ?? 0;
+      final costo = (p['precio_costo_usd'] as num?)?.toDouble() ?? 0;
+      final venta = (p['precio_venta_cup'] as num?)?.toDouble();
+
+      return pw.TableRow(children: [
+        _buildTableCell(nombre, font: regularFont),
+        _buildTableCell(sku, font: regularFont, align: pw.TextAlign.center),
+        _buildTableCell('\$${_fmt(costo)} USD', font: regularFont, align: pw.TextAlign.right),
+        _buildTableCell(
+          venta != null && venta > 0 ? '\$${_fmt(venta)} CUP' : '-',
+          font: regularFont,
+          align: pw.TextAlign.right,
+        ),
+        _buildTableCell(qty.toStringAsFixed(0), font: regularFont, align: pw.TextAlign.center),
+      ]);
+    }).toList();
+
+    // ── Sección de tienda (origen / destino) ─────────────────────────────────
+    pw.Widget _buildStoreSection(String title, String store, String warehouse, pw.Font bold, pw.Font regular) {
+      return pw.Container(
+        padding: const pw.EdgeInsets.all(8),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.grey400),
+          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(title, style: pw.TextStyle(font: bold, fontSize: 10)),
+            pw.SizedBox(height: 4),
+            _buildPdfInfoRow('Tienda:', store, bold, regular),
+            _buildPdfInfoRow('Almacén:', warehouse, bold, regular),
+          ],
+        ),
+      );
+    }
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        header: (pw.Context ctx) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            // ── Cabecera ───────────────────────────────────────────────────
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text('INVENTTIA',
+                        style: pw.TextStyle(font: boldFont, fontSize: 20)),
+                    pw.Text('ENVÍO DE CONSIGNACIÓN',
+                        style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blueGrey700)),
+                  ],
+                ),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Text('#${detalles['numero_envio'] ?? 'N/A'}',
+                        style: pw.TextStyle(font: boldFont, fontSize: 16)),
+                    pw.Text(
+                      'Estado: ${detalles['estado_envio_texto'] ?? 'N/A'}',
+                      style: pw.TextStyle(font: regularFont, fontSize: 10),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            pw.Divider(thickness: 1),
+            pw.SizedBox(height: 6),
+
+            // ── Tiendas origen / destino ──────────────────────────────────
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Expanded(
+                  child: _buildStoreSection(
+                    'TIENDA ORIGEN',
+                    detalles['tienda_consignadora']?.toString() ?? 'N/A',
+                    detalles['almacen_origen']?.toString() ?? 'N/A',
+                    boldFont, regularFont,
+                  ),
+                ),
+                pw.SizedBox(width: 12),
+                pw.Expanded(
+                  child: _buildStoreSection(
+                    'TIENDA DESTINO',
+                    detalles['tienda_consignataria']?.toString() ?? 'N/A',
+                    detalles['almacen_destino']?.toString() ?? 'N/A',
+                    boldFont, regularFont,
+                  ),
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 8),
+
+            // ── Fechas y totales de resumen ───────────────────────────────
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    _buildPdfInfoRow('Fecha propuesta:', _fmtFecha(detalles['fecha_propuesta']), boldFont, regularFont),
+                    if (detalles['fecha_aceptacion'] != null)
+                      _buildPdfInfoRow('Fecha aceptación:', _fmtFecha(detalles['fecha_aceptacion']), boldFont, regularFont),
+                  ],
+                ),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    _buildPdfInfoRow('Total unidades:', '${(detalles['cantidad_total_unidades'] as num?)?.toStringAsFixed(0) ?? '0'} u.', boldFont, regularFont),
+                    _buildPdfInfoRow('Valor total costo:', '\$${_fmt(detalles['valor_total_costo'])} USD', boldFont, regularFont),
+                    if (((detalles['valor_total_venta'] as num?) ?? 0) > 0)
+                      _buildPdfInfoRow('Valor total venta:', '\$${_fmt(detalles['valor_total_venta'])} CUP', boldFont, regularFont),
+                  ],
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 10),
+            pw.Text('LISTADO DE PRODUCTOS',
+                style: pw.TextStyle(font: boldFont, fontSize: 12)),
+            pw.SizedBox(height: 4),
+            // Encabezado de tabla (se repite en cada página)
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(4),
+                1: const pw.FlexColumnWidth(2),
+                2: const pw.FlexColumnWidth(2.5),
+                3: const pw.FlexColumnWidth(2.5),
+                4: const pw.FlexColumnWidth(1.2),
+              },
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.blueGrey100),
+                  children: [
+                    _buildTableHeader('Producto', font: boldFont),
+                    _buildTableHeader('SKU', font: boldFont),
+                    _buildTableHeader('P.Costo (USD)', font: boldFont),
+                    _buildTableHeader('P.Venta (CUP)', font: boldFont),
+                    _buildTableHeader('Cant.', font: boldFont),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+        footer: (pw.Context ctx) => pw.Column(
+          children: [
+            pw.Divider(),
+            pw.SizedBox(height: 4),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
+                  'Generado por Inventtia — ${dateFormatter.format(now)}',
+                  style: pw.TextStyle(font: regularFont, fontSize: 7, color: PdfColors.grey600),
+                ),
+                pw.Text(
+                  'Pág. ${ctx.pageNumber} / ${ctx.pagesCount}',
+                  style: pw.TextStyle(font: regularFont, fontSize: 7, color: PdfColors.grey600),
+                ),
+              ],
+            ),
+          ],
+        ),
+        build: (pw.Context ctx) => [
+          // Filas de productos
+          pw.Table(
+            border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+            columnWidths: {
+              0: const pw.FlexColumnWidth(4),
+              1: const pw.FlexColumnWidth(2),
+              2: const pw.FlexColumnWidth(2.5),
+              3: const pw.FlexColumnWidth(2.5),
+              4: const pw.FlexColumnWidth(1.2),
+            },
+            children: tableRows,
+          ),
+          pw.SizedBox(height: 16),
+          // Fila de totales
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Container(
+              padding: const pw.EdgeInsets.all(8),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.blueGrey50,
+                border: pw.Border.all(color: PdfColors.blueGrey300),
+                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  pw.Row(children: [
+                    pw.Text('Total productos: ', style: pw.TextStyle(font: boldFont, fontSize: 10)),
+                    pw.Text('${productos.length}', style: pw.TextStyle(font: regularFont, fontSize: 10)),
+                  ]),
+                  pw.Row(children: [
+                    pw.Text('Total unidades: ', style: pw.TextStyle(font: boldFont, fontSize: 10)),
+                    pw.Text(totalCantidad.toStringAsFixed(0), style: pw.TextStyle(font: regularFont, fontSize: 10)),
+                  ]),
+                  pw.Row(children: [
+                    pw.Text('Valor total costo: ', style: pw.TextStyle(font: boldFont, fontSize: 11)),
+                    pw.Text('\$${_fmt(totalCostoUsd)} USD', style: pw.TextStyle(font: boldFont, fontSize: 11)),
+                  ]),
+                  if (totalVentaCup > 0)
+                    pw.Row(children: [
+                      pw.Text('Valor total venta: ', style: pw.TextStyle(font: boldFont, fontSize: 11)),
+                      pw.Text('\$${_fmt(totalVentaCup)} CUP', style: pw.TextStyle(font: boldFont, fontSize: 11)),
+                    ]),
+                ],
+              ),
+            ),
           ),
         ],
       ),

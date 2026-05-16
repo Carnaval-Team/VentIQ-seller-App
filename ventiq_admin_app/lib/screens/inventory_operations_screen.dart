@@ -1510,37 +1510,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    FutureBuilder<Map<String, dynamic>>(
-                      future: InventoryService.getAdjustmentDetails(operation['id']),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: CircularProgressIndicator(),
-                          );
-                        }
-
-                        if (snapshot.hasError) {
-                          return Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Text(
-                              'Error al cargar detalles: ${snapshot.error}',
-                              style: const TextStyle(color: Colors.red),
-                            ),
-                          );
-                        }
-
-                        final adjustmentData = snapshot.data;
-                        if (adjustmentData == null || adjustmentData['details'].isEmpty) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Text('Sin detalles de ajuste'),
-                          );
-                        }
-
-                        return _buildAdjustmentDetailsList(adjustmentData['details']);
-                      },
-                    ),
+                    _buildAdjustmentDetailsSection(operation),
 
                     // Show print button for all operations
                     const SizedBox(height: 24),
@@ -1552,6 +1522,77 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Renders adjustment details.
+  ///
+  /// Path 1 (fast): uses pre-fetched `detalles.items` embedded in the listing
+  ///   response — contains ALL products of the grouped session, no extra call.
+  /// Path 2 (fallback): queries the DB using the list of ALL session op-IDs
+  ///   stored in `detalles.detalles_especificos.ids_operaciones`.
+  /// Path 3 (legacy): single-operation query for records before the grouping fix.
+  Widget _buildAdjustmentDetailsSection(Map<String, dynamic> operation) {
+    // ── Helper: safely coerce any Map to Map<String, dynamic> ──────────────
+    Map<String, dynamic>? _toStringMap(dynamic raw) {
+      if (raw == null) return null;
+      if (raw is Map<String, dynamic>) return raw;
+      if (raw is Map) return raw.map((k, v) => MapEntry(k.toString(), v));
+      return null;
+    }
+
+    final detalles = _toStringMap(operation['detalles']);
+
+    // Path 1 ─ embedded items (all products, zero extra DB call)
+    final rawItems = detalles?['items'];
+    if (rawItems is List && rawItems.isNotEmpty) {
+      return _buildAdjustmentDetailsList(List<dynamic>.from(rawItems));
+    }
+
+    // Path 2 ─ use ids_operaciones from det_esp for a multi-op query
+    final detEsp = _toStringMap(detalles?['detalles_especificos']);
+    final rawIds = detEsp?['ids_operaciones'];
+    List<int>? sessionIds;
+    if (rawIds is List && rawIds.isNotEmpty) {
+      sessionIds = rawIds
+          .map((e) => (e is int) ? e : int.tryParse(e.toString()))
+          .whereType<int>()
+          .toList();
+    }
+
+    final Future<Map<String, dynamic>> detailFuture =
+        (sessionIds != null && sessionIds.isNotEmpty)
+            ? InventoryService.getAdjustmentDetailsByIds(sessionIds)
+            : InventoryService.getAdjustmentDetails(operation['id'] as int);
+
+    return FutureBuilder<Map<String, dynamic>>(
+      future: detailFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: CircularProgressIndicator(),
+          );
+        }
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Error al cargar detalles: ${snapshot.error}',
+              style: const TextStyle(color: Colors.red),
+            ),
+          );
+        }
+        final adjustmentData = snapshot.data;
+        final details = adjustmentData?['details'] as List?;
+        if (details == null || details.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Sin detalles de ajuste'),
+          );
+        }
+        return _buildAdjustmentDetailsList(details);
+      },
     );
   }
 

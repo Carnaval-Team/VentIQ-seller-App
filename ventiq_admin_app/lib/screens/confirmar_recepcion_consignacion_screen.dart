@@ -4,7 +4,7 @@ import '../config/app_colors.dart';
 import '../services/consignacion_service.dart';
 import '../services/consignacion_envio_service.dart';
 import '../services/consignacion_envio_listado_service.dart';
-import '../services/currency_display_service.dart';
+import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
 
 class ConfirmarRecepcionConsignacionScreen extends StatefulWidget {
@@ -57,7 +57,7 @@ class _ConfirmarRecepcionConsignacionScreenState
   
   Future<void> _loadTasaCambio() async {
     try {
-      final rate = await CurrencyDisplayService.getExchangeRateForDisplay('USD', 'CUP');
+      final rate = await CurrencyService.getEffectiveUsdToCupRate();
       if (mounted) {
         setState(() {
           _tasaCambio = rate;
@@ -65,8 +65,13 @@ class _ConfirmarRecepcionConsignacionScreenState
       }
     } catch (e) {
       debugPrint('⚠️ Error cargando tasa de cambio: $e');
-      // Usa el valor por defecto de 440.0
     }
+  }
+
+  /// Convierte precio de venta CUP a USD usando la tasa efectiva de la tienda.
+  double _calcularPrecioVentaUsd(double precioVentaCup) {
+    if (precioVentaCup <= 0 || _tasaCambio <= 0) return 0.0;
+    return double.parse((precioVentaCup / _tasaCambio).toStringAsFixed(4));
   }
 
   @override
@@ -1123,6 +1128,14 @@ class _ConfirmarRecepcionConsignacionScreenState
         }).toList();
         
         debugPrint('📊 Productos a procesar: ${productosNoRechazados.length} (excluidos rechazados)');
+
+        // Refrescar tasa de la tienda antes de calcular precios USD
+        try {
+          _tasaCambio = await CurrencyService.getEffectiveUsdToCupRate();
+          debugPrint('💱 Tasa USD→CUP efectiva de la tienda: $_tasaCambio');
+        } catch (e) {
+          debugPrint('⚠️ No se pudo refrescar tasa, usando $_tasaCambio: $e');
+        }
         
         // Construir JSON de precios del formulario
         final preciosProductos = <Map<String, dynamic>>[];
@@ -1154,11 +1167,16 @@ class _ConfirmarRecepcionConsignacionScreenState
             continue; // Saltar este producto
           }
           
-          debugPrint('✅ Producto $nombreProducto: precio_venta_cup=$precioConfigurable');
+          final precioVentaUsd = _calcularPrecioVentaUsd(precioConfigurable);
+          debugPrint(
+            '✅ Producto $nombreProducto: precio_venta_cup=$precioConfigurable, '
+            'precio_venta_usd=$precioVentaUsd (tasa=$_tasaCambio)',
+          );
           
           preciosProductos.add({
             'id_producto': idProducto,
             'precio_venta_cup': precioConfigurable,
+            'precio_venta_usd': precioVentaUsd,
             'precio_costo_usd': precioCostoUsd,
           });
         }

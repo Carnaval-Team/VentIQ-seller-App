@@ -5,6 +5,7 @@ import '../services/consignacion_envio_listado_service.dart';
 import '../services/consignacion_envio_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/currency_display_service.dart';
+import '../services/export_service.dart';
 import 'confirmar_recepcion_consignacion_screen.dart';
 import '../utils/navigation_guard.dart';
 import '../services/inventory_service.dart';
@@ -29,11 +30,15 @@ class _ConsignacionEnvioDetallesScreenState
   late Future<Map<String, dynamic>?> _detallesFuture;
   late Future<List<Map<String, dynamic>>> _productosFuture;
 
-  double _tasaCambio = 440.0; // Valor por defecto
+  double _tasaCambio = 440.0;
   bool _isLoadingTasa = true;
   bool _isAccepting = false;
+  bool _isExporting = false;
 
   bool _canManageConsignacion = false;
+
+  Map<String, dynamic>? _detallesCargados;
+  List<Map<String, dynamic>>? _productosCargados;
 
   // Operaciones vinculadas al envío
   int? _idOperacionExtraccion;
@@ -96,12 +101,16 @@ class _ConsignacionEnvioDetallesScreenState
           print('   - Almacén Destino: ${detalles['almacen_destino']}');
           print('   - Porcentaje Comisión: ${detalles['porcentaje_comision']}');
           print('   - Todas las claves: ${detalles.keys.toList()}');
+          _detallesCargados = detalles;
         }
         return detalles;
       });
       _productosFuture = ConsignacionEnvioListadoService.obtenerProductosEnvio(
         widget.idEnvio,
-      );
+      ).then((productos) {
+        _productosCargados = productos;
+        return productos;
+      });
     });
     _cargarOperacionesEnvio();
   }
@@ -157,10 +166,58 @@ class _ConsignacionEnvioDetallesScreenState
     }
   }
 
+  Future<void> _exportarPdf() async {
+    final detalles = _detallesCargados;
+    final productos = _productosCargados;
+
+    if (detalles == null || productos == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Los datos aún están cargando. Espera un momento.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isExporting = true);
+    try {
+      await ExportService().exportConsignacionEnvioPdf(
+        context: context,
+        detalles: detalles,
+        productos: productos,
+      );
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Detalles del Envío'), elevation: 0),
+      appBar: AppBar(
+        title: const Text('Detalles del Envío'),
+        elevation: 0,
+        actions: [
+          if (_isExporting)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              tooltip: 'Exportar PDF',
+              onPressed: _exportarPdf,
+            ),
+        ],
+      ),
       body: FutureBuilder<Map<String, dynamic>?>(
         future: _detallesFuture,
         builder: (context, snapshot) {
