@@ -36,6 +36,29 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
   int _inventarioTotal = 0;
   int _operacionesTotal = 0;
 
+  // Flash highlight tracking (items recently moved/inserted).
+  // Inventario: 'up' subió de posición, 'down' bajó, 'new' nuevo.
+  final Map<String, String> _flashInv = {};
+  final Set<int> _flashOps = {};
+
+  void _flashInvKey(String key, String dir) {
+    _flashInv[key] = dir;
+    Future.delayed(const Duration(milliseconds: 1400), () {
+      if (!mounted) return;
+      if (_flashInv[key] == dir) {
+        setState(() => _flashInv.remove(key));
+      }
+    });
+  }
+
+  void _flashOpKey(int id) {
+    _flashOps.add(id);
+    Future.delayed(const Duration(milliseconds: 1600), () {
+      if (!mounted) return;
+      setState(() => _flashOps.remove(id));
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -163,26 +186,35 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
         _inventarioUI.insert(i, n);
         state?.insertItem(
           i,
-          duration: const Duration(milliseconds: 400),
+          duration: const Duration(milliseconds: 500),
         );
+        _flashInvKey(n.clave, 'new');
       } else if (currentIdx != i) {
-        // Mover: remove + insert con animación
+        // Mover: remove + insert con animación (leaderboard style)
         final moved = _inventarioUI.removeAt(currentIdx);
+        final wentUp = i < currentIdx;
         state?.removeItem(
           currentIdx,
-          (ctx, anim) => _buildInventarioRow(moved, anim, removing: true),
-          duration: const Duration(milliseconds: 250),
+          (ctx, anim) => _buildInventarioRow(
+            moved,
+            anim,
+            removing: true,
+            slideFromBottom: wentUp,
+          ),
+          duration: const Duration(milliseconds: 350),
         );
         _inventarioUI.insert(i, n);
         state?.insertItem(
           i,
-          duration: const Duration(milliseconds: 400),
+          duration: const Duration(milliseconds: 550),
         );
+        _flashInvKey(n.clave, wentUp ? 'up' : 'down');
       } else {
         // Misma posición pero pudo cambiar cantidad → actualizar en sitio
         if (_inventarioUI[i].cantidadFinal != n.cantidadFinal ||
             _inventarioUI[i].variacion != n.variacion) {
           _inventarioUI[i] = n;
+          _flashInvKey(n.clave, n.cantidadFinal > _inventarioUI[i].cantidadFinal ? 'up' : 'down');
         }
       }
     }
@@ -215,19 +247,20 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
         _operacionesUI.insert(i, n);
         state?.insertItem(
           i,
-          duration: const Duration(milliseconds: 400),
+          duration: const Duration(milliseconds: 600),
         );
+        _flashOpKey(n.idOperacion);
       } else if (currentIdx != i) {
         final moved = _operacionesUI.removeAt(currentIdx);
         state?.removeItem(
           currentIdx,
           (ctx, anim) => _buildOperacionRow(moved, anim, removing: true),
-          duration: const Duration(milliseconds: 250),
+          duration: const Duration(milliseconds: 300),
         );
         _operacionesUI.insert(i, n);
         state?.insertItem(
           i,
-          duration: const Duration(milliseconds: 400),
+          duration: const Duration(milliseconds: 600),
         );
       } else {
         _operacionesUI[i] = n;
@@ -454,6 +487,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
     Animation<double> anim, {
     bool removing = false,
     int? position,
+    bool slideFromBottom = true,
   }) {
     final isSubio = m.subio;
     final isBajo = m.bajo;
@@ -468,10 +502,34 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
             ? Icons.arrow_downward
             : Icons.remove;
 
-    final row = Card(
-      key: ValueKey('inv-${m.clave}'),
+    final flashDir = _flashInv[m.clave];
+    final flashColor = flashDir == 'up' || flashDir == 'new'
+        ? AppColors.success.withOpacity(0.18)
+        : flashDir == 'down'
+            ? AppColors.error.withOpacity(0.18)
+            : null;
+
+    final row = AnimatedContainer(
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOut,
       margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-      elevation: 1.5,
+      decoration: BoxDecoration(
+        color: flashColor,
+        borderRadius: BorderRadius.circular(10),
+        border: flashColor != null
+            ? Border.all(
+                color: (flashDir == 'down'
+                        ? AppColors.error
+                        : AppColors.success)
+                    .withOpacity(0.45),
+                width: 1.2,
+              )
+            : null,
+      ),
+      child: Card(
+      key: ValueKey('inv-${m.clave}'),
+      margin: EdgeInsets.zero,
+      elevation: flashColor != null ? 4 : 1.5,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -565,18 +623,27 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
           ),
         ),
       ),
+      ),
     );
+
+    // Leaderboard style: filas que suben entran desde abajo,
+    // las que bajan salen hacia abajo. Las nuevas/eliminadas
+    // dependen de `slideFromBottom`.
+    final beginOffset = slideFromBottom
+        ? const Offset(0, 0.6)
+        : const Offset(0, -0.6);
 
     return SizeTransition(
       sizeFactor: CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+      axisAlignment: -1,
       child: FadeTransition(
         opacity: anim,
         child: SlideTransition(
           position: Tween<Offset>(
-            begin: const Offset(0, -0.15),
+            begin: beginOffset,
             end: Offset.zero,
           ).animate(
-            CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+            CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
           ),
           child: row,
         ),
@@ -635,10 +702,32 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
   }) {
     final tipoColor = _colorPorTipo(op.tipoOperacion);
     final tf = DateFormat('HH:mm:ss');
-    final row = Card(
-      key: ValueKey('op-${op.idOperacion}'),
+    final isNew = _flashOps.contains(op.idOperacion);
+
+    final row = AnimatedContainer(
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeOut,
       margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-      elevation: 1.5,
+      decoration: BoxDecoration(
+        color: isNew ? tipoColor.withOpacity(0.10) : null,
+        borderRadius: BorderRadius.circular(10),
+        border: isNew
+            ? Border.all(color: tipoColor.withOpacity(0.55), width: 1.4)
+            : null,
+        boxShadow: isNew
+            ? [
+                BoxShadow(
+                  color: tipoColor.withOpacity(0.35),
+                  blurRadius: 12,
+                  spreadRadius: 1,
+                ),
+              ]
+            : null,
+      ),
+      child: Card(
+      key: ValueKey('op-${op.idOperacion}'),
+      margin: EdgeInsets.zero,
+      elevation: isNew ? 4 : 1.5,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -745,20 +834,31 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
           ],
         ),
       ),
+      ),
+    );
+
+    // Estilo notificación: entra deslizándose desde la derecha,
+    // con un pequeño rebote y escala. Tipos removidos salen igual.
+    final curved = CurvedAnimation(
+      parent: anim,
+      curve: Curves.easeOutBack,
+      reverseCurve: Curves.easeInCubic,
     );
 
     return SizeTransition(
       sizeFactor: CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+      axisAlignment: -1,
       child: FadeTransition(
         opacity: anim,
         child: SlideTransition(
           position: Tween<Offset>(
-            begin: const Offset(0, -0.15),
+            begin: const Offset(1.05, 0),
             end: Offset.zero,
-          ).animate(
-            CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+          ).animate(curved),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.92, end: 1.0).animate(curved),
+            child: row,
           ),
-          child: row,
         ),
       ),
     );
