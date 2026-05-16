@@ -493,6 +493,91 @@ class InventoryService {
     }
   }
 
+  /// Get adjustment details for a whole session using multiple operation IDs.
+  /// Used as fallback when the embedded `detalles.items` is unavailable.
+  static Future<Map<String, dynamic>> getAdjustmentDetailsByIds(
+    List<int> operationIds,
+  ) async {
+    try {
+      if (operationIds.isEmpty) return {'details': []};
+
+      print('🔍 Obteniendo detalles de ajuste para ${operationIds.length} operaciones: $operationIds');
+
+      final response = await _supabase
+          .from('app_dat_ajuste_inventario')
+          .select('''
+            id,
+            id_producto,
+            id_variante,
+            id_ubicacion,
+            cantidad_anterior,
+            cantidad_nueva,
+            diferencia,
+            created_at,
+            app_dat_producto:id_producto (
+              id,
+              denominacion,
+              sku,
+              codigo_barras
+            )
+          ''')
+          .inFilter('id_operacion', operationIds)
+          .order('id', ascending: true);
+
+      print('✅ Detalles de ajuste (sesión) obtenidos: ${(response as List).length} registros');
+
+      final details = <Map<String, dynamic>>[];
+      for (final item in response as List) {
+        final producto = item['app_dat_producto'];
+        final idUbicacion = item['id_ubicacion'];
+
+        String ubicacionNombre = 'N/A';
+        String almacenNombre = 'N/A';
+        if (idUbicacion != null) {
+          try {
+            final locationResponse = await _supabase
+                .from('app_dat_layout_almacen')
+                .select('''
+                  denominacion,
+                  id_almacen,
+                  app_dat_almacen:id_almacen (
+                    denominacion
+                  )
+                ''')
+                .eq('id', idUbicacion)
+                .single();
+            ubicacionNombre = locationResponse['denominacion'] ?? 'N/A';
+            final almacen = locationResponse['app_dat_almacen'];
+            almacenNombre = almacen?['denominacion'] ?? 'N/A';
+          } catch (e) {
+            print('⚠️ No se pudo obtener ubicación $idUbicacion: $e');
+          }
+        }
+
+        details.add({
+          'id': item['id'],
+          'cantidad_anterior': item['cantidad_anterior'],
+          'cantidad_nueva': item['cantidad_nueva'],
+          'diferencia': item['diferencia'],
+          'producto_nombre': producto?['denominacion'] ?? 'Producto',
+          'producto': {
+            'denominacion': producto?['denominacion'] ?? 'Producto',
+            'codigo_barras': producto?['codigo_barras'],
+            'sku': producto?['sku'],
+          },
+          'ubicacion': ubicacionNombre,
+          'almacen': almacenNombre,
+          'created_at': item['created_at'],
+        });
+      }
+
+      return {'details': details};
+    } catch (e) {
+      print('❌ Error al obtener detalles de ajuste (multi-op): $e');
+      rethrow;
+    }
+  }
+
   /// Get inventory products using fn_listar_inventario_productos RPC with pagination
   static Future<InventoryResponse> getInventoryProducts({
     String? busqueda,

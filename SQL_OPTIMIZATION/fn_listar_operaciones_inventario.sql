@@ -374,6 +374,83 @@ BEGIN
                OR t.denominacion     ILIKE '%' || p_busqueda || '%'
                OR o.observaciones    ILIKE '%' || p_busqueda || '%')
           AND o.id_tienda IN (SELECT ac.id_tienda FROM accesos ac)
+
+        UNION ALL
+
+        -- ── 5. AJUSTES DE INVENTARIO ─────────────────────────────────────────
+        -- fn_insertar_ajuste_inventario2 crea UNA operación por producto ajustado.
+        -- Agrupamos por sesión (mismo usuario + mismo minuto + mismas observaciones
+        -- + misma tienda + mismo tipo) para presentar UN solo registro por lote
+        -- de ajuste, con todos los productos como detalle.
+        SELECT
+            MIN(o.id)                                                AS op_id,
+            top.denominacion                                         AS tipo_nombre,
+            top.accion                                               AS tipo_accion,
+            o.id_tienda,
+            t.denominacion                                           AS tienda_nom,
+            NULL::BIGINT                                             AS tpv_id,
+            NULL::TEXT                                               AS tpv_nom,
+            o.uuid,
+            -- Tomamos el estado de la operación más reciente del grupo
+            MAX(ue.estado)::SMALLINT                                 AS estado,
+            MAX(neo.denominacion)                                    AS estado_nom,
+            MIN(o.created_at)                                        AS created_at,
+            COALESCE(o.observaciones, '')                            AS observaciones,
+            0::NUMERIC                                               AS total_op,
+            COUNT(DISTINCT ai.id_producto)::INTEGER                  AS items_count,
+            jsonb_build_object(
+                'motivo',         COALESCE(o.observaciones, ''),
+                'tipo_ajuste',    top.denominacion,
+                -- Todos los IDs de operación del grupo (uno por producto ajustado).
+                -- Se obtienen directamente con jsonb_agg sin subquery correlacionado,
+                -- así no hay conflicto con columnas no agrupadas en el GROUP BY.
+                'ids_operaciones', jsonb_agg(o.id ORDER BY o.id)
+            )                                                        AS det_esp,
+            jsonb_agg(
+                jsonb_build_object(
+                    'id_producto',       ai.id_producto,
+                    'producto_nombre',   COALESCE(p.denominacion, 'Producto no encontrado'),
+                    'sku_producto',      p.sku,
+                    'ubicacion',         COALESCE(la.denominacion, ''),
+                    'almacen',           COALESCE(alm.denominacion, ''),
+                    'cantidad_anterior', ai.cantidad_anterior,
+                    'cantidad_nueva',    ai.cantidad_nueva,
+                    'diferencia',        ai.diferencia
+                )
+                ORDER BY ai.id
+            )                                                        AS det_items
+        FROM app_dat_ajuste_inventario    ai
+        JOIN app_dat_operaciones          o    ON ai.id_operacion     = o.id
+        JOIN app_nom_tipo_operacion       top  ON o.id_tipo_operacion = top.id
+        JOIN app_dat_tienda               t    ON o.id_tienda         = t.id
+        LEFT JOIN app_dat_producto        p    ON ai.id_producto      = p.id
+        LEFT JOIN app_dat_layout_almacen  la   ON ai.id_ubicacion     = la.id
+        LEFT JOIN app_dat_almacen         alm  ON la.id_almacen       = alm.id
+        LEFT JOIN ultimo_estado           ue   ON o.id                = ue.id_operacion
+        LEFT JOIN app_nom_estado_operacion neo ON ue.estado           = neo.id
+        WHERE ai.id_operacion IS NOT NULL
+          AND p_id_tpv IS NULL
+          AND (p_id_tienda            IS NULL OR o.id_tienda          = p_id_tienda)
+          AND (p_id_tipo_operacion    IS NULL OR o.id_tipo_operacion  = p_id_tipo_operacion)
+          AND (p_estados              IS NULL OR ue.estado            = ANY(p_estados))
+          AND (p_fecha_desde          IS NULL OR o.created_at::DATE   >= p_fecha_desde)
+          AND (p_fecha_hasta          IS NULL OR o.created_at::DATE   <= p_fecha_hasta)
+          AND (p_uuid_usuario_operador IS NULL OR o.uuid              = p_uuid_usuario_operador)
+          AND (p_busqueda IS NULL
+               OR o.id::TEXT         ILIKE '%' || p_busqueda || '%'
+               OR top.denominacion   ILIKE '%' || p_busqueda || '%'
+               OR t.denominacion     ILIKE '%' || p_busqueda || '%'
+               OR o.observaciones    ILIKE '%' || p_busqueda || '%')
+          AND o.id_tienda IN (SELECT ac.id_tienda FROM accesos ac)
+        GROUP BY
+            DATE_TRUNC('minute', o.created_at),
+            o.uuid,
+            COALESCE(o.observaciones, ''),
+            o.id_tienda,
+            o.id_tipo_operacion,
+            t.denominacion,
+            top.denominacion,
+            top.accion
     )
     -- ── Proyección final con nombre de usuario y paginación ───────────────────
     SELECT
