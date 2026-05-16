@@ -1,12 +1,12 @@
 {
-  "current_version": "2.2.9",
-  "build": 831,
+  "current_version": "2.3.0",
+  "build": 832,
 
   "app_name": "ventiq_app",
   "changelogs": [
     {
-      "version": "2.2.9",
-      "date": "2026-05-13",
+      "version": "2.3.0",
+      "date": "2026-05-16",
       "title": "🚀 Inventario más preciso y mejor respuesta ante fallos de conexión",
       "changes": [
         {

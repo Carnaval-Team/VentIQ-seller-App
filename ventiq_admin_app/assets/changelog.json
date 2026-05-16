@@ -1,12 +1,12 @@
 {
-  "current_version": "2.2.0",
-  "build": 220,
+  "current_version": "2.2.1",
+  "build": 221,
 
   "app_name": "ventiq_admin",
   "changelogs": [
     {
-      "version": "2.2.0",
-      "date": "2026-05-13",
+      "version": "2.2.1",
+      "date": "2026-05-16",
       "title": "💵 Ventas en USD y EUR a la vista, y más control de tu inventario",
       "changes": [
         {
