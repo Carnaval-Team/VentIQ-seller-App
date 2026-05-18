@@ -827,6 +827,17 @@ CREATE TABLE public.app_dat_notificaciones (
   CONSTRAINT app_dat_notificaciones_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_notificaciones_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
+CREATE TABLE public.app_dat_numero_paquete_tienda (
+  id bigint NOT NULL DEFAULT nextval('app_dat_numero_paquete_tienda_id_seq'::regclass),
+  id_tienda bigint NOT NULL,
+  anio integer NOT NULL,
+  mes integer NOT NULL,
+  numero_paquete integer NOT NULL DEFAULT 0,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_dat_numero_paquete_tienda_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_numero_paquete_tienda_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
+);
 CREATE TABLE public.app_dat_operacion_extraccion (
   id_operacion bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   id_motivo_operacion bigint NOT NULL,
@@ -1373,6 +1384,7 @@ CREATE TABLE public.app_dat_trabajadores (
   salario_horas numeric NOT NULL DEFAULT 0,
   maneja_apertura_control boolean DEFAULT true,
   pago_por_resultado numeric DEFAULT 0,
+  user_mail text,
   CONSTRAINT app_dat_trabajadores_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_trabajadores_id_roll_fkey FOREIGN KEY (id_roll) REFERENCES public.seg_roll(id),
   CONSTRAINT app_dat_trabajadores_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
@@ -1420,6 +1432,18 @@ CREATE TABLE public.app_dat_vendedor (
   CONSTRAINT app_dat_vendedor_id_tpv_fkey FOREIGN KEY (id_tpv) REFERENCES public.app_dat_tpv(id),
   CONSTRAINT app_dat_vendedor_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id)
 );
+CREATE TABLE public.app_inf_presentacion_producto (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_producto bigint NOT NULL,
+  id_presentacion bigint NOT NULL,
+  cantidad numeric NOT NULL CHECK (cantidad > 0::numeric),
+  observaciones text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_inf_presentacion_producto_pkey PRIMARY KEY (id),
+  CONSTRAINT app_inf_presentacion_producto_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT app_inf_presentacion_producto_id_presentacion_fkey FOREIGN KEY (id_presentacion) REFERENCES public.app_nom_presentacion(id)
+);
 CREATE TABLE public.app_licencias_offline (
   id bigint NOT NULL DEFAULT nextval('app_licencias_offline_id_seq'::regclass),
   device_id text NOT NULL UNIQUE,
@@ -1446,6 +1470,7 @@ CREATE TABLE public.app_mkt_campanas (
   presupuesto numeric,
   estado smallint NOT NULL DEFAULT 1,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  metricas numeric,
   CONSTRAINT app_mkt_campanas_pkey PRIMARY KEY (id),
   CONSTRAINT app_mkt_campanas_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
   CONSTRAINT app_mkt_campanas_id_tipo_campana_fkey FOREIGN KEY (id_tipo_campana) REFERENCES public.app_mkt_tipo_campana(id)
