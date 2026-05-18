@@ -133,8 +133,10 @@ class StoreSelectorService extends ChangeNotifier {
 
         print('🏪 Tiendas cargadas: ${_userStores.length}');
       } else {
-        print('⚠️ No se encontraron tiendas para el usuario');
-        _userStores = [];
+        // RPC returned empty — user may be a Recursos Humanos role.
+        // Query app_dat_recursos_humanos directly.
+        print('⚠️ No se encontraron tiendas vía RPC, verificando rol Recursos Humanos...');
+        await _loadHRStores(user.id);
       }
     } catch (e) {
       print('❌ Error cargando tiendas: $e');
@@ -247,6 +249,43 @@ class StoreSelectorService extends ChangeNotifier {
     await _loadUserStores();
     await _loadSelectedStore();
     notifyListeners();
+  }
+
+  /// Cargar tiendas asignadas a un usuario de Recursos Humanos
+  Future<void> _loadHRStores(String userUuid) async {
+    try {
+      final rrhhData = await _supabase
+          .from('app_dat_recursos_humanos')
+          .select('id_tienda, app_dat_tienda(id, denominacion, direccion, created_at)')
+          .eq('uuid', userUuid);
+
+      print('🏪 Tiendas HR encontradas: ${rrhhData.length}');
+
+      if (rrhhData.isNotEmpty) {
+        _userStores = rrhhData
+            .where((r) => r['app_dat_tienda'] != null)
+            .map((r) {
+              final tienda = r['app_dat_tienda'] as Map<String, dynamic>;
+              return Store(
+                id: tienda['id'] as int,
+                denominacion: tienda['denominacion'] as String,
+                direccion: tienda['direccion'] as String?,
+                ubicacion: null,
+                createdAt: tienda['created_at'] != null
+                    ? DateTime.parse(tienda['created_at'] as String)
+                    : DateTime.now(),
+              );
+            })
+            .toList();
+        print('🏪 Tiendas HR cargadas: ${_userStores.length}');
+      } else {
+        print('⚠️ No se encontraron tiendas para el usuario Recursos Humanos');
+        _userStores = [];
+      }
+    } catch (e) {
+      print('❌ Error cargando tiendas HR: $e');
+      _userStores = [];
+    }
   }
 
   /// Datos mock para desarrollo/fallback

@@ -36,12 +36,18 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
     try {
       // Actualizar la tienda seleccionada
       await _userPreferencesService.updateSelectedStore(_selectedStoreId);
-      
       print('✅ Tienda seleccionada: $_selectedStoreId');
 
+      // Verificar si el rol en esta tienda es HR para redirigir correctamente
+      final role = await _permissionsService.getUserRoleForStore(_selectedStoreId);
+      print('✅ Rol en tienda $_selectedStoreId: ${_permissionsService.getRoleName(role)}');
+
       if (mounted) {
-        // Navegar al dashboard
-        Navigator.pushReplacementNamed(context, '/dashboard');
+        if (role == UserRole.recursosHumanos) {
+          Navigator.pushReplacementNamed(context, '/hr-dashboard');
+        } else {
+          Navigator.pushReplacementNamed(context, '/dashboard');
+        }
       }
     } catch (e) {
       print('❌ Error al seleccionar tienda: $e');

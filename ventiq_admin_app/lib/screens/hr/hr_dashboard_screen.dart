@@ -243,7 +243,7 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
       physics: const NeverScrollableScrollPhysics(),
       mainAxisSpacing: 8,
       crossAxisSpacing: 8,
-      childAspectRatio: 1.5,
+      childAspectRatio: 1.3,
       children: [
         HRKpiCard(
           title: 'Total Horas',
