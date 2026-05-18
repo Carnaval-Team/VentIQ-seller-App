@@ -54,14 +54,14 @@ class _SplashScreenState extends State<SplashScreen>
       if (!mounted) return;
 
       if (authProvider.role == null || authProvider.profileLoadFailed) {
-        // Profile failed to load (e.g. no connection) — go to login
-        Navigator.pushReplacementNamed(context, '/login');
+        // Profile failed to load (e.g. no connection) — go to landing
+        Navigator.pushReplacementNamed(context, '/landing');
       } else {
         Navigator.pushReplacementNamed(context, authProvider.homeRoute);
       }
     } else {
-      // Not logged in -- go to login
-      Navigator.pushReplacementNamed(context, '/login');
+      // Not logged in -- go to landing
+      Navigator.pushReplacementNamed(context, '/landing');
     }
   }
 

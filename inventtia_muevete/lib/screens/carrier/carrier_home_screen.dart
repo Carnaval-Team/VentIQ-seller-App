@@ -8,6 +8,7 @@ import '../../models/estado_carga_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/carga_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../widgets/plan_suscripcion_widget.dart';
 import '../../widgets/route_map_widget.dart';
 import 'carrier_carga_profile_screen.dart';
 
@@ -18,11 +19,21 @@ class CarrierHomeScreen extends StatefulWidget {
   State<CarrierHomeScreen> createState() => _CarrierHomeScreenState();
 }
 
-class _CarrierHomeScreenState extends State<CarrierHomeScreen> {
+class _CarrierHomeScreenState extends State<CarrierHomeScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabs;
+
   @override
   void initState() {
     super.initState();
+    _tabs = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
   }
 
   void _load() {
@@ -82,8 +93,25 @@ class _CarrierHomeScreenState extends State<CarrierHomeScreen> {
             },
           ),
         ],
+        bottom: TabBar(
+          controller: _tabs,
+          labelColor: AppTheme.primaryColor,
+          unselectedLabelColor:
+              isDark ? Colors.white54 : Colors.grey[500],
+          indicatorColor: AppTheme.primaryColor,
+          tabs: const [
+            Tab(icon: Icon(Icons.search_outlined), text: 'Cargas'),
+            Tab(icon: Icon(Icons.workspace_premium_outlined), text: 'Mi Plan'),
+          ],
+        ),
       ),
-      body: const _CargasDisponiblesTab(),
+      body: TabBarView(
+        controller: _tabs,
+        children: [
+          const _CargasDisponiblesTab(),
+          const _CarrierPlanTab(),
+        ],
+      ),
     );
   }
 }
@@ -1555,6 +1583,45 @@ class _PrioridadBadge extends StatelessWidget {
           fontWeight: FontWeight.w600,
           color: color,
         ),
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Tab 2 – Mi Plan
+// ──────────────────────────────────────────────────────────────────────────────
+
+class _CarrierPlanTab extends StatelessWidget {
+  const _CarrierPlanTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.watch<ThemeProvider>().isDark;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Suscripción y Facturación',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : const Color(0xFF1A1D27),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'El ciclo de facturación cierra el día 2 de cada mes.',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              color: isDark ? Colors.white60 : Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const PlanSuscripcionTile(),
+        ],
       ),
     );
   }

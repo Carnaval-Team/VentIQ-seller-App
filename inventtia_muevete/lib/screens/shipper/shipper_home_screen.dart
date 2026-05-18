@@ -10,6 +10,7 @@ import '../../models/oferta_carga_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/carga_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../widgets/plan_suscripcion_widget.dart';
 import '../../widgets/route_map_widget.dart';
 import 'cargo_location_picker_screen.dart';
 import 'carrier_directory_screen.dart';
@@ -29,7 +30,7 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 4, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
@@ -97,6 +98,7 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen>
             Tab(icon: Icon(Icons.list_alt_outlined), text: 'Mis Cargas'),
             Tab(icon: Icon(Icons.add_box_outlined), text: 'Publicar'),
             Tab(icon: Icon(Icons.people_alt_outlined), text: 'Transportistas'),
+            Tab(icon: Icon(Icons.workspace_premium_outlined), text: 'Mi Plan'),
           ],
           isScrollable: true,
         ),
@@ -110,6 +112,7 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen>
             _tabs.animateTo(0);
           }),
           const CarrierDirectoryScreen(embedded: true),
+          const _ShipperPlanTab(),
         ],
       ),
     );
@@ -1922,6 +1925,45 @@ class _EmptyState extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Tab 4 – Mi Plan
+// ──────────────────────────────────────────────────────────────────────────────
+
+class _ShipperPlanTab extends StatelessWidget {
+  const _ShipperPlanTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.watch<ThemeProvider>().isDark;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Suscripción y Facturación',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : const Color(0xFF1A1D27),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'El ciclo de facturación cierra el día 2 de cada mes.',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              color: isDark ? Colors.white60 : Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const PlanSuscripcionTile(),
+        ],
       ),
     );
   }
