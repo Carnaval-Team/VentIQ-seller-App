@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Codigo de referido - Carnaval Tienda</title>
-    <meta name="description" content="Activa tu codigo de referido para Carnaval Tienda y descarga la app desde Google Play.">
+    <meta name="description" content="Activa tu codigo de referido para Carnaval Tienda y descarga la app desde Google Play o App Store.">
     <meta name="robots" content="noindex, nofollow">
     <link rel="icon" type="image/png" href="assets/images/ic.png">
     <style>
@@ -22,6 +22,7 @@
             justify-content: center;
             padding: 20px;
             color: #1a1a1a;
+            -webkit-text-size-adjust: 100%;
         }
         .card {
             background: #ffffff;
@@ -64,16 +65,51 @@
             color: #d24a00;
             padding: 14px;
             border-radius: 10px;
-            margin: 0 0 22px;
+            margin: 0 0 16px;
+            /* iOS necesita estos para que la seleccion manual funcione bien */
+            -webkit-user-select: all;
+            -moz-user-select: all;
+            -ms-user-select: all;
             user-select: all;
+            -webkit-touch-callout: default;
+            cursor: text;
+            word-break: break-all;
+        }
+        /* Campo de respaldo: textarea visible que iOS puede seleccionar al
+           tocar/mantener pulsado. Lo dejamos pequeño pero accesible. */
+        .manual-copy {
+            display: none;
+            margin: 0 0 16px;
+        }
+        .manual-copy textarea {
+            width: 100%;
+            font-family: "SF Mono", Consolas, "Roboto Mono", monospace;
+            font-size: 16px; /* >=16 evita zoom al enfocar en iOS */
+            font-weight: 700;
+            text-align: center;
+            padding: 12px;
+            border: 1px dashed #ff6b35;
+            border-radius: 10px;
+            background: #fff7ed;
+            color: #d24a00;
+            resize: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        .manual-copy .hint {
+            font-size: 11px;
+            color: #888;
+            margin-top: 6px;
         }
         .status {
             font-size: 13px;
             color: #2e7d32;
             margin: 0 0 18px;
             min-height: 18px;
+            line-height: 1.4;
         }
         .status.error { color: #c62828; }
+        .status.warn { color: #ef6c00; }
         .btn {
             display: inline-block;
             background: #ff6b35;
@@ -87,9 +123,11 @@
             border: 0;
             cursor: pointer;
             transition: transform 0.08s ease, background 0.15s ease;
+            font-family: inherit;
         }
         .btn:hover { background: #e85a2a; }
         .btn:active { transform: scale(0.98); }
+        .btn[disabled] { opacity: 0.5; pointer-events: none; }
         .btn.secondary {
             background: transparent;
             color: #ff6b35;
@@ -112,11 +150,15 @@
     <main class="card">
         <div class="logo">🎁</div>
         <h1>Tu codigo de referido</h1>
-        <p>Lo copiamos a tu portapapeles. Instala la app y al registrarte se aplicara automaticamente.</p>
-        <div id="code" class="code-box">--------</div>
-        <div id="status" class="status">Preparando...</div>
-        <a id="goStore" class="btn" href="#" rel="noopener">Abrir tienda</a>
-        <button id="copyBtn" class="btn secondary" type="button">Copiar codigo otra vez</button>
+        <p id="intro">Toca <b>Copiar</b> y luego abre la tienda para instalar la app. Al registrarte se aplicara automaticamente.</p>
+        <div id="code" class="code-box" tabindex="0">--------</div>
+        <div id="manualCopy" class="manual-copy">
+            <textarea id="manualCopyText" rows="2" readonly autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+            <div class="hint">Manten pulsado el texto y elige "Copiar" si el boton no funciona.</div>
+        </div>
+        <div id="status" class="status">Toca "Copiar codigo" para empezar.</div>
+        <button id="copyBtn" class="btn" type="button">Copiar codigo</button>
+        <a id="goStore" class="btn secondary" href="#" rel="noopener">Abrir tienda</a>
         <p class="small">Te llevamos a Google Play o App Store segun tu dispositivo. Al abrir la app por primera vez se aplica solo.</p>
     </main>
     <script>
@@ -125,92 +167,200 @@
             var APPSTORE_URL = "https://apps.apple.com/es/app/carnaval-tienda/id6742862060";
             var CLIPBOARD_PREFIX = "CARNAVAL-REF:";
 
-            // Deteccion simple iOS vs Android. En iPadOS 13+ el UA dice "Mac"
-            // pero hay touch, asi que lo cubrimos con la heuristica de maxTouchPoints.
+            // Deteccion: iOS clasico + iPadOS 13+ (UA dice "Mac" pero hay touch).
             var ua = navigator.userAgent || "";
             var isIOS = /iPad|iPhone|iPod/.test(ua) ||
                 (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+            var isAndroid = /Android/i.test(ua);
             var STORE_URL = isIOS ? APPSTORE_URL : PLAY_URL;
             var STORE_LABEL = isIOS ? "App Store" : "Google Play";
 
             var params = new URLSearchParams(window.location.search);
             var raw = (params.get("code") || "").trim().toUpperCase();
-            // Filtramos caracteres no validos (defensivo contra URLs raras).
             var code = raw.replace(/[^A-Z0-9]/g, "").slice(0, 16);
+            var payload = CLIPBOARD_PREFIX + code;
 
             var codeEl = document.getElementById("code");
             var statusEl = document.getElementById("status");
             var goStoreBtn = document.getElementById("goStore");
             var copyBtn = document.getElementById("copyBtn");
+            var manualBox = document.getElementById("manualCopy");
+            var manualText = document.getElementById("manualCopyText");
 
             goStoreBtn.href = STORE_URL;
+            goStoreBtn.textContent = "Abrir " + STORE_LABEL;
+            // Hasta que el usuario copie, el boton de tienda queda desactivado
+            // para forzar el orden: copiar primero -> abrir tienda. Asi cuando
+            // la app arranca, el portapapeles tiene el codigo seguro.
+            goStoreBtn.setAttribute("aria-disabled", "true");
+            goStoreBtn.setAttribute("disabled", "disabled");
 
             if (!code) {
                 codeEl.textContent = "(sin codigo)";
                 statusEl.textContent = "No se detecto codigo. Aun puedes descargar la app.";
                 statusEl.classList.add("error");
                 copyBtn.style.display = "none";
-                goStoreBtn.textContent = "Abrir " + STORE_LABEL;
+                goStoreBtn.removeAttribute("aria-disabled");
+                goStoreBtn.removeAttribute("disabled");
                 return;
             }
             codeEl.textContent = code;
+            manualText.value = payload;
 
-            var payload = CLIPBOARD_PREFIX + code;
-
-            function copyPayload() {
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    return navigator.clipboard.writeText(payload);
+            // -------- Estrategias de copia (en orden) ----------
+            // 1) navigator.clipboard.writeText: la moderna. iOS Safari la
+            //    soporta DESDE iOS 13.4, PERO solo dentro de un user gesture.
+            //    Por eso la llamamos exclusivamente desde el click del boton.
+            // 2) execCommand('copy') con un textarea seleccionado a mano.
+            //    Funciona en Safari viejo siempre que el textarea sea editable
+            //    y que el rango este seleccionado en el momento del click.
+            // 3) Como ultima salida, mostramos el textarea visible para que el
+            //    usuario haga long-press y use el menu nativo de iOS.
+            function copyViaClipboardApi() {
+                if (!navigator.clipboard || !navigator.clipboard.writeText) {
+                    return Promise.reject(new Error("no-clipboard-api"));
                 }
-                // Fallback execCommand para navegadores viejos.
+                return navigator.clipboard.writeText(payload);
+            }
+
+            function copyViaExecCommand() {
                 return new Promise(function (resolve, reject) {
                     try {
+                        // iOS exige que el campo sea visible y editable durante
+                        // la seleccion. Lo montamos fuera de la viewport con
+                        // tamaño no-cero, sin readonly, y seleccionamos con
+                        // setSelectionRange (en Safari .select() a veces no
+                        // selecciona realmente).
                         var ta = document.createElement("textarea");
                         ta.value = payload;
-                        ta.setAttribute("readonly", "");
-                        ta.style.position = "absolute";
-                        ta.style.left = "-9999px";
+                        ta.contentEditable = "true";
+                        ta.readOnly = false;
+                        ta.style.position = "fixed";
+                        ta.style.top = "0";
+                        ta.style.left = "0";
+                        ta.style.width = "1px";
+                        ta.style.height = "1px";
+                        ta.style.padding = "0";
+                        ta.style.border = "0";
+                        ta.style.opacity = "0";
+                        ta.style.pointerEvents = "none";
+                        // Evita el zoom + scroll molesto al enfocar en iOS.
+                        ta.style.fontSize = "16px";
                         document.body.appendChild(ta);
-                        ta.select();
+
+                        // Truco iOS: usar createRange + Selection en lugar de
+                        // .select() para que execCommand encuentre seleccion.
+                        var range = document.createRange();
+                        range.selectNodeContents(ta);
+                        var sel = window.getSelection();
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                        ta.setSelectionRange(0, payload.length);
+
                         var ok = document.execCommand("copy");
+                        sel.removeAllRanges();
                         document.body.removeChild(ta);
-                        ok ? resolve() : reject(new Error("execCommand failed"));
-                    } catch (e) { reject(e); }
+                        ok ? resolve() : reject(new Error("execCommand-false"));
+                    } catch (e) {
+                        reject(e);
+                    }
                 });
             }
 
+            function tryCopy() {
+                // En iOS preferimos primero la API moderna (con user gesture
+                // funciona desde 13.4); si falla, caemos a execCommand.
+                return copyViaClipboardApi().catch(function () {
+                    return copyViaExecCommand();
+                });
+            }
+
+            function unlockStoreButton() {
+                goStoreBtn.removeAttribute("aria-disabled");
+                goStoreBtn.removeAttribute("disabled");
+            }
+
             function markCopied() {
-                statusEl.textContent = "Codigo copiado. Te llevamos a " + STORE_LABEL + "...";
+                statusEl.textContent =
+                    "Codigo copiado. Toca 'Abrir " + STORE_LABEL +
+                    "' e instala la app: al abrirla el codigo se aplica solo.";
                 statusEl.classList.remove("error");
+                statusEl.classList.remove("warn");
+                copyBtn.textContent = "Copiado ✔ (volver a copiar)";
+                unlockStoreButton();
             }
 
-            function markFailed() {
-                statusEl.textContent = "No pudimos copiar automaticamente. Toca 'Copiar codigo' antes de abrir " + STORE_LABEL + ".";
-                statusEl.classList.add("error");
+            function markManual() {
+                // Si la copia automatica fallo, mostramos el textarea para
+                // que el usuario lo copie con long-press. Igual habilitamos el
+                // boton de tienda para no bloquearlo.
+                manualBox.style.display = "block";
+                statusEl.textContent =
+                    "Tu navegador no permitio copiar automaticamente. " +
+                    "Manten pulsado el cuadro de abajo y elige 'Copiar', " +
+                    "luego abre " + STORE_LABEL + ".";
+                statusEl.classList.remove("error");
+                statusEl.classList.add("warn");
+                // Selecciona el contenido del textarea para que el long-press
+                // muestre el menu de inmediato en iOS.
+                try {
+                    manualText.focus({ preventScroll: true });
+                    manualText.setSelectionRange(0, manualText.value.length);
+                } catch (_) {}
+                unlockStoreButton();
             }
-
-            copyPayload().then(markCopied).catch(markFailed);
 
             copyBtn.addEventListener("click", function () {
-                copyPayload().then(function () {
-                    statusEl.textContent = "Copiado.";
-                    statusEl.classList.remove("error");
-                }).catch(markFailed);
+                copyBtn.disabled = true;
+                tryCopy().then(function () {
+                    copyBtn.disabled = false;
+                    markCopied();
+                }).catch(function () {
+                    copyBtn.disabled = false;
+                    markManual();
+                });
             });
 
-            // Redirige automaticamente a la tienda despues de unos segundos para
-            // dar tiempo al portapapeles. El usuario puede tocar el boton antes.
-            var seconds = 3;
-            function tick() {
-                if (seconds > 0) {
-                    goStoreBtn.textContent = "Abrir " + STORE_LABEL + " (" + seconds + ")";
-                    seconds--;
-                    setTimeout(tick, 1000);
-                } else {
-                    goStoreBtn.textContent = "Abrir " + STORE_LABEL;
-                    window.location.href = STORE_URL;
-                }
+            // Permitir que tocar la caja del codigo tambien intente copiar
+            // (atajo para usuarios que esperan "tocar = copiar").
+            codeEl.addEventListener("click", function () {
+                copyBtn.click();
+            });
+
+            // En Android Chrome (y desktop) intentamos copia automatica al
+            // entrar a la pagina: tienen permisos mas laxos y mejora la UX.
+            // En iOS NO lo hacemos: Safari rechaza writeText sin gesto y nos
+            // dejaria con un estado de error que confunde al usuario.
+            if (!isIOS) {
+                tryCopy().then(markCopied).catch(function () {
+                    statusEl.textContent =
+                        "Toca 'Copiar codigo' y luego 'Abrir " + STORE_LABEL + "'.";
+                    statusEl.classList.remove("error");
+                });
             }
-            tick();
+
+            // El textarea manual: al recibir foco/click seleccionamos todo
+            // para que el long-press de iOS abra el menu sobre la seleccion.
+            manualText.addEventListener("focus", function () {
+                try {
+                    manualText.setSelectionRange(0, manualText.value.length);
+                } catch (_) {}
+            });
+            manualText.addEventListener("click", function () {
+                try {
+                    manualText.setSelectionRange(0, manualText.value.length);
+                } catch (_) {}
+            });
+
+            // Si el usuario vuelve a la pagina desde la tienda (back), el
+            // portapapeles puede haberse perdido (algunos navegadores lo
+            // limpian). Reintentamos copiar silenciosamente.
+            window.addEventListener("pageshow", function (ev) {
+                if (ev.persisted) {
+                    // No tocamos UI: solo intentamos refrescar el portapapeles.
+                    tryCopy().catch(function () { /* no-op */ });
+                }
+            });
         })();
     </script>
 </body>
