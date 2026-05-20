@@ -1,6 +1,9 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import '../../config/app_colors.dart';
 import '../../models/importadora_factura.dart';
 import '../../services/importadora_facturas_service.dart';
@@ -28,6 +31,10 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
 
   bool _isLoadingSaldo = true;
   bool _isLoadingFacturas = true;
+
+  // Filtro de fechas para el reporte de saldo
+  DateTime? _reporteDesde;
+  DateTime? _reporteHasta;
 
   final _currencyFmt = NumberFormat.currency(locale: 'es', symbol: '\$');
   final _dateFmt = DateFormat('dd/MM/yyyy');
@@ -214,6 +221,148 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                   ],
                 ),
           ),
+    );
+  }
+
+  // ==================== AÑADIR FOTO A FACTURA EXISTENTE ====================
+
+  void _showAnadirFotoDialog(ImportadoraFactura factura) {
+    Uint8List? fotoBytes;
+    String? fotoNombre;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('Foto — Factura #${factura.numeroFactura}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.screen_rotation, color: Colors.blue.shade700, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Tome la foto en modo horizontal para que la factura sea completamente visible.',
+                        style: TextStyle(fontSize: 12, color: Colors.blue.shade800),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              InkWell(
+                onTap: () async {
+                  final bytes = await ImagePickerService.pickImage();
+                  if (bytes != null) {
+                    setDialogState(() {
+                      fotoBytes = bytes;
+                      fotoNombre = 'factura_${DateTime.now().millisecondsSinceEpoch}.jpg';
+                    });
+                  }
+                },
+                child: Container(
+                  width: double.infinity,
+                  height: fotoBytes != null ? 160 : 52,
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: fotoBytes != null ? AppColors.primary : Colors.grey.shade400,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                    color: fotoBytes != null ? null : Colors.grey.shade50,
+                  ),
+                  child: fotoBytes != null
+                      ? Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(7),
+                              child: Image.memory(fotoBytes!, fit: BoxFit.contain),
+                            ),
+                            Positioned(
+                              top: 4,
+                              right: 4,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  GestureDetector(
+                                    onTap: () => _verFotoDesdeBytes(fotoBytes!),
+                                    child: Container(
+                                      margin: const EdgeInsets.only(right: 4),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.black54,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.zoom_in, color: Colors.white, size: 20),
+                                    ),
+                                  ),
+                                  GestureDetector(
+                                    onTap: () => setDialogState(() {
+                                      fotoBytes = null;
+                                      fotoNombre = null;
+                                    }),
+                                    child: Container(
+                                      decoration: const BoxDecoration(
+                                        color: Colors.black54,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.close, color: Colors.white, size: 20),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(Icons.add_a_photo_outlined, color: Colors.grey),
+                            SizedBox(width: 8),
+                            Text('Seleccionar foto', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                          ],
+                        ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.upload, size: 16),
+              label: const Text('Guardar Foto'),
+              onPressed: fotoBytes == null
+                  ? null
+                  : () async {
+                      Navigator.pop(ctx);
+                      try {
+                        final url = await _service.uploadFacturaFoto(fotoBytes!, fotoNombre!);
+                        if (url != null) {
+                          await _service.actualizarFotoFactura(factura.id!, url);
+                          await _loadFacturasData();
+                          _showSuccess('Foto añadida correctamente');
+                        } else {
+                          _showError('No se pudo subir la foto');
+                        }
+                      } catch (e) {
+                        _showError('Error: \$e');
+                      }
+                    },
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -890,6 +1039,136 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
 
   // ==================== TAB SALDO ====================
 
+  // ==================== REPORTE PDF ====================
+
+  Future<void> _exportarReportePdf() async {
+    final doc = pw.Document();
+    final fechaFmt = DateFormat('dd/MM/yyyy');
+    final moneyFmt = NumberFormat.currency(locale: 'es', symbol: '\$');
+
+    // Combinar movimientos del historial filtrados
+    final movimientos = _historialFiltrado();
+
+    final totalRecargas = movimientos
+        .where((h) => h.diferencia > 0)
+        .fold(0.0, (s, h) => s + h.diferencia);
+    final totalDescuentos = movimientos
+        .where((h) => h.diferencia < 0)
+        .fold(0.0, (s, h) => s + h.diferencia.abs());
+
+    final rangoTexto = (_reporteDesde != null || _reporteHasta != null)
+        ? 'Del ${_reporteDesde != null ? fechaFmt.format(_reporteDesde!) : '—'} al ${_reporteHasta != null ? fechaFmt.format(_reporteHasta!) : '—'}'
+        : 'Todos los movimientos';
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (ctx) => [
+          pw.Header(
+            level: 0,
+            child: pw.Text('Reporte de Saldo — Importadora',
+                style: pw.TextStyle(
+                    fontSize: 18, fontWeight: pw.FontWeight.bold)),
+          ),
+          pw.Text(rangoTexto,
+              style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
+          pw.SizedBox(height: 12),
+          // Resumen
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.blue50,
+              borderRadius: pw.BorderRadius.circular(8),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+              children: [
+                pw.Column(children: [
+                  pw.Text('Saldo Actual',
+                      style: const pw.TextStyle(
+                          fontSize: 10, color: PdfColors.grey700)),
+                  pw.Text(moneyFmt.format(_saldoDisponible),
+                      style: pw.TextStyle(
+                          fontSize: 14, fontWeight: pw.FontWeight.bold)),
+                ]),
+                pw.Column(children: [
+                  pw.Text('Total Recargas',
+                      style: const pw.TextStyle(
+                          fontSize: 10, color: PdfColors.grey700)),
+                  pw.Text(moneyFmt.format(totalRecargas),
+                      style: pw.TextStyle(
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.green700)),
+                ]),
+                pw.Column(children: [
+                  pw.Text('Total Descuentos',
+                      style: const pw.TextStyle(
+                          fontSize: 10, color: PdfColors.grey700)),
+                  pw.Text(moneyFmt.format(totalDescuentos),
+                      style: pw.TextStyle(
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.red700)),
+                ]),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 16),
+          // Tabla de movimientos
+          pw.TableHelper.fromTextArray(
+            headers: ['Fecha', 'Tipo', 'Referencia', 'Monto Ant.', 'Monto Nuevo', 'Diferencia'],
+            headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.white),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.blue700),
+            cellStyle: const pw.TextStyle(fontSize: 8),
+            cellAlignments: {
+              0: pw.Alignment.centerLeft,
+              1: pw.Alignment.centerLeft,
+              2: pw.Alignment.centerLeft,
+              3: pw.Alignment.centerRight,
+              4: pw.Alignment.centerRight,
+              5: pw.Alignment.centerRight,
+            },
+            data: movimientos.map((h) {
+              final esIngreso = h.diferencia > 0;
+              return [
+                fechaFmt.format(h.createdAt),
+                esIngreso ? 'Recarga' : 'Descuento',
+                h.referencia ?? '',
+                moneyFmt.format(h.montoAnterior),
+                moneyFmt.format(h.montoNuevo),
+                '${esIngreso ? '+' : ''}${moneyFmt.format(h.diferencia)}',
+              ];
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (_) async => doc.save(),
+      name: 'reporte_importadora_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
+    );
+  }
+
+  List<HistorialSaldo> _historialFiltrado() {
+    return _historialSaldo.where((h) {
+      if (_reporteDesde != null &&
+          h.createdAt.isBefore(
+              DateTime(_reporteDesde!.year, _reporteDesde!.month, _reporteDesde!.day))) {
+        return false;
+      }
+      if (_reporteHasta != null &&
+          h.createdAt.isAfter(DateTime(
+              _reporteHasta!.year, _reporteHasta!.month, _reporteHasta!.day, 23, 59, 59))) {
+        return false;
+      }
+      return true;
+    }).toList();
+  }
+
   Widget _buildSaldoTab() {
     if (_isLoadingSaldo) {
       return const Center(
@@ -908,7 +1187,7 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
           children: [
             _buildSaldoCard(),
             const SizedBox(height: 20),
-            _buildRecargasSection(),
+            _buildReporteSection(),
           ],
         ),
       ),
@@ -1020,26 +1299,202 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
     );
   }
 
-  Widget _buildRecargasSection() {
+  Widget _buildReporteSection() {
+    final movimientos = _historialFiltrado();
+    final totalRecargas =
+        movimientos.where((h) => h.diferencia > 0).fold(0.0, (s, h) => s + h.diferencia);
+    final totalDescuentos =
+        movimientos.where((h) => h.diferencia < 0).fold(0.0, (s, h) => s + h.diferencia.abs());
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Historial de Recargas',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        // ---- Cabecera con título y botón PDF ----
+        Row(
+          children: [
+            const Text(
+              'Reporte de Movimientos',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const Spacer(),
+            ElevatedButton.icon(
+              onPressed: _historialSaldo.isEmpty ? null : _exportarReportePdf,
+              icon: const Icon(Icons.picture_as_pdf, size: 16),
+              label: const Text('Exportar PDF', style: TextStyle(fontSize: 12)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
-        if (_recargas.isEmpty)
+        // ---- Filtro de fechas ----
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.filter_list, size: 16, color: AppColors.primary),
+                    const SizedBox(width: 6),
+                    const Text('Filtrar por fechas',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    if (_reporteDesde != null || _reporteHasta != null)
+                      TextButton(
+                        onPressed: () => setState(() {
+                          _reporteDesde = null;
+                          _reporteHasta = null;
+                        }),
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          foregroundColor: Colors.grey,
+                        ),
+                        child: const Text('Limpiar', style: TextStyle(fontSize: 12)),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _reporteDesde ?? DateTime.now(),
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now(),
+                            helpText: 'Desde',
+                          );
+                          if (picked != null) setState(() => _reporteDesde = picked);
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Desde',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                            suffixIcon: Icon(Icons.calendar_today, size: 14),
+                            contentPadding:
+                                EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          ),
+                          child: Text(
+                            _reporteDesde != null
+                                ? _dateFmt.format(_reporteDesde!)
+                                : 'Todas',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _reporteHasta ?? DateTime.now(),
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now(),
+                            helpText: 'Hasta',
+                          );
+                          if (picked != null) setState(() => _reporteHasta = picked);
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Hasta',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                            suffixIcon: Icon(Icons.calendar_today, size: 14),
+                            contentPadding:
+                                EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          ),
+                          child: Text(
+                            _reporteHasta != null
+                                ? _dateFmt.format(_reporteHasta!)
+                                : 'Hoy',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        // ---- Resumen de totales ----
+        Row(
+          children: [
+            Expanded(
+              child: Card(
+                color: AppColors.success.withOpacity(0.08),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.arrow_upward, size: 14, color: AppColors.success),
+                        const SizedBox(width: 4),
+                        const Text('Recargas', style: TextStyle(fontSize: 11, color: AppColors.success)),
+                      ]),
+                      const SizedBox(height: 2),
+                      Text(_currencyFmt.format(totalRecargas),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, color: AppColors.success, fontSize: 14)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Card(
+                color: Colors.red.shade50,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Icon(Icons.arrow_downward, size: 14, color: Colors.red.shade700),
+                        const SizedBox(width: 4),
+                        Text('Descuentos', style: TextStyle(fontSize: 11, color: Colors.red.shade700)),
+                      ]),
+                      const SizedBox(height: 2),
+                      Text(_currencyFmt.format(totalDescuentos),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, color: Colors.red.shade700, fontSize: 14)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // ---- Lista de movimientos ----
+        if (movimientos.isEmpty)
           Center(
             child: Padding(
               padding: const EdgeInsets.all(32),
               child: Column(
                 children: [
-                  Icon(Icons.payments_outlined, size: 48, color: Colors.grey[400]),
+                  Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey[400]),
                   const SizedBox(height: 12),
                   Text(
-                    'Sin recargas registradas',
+                    _historialSaldo.isEmpty
+                        ? 'Sin movimientos registrados'
+                        : 'Sin movimientos en el período seleccionado',
                     style: TextStyle(color: Colors.grey[600]),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),
@@ -1049,45 +1504,61 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: _recargas.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemCount: movimientos.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 6),
             itemBuilder: (ctx, i) {
-              final recarga = _recargas[i];
+              final h = movimientos[i];
+              final esIngreso = h.diferencia > 0;
               return Card(
                 child: ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: AppColors.success.withOpacity(0.15),
-                    child: const Icon(
-                      Icons.arrow_upward,
-                      color: AppColors.success,
+                    backgroundColor: esIngreso
+                        ? AppColors.success.withOpacity(0.15)
+                        : Colors.red.shade50,
+                    child: Icon(
+                      esIngreso ? Icons.arrow_upward : Icons.arrow_downward,
+                      color: esIngreso ? AppColors.success : Colors.red.shade700,
                     ),
                   ),
-                  title: Text(
-                    _currencyFmt.format(recarga.monto),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.success,
-                    ),
+                  title: Row(
+                    children: [
+                      Text(
+                        '${esIngreso ? '+' : ''}${_currencyFmt.format(h.diferencia)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: esIngreso ? AppColors.success : Colors.red.shade700,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: esIngreso
+                              ? AppColors.success.withOpacity(0.1)
+                              : Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          esIngreso ? 'Recarga' : 'Descuento',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: esIngreso ? AppColors.success : Colors.red.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (h.referencia != null)
+                        Text(h.referencia!,
+                            style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
                       Text(
-                        'Fecha de pago: ${_dateFmt.format(recarga.fechaPago)}',
+                        '${_dateFmt.format(h.createdAt)}  •  Ant: ${_currencyFmt.format(h.montoAnterior)}  →  Nuevo: ${_currencyFmt.format(h.montoNuevo)}',
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
                       ),
-                      if (recarga.observacion != null)
-                        Text(
-                          recarga.observacion!,
-                          style: const TextStyle(
-                            fontStyle: FontStyle.italic,
-                            fontSize: 12,
-                          ),
-                        ),
                     ],
-                  ),
-                  trailing: Text(
-                    _dateFmt.format(recarga.createdAt),
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
                   ),
                 ),
               );
@@ -1394,6 +1865,16 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                     label: const Text('Ver Foto', style: TextStyle(fontSize: 12)),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  )
+                else
+                  TextButton.icon(
+                    onPressed: () => _showAnadirFotoDialog(factura),
+                    icon: const Icon(Icons.add_a_photo_outlined, size: 16),
+                    label: const Text('Añadir Foto', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey,
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                     ),
                   ),
