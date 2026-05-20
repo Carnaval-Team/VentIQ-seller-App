@@ -1,8 +1,10 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../config/app_colors.dart';
 import '../../models/importadora_factura.dart';
 import '../../services/importadora_facturas_service.dart';
+import '../../services/image_picker_service.dart';
 import 'estados_factura_screen.dart';
 
 class ImportadoraFacturasScreen extends StatefulWidget {
@@ -384,6 +386,8 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
     final numFacturaCtrl = TextEditingController();
     final valorCtrl = TextEditingController();
     DateTime selectedDate = DateTime.now();
+    Uint8List? fotoBytes;
+    String? fotoNombre;
 
     showDialog(
       context: context,
@@ -465,6 +469,127 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                             child: Text(_dateFmt.format(selectedDate)),
                           ),
                         ),
+                        const SizedBox(height: 12),
+                        // ---- AVISO ORIENTACIÓN ----
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.blue.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.screen_rotation,
+                                  color: Colors.blue.shade700, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Tome la foto en modo horizontal (apaisado) para que la factura sea completamente visible.',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.blue.shade800),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        // ---- SELECTOR DE FOTO ----
+                        InkWell(
+                          onTap: () async {
+                            final bytes = await ImagePickerService.pickImage();
+                            if (bytes != null) {
+                              setDialogState(() {
+                                fotoBytes = bytes;
+                                fotoNombre = 'factura_${DateTime.now().millisecondsSinceEpoch}.jpg';
+                              });
+                            }
+                          },
+                          child: Container(
+                            width: double.infinity,
+                            height: fotoBytes != null ? 160 : 52,
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: fotoBytes != null
+                                    ? AppColors.primary
+                                    : Colors.grey.shade400,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                              color: fotoBytes != null
+                                  ? null
+                                  : Colors.grey.shade50,
+                            ),
+                            child: fotoBytes != null
+                                ? Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(7),
+                                        child: Image.memory(
+                                          fotoBytes!,
+                                          fit: BoxFit.contain,
+                                        ),
+                                      ),
+                                      Positioned(
+                                        top: 4,
+                                        right: 4,
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            GestureDetector(
+                                              onTap: () => _verFotoDesdeBytes(fotoBytes!),
+                                              child: Container(
+                                                margin: const EdgeInsets.only(right: 4),
+                                                decoration: const BoxDecoration(
+                                                  color: Colors.black54,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.zoom_in,
+                                                  color: Colors.white,
+                                                  size: 20,
+                                                ),
+                                              ),
+                                            ),
+                                            GestureDetector(
+                                              onTap: () => setDialogState(() {
+                                                fotoBytes = null;
+                                                fotoNombre = null;
+                                              }),
+                                              child: Container(
+                                                decoration: const BoxDecoration(
+                                                  color: Colors.black54,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.close,
+                                                  color: Colors.white,
+                                                  size: 20,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: const [
+                                      Icon(Icons.add_a_photo_outlined,
+                                          color: Colors.grey),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Adjuntar foto de factura (opcional)',
+                                        style: TextStyle(
+                                            color: Colors.grey, fontSize: 13),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
                         const SizedBox(height: 8),
                         Container(
                           padding: const EdgeInsets.all(8),
@@ -519,10 +644,18 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                         }
                         Navigator.pop(ctx);
                         try {
+                          String? fotoUrl;
+                          if (fotoBytes != null && fotoNombre != null) {
+                            fotoUrl = await _service.uploadFacturaFoto(
+                              fotoBytes!,
+                              fotoNombre!,
+                            );
+                          }
                           await _service.crearFactura(
                             numeroFactura: numFactura,
                             valor: valor,
                             fechaProcesamiento: selectedDate,
+                            fotoUrl: fotoUrl,
                           );
                           await _loadAllData();
                           _showSuccess('Factura #$numFactura creada');
@@ -1022,8 +1155,145 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
     );
   }
 
+  void _verFotoDesdeBytes(Uint8List bytes) {
+    _mostrarVisorFoto(
+      imageWidget: Image.memory(bytes, fit: BoxFit.contain),
+    );
+  }
+
+  void _verFotoFactura(String url) {
+    _mostrarVisorFoto(
+      imageWidget: Image.network(
+        url,
+        fit: BoxFit.contain,
+        loadingBuilder: (_, child, progress) => progress == null
+            ? child
+            : const Center(
+                child: CircularProgressIndicator(color: Colors.white)),
+        errorBuilder: (_, __, ___) => const Center(
+          child: Icon(Icons.broken_image, color: Colors.white, size: 64),
+        ),
+      ),
+    );
+  }
+
+  void _mostrarVisorFoto({required Widget imageWidget}) {
+    final transformCtrl = TransformationController();
+    int rotacion = 0;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setViewState) => Dialog(
+          backgroundColor: Colors.black87,
+          insetPadding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ---- BARRA DE HERRAMIENTAS ----
+              Container(
+                color: Colors.black54,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.zoom_in,
+                        color: Colors.white70, size: 16),
+                    const SizedBox(width: 4),
+                    const Text('Pellizca para hacer zoom',
+                        style:
+                            TextStyle(color: Colors.white70, fontSize: 11)),
+                    const Spacer(),
+                    // Zoom +
+                    IconButton(
+                      tooltip: 'Acercar',
+                      icon: const Icon(Icons.add_circle_outline,
+                          color: Colors.white),
+                      onPressed: () {
+                        final current = transformCtrl.value;
+                        final scale = current.getMaxScaleOnAxis();
+                        if (scale < 5.0) {
+                          transformCtrl.value = current.clone()
+                            ..scale(1.3);
+                        }
+                      },
+                    ),
+                    // Zoom -
+                    IconButton(
+                      tooltip: 'Alejar',
+                      icon: const Icon(Icons.remove_circle_outline,
+                          color: Colors.white),
+                      onPressed: () {
+                        final current = transformCtrl.value;
+                        final scale = current.getMaxScaleOnAxis();
+                        if (scale > 0.5) {
+                          transformCtrl.value = current.clone()
+                            ..scale(0.75);
+                        }
+                      },
+                    ),
+                    // Reset zoom
+                    IconButton(
+                      tooltip: 'Restablecer',
+                      icon: const Icon(Icons.fit_screen, color: Colors.white),
+                      onPressed: () {
+                        transformCtrl.value = Matrix4.identity();
+                      },
+                    ),
+                    // Rotar 90°
+                    IconButton(
+                      tooltip: 'Rotar 90°',
+                      icon: const Icon(Icons.rotate_right, color: Colors.white),
+                      onPressed: () {
+                        setViewState(() => rotacion = (rotacion + 1) % 4);
+                      },
+                    ),
+                    // Cerrar
+                    IconButton(
+                      tooltip: 'Cerrar',
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+              // ---- IMAGEN ----
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(ctx).size.height * 0.75,
+                  maxWidth: MediaQuery.of(ctx).size.width,
+                ),
+                child: InteractiveViewer(
+                  transformationController: transformCtrl,
+                  minScale: 0.5,
+                  maxScale: 6.0,
+                  child: RotatedBox(
+                    quarterTurns: rotacion,
+                    child: imageWidget,
+                  ),
+                ),
+              ),
+              // ---- PIE ----
+              Container(
+                color: Colors.black54,
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: const Center(
+                  child: Text(
+                    'Doble tap para zoom rápido  •  Arrastra para mover',
+                    style: TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildFacturaCard(ImportadoraFactura factura) {
     final estadoColor = _hexToColor(factura.colorEstado);
+    final tieneFoto = factura.fotoUrl != null && factura.fotoUrl!.isNotEmpty;
 
     return Card(
       child: Padding(
@@ -1055,6 +1325,27 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                     ],
                   ),
                 ),
+                if (tieneFoto)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () => _verFotoFactura(factura.fotoUrl!),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.network(
+                          factura.fotoUrl!,
+                          width: 42,
+                          height: 42,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.image_not_supported_outlined,
+                            size: 42,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
@@ -1096,6 +1387,16 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                   ),
                 ),
                 const Spacer(),
+                if (tieneFoto)
+                  TextButton.icon(
+                    onPressed: () => _verFotoFactura(factura.fotoUrl!),
+                    icon: const Icon(Icons.receipt, size: 16),
+                    label: const Text('Ver Foto', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
                 TextButton.icon(
                   onPressed:
                       () => _showHistorialEstadosDialog(factura),

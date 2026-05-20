@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/importadora_factura.dart';
 import 'user_preferences_service.dart';
@@ -350,6 +351,42 @@ class ImportadoraFacturasService {
           .toList();
     } catch (e) {
       print('❌ Error obteniendo historial de estados: $e');
+      rethrow;
+    }
+  }
+
+  // ==================== FOTO DE FACTURA ====================
+
+  Future<String?> uploadFacturaFoto(Uint8List imageBytes, String fileName) async {
+    try {
+      final uniqueFileName =
+          'factura_${DateTime.now().millisecondsSinceEpoch}_$fileName';
+      final response = await _supabase.storage
+          .from('images_back')
+          .uploadBinary(
+            uniqueFileName,
+            imageBytes,
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+          );
+      if (response.isEmpty) throw Exception('Error al subir foto de factura');
+      final url = _supabase.storage.from('images_back').getPublicUrl(uniqueFileName);
+      print('✅ Foto de factura subida: $url');
+      return url;
+    } catch (e) {
+      print('❌ Error subiendo foto de factura: $e');
+      return null;
+    }
+  }
+
+  Future<void> actualizarFotoFactura(int idFactura, String fotoUrl) async {
+    try {
+      await _supabase
+          .from('imp_dat_factura')
+          .update({'foto_url': fotoUrl})
+          .eq('id', idFactura);
+      print('✅ foto_url actualizada en factura $idFactura');
+    } catch (e) {
+      print('❌ Error actualizando foto de factura: $e');
       rethrow;
     }
   }
