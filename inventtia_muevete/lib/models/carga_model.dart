@@ -1,10 +1,16 @@
 class CargaModel {
   final int id;
   final String shipperId;
-  final String tipo; // 'ftl' | 'ltl'
+
+  // Tipo de carga — FK a app_nom_tipo_carga
+  final int tipoCargaId;
+  final String? tipoCargaNombre;      // enriquecido por JOIN
+  final String? tipoCargaAbreviacion; // enriquecido por JOIN (e.g. 'FTL', 'LTL')
+
+  // Estado — campo de cache (fuente autoritativa: app_dat_estado_carga)
   final String estado;
   // estados: 'publicada','en_matching','ofertada','aceptada',
-  //          'en_transito','entregada','completada','cancelada','disputa'
+  //          'en_transito','entregada','completada','cancelada','disputa','tomada','completada_carrier'
 
   // Origen
   final String dirOrigen;
@@ -32,7 +38,13 @@ class CargaModel {
 
   // Mercancía
   final String? descripcion;
-  final String? tipoMercancia;
+
+  // Tipo de mercancía — FK a app_nom_tipo_mercancia
+  final int? tipoMercanciaId;
+  final String? tipoMercanciaNombre;      // enriquecido por JOIN
+  final String? tipoMercanciaCodigo;      // enriquecido por JOIN (ej: 'DRY_GOODS')
+  final String? tipoMercanciaNmfc;        // código NMFC, si aplica
+
   final double? pesoKg;
   final double? volumenM3;
   final double? longitudM;
@@ -45,12 +57,17 @@ class CargaModel {
   final bool requiereSeguro;
   final String? instrucciones;
 
-  // Mercancía / equipo
-  final int? commodityId;
-  final List<String> opcionesEquipo;
+  // Opciones de manejo/equipo adicional — M:N con app_nom_equipo_manejo_carga
+  final List<int> opcionesEquipoManejo;          // IDs de la tabla pivot
+  final List<String> opcionesEquipoManejoNombres; // enriquecido por JOIN
+  final List<String> opcionesEquipoManejoCodigos; // enriquecido por JOIN
 
-  // Equipo
-  final String? tipoEquipo;
+  // Tipo de equipo — FK a app_nom_tipo_equipo (compartido con vehiculos)
+  final int? tipoEquipoId;
+  final String? tipoEquipoNombre;      // enriquecido por JOIN
+  final String? tipoEquipoAbreviacion; // enriquecido por JOIN
+
+  // Tipo de vehículo requerido — FK a muevete.vehicle_type
   final int? idTipoVehiculo;
 
   // Fechas
@@ -118,7 +135,9 @@ class CargaModel {
   const CargaModel({
     required this.id,
     required this.shipperId,
-    required this.tipo,
+    required this.tipoCargaId,
+    this.tipoCargaNombre,
+    this.tipoCargaAbreviacion,
     required this.estado,
     required this.dirOrigen,
     required this.latOrigen,
@@ -133,7 +152,10 @@ class CargaModel {
     this.estadoDestino,
     this.paisDestino,
     this.descripcion,
-    this.tipoMercancia,
+    this.tipoMercanciaId,
+    this.tipoMercanciaNombre,
+    this.tipoMercanciaCodigo,
+    this.tipoMercanciaNmfc,
     this.pesoKg,
     this.volumenM3,
     this.longitudM,
@@ -153,10 +175,13 @@ class CargaModel {
     this.cpDestino,
     this.contactoDestinoNombre,
     this.contactoDestinoTel,
-    this.commodityId,
-    this.opcionesEquipo = const [],
+    this.opcionesEquipoManejo = const [],
+    this.opcionesEquipoManejoNombres = const [],
+    this.opcionesEquipoManejoCodigos = const [],
     this.numerosReferencia = const [],
-    this.tipoEquipo,
+    this.tipoEquipoId,
+    this.tipoEquipoNombre,
+    this.tipoEquipoAbreviacion,
     this.idTipoVehiculo,
     this.fechaRecogida,
     this.fechaEntrega,
@@ -199,8 +224,10 @@ class CargaModel {
     return CargaModel(
       id: json['id'] as int,
       shipperId: json['shipper_id'] as String,
-      tipo: json['tipo'] as String? ?? 'ftl',
-      estado: json['estado'] as String? ?? 'publicada',
+      tipoCargaId: json['tipo_carga_id'] as int? ?? 1,
+      tipoCargaNombre: json['tipo_carga_nombre'] as String?,
+      tipoCargaAbreviacion: json['tipo_carga_abreviacion'] as String?,
+      estado: (json['estado_actual'] ?? json['estado']) as String? ?? 'publicada',
       dirOrigen: json['dir_origen'] as String? ?? '',
       latOrigen: (json['lat_origen'] as num?)?.toDouble() ?? 0,
       lonOrigen: (json['lon_origen'] as num?)?.toDouble() ?? 0,
@@ -214,7 +241,10 @@ class CargaModel {
       estadoDestino: json['estado_destino'] as String?,
       paisDestino: json['pais_destino'] as String?,
       descripcion: json['descripcion'] as String?,
-      tipoMercancia: json['tipo_mercancia'] as String?,
+      tipoMercanciaId: json['tipo_mercancia_id'] as int?,
+      tipoMercanciaNombre: json['tipo_mercancia_nombre'] as String?,
+      tipoMercanciaCodigo: json['tipo_mercancia_codigo'] as String?,
+      tipoMercanciaNmfc: json['tipo_mercancia_nmfc'] as String?,
       pesoKg: (json['peso_kg'] as num?)?.toDouble(),
       volumenM3: (json['volumen_m3'] as num?)?.toDouble(),
       longitudM: (json['longitud_m'] as num?)?.toDouble(),
@@ -235,10 +265,13 @@ class CargaModel {
       cpDestino: json['cp_destino'] as String?,
       contactoDestinoNombre: json['contacto_destino_nombre'] as String?,
       contactoDestinoTel: json['contacto_destino_tel'] as String?,
-      commodityId: json['commodity_id'] as int?,
-      opcionesEquipo: (json['opciones_equipo'] as List<dynamic>?)?.cast<String>() ?? [],
+      opcionesEquipoManejo: (json['opciones_equipo_manejo_ids'] as List<dynamic>?)?.cast<int>() ?? [],
+      opcionesEquipoManejoNombres: (json['opciones_equipo_manejo_nombres'] as List<dynamic>?)?.cast<String>() ?? [],
+      opcionesEquipoManejoCodigos: (json['opciones_equipo_manejo_codigos'] as List<dynamic>?)?.cast<String>() ?? [],
       numerosReferencia: (json['numeros_referencia'] as List<dynamic>?)?.cast<String>() ?? [],
-      tipoEquipo: json['tipo_equipo'] as String?,
+      tipoEquipoId: json['tipo_equipo_id'] as int?,
+      tipoEquipoNombre: json['tipo_equipo_nombre'] as String?,
+      tipoEquipoAbreviacion: json['tipo_equipo_abreviacion'] as String?,
       idTipoVehiculo: json['id_tipo_vehiculo'] as int?,
       fechaRecogida: json['fecha_recogida'] != null
           ? DateTime.tryParse(json['fecha_recogida'] as String)
@@ -295,8 +328,7 @@ class CargaModel {
   Map<String, dynamic> toInsertJson() {
     return {
       'shipper_id': shipperId,
-      'tipo': tipo,
-      'estado': estado,
+      'tipo_carga_id': tipoCargaId,
       'dir_origen': dirOrigen,
       'lat_origen': latOrigen,
       'lon_origen': lonOrigen,
@@ -310,7 +342,7 @@ class CargaModel {
       if (estadoDestino != null) 'estado_destino': estadoDestino,
       if (paisDestino != null) 'pais_destino': paisDestino,
       if (descripcion != null) 'descripcion': descripcion,
-      if (tipoMercancia != null) 'tipo_mercancia': tipoMercancia,
+      if (tipoMercanciaId != null) 'tipo_mercancia_id': tipoMercanciaId,
       if (pesoKg != null) 'peso_kg': pesoKg,
       if (volumenM3 != null) 'volumen_m3': volumenM3,
       if (longitudM != null) 'longitud_m': longitudM,
@@ -330,12 +362,11 @@ class CargaModel {
       if (cpDestino != null) 'cp_destino': cpDestino,
       if (contactoDestinoNombre != null) 'contacto_destino_nombre': contactoDestinoNombre,
       if (contactoDestinoTel != null) 'contacto_destino_tel': contactoDestinoTel,
-      if (commodityId != null) 'commodity_id': commodityId,
-      if (opcionesEquipo.isNotEmpty) 'opciones_equipo': opcionesEquipo,
+      // opcionesEquipoManejo se inserta en la tabla pivot cargas_equipo_manejo — NO va aquí
       if (numerosReferencia.isNotEmpty) 'numeros_referencia': numerosReferencia,
       'es_privada': esPrivada,
       if (horasAnticipacionPublica != null) 'horas_anticipacion_publica': horasAnticipacionPublica,
-      if (tipoEquipo != null) 'tipo_equipo': tipoEquipo,
+      if (tipoEquipoId != null) 'tipo_equipo_id': tipoEquipoId,
       if (idTipoVehiculo != null) 'id_tipo_vehiculo': idTipoVehiculo,
       if (fechaRecogida != null)
         'fecha_recogida': fechaRecogida!.toIso8601String().split('T').first,
@@ -378,7 +409,22 @@ class CargaModel {
     return labels[estado] ?? estado;
   }
 
-  String get tipoLabel => tipo == 'ftl' ? 'FTL' : 'LTL';
+  String get tipoLabel => tipoCargaAbreviacion ?? tipoCargaNombre ?? 'FTL';
+
+  /// Compatibilidad retroactiva — devuelve la abreviación en minúsculas ('ftl'/'ltl')
+  String get tipo => (tipoCargaAbreviacion ?? 'FTL').toLowerCase();
+
+  /// Compatibilidad retroactiva — devuelve el nombre del tipo de equipo
+  String? get tipoEquipo => tipoEquipoNombre ?? tipoEquipoAbreviacion;
+
+  /// Compatibilidad retroactiva — devuelve el nombre del tipo de mercancía
+  String? get tipoMercancia => tipoMercanciaNombre;
+
+  /// Compatibilidad retroactiva — commodity_id ya no existe; devuelve null
+  int? get commodityId => null;
+
+  /// Compatibilidad retroactiva — devuelve los códigos de opciones de manejo
+  List<String> get opcionesEquipo => opcionesEquipoManejoCodigos;
 
   String get prioridadLabel {
     const labels = {'normal': 'Normal', 'alta': 'Alta', 'urgente': 'Urgente'};

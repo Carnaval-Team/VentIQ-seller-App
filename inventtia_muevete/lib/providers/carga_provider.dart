@@ -479,7 +479,7 @@ class CargaProvider extends ChangeNotifier {
         'estado_destino': c.estadoDestino,
         'pais_destino': c.paisDestino,
         'descripcion': c.descripcion,
-        'tipo_mercancia': c.tipoMercancia,
+        'tipo_mercancia_id': c.tipoMercanciaId,
         'peso_kg': c.pesoKg,
         'volumen_m3': c.volumenM3,
         'valor_declarado': c.valorDeclarado,

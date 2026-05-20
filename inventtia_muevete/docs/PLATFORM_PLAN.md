@@ -469,6 +469,32 @@ ALTER TABLE muevete.ofertas_chofer ADD COLUMN IF NOT EXISTS
 
 ### 3.2 Tablas NUEVAS a crear
 
+#### `muevete.app_nom_tipo_carga` ✅ (migración 022)
+```sql
+CREATE TABLE muevete.app_nom_tipo_carga (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  nombre      text NOT NULL,
+  descripcion text,
+  abreviacion text NOT NULL UNIQUE,  -- 'FTL', 'LTL'
+  activo      boolean NOT NULL DEFAULT true,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+-- Seed: FTL (Full Truckload), LTL (Less Than Truckload)
+```
+
+#### `muevete.app_nom_tipo_equipo` ✅ (migración 022) — compartido cargas ↔ vehículos
+```sql
+CREATE TABLE muevete.app_nom_tipo_equipo (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  nombre      text NOT NULL,
+  descripcion text,
+  abreviacion text NOT NULL UNIQUE,  -- 'DRY_VAN','FLATBED','REEFER','TANKER','CURTAIN','TIPPER','LOWBOY','AUTOTRANSPORTER'
+  activo      boolean NOT NULL DEFAULT true,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+```
+> Este nomenclador es la fuente única para `cargas.tipo_equipo_id` Y `vehiculos.tipo_equipo_id`, lo que permite hacer matching por tipo de equipo entre envíos y vehículos.
+
 #### `muevete.planes`
 ```sql
 CREATE TABLE muevete.planes (
@@ -522,9 +548,13 @@ CREATE TABLE muevete.cargas (
   id                    bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   shipper_id            uuid NOT NULL REFERENCES auth.users(id),
   tipo                  text NOT NULL DEFAULT 'ftl', -- 'ftl','ltl'
+  tipo_carga_id         bigint NOT NULL REFERENCES muevete.app_nom_tipo_carga(id),
+  -- reemplaza columna tipo text ('ftl'/'ltl') — ver migración 022
+
   estado                text NOT NULL DEFAULT 'publicada',
+  -- DEPRECATED como fuente autoritativa; gestionado por app_dat_estado_carga
   -- 'publicada','en_matching','ofertada','aceptada','en_transito',
-  -- 'entregada','completada','cancelada','disputa'
+  -- 'entregada','completada','cancelada','disputa','tomada','completada_carrier'
   
   -- Origen
   dir_origen            text NOT NULL,
@@ -558,8 +588,10 @@ CREATE TABLE muevete.cargas (
   instrucciones         text,
   
   -- Tipo de equipo requerido
-  tipo_equipo           text, -- 'flatbed','van','reefer','dryvan','tanker'
+  tipo_equipo_id        bigint REFERENCES muevete.app_nom_tipo_equipo(id),
+  -- reemplaza columna tipo_equipo text — compartido con vehiculos.tipo_equipo_id para matching
   id_tipo_vehiculo      bigint REFERENCES muevete.vehicle_type(id),
+  -- FK corregida: apunta a vehicle_type, NO a vehiculos (igual que vehiculos.id_tipo_vehiculo)
   
   -- Fechas
   fecha_recogida        date,
@@ -1194,7 +1226,7 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
 
 > **Leyenda**: ✅ Implementado | ⚠️ Parcial / pendiente completar | ❌ No implementado
 
-### FASE 1 – MVP de Carga (≈ 6 semanas) — 🟡 EN PROGRESO
+### FASE 1 – MVP de Carga (≈ 6 semanas) — ✅ COMPLETADA
 **Objetivo**: Publicar cargas FTL y recibir ofertas. Sin escrow ni matching.
 
 **Schema**: 
@@ -1209,6 +1241,9 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
   - ✅ Vista `v_cargas_estado_actual` — estado vigente por carga
   - ✅ Función RPC `fn_cambiar_estado_carga` — toda transición pasa por aquí y sincroniza `cargas.estado`
   - ✅ RLS: lectura para participantes (shipper + carrier asignado por `drivers.uuid`), escritura solo `service_role`
+- ✅ `suscripciones` — creada (migración 018) con RLS + `fn_crear_suscripcion_gratis` + `fn_proximo_dia_2`
+- ✅ `solicitudes_plan` — creada (migración 019) con flujo de evidencia de pago y aprobación admin
+- ✅ `cargas.estado` CHECK constraint — actualizado para incluir `tomada` y `completada_carrier`
 - ❌ `valoraciones_carga` — diferida a Fase 2
 - ❌ `kyc_documentos` — diferida a Fase 2
 
@@ -1217,6 +1252,11 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
 - ✅ `OfertaCargaModel` → `lib/models/oferta_carga_model.dart`
 - ✅ `PlanModel` → `lib/models/plan_model.dart`
 - ✅ `EstadoCargaModel` + `NomEstadoModel` → `lib/models/estado_carga_model.dart` — fila de bitácora y entrada del nomenclador
+- ✅ `SuscripcionModel` → `lib/models/suscripcion_model.dart` — con getters `estaActiva`, `esGratis`, `diasRestantes`, `estaPorVencer`, `estaVencida`
+- ✅ `SolicitudPlanModel` → `lib/models/solicitud_plan_model.dart` — flujo de evidencia + aprobación admin
+- ✅ `VehicleModel` → `lib/models/vehicle_model.dart` — **ya incluye** `tipoCarroceria`, `capacidadTon`, `tieneGps`, `tieneEld`, `seguroVigente`, `seguroVence`, `inspeccionVence`, `numEjes`, `longitudM`
+- ✅ `UserModel` → `lib/models/user_model.dart` — ya incluye `tipoUsuario`, `tipoCuenta`, `empresaNombre`, `empresaRut`, getters `isShipper`, `isClientePasajero`
+- ✅ `DriverModel` → `lib/models/driver_model.dart` — ya incluye `tipoUsuario`, `dispatcherId`, `mcNumber`, `dotNumber`, `tipoCarroceria`, `capacidadTon`, getters `isCarrierCarga`, `isDispatcher`
 - 🔜 `ValoracionCargaModel` — diferido a Fase 2
 
 **Servicios**: 
@@ -1231,12 +1271,17 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
   - ✅ `rechazarOferta()`, `retirarOferta()`, `getOfertasCarga()`, `getOfertasCarrier()`
 - ❌ `ValoracionCargaService` — diferido a Fase 2
 - ✅ `PlanService` → `lib/services/plan_service.dart` (`getPlanes`, `getTodosLosPlanes`, `getPlanPorCodigo`)
+- ✅ `SuscripcionService` → `lib/services/suscripcion_service.dart` — `getSuscripcionActiva()`, `crearSuscripcionGratis()`, `cambiarPlan()`, `solicitarCambioPlan()`, `getMisSolicitudes()`, `getSolicitudPendiente()`
+- ✅ `CargaService.marcarComoTomada()` — vía RPC `fn_marcar_carga_tomada`
+- ✅ `CargaService.completarCargaCarrier()` + `completarCargaShipper()` — flujo E2E completo
 
 **Providers**: 
 - ✅ `CargaProvider` → `lib/providers/carga_provider.dart`
   - ✅ `loadHistorialEstados()`, getters `historialEstados`, `nomEstados`, `loadingHistorial`
   - ✅ `cancelarCarga(usuarioUuid)`, `confirmarRecogida(driverId)`, `confirmarEntrega(driverId)`, `asignarCargaACarrier(usuarioUuid)` — propagan contexto del actor al RPC
+  - ✅ `marcarComoTomada()`, `completarCargaCarrier()`, `completarCargaShipper()` — flujo E2E completo
 - ✅ `PlanProvider` → `lib/providers/plan_provider.dart`
+- ✅ `SuscripcionProvider` → `lib/providers/suscripcion_provider.dart` — `cargarSuscripcion()`, `cambiarPlan()`, `solicitarCambioPlan()`
 
 **Pantallas**: 
 - ✅ `PublicarCargaScreen` → tab `_PublicarCargaTab` dentro de `shipper_home_screen.dart` — incluye campos Truckstop
@@ -1246,35 +1291,42 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
 - ✅ `DetalleCargaCarrierScreen` → `_DetalleCargaCarrierScreen` dentro de `carrier_home_screen.dart` — mapa OSRM, campos Truckstop, envío de oferta
 - ✅ `PlanesScreen` → `lib/screens/common/planes_screen.dart`
 - ✅ `RegisterScreen` modificado → `lib/screens/register_screen.dart`
-- ⚠️ `ProfileScreen` básico → existe pero sin plan/KYC
-- ⚠️ `DriverProfileScreen` básico → existe pero sin MC/DOT ni plan
+- ✅ `ShipperProfileScreen` → `lib/screens/shipper/shipper_profile_screen.dart` — incluye tabs Personal, Empresa, Mi Plan (con `PlanSuscripcionTile`)
+- ✅ `CarrierCargaProfileScreen` → `lib/screens/carrier/carrier_carga_profile_screen.dart` — incluye tabs Personal, Vehículos, Mi Plan (con `PlanSuscripcionTile`)
+- ⚠️ `ProfileScreen` (cliente_pasajero) → existe pero sin plan/KYC
+- ⚠️ `DriverProfileScreen` (conductor_pasajeros) → existe pero sin MC/DOT ni plan
 
 **Extras FASE 1 ya implementados (por delante del plan):**
 - ✅ `DispatcherService` → `lib/services/dispatcher_service.dart`
-- ✅ `DispatcherHomeScreen` → `lib/screens/dispatcher/dispatcher_home_screen.dart`
+- ✅ `DispatcherHomeScreen` → `lib/screens/dispatcher/dispatcher_home_screen.dart` — tabs: Mi Flota, Asignar, En Curso, Mi Plan
 - ✅ `CarrierDirectoryScreen` → `lib/screens/shipper/carrier_directory_screen.dart`
 - ✅ `CargoLocationPickerScreen` → `lib/screens/shipper/cargo_location_picker_screen.dart`
 - ✅ `RouteMapWidget` → `lib/widgets/route_map_widget.dart` — mapa de ruta OSRM reutilizable
+- ✅ `PlanSuscripcionWidget` → `lib/widgets/plan_suscripcion_widget.dart` — tile completo con upload de evidencia de pago, alerta de vencimiento, botón contratar
+- ✅ `SuscripcionService` + `SuscripcionProvider` — flujo completo de suscripciones con planes gratuitos y de pago
+- ✅ `SuscripcionModel` + `SolicitudPlanModel` — modelos completos con getters de estado
 - ✅ `AuthProvider` con 5 tipos de usuario y rutas diferenciadas
 - ✅ `LoginScreen` redirige a ruta correcta según `tipo_usuario`
 - ✅ `LandingScreen` redirige a `homeRoute` si el usuario ya está autenticado
 - ✅ Modelos `UserModel` y `DriverModel` extendidos con `tipoUsuario`, campos shipper/carrier/dispatcher
+- ✅ `VehicleModel` extendido con todos los campos de camión de carga
 
-**Pendiente para CERRAR FASE 1:**
-- ⚠️ **Ejecutar en Supabase**: `014_cargas_truckstop_fields.sql` y `015_estados_carga_nomenclador.sql`
-- ⚠️ Actualizar `VehicleModel` con campos de camión de carga (`tipoCarroceria`, `capacidadTon`, `tieneGps`, etc.)
-- ⚠️ Mostrar historial de estados en `DetalleCargaScreen` (shipper) y `DetalleCargaCarrierScreen` (carrier) usando `CargaProvider.loadHistorialEstados()`
-- ⚠️ Actualizar `app_nom_estado` con estados del nuevo flujo simplificado (`tomada`, `completada_carrier`)
-- ⚠️ Implementar `marcarComoTomada()` en `CargaService` + `CargaProvider` (shipper asigna carrier desde directorio)
-- ⚠️ Implementar `completarCargaCarrier()` y `completarCargaShipper()` en `CargaService` + `CargaProvider`
-- ⚠️ Mostrar historial de estados en `DetalleCargaScreen` (shipper) y `DetalleCargaCarrierScreen` (carrier)
-- ⚠️ Verificar flujo E2E: shipper publica → carrier ve carga → shipper asigna carrier → shipper marca tomada → carrier marca completada → shipper confirma completada
+**Todo completado — FASE 1 CERRADA ✅**
+- ✅ Migraciones 013–021 ejecutadas en Supabase
+- ✅ `VehicleModel` actualizado con campos de camión de carga
+- ✅ Historial de estados en `DetalleCargaScreen` y `DetalleCargaCarrierScreen` con `_HistorialTimeline`
+- ✅ `app_nom_estado` con estados `tomada` y `completada_carrier` (migración 016)
+- ✅ CHECK constraint `cargas.estado` actualizado para incluir `tomada` y `completada_carrier`
+- ✅ `marcarComoTomada()` en `CargaService` + `CargaProvider`
+- ✅ `completarCargaCarrier()` y `completarCargaShipper()` implementados
+- ✅ Flujo E2E completo: publicada → tomada → en_transito → completada_carrier → completada
 
-**Diferido a Fase 2 (fuera de scope Fase 1):**
+**Diferido a Fase 2:**
 - 🔜 `ValoracionCargaModel` + `ValoracionCargaService`
 - 🔜 `kyc_documentos` — tabla y flujo KYC
 - 🔜 `WalletTransactionModel` — nuevos tipos de transacción
 - 🔜 Verificación de límites de plan en `publicarCarga()`
+- 🔜 `MisOfertasScreen` — pantalla de ofertas enviadas por el carrier
 
 **Fuera de scope permanente (decisión de diseño):**
 - 🚫 **Escrow / custodia de pagos** — no se implementará en ninguna fase. El flujo de pago es externo a la plataforma.
@@ -1285,36 +1337,42 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
 
 ---
 
-### FASE 2 – Valoraciones + Matching básico + KYC (≈ 6 semanas) — ❌ NO INICIADA
+### FASE 2 – Valoraciones + Matching básico + KYC (≈ 6 semanas) — 🟡 PARCIALMENTE ADELANTADA
 **Objetivo**: Reputación multidimensional, matching automático y verificación de identidad.
 
 **Schema**: 
-- ❌ `matching_scores`
-- ❌ `suscripciones_usuario`
-- ❌ `alertas_usuario`
-- ❌ `valoraciones_carga`
-- ❌ `kyc_documentos`
+- ✅ `suscripciones` — completado en Fase 1 (migración 018)
+- ✅ `solicitudes_plan` — completado en Fase 1 (migración 019)
+- ❌ `matching_scores` — pendiente
+- ❌ `alertas_usuario` — pendiente
+- ❌ `valoraciones_carga` — pendiente
+- ❌ `kyc_documentos` — pendiente
 
 **Modelos**: 
-- ❌ `MatchingScoreModel`
-- ❌ `SuscripcionModel`
-- ❌ `AlertaUsuarioModel`
-- ❌ `ValoracionCargaModel`
-- ❌ `KycDocumentoModel`
+- ✅ `SuscripcionModel` → `lib/models/suscripcion_model.dart` — adelantado en Fase 1
+- ✅ `SolicitudPlanModel` → `lib/models/solicitud_plan_model.dart` — adelantado en Fase 1
+- ❌ `MatchingScoreModel` — pendiente
+- ❌ `AlertaUsuarioModel` — pendiente
+- ❌ `ValoracionCargaModel` — pendiente
+- ❌ `KycDocumentoModel` — pendiente
 
 **Servicios**: 
-- ❌ `MatchingService`
-- ❌ `AlertaService`
-- ❌ `ValoracionCargaService`
-- ❌ `KycService`
+- ✅ `SuscripcionService` → `lib/services/suscripcion_service.dart` — adelantado en Fase 1
+- ❌ `MatchingService` — pendiente
+- ❌ `AlertaService` — pendiente
+- ❌ `ValoracionCargaService` — pendiente
+- ❌ `KycService` — pendiente
 
 **Providers**: 
-- ❌ `MatchingProvider`
+- ✅ `SuscripcionProvider` → `lib/providers/suscripcion_provider.dart` — adelantado en Fase 1
+- ❌ `MatchingProvider` — pendiente
 
 **Pantallas**: 
-- ❌ `MisAlertasScreen`
-- ❌ `KycFlowScreen`
-- ❌ `ValorarCargaScreen`
+- ✅ `PlanSuscripcionTile` widget — en `ShipperProfileScreen` y `CarrierCargaProfileScreen`
+- ❌ `MisAlertasScreen` — pendiente
+- ❌ `KycFlowScreen` — pendiente
+- ❌ `ValorarCargaScreen` — pendiente
+- ❌ `MisOfertasScreen` (carrier) — pendiente
 
 ---
 
@@ -1356,32 +1414,32 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
 **Objetivo**: Dispatcher con múltiples choferes, contratos recurrentes, seguridad avanzada.
 
 **Schema**: 
-- ❌ `sub_usuarios`
-- ❌ `contratos_carga`
-- ❌ `antifraude_eventos`
-- ❌ `facturas_plataforma`
+- ✅ `sub_usuarios` — tabla presente en DB (creada en migraciones iniciales)
+- ❌ `contratos_carga` — pendiente
+- ❌ `antifraude_eventos` — pendiente
+- ❌ `facturas_plataforma` — pendiente
 
 **Modelos**: 
-- ❌ `SubUsuarioModel`
-- ❌ `ContratoCargaModel`
-- ❌ `AntiFraudeEventoModel`
-- ❌ `FacturaPlatformaModel`
+- ❌ `SubUsuarioModel` — pendiente (tabla existe, modelo no)
+- ❌ `ContratoCargaModel` — pendiente
+- ❌ `AntiFraudeEventoModel` — pendiente
+- ❌ `FacturaPlatformaModel` — pendiente
 
 **Servicios**: 
 - ✅ `DispatcherService` → `lib/services/dispatcher_service.dart` (adelantado desde Fase 1)
-- ❌ `SubUsuarioService`
-- ❌ `ContratoCargaService`
-- ❌ `AntiFraudeService`
+- ❌ `SubUsuarioService` — pendiente
+- ❌ `ContratoCargaService` — pendiente
+- ❌ `AntiFraudeService` — pendiente
 
 **Pantallas**: 
-- ✅ `DispatcherHomeScreen` → `lib/screens/dispatcher/dispatcher_home_screen.dart` (adelantado)
-- ❌ `GestionarChoferesScreen`
-- ❌ `CargasRecurrentesScreen`
-- ❌ `DashboardCarrierScreen`
-- ❌ `DashboardAnaliticoScreen` (shipper)
+- ✅ `DispatcherHomeScreen` → `lib/screens/dispatcher/dispatcher_home_screen.dart` — tabs: Mi Flota, Asignar, En Curso, Mi Plan
+- ❌ `GestionarChoferesScreen` — pendiente (tab Mi Flota es básico, sin edición)
+- ❌ `CargasRecurrentesScreen` — pendiente
+- ❌ `DashboardCarrierScreen` — pendiente
+- ❌ `DashboardAnaliticoScreen` (shipper) — pendiente
 - ✅ `BuscarCarriersScreen` → `lib/screens/shipper/carrier_directory_screen.dart` (adelantado)
-- ❌ `PerfilCarrierScreen`
-- ❌ `PerfilShipperScreen`
+- ❌ `PerfilCarrierScreen` — pendiente
+- ❌ `PerfilShipperScreen` — pendiente
 
 ---
 
@@ -1446,19 +1504,27 @@ Shipper confirma finalización
 ### Archivos SQL (migraciones) — estado real
 ```
 docs/migrations/
-  013_planes.sql                        ✅ creado — planes con seed
-  014_cargas_truckstop_fields.sql       ✅ creado — campos Truckstop en cargas
-  015_estados_carga_nomenclador.sql     ✅ creado — app_nom_estado + app_dat_estado_carga + RPC
-  016_escrow.sql                        🚫 fuera de scope permanente
-  017_tracking_geocercas.sql            ❌ pendiente Fase 3
-  018_chat.sql                          ❌ pendiente Fase 3
-  019_valoraciones_carga.sql            ❌ pendiente Fase 2
-  020_matching_scores.sql               ❌ pendiente Fase 2
-  021_consolidacion_ltl.sql             ❌ pendiente Fase 3
-  022_contratos_alertas.sql             ❌ pendiente Fase 4
-  023_kyc_antifraude.sql                ❌ pendiente Fase 2
-  024_sub_usuarios_facturas.sql         ❌ pendiente Fase 4
-  025_alter_users_drivers_vehicles.sql  ❌ pendiente (campos extras drivers/vehicles)
+  013_planes.sql                        ✅ ejecutado — planes con seed
+  014_cargas_truckstop_fields.sql       ✅ ejecutado — campos Truckstop en cargas
+  015_estados_carga_nomenclador.sql     ✅ ejecutado — app_nom_estado + app_dat_estado_carga + RPC
+  016_nuevo_flujo_carga.sql             ✅ ejecutado — estados tomada/completada_carrier + fn_marcar_carga_tomada
+  017_shipper_entity_fields.sql         ✅ ejecutado — campos empresa en muevete.users
+  018_prioridad_planes_suscripciones.sql ✅ ejecutado — prioridad en cargas + tabla suscripciones + fn_crear_suscripcion_gratis
+  019_solicitudes_plan.sql              ✅ ejecutado — tabla solicitudes_plan con RLS
+  020_fix_solicitudes_plan_rls.sql      ✅ ejecutado — fix de políticas RLS
+  021_aprobar_solicitud_con_fecha.sql   ✅ ejecutado — función de aprobación con fecha
+  -- Pendiente Fase 2:
+  valoraciones_carga.sql                ❌ pendiente Fase 2
+  matching_scores.sql                   ❌ pendiente Fase 2
+  kyc_antifraude.sql                    ❌ pendiente Fase 2
+  alertas_usuario.sql                   ❌ pendiente Fase 2
+  -- Pendiente Fase 3:
+  tracking_geocercas.sql                ❌ pendiente Fase 3
+  chat.sql                              ❌ pendiente Fase 3
+  consolidacion_ltl.sql                 ❌ pendiente Fase 3
+  -- Pendiente Fase 4:
+  contratos_alertas.sql                 ❌ pendiente Fase 4
+  sub_usuarios_facturas.sql             ❌ pendiente Fase 4
 ```
 
 ### Modelos — estado real
@@ -1467,7 +1533,12 @@ lib/models/
   carga_model.dart              ✅ completo + campos Truckstop
   oferta_carga_model.dart       ✅ completo
   plan_model.dart               ✅ completo
-  estado_carga_model.dart       ✅ nuevo — EstadoCargaModel + NomEstadoModel
+  estado_carga_model.dart       ✅ completo — EstadoCargaModel + NomEstadoModel
+  suscripcion_model.dart        ✅ completo — adelantado (Fase 1)
+  solicitud_plan_model.dart     ✅ completo — adelantado (Fase 1)
+  vehicle_model.dart            ✅ completo — incluye todos los campos de camión de carga
+  user_model.dart               ✅ completo — tipoUsuario, campos shipper, getters
+  driver_model.dart             ✅ completo — tipoUsuario, dispatcherId, mcNumber, dotNumber, getters
   escrow_model.dart             🚫 fuera de scope permanente
   tracking_carga_model.dart     ❌ pendiente Fase 3
   valoracion_carga_model.dart   ❌ pendiente Fase 2
@@ -1476,17 +1547,19 @@ lib/models/
   matching_score_model.dart     ❌ pendiente Fase 2
   consolidacion_ltl_model.dart  ❌ pendiente Fase 3
   contrato_carga_model.dart     ❌ pendiente Fase 4
-  suscripcion_model.dart        ❌ pendiente Fase 2
   alerta_usuario_model.dart     ❌ pendiente Fase 2
   kyc_documento_model.dart      ❌ pendiente Fase 2
+  sub_usuario_model.dart        ❌ pendiente Fase 4 (tabla existe, modelo no)
+  factura_plataforma_model.dart ❌ pendiente Fase 4
 ```
 
 ### Servicios — estado real
 ```
 lib/services/
-  carga_service.dart              ✅ completo — CRUD + cambios de estado vía RPC + historial
+  carga_service.dart              ✅ completo — CRUD + cambios de estado vía RPC + historial + marcarComoTomada + completar
   oferta_carga_service.dart       ✅ completo — hacer/aceptar/rechazar/retirar ofertas
   plan_service.dart               ✅ completo — getPlanes, getTodosLosPlanes, getPlanPorCodigo
+  suscripcion_service.dart        ✅ completo — adelantado (Fase 1): getSuscripcionActiva, crearGratis, cambiarPlan, solicitarCambio
   dispatcher_service.dart         ✅ completo (adelantado desde Fase 4)
   escrow_service.dart             🚫 fuera de scope permanente
   tracking_service.dart           ❌ pendiente Fase 3
@@ -1503,34 +1576,37 @@ lib/services/
 ### Providers — estado real
 ```
 lib/providers/
-  carga_provider.dart     ✅ completo — misCargas, cargasDisponibles, historialEstados, nomEstados
-  plan_provider.dart      ✅ completo
-  escrow_provider.dart    🚫 fuera de scope permanente
-  tracking_provider.dart  ❌ pendiente Fase 3
-  chat_provider.dart      ❌ pendiente Fase 3
-  matching_provider.dart  ❌ pendiente Fase 2
+  carga_provider.dart         ✅ completo — misCargas, cargasDisponibles, historialEstados, nomEstados, marcarComoTomada, completar
+  plan_provider.dart          ✅ completo
+  suscripcion_provider.dart   ✅ completo — adelantado (Fase 1): cargarSuscripcion, cambiarPlan, solicitarCambioPlan
+  escrow_provider.dart        🚫 fuera de scope permanente
+  tracking_provider.dart      ❌ pendiente Fase 3
+  chat_provider.dart          ❌ pendiente Fase 3
+  matching_provider.dart      ❌ pendiente Fase 2
 ```
 
 ### Pantallas — estado real
 ```
 lib/screens/
   shipper/
-    shipper_home_screen.dart            ✅ completo — tabs: publicar, mis cargas (tabla), detalle+ofertas
+    shipper_home_screen.dart            ✅ completo — tabs: publicar, mis cargas (tabla), detalle+ofertas+historial+marcarTomada+completar
+    shipper_profile_screen.dart         ✅ completo — tabs: Personal, Empresa, Mi Plan (PlanSuscripcionTile)
     cargo_location_picker_screen.dart   ✅ completo — mapa OSRM para selección de ruta
     carrier_directory_screen.dart       ✅ completo (adelantado)
     perfil_carrier_screen.dart          ❌ pendiente Fase 4
     dashboard_analitico_screen.dart     ❌ pendiente Fase 4
     cargas_recurrentes_screen.dart      ❌ pendiente Fase 4
   carrier/
-    carrier_home_screen.dart            ✅ completo — tabla responsiva + filtros + detalle + oferta
-    mis_ofertas_screen.dart             ❌ pendiente Fase 1 (post-cierre)
+    carrier_home_screen.dart            ✅ completo — tabla responsiva + filtros + detalle + oferta + historial + completarCarrier
+    carrier_carga_profile_screen.dart   ✅ completo — tabs: Personal, Vehículos, Mi Plan (PlanSuscripcionTile)
+    mis_ofertas_screen.dart             ❌ pendiente Fase 2 (diferido)
     carga_activa_screen.dart            ❌ pendiente Fase 3
     dashboard_carrier_screen.dart       ❌ pendiente Fase 4
     perfil_shipper_screen.dart          ❌ pendiente Fase 4
   dispatcher/
-    dispatcher_home_screen.dart         ✅ completo (adelantado desde Fase 4)
+    dispatcher_home_screen.dart         ✅ completo — tabs: Mi Flota, Asignar, En Curso, Mi Plan
     gestionar_choferes_screen.dart      ❌ pendiente Fase 4
-    asignar_carga_screen.dart           ❌ pendiente Fase 4
+    asignar_carga_screen.dart           ❌ pendiente Fase 4 (tab Asignar es básico)
     flota_mapa_screen.dart              ❌ pendiente Fase 4
   common/
     planes_screen.dart                  ✅ completo
@@ -1543,7 +1619,8 @@ lib/screens/
     kyc_flow_screen.dart                ❌ pendiente Fase 2
     disputa_screen.dart                 🚫 fuera de scope permanente
   widgets/
-    route_map_widget.dart               ✅ nuevo — mapa OSRM reutilizable (carrier + shipper)
+    route_map_widget.dart               ✅ completo — mapa OSRM reutilizable (carrier + shipper)
+    plan_suscripcion_widget.dart        ✅ completo — tile plan activo + upload evidencia + contratar
 ```
 
 ### Archivos modificados

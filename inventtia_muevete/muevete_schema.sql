@@ -1,6 +1,159 @@
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
 
+CREATE TABLE muevete.app_dat_estado_carga (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  carga_id bigint NOT NULL,
+  estado_codigo text NOT NULL,
+  usuario_uuid uuid,
+  driver_id bigint,
+  motivo text,
+  metadata jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_dat_estado_carga_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_estado_carga_carga_id_fkey FOREIGN KEY (carga_id) REFERENCES muevete.cargas(id),
+  CONSTRAINT app_dat_estado_carga_estado_codigo_fkey FOREIGN KEY (estado_codigo) REFERENCES muevete.app_nom_estado(codigo),
+  CONSTRAINT app_dat_estado_carga_usuario_uuid_fkey FOREIGN KEY (usuario_uuid) REFERENCES auth.users(id),
+  CONSTRAINT app_dat_estado_carga_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id)
+);
+CREATE TABLE muevete.app_nom_estado (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  codigo text NOT NULL UNIQUE,
+  nombre text NOT NULL,
+  descripcion text,
+  orden integer NOT NULL DEFAULT 0,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_nom_estado_pkey PRIMARY KEY (id)
+);
+CREATE TABLE muevete.app_nom_tipo_carga (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  nombre text NOT NULL,
+  descripcion text,
+  abreviacion text NOT NULL UNIQUE,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_nom_tipo_carga_pkey PRIMARY KEY (id)
+);
+CREATE TABLE muevete.app_nom_tipo_equipo (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  nombre text NOT NULL,
+  descripcion text,
+  abreviacion text NOT NULL UNIQUE,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_nom_tipo_equipo_pkey PRIMARY KEY (id)
+);
+CREATE TABLE muevete.app_nom_tipo_mercancia (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  nombre text NOT NULL,
+  descripcion text,
+  codigo text NOT NULL UNIQUE,
+  nmfc_codigo text,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_nom_tipo_mercancia_pkey PRIMARY KEY (id)
+);
+CREATE TABLE muevete.cargas (
+  id bigint NOT NULL DEFAULT nextval('muevete.cargas_id_seq'::regclass),
+  shipper_id uuid NOT NULL,
+  estado text NOT NULL DEFAULT 'publicada'::text CHECK (estado = ANY (ARRAY['publicada'::text, 'en_matching'::text, 'ofertada'::text, 'aceptada'::text, 'en_transito'::text, 'entregada'::text, 'completada'::text, 'cancelada'::text, 'disputa'::text, 'tomada'::text, 'completada_carrier'::text])),
+  dir_origen text NOT NULL,
+  lat_origen double precision NOT NULL DEFAULT 0,
+  lon_origen double precision NOT NULL DEFAULT 0,
+  ciudad_origen text,
+  estado_origen text,
+  pais_origen text,
+  dir_destino text NOT NULL,
+  lat_destino double precision NOT NULL DEFAULT 0,
+  lon_destino double precision NOT NULL DEFAULT 0,
+  ciudad_destino text,
+  estado_destino text,
+  pais_destino text,
+  descripcion text,
+  tipo_mercancia_id bigint,
+  peso_kg numeric,
+  volumen_m3 numeric,
+  longitud_m numeric,
+  ancho_m numeric,
+  alto_m numeric,
+  valor_declarado numeric,
+  requiere_refrigeracion boolean NOT NULL DEFAULT false,
+  temperatura_min numeric,
+  temperatura_max numeric,
+  requiere_seguro boolean NOT NULL DEFAULT false,
+  instrucciones text,
+  id_tipo_vehiculo bigint,
+  fecha_recogida date,
+  fecha_entrega date,
+  ventana_recogida_desde time without time zone,
+  ventana_recogida_hasta time without time zone,
+  ventana_entrega_desde time without time zone,
+  ventana_entrega_hasta time without time zone,
+  precio_ofertado numeric,
+  precio_final numeric,
+  moneda text NOT NULL DEFAULT 'USD'::text,
+  destacada boolean NOT NULL DEFAULT false,
+  destacada_hasta timestamp with time zone,
+  exclusiva_hasta timestamp with time zone,
+  distancia_km numeric,
+  distancia_millas numeric,
+  es_ltl boolean NOT NULL DEFAULT false,
+  ltl_espacio_ocupado numeric,
+  es_recurrente boolean NOT NULL DEFAULT false,
+  carrier_driver_id bigint,
+  oferta_aceptada_id bigint,
+  ultima_lat double precision,
+  ultima_lon double precision,
+  ultima_ubicacion_at timestamp with time zone,
+  expires_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone,
+  unidad_peso text DEFAULT 'kg'::text CHECK (unidad_peso = ANY (ARRAY['kg'::text, 'tonelada'::text])),
+  horas_carga numeric,
+  horas_descarga numeric,
+  nombre_ubicacion_origen text,
+  cp_origen text,
+  contacto_origen_nombre text,
+  contacto_origen_tel text,
+  nombre_ubicacion_destino text,
+  cp_destino text,
+  contacto_destino_nombre text,
+  contacto_destino_tel text,
+  opciones_equipo ARRAY DEFAULT '{}'::text[], -- DEPRECATED: ver cargas_equipo_manejo
+  numeros_referencia ARRAY DEFAULT '{}'::text[],
+  es_privada boolean NOT NULL DEFAULT false,
+  horas_anticipacion_publica integer,
+  carrier_uuid uuid,
+  prioridad text NOT NULL DEFAULT 'normal'::text CHECK (prioridad = ANY (ARRAY['normal'::text, 'alta'::text, 'urgente'::text])),
+  tipo_carga_id bigint NOT NULL,
+  tipo_equipo_id bigint,
+  CONSTRAINT cargas_pkey PRIMARY KEY (id),
+  CONSTRAINT cargas_tipo_carga_id_fkey FOREIGN KEY (tipo_carga_id) REFERENCES muevete.app_nom_tipo_carga(id),
+  CONSTRAINT cargas_tipo_mercancia_id_fkey FOREIGN KEY (tipo_mercancia_id) REFERENCES muevete.app_nom_tipo_mercancia(id),
+  CONSTRAINT cargas_carrier_uuid_fkey FOREIGN KEY (carrier_uuid) REFERENCES auth.users(id),
+  CONSTRAINT cargas_shipper_id_fkey FOREIGN KEY (shipper_id) REFERENCES auth.users(id),
+  CONSTRAINT cargas_carrier_driver_id_fkey FOREIGN KEY (carrier_driver_id) REFERENCES muevete.drivers(id),
+  CONSTRAINT cargas_tipo_equipo_id_fkey FOREIGN KEY (tipo_equipo_id) REFERENCES muevete.app_nom_tipo_equipo(id),
+  CONSTRAINT cargas_id_tipo_vehiculo_fkey FOREIGN KEY (id_tipo_vehiculo) REFERENCES muevete.vehicle_type(id)
+);
+CREATE TABLE muevete.app_nom_equipo_manejo_carga (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  nombre text NOT NULL,
+  descripcion text,
+  codigo text NOT NULL UNIQUE,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_nom_equipo_manejo_carga_pkey PRIMARY KEY (id)
+);
+CREATE TABLE muevete.cargas_equipo_manejo (
+  carga_id bigint NOT NULL,
+  equipo_manejo_id bigint NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT cargas_equipo_manejo_pkey PRIMARY KEY (carga_id, equipo_manejo_id),
+  CONSTRAINT cargas_equipo_manejo_carga_id_fkey FOREIGN KEY (carga_id) REFERENCES muevete.cargas(id) ON DELETE CASCADE,
+  CONSTRAINT cargas_equipo_manejo_equipo_id_fkey FOREIGN KEY (equipo_manejo_id) REFERENCES muevete.app_nom_equipo_manejo_carga(id)
+);
 CREATE TABLE muevete.carrocerias (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   driver_id bigint NOT NULL,
@@ -93,6 +246,27 @@ CREATE TABLE muevete.notificaciones (
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT notificaciones_pkey PRIMARY KEY (id)
 );
+CREATE TABLE muevete.ofertas_carga (
+  id bigint NOT NULL DEFAULT nextval('muevete.ofertas_carga_id_seq'::regclass),
+  carga_id bigint NOT NULL,
+  driver_id bigint NOT NULL,
+  precio numeric NOT NULL,
+  tarifa_por_milla numeric,
+  tiempo_estimado_dias integer,
+  fecha_recogida_prop date,
+  fecha_entrega_prop date,
+  vehiculo_id bigint,
+  incluye_seguro boolean NOT NULL DEFAULT false,
+  notas text,
+  estado text NOT NULL DEFAULT 'pendiente'::text CHECK (estado = ANY (ARRAY['pendiente'::text, 'aceptada'::text, 'rechazada'::text, 'retirada'::text, 'expirada'::text])),
+  matching_score numeric,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone,
+  CONSTRAINT ofertas_carga_pkey PRIMARY KEY (id),
+  CONSTRAINT ofertas_carga_carga_id_fkey FOREIGN KEY (carga_id) REFERENCES muevete.cargas(id),
+  CONSTRAINT ofertas_carga_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES muevete.drivers(id),
+  CONSTRAINT ofertas_carga_vehiculo_id_fkey FOREIGN KEY (vehiculo_id) REFERENCES muevete.vehiculos(id)
+);
 CREATE TABLE muevete.ofertas_chofer (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   solicitud_id bigint NOT NULL,
@@ -137,6 +311,34 @@ CREATE TABLE muevete.place (
   CONSTRAINT place_driver_fkey FOREIGN KEY (driver) REFERENCES muevete.drivers(id),
   CONSTRAINT place_vehiculo_id_fkey FOREIGN KEY (vehiculo_id) REFERENCES muevete.vehiculos(id)
 );
+CREATE TABLE muevete.planes (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  codigo text NOT NULL UNIQUE,
+  tipo_usuario text NOT NULL CHECK (tipo_usuario = ANY (ARRAY['shipper'::text, 'carrier'::text, 'dispatcher'::text])),
+  nombre text NOT NULL,
+  precio_mensual numeric NOT NULL DEFAULT 0,
+  cargas_mes_max integer,
+  contactos_mes_max integer,
+  matching_auto boolean NOT NULL DEFAULT false,
+  matching_diario_max integer,
+  escrow_comision numeric,
+  escrow_incluido boolean NOT NULL DEFAULT false,
+  verificacion_mc boolean NOT NULL DEFAULT false,
+  alertas_push boolean NOT NULL DEFAULT false,
+  ventana_exclusiva_horas integer,
+  gps_basico boolean NOT NULL DEFAULT false,
+  gps_avanzado boolean NOT NULL DEFAULT false,
+  eld_integrado boolean NOT NULL DEFAULT false,
+  multi_usuarios integer NOT NULL DEFAULT 1,
+  api_acceso boolean NOT NULL DEFAULT false,
+  factoraje boolean NOT NULL DEFAULT false,
+  dashboard_nivel text NOT NULL DEFAULT 'ninguno'::text CHECK (dashboard_nivel = ANY (ARRAY['ninguno'::text, 'basico'::text, 'avanzado'::text])),
+  soporte_nivel text NOT NULL DEFAULT 'email'::text CHECK (soporte_nivel = ANY (ARRAY['email'::text, 'chat'::text, 'telefono'::text])),
+  soporte_sla_h integer,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT planes_pkey PRIMARY KEY (id)
+);
 CREATE TABLE muevete.push_tokens (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   user_uuid uuid NOT NULL,
@@ -146,6 +348,22 @@ CREATE TABLE muevete.push_tokens (
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT push_tokens_pkey PRIMARY KEY (id),
   CONSTRAINT push_tokens_user_uuid_fkey FOREIGN KEY (user_uuid) REFERENCES auth.users(id)
+);
+CREATE TABLE muevete.solicitudes_plan (
+  id bigint NOT NULL DEFAULT nextval('muevete.solicitudes_plan_id_seq'::regclass),
+  usuario_uuid uuid NOT NULL,
+  plan_codigo text NOT NULL,
+  estado text NOT NULL DEFAULT 'pendiente'::text CHECK (estado = ANY (ARRAY['pendiente'::text, 'aprobada'::text, 'rechazada'::text])),
+  evidencia_url text NOT NULL,
+  codigo_transferencia text UNIQUE,
+  observaciones text,
+  admin_uuid uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT solicitudes_plan_pkey PRIMARY KEY (id),
+  CONSTRAINT solicitudes_plan_usuario_uuid_fkey FOREIGN KEY (usuario_uuid) REFERENCES auth.users(id),
+  CONSTRAINT solicitudes_plan_plan_codigo_fkey FOREIGN KEY (plan_codigo) REFERENCES muevete.planes(codigo),
+  CONSTRAINT solicitudes_plan_admin_uuid_fkey FOREIGN KEY (admin_uuid) REFERENCES auth.users(id)
 );
 CREATE TABLE muevete.solicitudes_transporte (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -183,6 +401,21 @@ CREATE TABLE muevete.sub_usuarios (
   CONSTRAINT sub_usuarios_propietario_fkey FOREIGN KEY (propietario_uuid) REFERENCES auth.users(id),
   CONSTRAINT sub_usuarios_sub_uuid_fkey FOREIGN KEY (sub_uuid) REFERENCES auth.users(id),
   CONSTRAINT sub_usuarios_sub_driver_fkey FOREIGN KEY (sub_driver_id) REFERENCES muevete.drivers(id)
+);
+CREATE TABLE muevete.suscripciones (
+  id bigint NOT NULL DEFAULT nextval('muevete.suscripciones_id_seq'::regclass),
+  usuario_uuid uuid NOT NULL,
+  plan_codigo text NOT NULL,
+  estado text NOT NULL DEFAULT 'activa'::text CHECK (estado = ANY (ARRAY['activa'::text, 'vencida'::text, 'cancelada'::text, 'pendiente_pago'::text])),
+  inicio date NOT NULL,
+  vencimiento date NOT NULL,
+  renovacion_auto boolean NOT NULL DEFAULT true,
+  notas text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT suscripciones_pkey PRIMARY KEY (id),
+  CONSTRAINT suscripciones_usuario_uuid_fkey FOREIGN KEY (usuario_uuid) REFERENCES auth.users(id),
+  CONSTRAINT suscripciones_plan_codigo_fkey FOREIGN KEY (plan_codigo) REFERENCES muevete.planes(codigo)
 );
 CREATE TABLE muevete.suscription_plan (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -261,6 +494,16 @@ CREATE TABLE muevete.users (
   empresa_rut text,
   empresa_direccion text,
   mercaderias_habituales jsonb DEFAULT '[]'::jsonb,
+  tipo_organizacion text,
+  nombre_legal text,
+  id_fiscal text,
+  cod_actividad text,
+  pais_empresa text,
+  region_empresa text,
+  ciudad_empresa text,
+  direccion_empresa text,
+  telefono_empresa text,
+  email_empresa text,
   CONSTRAINT users_pkey PRIMARY KEY (user_id),
   CONSTRAINT clientes_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id)
 );
@@ -312,8 +555,10 @@ CREATE TABLE muevete.vehiculos (
   aire_acondicionado boolean NOT NULL DEFAULT false,
   capacidad_int integer,
   driver_uuid uuid,
+  tipo_equipo_id bigint,
   CONSTRAINT vehiculos_pkey PRIMARY KEY (id),
-  CONSTRAINT vehiculos_id_tipo_vehiculo_fkey FOREIGN KEY (id_tipo_vehiculo) REFERENCES muevete.vehicle_type(id)
+  CONSTRAINT vehiculos_id_tipo_vehiculo_fkey FOREIGN KEY (id_tipo_vehiculo) REFERENCES muevete.vehicle_type(id),
+  CONSTRAINT vehiculos_tipo_equipo_id_fkey FOREIGN KEY (tipo_equipo_id) REFERENCES muevete.app_nom_tipo_equipo(id)
 );
 CREATE TABLE muevete.verificacion_operacion_recarga (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,

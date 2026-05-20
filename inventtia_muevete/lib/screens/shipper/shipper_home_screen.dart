@@ -477,10 +477,13 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
     final uid = auth.user?.id;
     if (uid == null) return;
 
+    // IDs nomenclador: 1=FTL, 2=LTL (seed migración 022)
+    final tipoCargaId = _tipo == 'ltl' ? 2 : 1;
+
     final carga = CargaModel(
       id: 0,
       shipperId: uid,
-      tipo: _tipo,
+      tipoCargaId: tipoCargaId,
       estado: 'publicada',
       dirOrigen: _dirOrigen!,
       latOrigen: _latOrigen ?? 0,
@@ -493,7 +496,7 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
       descripcion: _descripcionCtrl.text.trim().isEmpty
           ? null
           : _descripcionCtrl.text.trim(),
-      tipoMercancia: _tipoMercancia,
+      tipoMercanciaId: null, // TODO: enlazar dropdown con app_nom_tipo_mercancia
       pesoKg: () {
         final cleaned = _pesoCtrl.text.replaceAll(',', '.');
         final v = double.tryParse(cleaned);
@@ -509,8 +512,8 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
       instrucciones: _instruccionesCtrl.text.trim().isEmpty
           ? null
           : _instruccionesCtrl.text.trim(),
-      tipoEquipo: _tipoEquipo,
-      opcionesEquipo: List.from(_opcionesEquipoSel),
+      tipoEquipoId: null, // TODO: enlazar dropdown con app_nom_tipo_equipo
+      opcionesEquipoManejo: const [], // TODO: IDs desde app_nom_equipo_manejo_carga
       fechaRecogida: _fechaRecogida,
       fechaEntrega: _fechaEntrega,
       precioOfertado: double.tryParse(_precioCtrl.text),
@@ -524,7 +527,6 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
       contactoDestinoNombre: _contactoDestinoNombreCtrl.text.trim().isEmpty ? null : _contactoDestinoNombreCtrl.text.trim(),
       contactoDestinoTel: _contactoDestinoTelCtrl.text.trim().isEmpty ? null : _contactoDestinoTelCtrl.text.trim(),
       // Comercial
-      commodityId: _commodityId,
       numerosReferencia: _refNumCtrl.text.trim().isEmpty
           ? []
           : _refNumCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList(),

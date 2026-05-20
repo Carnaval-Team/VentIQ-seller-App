@@ -11,8 +11,16 @@ class VehicleModel {
   final String? descripcion;
   final String? color;
 
-  // Campos de camión de carga
-  final String? tipoCarroceria;  // 'flatbed','van','reefer','tanker','dryvan','curtain'
+  // FK a muevete.vehicle_type (igual que solicitudes_transporte)
+  final int? idTipoVehiculo;
+
+  // Tipo de equipo/carrocería — FK a app_nom_tipo_equipo
+  final int? tipoEquipoId;
+  final String? tipoEquipoNombre;      // enriquecido por JOIN
+  final String? tipoEquipoAbreviacion; // enriquecido por JOIN
+
+  // Legacy — se mantiene para compatibilidad
+  final String? tipoCarroceria;
   final double? capacidadTon;
   final double? capacidadM3;
   final int? anio;
@@ -38,6 +46,10 @@ class VehicleModel {
     this.image,
     this.descripcion,
     this.color,
+    this.idTipoVehiculo,
+    this.tipoEquipoId,
+    this.tipoEquipoNombre,
+    this.tipoEquipoAbreviacion,
     this.tipoCarroceria,
     this.capacidadTon,
     this.capacidadM3,
@@ -68,6 +80,10 @@ class VehicleModel {
       image: json['image'] as String?,
       descripcion: json['descripcion'] as String?,
       color: json['color'] as String?,
+      idTipoVehiculo: json['id_tipo_vehiculo'] as int?,
+      tipoEquipoId: json['tipo_equipo_id'] as int?,
+      tipoEquipoNombre: json['tipo_equipo_nombre'] as String?,
+      tipoEquipoAbreviacion: json['tipo_equipo_abreviacion'] as String?,
       tipoCarroceria: json['tipo_carroceria'] as String?,
       capacidadTon: (json['capacidad_ton'] as num?)?.toDouble(),
       capacidadM3: (json['capacidad_m3'] as num?)?.toDouble(),
@@ -99,6 +115,8 @@ class VehicleModel {
       'image': image,
       'descripcion': descripcion,
       'color': color,
+      if (idTipoVehiculo != null) 'id_tipo_vehiculo': idTipoVehiculo,
+      if (tipoEquipoId != null) 'tipo_equipo_id': tipoEquipoId,
       if (tipoCarroceria != null) 'tipo_carroceria': tipoCarroceria,
       if (capacidadTon != null) 'capacidad_ton': capacidadTon,
       if (capacidadM3 != null) 'capacidad_m3': capacidadM3,
@@ -129,6 +147,10 @@ class VehicleModel {
     String? image,
     String? descripcion,
     String? color,
+    int? idTipoVehiculo,
+    int? tipoEquipoId,
+    String? tipoEquipoNombre,
+    String? tipoEquipoAbreviacion,
     String? tipoCarroceria,
     double? capacidadTon,
     double? capacidadM3,
@@ -155,6 +177,10 @@ class VehicleModel {
       image: image ?? this.image,
       descripcion: descripcion ?? this.descripcion,
       color: color ?? this.color,
+      idTipoVehiculo: idTipoVehiculo ?? this.idTipoVehiculo,
+      tipoEquipoId: tipoEquipoId ?? this.tipoEquipoId,
+      tipoEquipoNombre: tipoEquipoNombre ?? this.tipoEquipoNombre,
+      tipoEquipoAbreviacion: tipoEquipoAbreviacion ?? this.tipoEquipoAbreviacion,
       tipoCarroceria: tipoCarroceria ?? this.tipoCarroceria,
       capacidadTon: capacidadTon ?? this.capacidadTon,
       capacidadM3: capacidadM3 ?? this.capacidadM3,

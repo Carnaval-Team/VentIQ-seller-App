@@ -7,6 +7,56 @@ import '../models/estado_carga_model.dart';
 class CargaService {
   final _supabase = Supabase.instance.client;
 
+  /// Select base para cargas: incluye JOINs a los cuatro nomencladores
+  static const _selectCargas = '''
+    *,
+    app_nom_tipo_carga(nombre, abreviacion),
+    app_nom_tipo_equipo(nombre, abreviacion),
+    app_nom_tipo_mercancia(nombre, codigo, nmfc_codigo),
+    cargas_equipo_manejo(equipo_manejo_id, app_nom_equipo_manejo_carga(nombre, codigo))
+  ''';
+
+  /// Aplana los objetos anidados del JOIN en el mapa plano que espera [CargaModel.fromJson]
+  static Map<String, dynamic> _aplanarCarga(Map<String, dynamic> row) {
+    final m = Map<String, dynamic>.from(row);
+    final tc = m.remove('app_nom_tipo_carga');
+    if (tc is Map) {
+      m['tipo_carga_nombre']      = tc['nombre'];
+      m['tipo_carga_abreviacion'] = tc['abreviacion'];
+    }
+    final te = m.remove('app_nom_tipo_equipo');
+    if (te is Map) {
+      m['tipo_equipo_nombre']      = te['nombre'];
+      m['tipo_equipo_abreviacion'] = te['abreviacion'];
+    }
+    final tm = m.remove('app_nom_tipo_mercancia');
+    if (tm is Map) {
+      m['tipo_mercancia_nombre'] = tm['nombre'];
+      m['tipo_mercancia_codigo'] = tm['codigo'];
+      m['tipo_mercancia_nmfc']   = tm['nmfc_codigo'];
+    }
+    // M:N opciones de manejo — lista de objetos anidados
+    final pivotList = m.remove('cargas_equipo_manejo');
+    if (pivotList is List) {
+      final ids     = <int>[];
+      final nombres = <String>[];
+      final codigos = <String>[];
+      for (final row in pivotList) {
+        if (row is! Map) continue;
+        ids.add(row['equipo_manejo_id'] as int);
+        final nom = row['app_nom_equipo_manejo_carga'];
+        if (nom is Map) {
+          nombres.add(nom['nombre'] as String? ?? '');
+          codigos.add(nom['codigo']  as String? ?? '');
+        }
+      }
+      m['opciones_equipo_manejo_ids']     = ids;
+      m['opciones_equipo_manejo_nombres'] = nombres;
+      m['opciones_equipo_manejo_codigos'] = codigos;
+    }
+    return m;
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
   // SHIPPER: publicar y gestionar cargas propias
   // ──────────────────────────────────────────────────────────────────────────
@@ -18,10 +68,20 @@ class CargaService {
           .schema('muevete')
           .from('cargas')
           .insert(carga.toInsertJson())
-          .select()
+          .select(_selectCargas)
           .single();
       final int newId = data['id'] as int;
       debugPrint('[CargaService] Carga publicada id=$newId');
+      // Insertar opciones de manejo en la tabla pivot M:N
+      if (carga.opcionesEquipoManejo.isNotEmpty) {
+        final rows = carga.opcionesEquipoManejo
+            .map((eid) => {'carga_id': newId, 'equipo_manejo_id': eid})
+            .toList();
+        await _supabase
+            .schema('muevete')
+            .from('cargas_equipo_manejo')
+            .upsert(rows, onConflict: 'carga_id,equipo_manejo_id');
+      }
       // Registrar estado inicial en la bitácora
       await _registrarEstado(
         cargaId: newId,
@@ -29,7 +89,7 @@ class CargaService {
         usuarioUuid: carga.shipperId,
         motivo: 'Carga creada',
       );
-      return CargaModel.fromJson(data);
+      return CargaModel.fromJson(_aplanarCarga(data));
     } catch (e) {
       debugPrint('[CargaService] Error publicarCarga: $e');
       rethrow;
@@ -42,11 +102,12 @@ class CargaService {
       final data = await _supabase
           .schema('muevete')
           .from('cargas')
-          .select()
+          .select(_selectCargas)
           .eq('shipper_id', shipperUuid)
           .order('created_at', ascending: false);
-      final list =
-          (data as List).map((e) => CargaModel.fromJson(e)).toList();
+      final list = (data as List)
+          .map((e) => CargaModel.fromJson(_aplanarCarga(Map<String, dynamic>.from(e as Map))))
+          .toList();
       debugPrint('[CargaService] ${list.length} cargas del shipper');
       return list;
     } catch (e) {
@@ -60,10 +121,10 @@ class CargaService {
       final data = await _supabase
           .schema('muevete')
           .from('cargas')
-          .select()
+          .select(_selectCargas)
           .eq('id', id)
           .single();
-      return CargaModel.fromJson(data);
+      return CargaModel.fromJson(_aplanarCarga(data));
     } catch (e) {
       debugPrint('[CargaService] Error getCargaById: $e');
       return null;
@@ -174,11 +235,12 @@ class CargaService {
       var query = _supabase
           .schema('muevete')
           .from('cargas')
-          .select()
+          .select(_selectCargas)
           .inFilter('estado', ['publicada', 'en_matching', 'ofertada']);
 
       if (tipoEquipo != null && tipoEquipo.isNotEmpty) {
-        query = query.eq('tipo_equipo', tipoEquipo);
+        // tipo_equipo_id es FK bigint — el parámetro es la abreviación,
+        // el filtrado real por ID se hace en el provider/UI via tipoEquipo getter
       }
       if (ciudadOrigen != null && ciudadOrigen.isNotEmpty) {
         query = query.ilike('ciudad_origen', '%$ciudadOrigen%');
@@ -200,8 +262,9 @@ class CargaService {
           .order('fecha_recogida', ascending: true, nullsFirst: false)
           .order('prioridad', ascending: false)
           .order('created_at', ascending: true);
-      final list =
-          (data as List).map((e) => CargaModel.fromJson(e)).toList();
+      final list = (data as List)
+          .map((e) => CargaModel.fromJson(_aplanarCarga(Map<String, dynamic>.from(e as Map))))
+          .toList();
       debugPrint('[CargaService] ${list.length} cargas disponibles');
       return list;
     } catch (e) {
@@ -223,11 +286,12 @@ class CargaService {
       final data = await _supabase
           .schema('muevete')
           .from('cargas')
-          .select()
+          .select(_selectCargas)
           .inFilter('carrier_driver_id', carrierDriverIds)
           .order('created_at', ascending: false);
-      final list =
-          (data as List).map((e) => CargaModel.fromJson(e)).toList();
+      final list = (data as List)
+          .map((e) => CargaModel.fromJson(_aplanarCarga(Map<String, dynamic>.from(e as Map))))
+          .toList();
       debugPrint('[CargaService] ${list.length} cargas del dispatcher');
       return list;
     } catch (e) {
@@ -267,11 +331,13 @@ class CargaService {
       final data = await _supabase
           .schema('muevete')
           .from('cargas')
-          .select()
+          .select(_selectCargas)
           .eq('carrier_driver_id', driverId)
           .inFilter('estado', ['tomada', 'en_transito', 'completada_carrier'])
           .order('created_at', ascending: false);
-      return (data as List).map((e) => CargaModel.fromJson(e)).toList();
+      return (data as List)
+          .map((e) => CargaModel.fromJson(_aplanarCarga(Map<String, dynamic>.from(e as Map))))
+          .toList();
     } catch (e) {
       debugPrint('[CargaService] Error getCargasCarrier: $e');
       rethrow;
@@ -284,11 +350,13 @@ class CargaService {
       final data = await _supabase
           .schema('muevete')
           .from('cargas')
-          .select()
+          .select(_selectCargas)
           .eq('carrier_uuid', carrierUuid)
           .inFilter('estado', ['tomada', 'en_transito', 'completada_carrier'])
           .order('created_at', ascending: false);
-      return (data as List).map((e) => CargaModel.fromJson(e)).toList();
+      return (data as List)
+          .map((e) => CargaModel.fromJson(_aplanarCarga(Map<String, dynamic>.from(e as Map))))
+          .toList();
     } catch (e) {
       debugPrint('[CargaService] Error getCargasCarrierByUuid: $e');
       rethrow;

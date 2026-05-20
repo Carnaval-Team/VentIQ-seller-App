@@ -524,6 +524,19 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
 
+                // Pagos a Importadora
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.import_export,
+                  title: 'Pagos a Importadora',
+                  subtitle: 'Facturas y saldo importadora',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/importadora-facturas');
+                  },
+                ),
+                const Divider(height: 1),
+
                 // Configuración (solo Gerente)
                 FutureBuilder<bool>(
                   future: NavigationGuard.canNavigate(
