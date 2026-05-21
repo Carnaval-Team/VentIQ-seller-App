@@ -271,13 +271,40 @@ BEGIN
         -- mantiene como FOR para no alterar la estructura del cuerpo, pero
         -- itera exactamente una vez sobre NEW.
         FOR v_order_detail IN SELECT NEW.* LOOP
-            -- Obtener producto
+            -- Obtener producto.
+            -- IMPORTANTE: filtrar por id_tienda = v_tienda_id (tienda derivada del
+            -- proveedor del OrderDetail). En la BD existen mapeos donde
+            -- app_dat_producto.id_vendedor_app o relation_products_carnaval apuntan
+            -- al producto interno de OTRA tienda (datos maestros mal hechos).
+            -- Si no filtráramos, el trigger generaría extracciones e inventario
+            -- contra el producto de la tienda equivocada -> productos "cruzados"
+            -- entre proveedores en una misma orden multi-proveedor.
+            v_producto_id := NULL;
+            v_producto_nombre := NULL;
+
             SELECT id, denominacion INTO v_producto_id, v_producto_nombre
             FROM public.app_dat_producto
             WHERE id_vendedor_app = v_order_detail.product_id
+              AND id_tienda = v_tienda_id
             LIMIT 1;
 
             IF v_producto_id IS NULL THEN
+                -- Fallback: intentar por relation_products_carnaval, pero
+                -- exigiendo igualmente que el id_producto pertenezca a v_tienda_id.
+                SELECT p.id, p.denominacion
+                INTO v_producto_id, v_producto_nombre
+                FROM public.relation_products_carnaval rpc
+                JOIN public.app_dat_producto p ON p.id = rpc.id_producto
+                WHERE rpc.id_producto_carnaval = v_order_detail.product_id
+                  AND p.id_tienda = v_tienda_id
+                LIMIT 1;
+            END IF;
+
+            IF v_producto_id IS NULL THEN
+                RAISE NOTICE
+                    'Producto Carnaval % no tiene equivalente en tienda % (orden %, OrderDetail %). Se omite. Revisar datos maestros (app_dat_producto.id_vendedor_app / relation_products_carnaval).',
+                    v_order_detail.product_id, v_tienda_id,
+                    v_order_record.id, v_order_detail.id;
                 CONTINUE;
             END IF;
 
@@ -291,10 +318,17 @@ BEGIN
             DECLARE
                 v_ubicacion_especifica BIGINT;
             BEGIN
-                SELECT id_ubicacion INTO v_ubicacion_especifica
-                FROM public.relation_products_carnaval
-                WHERE id_producto = v_producto_id
-                  AND id_producto_carnaval = v_order_detail.product_id
+                -- Buscar la ubicación específica de la relación, pero exigiendo
+                -- que esa ubicación pertenezca a la tienda actual (v_tienda_id).
+                -- Si la fila de relation_products_carnaval está mal hecha y apunta
+                -- a una ubicación de otra tienda, NO la usamos.
+                SELECT rpc.id_ubicacion INTO v_ubicacion_especifica
+                FROM public.relation_products_carnaval rpc
+                JOIN public.app_dat_layout_almacen au ON au.id = rpc.id_ubicacion
+                JOIN public.app_dat_almacen a ON a.id = au.id_almacen
+                WHERE rpc.id_producto = v_producto_id
+                  AND rpc.id_producto_carnaval = v_order_detail.product_id
+                  AND a.id_tienda = v_tienda_id
                 LIMIT 1;
 
                 -- Obtener inventario más reciente según ubicación
@@ -308,18 +342,22 @@ BEGIN
                     -- FOUND es la forma confiable de saber si SELECT INTO encontró filas
                     v_tiene_inventario := FOUND;
 
-                    RAISE NOTICE 'Usando ubicación específica % para producto % desde relation_products_carnaval. Encontrado: %',
-                        v_ubicacion_especifica, v_producto_id, v_tiene_inventario;
+                    RAISE NOTICE 'Usando ubicación específica % (tienda %) para producto %. Encontrado: %',
+                        v_ubicacion_especifica, v_tienda_id, v_producto_id, v_tiene_inventario;
                 ELSE
-                    -- Obtener inventario más reciente
-                    SELECT * INTO v_inventario_record
-                    FROM public.app_dat_inventario_productos
-                    WHERE id_producto = v_producto_id
-                    ORDER BY id desc, created_at DESC
+                    -- Fallback: inventario más reciente del producto, pero limitado
+                    -- a ubicaciones de la tienda actual para evitar cruces.
+                    SELECT ip.* INTO v_inventario_record
+                    FROM public.app_dat_inventario_productos ip
+                    JOIN public.app_dat_layout_almacen au ON au.id = ip.id_ubicacion
+                    JOIN public.app_dat_almacen a ON a.id = au.id_almacen
+                    WHERE ip.id_producto = v_producto_id
+                      AND a.id_tienda = v_tienda_id
+                    ORDER BY ip.id desc, ip.created_at DESC
                     LIMIT 1;
                     v_tiene_inventario := FOUND;
-                    RAISE NOTICE 'No se encontró ubicación específica para producto %, usando inventario más reciente. Encontrado: %',
-                        v_producto_id, v_tiene_inventario;
+                    RAISE NOTICE 'No se encontró ubicación específica para producto %, usando inventario más reciente de la tienda %. Encontrado: %',
+                        v_producto_id, v_tienda_id, v_tiene_inventario;
                 END IF;
             END;
 

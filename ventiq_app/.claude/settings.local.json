@@ -5,7 +5,8 @@
       "Bash(grep -vE \"avoid_print|^Analyzing|^\\\\s*$\")",
       "Bash(grep -vE \"avoid_print|^Analyzing|^\\\\s*$|withOpacity|deprecated_member_use|use_build_context_synchronously\")",
       "mcp__supabase__list_tables",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "mcp__supabase__execute_sql"
     ]
   },
   "enabledMcpjsonServers": [
