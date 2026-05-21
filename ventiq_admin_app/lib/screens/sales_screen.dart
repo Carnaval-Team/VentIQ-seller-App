@@ -540,6 +540,397 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
+  Future<void> _exportVendorOrdersToPdf({
+    required SalesVendorReport vendor,
+    required List<VendorOrder> orders,
+    required double totalEfectivoOferta,
+    required double totalEfectivoRegular,
+    required double totalTransferencias,
+  }) async {
+    if (orders.isEmpty) return;
+
+    final dateRange = _getDateRange();
+    final start = dateRange['start']!;
+    final end = dateRange['end']!;
+
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      Map<String, dynamic>? storeData;
+      if (storeId != null) {
+        storeData =
+            await Supabase.instance.client
+                .from('app_dat_tienda')
+                .select('denominacion, direccion, ubicacion, phone, imagen_url')
+                .eq('id', storeId)
+                .maybeSingle();
+      }
+
+      final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+      final storeAddress = storeData?['direccion'] as String? ?? '';
+      final storeLocation = storeData?['ubicacion'] as String? ?? '';
+      final storePhone = storeData?['phone'] as String? ?? '';
+      final storeLogoUrl = storeData?['imagen_url'] as String?;
+      final logoBytes = await _downloadImageBytes(storeLogoUrl);
+
+      final dateLabel =
+          '${_formatDateForPdf(start)} - ${_formatDateForPdf(end)}';
+      final totalVentas = orders.fold<double>(
+        0.0,
+        (sum, o) => sum + o.totalOperacion,
+      );
+
+      final pdf = pw.Document();
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          build:
+              (context) => [
+                _buildPdfHeader(
+                  logoBytes: logoBytes,
+                  storeName: storeName,
+                  storeAddress: storeAddress,
+                  storeLocation: storeLocation,
+                  storePhone: storePhone,
+                  dateLabel: dateLabel,
+                  reportTitle: 'Reporte de Órdenes',
+                  extraLines: ['Vendedor: ${vendor.nombreCompleto}'],
+                ),
+                pw.SizedBox(height: 16),
+                _buildVendorOrdersPdfSummary(
+                  orderCount: orders.length,
+                  totalVentas: totalVentas,
+                  totalEfectivoOferta: totalEfectivoOferta,
+                  totalEfectivoRegular: totalEfectivoRegular,
+                  totalTransferencias: totalTransferencias,
+                ),
+                pw.SizedBox(height: 16),
+                pw.Text(
+                  'Detalle de órdenes',
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('#0F172A'),
+                  ),
+                ),
+                pw.SizedBox(height: 8),
+                ...orders.map(
+                  (order) => pw.Container(
+                    margin: const pw.EdgeInsets.only(bottom: 12),
+                    padding: const pw.EdgeInsets.all(12),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColor.fromHex('#F8FAFC'),
+                      borderRadius: pw.BorderRadius.circular(10),
+                      border: pw.Border.all(
+                        color: PdfColors.grey300,
+                        width: 0.8,
+                      ),
+                    ),
+                    child: _buildVendorOrderPdfDetailSection(order),
+                  ),
+                ),
+              ],
+        ),
+      );
+
+      final safeVendorName = vendor.nombreCompleto
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .trim()
+          .replaceAll(RegExp(r'\s+'), '_');
+      final fileName =
+          'ordenes_${safeVendorName}_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.pdf';
+      final pdfBytes = await pdf.save();
+
+      if (kIsWeb) {
+        await Printing.sharePdf(bytes: pdfBytes, filename: fileName);
+      } else {
+        final output = await getTemporaryDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(pdfBytes);
+        await Share.shareXFiles(
+          [XFile(file.path, mimeType: 'application/pdf')],
+          text: 'Órdenes de ${vendor.nombreCompleto} · $dateLabel',
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PDF generado correctamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  pw.Widget _buildVendorOrdersPdfSummary({
+    required int orderCount,
+    required double totalVentas,
+    required double totalEfectivoOferta,
+    required double totalEfectivoRegular,
+    required double totalTransferencias,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        color: PdfColor.fromHex('#F1F5F9'),
+        borderRadius: pw.BorderRadius.circular(12),
+        border: pw.Border.all(color: PdfColors.grey300, width: 1),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Resumen',
+            style: pw.TextStyle(
+              fontSize: 13,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColor.fromHex('#0F172A'),
+            ),
+          ),
+          pw.SizedBox(height: 8),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text(
+                'Total órdenes',
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  color: PdfColor.fromHex('#475569'),
+                ),
+              ),
+              pw.Text(
+                '$orderCount',
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromHex('#0F172A'),
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 4),
+          _pdfSummaryRow('Total ventas', totalVentas),
+          if (totalEfectivoOferta > 0)
+            _pdfSummaryRow('Efectivo (Oferta)', totalEfectivoOferta),
+          if (totalEfectivoRegular > 0)
+            _pdfSummaryRow('Efectivo (Regular)', totalEfectivoRegular),
+          if (totalTransferencias > 0)
+            _pdfSummaryRow('Transferencias', totalTransferencias),
+        ],
+      ),
+    );
+  }
+
+  List<dynamic> _filterUniqueOrderItems(List<dynamic> items) {
+    final seenProductIds = <dynamic>{};
+    return items.where((item) {
+      final precioUnitario =
+          (item['precio_unitario'] ?? 0.0).toDouble();
+      if (precioUnitario == 0.0) return false;
+      final productId =
+          item['id_producto'] ?? item['producto_id'] ?? item['id'];
+      if (seenProductIds.contains(productId)) return false;
+      seenProductIds.add(productId);
+      return true;
+    }).toList();
+  }
+
+  String _paymentLabelForPdf(Map<String, dynamic> payment) {
+    var metodoPago = payment['medio_pago']?.toString() ?? 'N/A';
+    final esEfectivo = payment['es_efectivo'] ?? false;
+    final tipoPago = payment['tipo_pago'] ?? 1;
+
+    if (esEfectivo && metodoPago.toLowerCase().contains('efectivo')) {
+      if (tipoPago == 1) return 'Pago Oferta (Efectivo)';
+      if (tipoPago == 2) return 'Pago Regular (Efectivo)';
+    }
+    return metodoPago;
+  }
+
+  pw.Widget _buildVendorOrderPdfDetailSection(VendorOrder order) {
+    final summary = _calculateDiscountSummary(order);
+    final cobrado = summary['cobrado'] ?? order.totalOperacion;
+    final descuento = summary['descuento'] ?? 0.0;
+    final original = summary['original'] ?? order.totalOperacion;
+
+    final cliente = order.detalles['cliente'] as Map<String, dynamic>?;
+    final clienteNombre =
+        cliente != null
+            ? (cliente['nombre_completo'] ?? 'N/A').toString()
+            : null;
+    final pagos = (order.detalles['pagos'] as List?) ?? [];
+    final rawItems = (order.detalles['items'] as List?) ?? [];
+    final items = _filterUniqueOrderItems(rawItems);
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              'Orden #${order.idOperacion}',
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#0F172A'),
+              ),
+            ),
+            pw.Text(
+              order.estadoNombre,
+              style: pw.TextStyle(
+                fontSize: 10,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#475569'),
+              ),
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 4),
+        pw.Text(
+          '${_formatOrderDate(order.fechaOperacion)} · ${order.tpvNombre}',
+          style: pw.TextStyle(fontSize: 10, color: PdfColor.fromHex('#475569')),
+        ),
+        if (clienteNombre != null) ...[
+          pw.SizedBox(height: 4),
+          pw.Text(
+            'Cliente: $clienteNombre',
+            style: pw.TextStyle(
+              fontSize: 10,
+              color: PdfColor.fromHex('#334155'),
+            ),
+          ),
+        ],
+        if (items.isNotEmpty) ...[
+          pw.SizedBox(height: 8),
+          pw.Table(
+            border: pw.TableBorder(
+              horizontalInside: pw.BorderSide(
+                color: PdfColors.grey300,
+                width: 0.3,
+              ),
+              bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5),
+            ),
+            columnWidths: {
+              0: const pw.FlexColumnWidth(4),
+              1: const pw.FlexColumnWidth(1),
+              2: const pw.FlexColumnWidth(1.5),
+            },
+            children: [
+              pw.TableRow(
+                children: [
+                  _pdfHeaderCell('Producto'),
+                  _pdfHeaderCell('Cant.'),
+                  _pdfHeaderCell('Importe'),
+                ],
+              ),
+              ...items.map((item) {
+                final nombre =
+                    item['producto_nombre']?.toString() ??
+                    item['nombre']?.toString() ??
+                    'Producto';
+                final cantidad = _formatCantidadDecimal(item['cantidad']);
+                final importe = _toDoubleSafe(item['importe']).toStringAsFixed(
+                  2,
+                );
+                return pw.TableRow(
+                  children: [
+                    _pdfBodyCell(nombre),
+                    _pdfBodyCell(cantidad),
+                    _pdfBodyCell('\$$importe', isBold: true),
+                  ],
+                );
+              }),
+            ],
+          ),
+        ],
+        if (pagos.isNotEmpty) ...[
+          pw.SizedBox(height: 8),
+          pw.Text(
+            'Desglose de pagos',
+            style: pw.TextStyle(
+              fontSize: 11,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColor.fromHex('#0F172A'),
+            ),
+          ),
+          pw.SizedBox(height: 4),
+          ...pagos.map((pago) {
+            final pagoMap =
+                pago is Map<String, dynamic>
+                    ? pago
+                    : Map<String, dynamic>.from(pago as Map);
+            return pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 4),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(
+                    _paymentLabelForPdf(pagoMap),
+                    style: pw.TextStyle(
+                      fontSize: 10,
+                      color: PdfColor.fromHex('#334155'),
+                    ),
+                  ),
+                  pw.Text(
+                    '\$${_toDoubleSafe(pagoMap['total']).toStringAsFixed(2)}',
+                    style: pw.TextStyle(
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColor.fromHex('#0F172A'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+        pw.SizedBox(height: 6),
+        pw.Container(
+          padding: const pw.EdgeInsets.all(8),
+          decoration: pw.BoxDecoration(
+            color: PdfColor.fromHex('#EEF2FF'),
+            borderRadius: pw.BorderRadius.circular(8),
+            border: pw.Border.all(
+              color: PdfColor.fromHex('#CBD5E1'),
+              width: 0.8,
+            ),
+          ),
+          child: pw.Column(
+            children: [
+              if (descuento > 0) ...[
+                _pdfSummaryRow('Subtotal', original, fontSize: 10),
+                _pdfSummaryRow('Descuento', -descuento, fontSize: 10),
+              ],
+              _pdfSummaryRow('Total orden', cobrado, isBold: true, fontSize: 11),
+            ],
+          ),
+        ),
+        if (order.observaciones != null && order.observaciones!.isNotEmpty) ...[
+          pw.SizedBox(height: 6),
+          pw.Text(
+            'Observaciones: ${order.observaciones}',
+            style: pw.TextStyle(
+              fontSize: 9,
+              color: PdfColor.fromHex('#64748B'),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Future<List<VendorOrder>> _fetchOrdersForPdf({
     required DateTime start,
     required DateTime end,
@@ -660,6 +1051,8 @@ class _SalesScreenState extends State<SalesScreen>
     required String storeLocation,
     required String storePhone,
     required String dateLabel,
+    String reportTitle = 'Reporte de Facturas',
+    List<String> extraLines = const [],
   }) {
     return pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -710,6 +1103,15 @@ class _SalesScreenState extends State<SalesScreen>
                     color: PdfColor.fromHex('#475569'),
                   ),
                 ),
+              ...extraLines.map(
+                (line) => pw.Text(
+                  line,
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    color: PdfColor.fromHex('#475569'),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -717,7 +1119,7 @@ class _SalesScreenState extends State<SalesScreen>
           crossAxisAlignment: pw.CrossAxisAlignment.end,
           children: [
             pw.Text(
-              'Reporte de Facturas',
+              reportTitle,
               style: pw.TextStyle(
                 fontSize: 14,
                 fontWeight: pw.FontWeight.bold,
@@ -4915,6 +5317,26 @@ class _SalesScreenState extends State<SalesScreen>
                                       ],
                                     ),
                                   ],
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Exportar PDF',
+                                onPressed:
+                                    orders.isEmpty
+                                        ? null
+                                        : () => _exportVendorOrdersToPdf(
+                                          vendor: vendor,
+                                          orders: orders,
+                                          totalEfectivoOferta:
+                                              totalEfectivoOferta,
+                                          totalEfectivoRegular:
+                                              totalEfectivoRegular,
+                                          totalTransferencias:
+                                              totalTransferencias,
+                                        ),
+                                icon: const Icon(
+                                  Icons.picture_as_pdf_outlined,
+                                  color: Colors.red,
                                 ),
                               ),
                               IconButton(
