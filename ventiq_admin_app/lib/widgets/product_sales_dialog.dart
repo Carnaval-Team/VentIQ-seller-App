@@ -6,12 +6,14 @@ class ProductSalesDialog extends StatefulWidget {
   final Map<String, dynamic> product;
   final int? storeId;
   final int? localProductId;
+  final int? carnavalStoreId;
 
   const ProductSalesDialog({
     super.key,
     required this.product,
     this.storeId,
     this.localProductId,
+    this.carnavalStoreId,
   });
 
   @override
@@ -157,13 +159,19 @@ class _ProductSalesDialogState extends State<ProductSalesDialog> {
   }
 
   Future<void> _changeLocation() async {
-    // Validar que tenemos los datos necesarios
-    if (widget.storeId == null || widget.localProductId == null) {
+    // Validar que tenemos los datos necesarios. carnavalStoreId también es
+    // obligatorio porque updateProductLocation valida la integridad de la
+    // tupla (producto-ubicación-tienda-proveedor) para evitar relaciones
+    // cruzadas en relation_products_carnaval.
+    if (widget.storeId == null ||
+        widget.localProductId == null ||
+        widget.carnavalStoreId == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'No se puede cambiar la ubicación: faltan datos del producto. '
+              'No se puede cambiar la ubicación: faltan datos del producto '
+              '(tienda, producto local o proveedor Carnaval). '
               'Por favor, contacta al administrador.',
             ),
             backgroundColor: Colors.red,
@@ -196,11 +204,15 @@ class _ProductSalesDialogState extends State<ProductSalesDialog> {
         builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
-      // Actualizar la ubicación del producto
+      // Actualizar la ubicación del producto.
+      // storeId y carnavalStoreId habilitan la validación de integridad en
+      // CarnavalService que evita guardar relaciones cruzadas entre tiendas.
       final success = await CarnavalService.updateProductLocation(
         carnavalProductId: carnavalProductId,
         newLocationId: location['id_ubicacion'],
         localProductId: widget.localProductId!,
+        storeId: widget.storeId!,
+        carnavalStoreId: widget.carnavalStoreId!,
       );
 
       if (mounted) {

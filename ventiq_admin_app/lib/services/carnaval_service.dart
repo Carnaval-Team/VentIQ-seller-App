@@ -598,12 +598,119 @@ class CarnavalService {
     }
   }
 
+  /// Valida la integridad de una tupla (producto local, ubicación, tienda local,
+  /// proveedor Carnaval) antes de cualquier insert/update sobre
+  /// `relation_products_carnaval`. Esto evita que la app guarde relaciones
+  /// "cruzadas" donde, por bug en la UI, edición posterior o datos legacy,
+  /// el producto/ubicación pertenezcan a una tienda distinta a la activa.
+  ///
+  /// El trigger `crear_orden_desde_carnaval.sql` ya tiene guardas defensivas
+  /// equivalentes, pero ese es un parche curativo. Esta función ataca el
+  /// origen.
+  ///
+  /// Lanza Exception con mensaje específico si algo no cuadra. Devuelve un
+  /// Map con datos útiles (producto, ubicación) si pasa.
+  static Future<Map<String, dynamic>> _validateRelationIntegrity({
+    required int localProductId,
+    required int idUbicacion,
+    required int expectedStoreId,
+    required int expectedCarnavalStoreId,
+  }) async {
+    // (a) Producto local existe y pertenece a la tienda esperada
+    final product = await _supabase
+        .from('app_dat_producto')
+        .select('id, id_tienda, denominacion, id_vendedor_app')
+        .eq('id', localProductId)
+        .maybeSingle();
+
+    if (product == null) {
+      throw Exception(
+        'Producto local $localProductId no existe en app_dat_producto',
+      );
+    }
+    if (product['id_tienda'] != expectedStoreId) {
+      throw Exception(
+        'Producto $localProductId (${product['denominacion']}) pertenece a '
+        'tienda ${product['id_tienda']}, no a la tienda activa '
+        '$expectedStoreId. No se puede sincronizar bajo una tienda ajena.',
+      );
+    }
+
+    // (b) Ubicación existe y su almacén pertenece a la misma tienda.
+    // Hacemos dos queries en lugar de un join anidado para evitar
+    // ambigüedades del cliente Supabase Dart con relaciones explícitas.
+    final layout = await _supabase
+        .from('app_dat_layout_almacen')
+        .select('id, id_almacen')
+        .eq('id', idUbicacion)
+        .maybeSingle();
+
+    if (layout == null) {
+      throw Exception(
+        'Ubicación $idUbicacion no existe en app_dat_layout_almacen',
+      );
+    }
+
+    final almacen = await _supabase
+        .from('app_dat_almacen')
+        .select('id, id_tienda, denominacion')
+        .eq('id', layout['id_almacen'])
+        .maybeSingle();
+
+    if (almacen == null) {
+      throw Exception(
+        'Almacén ${layout['id_almacen']} (referenciado por ubicación '
+        '$idUbicacion) no existe',
+      );
+    }
+    if (almacen['id_tienda'] != expectedStoreId) {
+      throw Exception(
+        'Ubicación $idUbicacion pertenece al almacén "${almacen['denominacion']}" '
+        'de la tienda ${almacen['id_tienda']}, no a la tienda activa '
+        '$expectedStoreId. Esto provocaría productos cruzados entre proveedores.',
+      );
+    }
+
+    // (c) Tienda local está vinculada a Carnaval y al proveedor esperado
+    final tienda = await _supabase
+        .from('app_dat_tienda')
+        .select('id, id_tienda_carnaval, admin_carnaval')
+        .eq('id', expectedStoreId)
+        .maybeSingle();
+
+    if (tienda == null) {
+      throw Exception('Tienda $expectedStoreId no existe');
+    }
+    if (tienda['admin_carnaval'] != true) {
+      throw Exception(
+        'Tienda $expectedStoreId no está sincronizada con Carnaval '
+        '(admin_carnaval=${tienda['admin_carnaval']}). '
+        'Sincroniza la tienda antes de añadir productos.',
+      );
+    }
+    if (tienda['id_tienda_carnaval'] != expectedCarnavalStoreId) {
+      throw Exception(
+        'Tienda $expectedStoreId está mapeada al proveedor Carnaval '
+        '${tienda['id_tienda_carnaval']}, no a $expectedCarnavalStoreId. '
+        'Recarga la pantalla para refrescar el ID de proveedor.',
+      );
+    }
+
+    return {
+      'product': product,
+      'layout': layout,
+      'almacen': almacen,
+      'tienda': tienda,
+    };
+  }
+
   /// Sincroniza un producto local con Carnaval App
   static Future<bool> syncProductToCarnaval({
     required int localProductId,
     required int carnavalCategoryId,
     required int carnavalStoreId,
     required int idUbicacion,
+    required int storeId,
   }) async {
     try {
       print('comenzando');
@@ -619,6 +726,16 @@ class CarnavalService {
         print('⚠️ Producto $localProductId ya está sincronizado en Carnaval');
         return false;
       }
+
+      // 0.1 Validación de integridad de la tupla
+      // (producto local <-> ubicación <-> tienda <-> proveedor Carnaval).
+      // Si algo no cuadra, abortar antes de tocar ninguna tabla.
+      await _validateRelationIntegrity(
+        localProductId: localProductId,
+        idUbicacion: idUbicacion,
+        expectedStoreId: storeId,
+        expectedCarnavalStoreId: carnavalStoreId,
+      );
 
       // 1. Obtener datos del producto local
       final productData =
@@ -728,7 +845,10 @@ class CarnavalService {
     } catch (e, stackTrace) {
       print('❌ Error al sincronizar producto: $e');
       print(stackTrace);
-      return false;
+      // Re-lanzar la excepción para que el caller pueda mostrar el motivo
+      // exacto al usuario (especialmente los mensajes de
+      // _validateRelationIntegrity). El caller decide cómo reportar.
+      rethrow;
     }
   }
 
@@ -992,11 +1112,45 @@ class CarnavalService {
     required int carnavalProductId,
     required int newLocationId,
     required int localProductId,
+    required int storeId,
+    required int carnavalStoreId,
   }) async {
     try {
       print(
         '🔧 Actualizando ubicación del producto Carnaval ID: $carnavalProductId a ubicación ID: $newLocationId',
       );
+
+      // 0. Validación de integridad de la tupla
+      // (producto local <-> nueva ubicación <-> tienda <-> proveedor Carnaval).
+      await _validateRelationIntegrity(
+        localProductId: localProductId,
+        idUbicacion: newLocationId,
+        expectedStoreId: storeId,
+        expectedCarnavalStoreId: carnavalStoreId,
+      );
+
+      // 0.1 Verificar que el producto Carnaval pertenece al proveedor esperado.
+      // Esto detecta el caso de que un id_vendedor_app local apunte a un
+      // Producto de otro proveedor (datos cruzados).
+      final carnavalProd = await _supabase
+          .schema('carnavalapp')
+          .from('Productos')
+          .select('id, proveedor')
+          .eq('id', carnavalProductId)
+          .maybeSingle();
+
+      if (carnavalProd == null) {
+        throw Exception(
+          'Producto Carnaval $carnavalProductId no existe en carnavalapp.Productos',
+        );
+      }
+      if (carnavalProd['proveedor'] != carnavalStoreId) {
+        throw Exception(
+          'Producto Carnaval $carnavalProductId pertenece al proveedor '
+          '${carnavalProd['proveedor']}, no a $carnavalStoreId. '
+          'Esto indica datos cruzados — re-sincroniza el producto.',
+        );
+      }
 
       // 1. Obtener nuevo stock de la ubicación
       final stockData =

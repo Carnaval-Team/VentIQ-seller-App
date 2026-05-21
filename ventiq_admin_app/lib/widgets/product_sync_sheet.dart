@@ -110,32 +110,65 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
 
     int successCount = 0;
     int failCount = 0;
+    // Lista de mensajes específicos por producto fallido. Útil para
+    // diagnosticar errores de integridad (producto/ubicación de otra tienda)
+    // que vienen de _validateRelationIntegrity en CarnavalService.
+    final List<String> failures = [];
 
     try {
       for (final item in _pendingProducts) {
-        final success = await CarnavalService.syncProductToCarnaval(
-          localProductId: item['product']['id'],
-          carnavalCategoryId: item['category']['id'],
-          carnavalStoreId: widget.carnavalStoreId,
-          idUbicacion: item['location']['id_ubicacion'],
-        );
+        final productName =
+            item['product']['denominacion']?.toString() ?? 'Producto sin nombre';
+        try {
+          final success = await CarnavalService.syncProductToCarnaval(
+            localProductId: item['product']['id'],
+            carnavalCategoryId: item['category']['id'],
+            carnavalStoreId: widget.carnavalStoreId,
+            idUbicacion: item['location']['id_ubicacion'],
+            storeId: widget.storeId,
+          );
 
-        if (success) {
-          successCount++;
-        } else {
+          if (success) {
+            successCount++;
+          } else {
+            failCount++;
+            failures.add('$productName: ya sincronizado o sin datos');
+          }
+        } catch (e) {
+          // Capturamos por-item para no abortar el batch entero ante un
+          // único fallo de validación (producto cruzado, ubicación de otra
+          // tienda, etc.).
           failCount++;
+          // Limpiar el prefijo "Exception: " del toString de Dart
+          final msg = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+          failures.add('$productName: $msg');
         }
       }
 
       if (mounted) {
         Navigator.of(context).pop(true); // Retornar true para recargar
 
+        // Construir mensaje resumido. Si hay fallos, mostrar hasta 3 razones
+        // específicas para que el usuario sepa qué corregir.
+        final buffer = StringBuffer(
+          'Sincronización finalizada: $successCount exitosos, $failCount fallidos',
+        );
+        if (failures.isNotEmpty) {
+          final shown = failures.take(3).join('\n• ');
+          buffer.write('\n• $shown');
+          if (failures.length > 3) {
+            buffer.write('\n(+${failures.length - 3} más en consola)');
+            for (final f in failures.skip(3)) {
+              print('⚠️ Sync fallido: $f');
+            }
+          }
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Sincronización finalizada: $successCount exitosos, $failCount fallidos',
-            ),
+            content: Text(buffer.toString()),
             backgroundColor: failCount == 0 ? Colors.green : Colors.orange,
+            duration: Duration(seconds: failures.isEmpty ? 3 : 8),
           ),
         );
       }
