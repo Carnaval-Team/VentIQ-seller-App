@@ -1078,6 +1078,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       // Actualizar inventario en cache
       for (final item in widget.order.items) {
+        // 🚫 No rebajar stock local de productos elaborados ni servicios.
+        // En el flujo online el backend descuenta los ingredientes en lugar
+        // del producto elaborado; al sincronizarse ocurrirá lo mismo. Si lo
+        // descontáramos aquí, el cache offline se quedaría sin stock (porque
+        // el "stock" de un elaborado se calcula dinámicamente a partir de
+        // sus ingredientes) y la cantidad se restaría dos veces.
+        if (item.producto.esElaborado || item.producto.esServicio) {
+          print(
+            '⏭️ OFFLINE - Omitiendo rebaja de stock local para '
+            '${item.producto.esElaborado ? "elaborado" : "servicio"}: '
+            '${item.producto.denominacion} (id=${item.producto.id})',
+          );
+          continue;
+        }
+
         final inventoryMetadata = item.inventoryData;
 
         if (inventoryMetadata != null) {

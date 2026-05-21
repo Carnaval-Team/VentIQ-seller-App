@@ -214,11 +214,11 @@ BEGIN
             -- Crear operación para este proveedor
             INSERT INTO public.app_dat_operaciones (
                 id_tipo_operacion, uuid, id_tienda,
-                observaciones, created_at
+                observaciones, created_at, id_carnaval_order
             ) VALUES (
                 v_tipo_operacion_id, v_usuario_operacion_uuid, v_tienda_id,
                 'Venta desde orden ' || v_order_record.id, 
-                now()
+                now(), v_order_record.id
             ) RETURNING id INTO v_operacion_id;
 
             -- Crear operación de venta para este proveedor
