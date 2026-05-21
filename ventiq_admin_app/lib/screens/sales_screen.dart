@@ -540,14 +540,55 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
+  bool _isVendorOrderCompleted(VendorOrder order) {
+    if (order.estado == 2) return true;
+    final estado = order.estadoNombre.toLowerCase();
+    return estado.contains('completad');
+  }
+
+  ({double efectivoOferta, double efectivoRegular, double transferencias})
+  _calculateVendorPaymentTotals(List<VendorOrder> orders) {
+    double totalEfectivoOferta = 0.0;
+    double totalEfectivoRegular = 0.0;
+    double totalTransferencias = 0.0;
+
+    for (final order in orders) {
+      if (order.detalles['pagos'] == null) continue;
+      final pagos = order.detalles['pagos'] as List;
+      for (final pago in pagos) {
+        final metodoPago = pago['medio_pago']?.toString().toLowerCase() ?? '';
+        final total = (pago['total'] ?? 0.0).toDouble();
+        final esEfectivo = pago['es_efectivo'] ?? false;
+        final tipoPago = pago['tipo_pago'] ?? 1;
+
+        if (esEfectivo && metodoPago.contains('efectivo')) {
+          if (tipoPago == 1) {
+            totalEfectivoOferta += total;
+          } else if (tipoPago == 2) {
+            totalEfectivoRegular += total;
+          }
+        } else if (metodoPago.contains('transferencia')) {
+          totalTransferencias += total;
+        }
+      }
+    }
+
+    return (
+      efectivoOferta: totalEfectivoOferta,
+      efectivoRegular: totalEfectivoRegular,
+      transferencias: totalTransferencias,
+    );
+  }
+
   Future<void> _exportVendorOrdersToPdf({
     required SalesVendorReport vendor,
     required List<VendorOrder> orders,
-    required double totalEfectivoOferta,
-    required double totalEfectivoRegular,
-    required double totalTransferencias,
   }) async {
     if (orders.isEmpty) return;
+
+    final completedOrders =
+        orders.where(_isVendorOrderCompleted).toList();
+    final paymentTotals = _calculateVendorPaymentTotals(completedOrders);
 
     final dateRange = _getDateRange();
     final start = dateRange['start']!;
@@ -574,9 +615,12 @@ class _SalesScreenState extends State<SalesScreen>
 
       final dateLabel =
           '${_formatDateForPdf(start)} - ${_formatDateForPdf(end)}';
-      final totalVentas = orders.fold<double>(
+      final totalVentas = completedOrders.fold<double>(
         0.0,
-        (sum, o) => sum + o.totalOperacion,
+        (sum, o) {
+          final summary = _calculateDiscountSummary(o);
+          return sum + (summary['cobrado'] ?? o.totalOperacion);
+        },
       );
 
       final pdf = pw.Document();
@@ -600,9 +644,9 @@ class _SalesScreenState extends State<SalesScreen>
                 _buildVendorOrdersPdfSummary(
                   orderCount: orders.length,
                   totalVentas: totalVentas,
-                  totalEfectivoOferta: totalEfectivoOferta,
-                  totalEfectivoRegular: totalEfectivoRegular,
-                  totalTransferencias: totalTransferencias,
+                  totalEfectivoOferta: paymentTotals.efectivoOferta,
+                  totalEfectivoRegular: paymentTotals.efectivoRegular,
+                  totalTransferencias: paymentTotals.transferencias,
                 ),
                 pw.SizedBox(height: 16),
                 pw.Text(
@@ -720,7 +764,20 @@ class _SalesScreenState extends State<SalesScreen>
             ],
           ),
           pw.SizedBox(height: 4),
+          pw.Text(
+            'Totales de ventas y métodos de pago: solo órdenes completadas',
+            style: pw.TextStyle(
+              fontSize: 9,
+              fontStyle: pw.FontStyle.italic,
+              color: PdfColor.fromHex('#64748B'),
+            ),
+          ),
+          pw.SizedBox(height: 4),
           _pdfSummaryRow('Total ventas', totalVentas),
+          if (totalEfectivoOferta > 0 ||
+              totalEfectivoRegular > 0 ||
+              totalTransferencias > 0)
+            pw.SizedBox(height: 4),
           if (totalEfectivoOferta > 0)
             _pdfSummaryRow('Efectivo (Oferta)', totalEfectivoOferta),
           if (totalEfectivoRegular > 0)
@@ -5112,34 +5169,12 @@ class _SalesScreenState extends State<SalesScreen>
 
       if (!mounted) return;
 
-      // Calcular totales separados por tipo de pago
-      double totalEfectivoOferta = 0.0; // tipo_pago = 1
-      double totalEfectivoRegular = 0.0; // tipo_pago = 2
-      double totalTransferencias = 0.0;
-
-      for (final order in orders) {
-        if (order.detalles['pagos'] != null) {
-          final pagos = order.detalles['pagos'] as List;
-          for (final pago in pagos) {
-            final metodoPago =
-                pago['medio_pago']?.toString().toLowerCase() ?? '';
-            final total = (pago['total'] ?? 0.0).toDouble();
-            final esEfectivo = pago['es_efectivo'] ?? false;
-            final tipoPago = pago['tipo_pago'] ?? 1;
-
-            if (esEfectivo && metodoPago.contains('efectivo')) {
-              // Separar efectivo por tipo_pago
-              if (tipoPago == 1) {
-                totalEfectivoOferta += total;
-              } else if (tipoPago == 2) {
-                totalEfectivoRegular += total;
-              }
-            } else if (metodoPago.contains('transferencia')) {
-              totalTransferencias += total;
-            }
-          }
-        }
-      }
+      final completedOrders =
+          orders.where(_isVendorOrderCompleted).toList();
+      final paymentTotals = _calculateVendorPaymentTotals(completedOrders);
+      final totalEfectivoOferta = paymentTotals.efectivoOferta;
+      final totalEfectivoRegular = paymentTotals.efectivoRegular;
+      final totalTransferencias = paymentTotals.transferencias;
 
       showModalBottomSheet(
         context: context,
@@ -5327,12 +5362,6 @@ class _SalesScreenState extends State<SalesScreen>
                                         : () => _exportVendorOrdersToPdf(
                                           vendor: vendor,
                                           orders: orders,
-                                          totalEfectivoOferta:
-                                              totalEfectivoOferta,
-                                          totalEfectivoRegular:
-                                              totalEfectivoRegular,
-                                          totalTransferencias:
-                                              totalTransferencias,
                                         ),
                                 icon: const Icon(
                                   Icons.picture_as_pdf_outlined,
