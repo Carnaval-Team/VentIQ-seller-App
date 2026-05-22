@@ -2123,7 +2123,8 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                   (sum, loc) =>
                                       sum + ((loc['pendiente_carnaval'] as num?)?.toDouble() ?? 0.0),
                                 );
-                                final totalReal = (totalQuantity - totalReservadoCarnaval - totalPendienteCarnaval).clamp(0.0, double.infinity);
+                                final totalSistema = totalQuantity;
+                                final totalReal = totalQuantity + totalPendienteCarnaval;
 
                                 if (snapshot.connectionState ==
                                         ConnectionState.done &&
@@ -2185,7 +2186,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                                         ),
                                                       ),
                                                       child: Text(
-                                                        'Sistema: ${totalReal.toStringAsFixed(2)} unidades',
+                                                        'Sistema: ${totalSistema.toStringAsFixed(2)} unidades',
                                                         style: TextStyle(
                                                           fontSize: 11,
                                                           fontWeight:
@@ -2298,7 +2299,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                                       final locCantidad = loc['cantidad'] as double;
                                                       final locReservado = ((loc['reservado_carnaval'] as num?)?.toDouble() ?? 0.0);
                                                       final locPendiente = ((loc['pendiente_carnaval'] as num?)?.toDouble() ?? 0.0);
-                                                      final locReal = (locCantidad - locReservado - locPendiente).clamp(0.0, double.infinity);
+                                                      final locReal = locCantidad;
                                                       return Padding(
                                                         padding:
                                                             const EdgeInsets.only(
