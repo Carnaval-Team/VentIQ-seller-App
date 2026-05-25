@@ -13,7 +13,11 @@
       "Bash(curl:*)",
       "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch:*)",
       "Bash(xargs wc:*)",
-      "Bash(xargs -I {} basename {})"
+      "Bash(xargs -I {} basename {})",
+      "Bash(Get-ChildItem *)",
+      "Bash(dir .\\\\inventtia_muevete\\\\docs\\\\migrations\\\\ *)",
+      "mcp__ide__getDiagnostics",
+      "WebFetch(domain:vsieeihstajlrdvpuooh.supabase.co)"
     ]
   },
   "disabledMcpjsonServers": [
