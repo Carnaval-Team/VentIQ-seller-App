@@ -428,14 +428,17 @@ class _SalesScreenState extends State<SalesScreen>
         }
       }
 
-      final costoTotal = productReports.fold<double>(
+      // Calcular en CUP puro con fallback: si precioCostoCup == 0 usar precioCosto * valorUsd
+      final costoTotal = productReports.fold<double>(0.0, (sum, p) {
+        final cu = p.precioCostoCup > 0 ? p.precioCostoCup : p.precioCosto * p.valorUsd;
+        return sum + cu * p.totalVendido;
+      });
+      // Ingresos CUP = precioVentaCup * totalVendido (para consistencia con la tabla)
+      final ventaTotalCup = productReports.fold<double>(
         0.0,
-        (sum, p) => sum + p.costoTotalVendido,
+        (sum, p) => sum + p.precioVentaCup * p.totalVendido,
       );
-      final gananciaTotal = productReports.fold<double>(
-        0.0,
-        (sum, p) => sum + p.gananciaTotal,
-      );
+      final gananciaTotal = ventaTotalCup - costoTotal;
       final gananciasReales = (ventaTotal - descuentoTotal) - costoTotal;
 
       final pdf = pw.Document();
@@ -1491,10 +1494,11 @@ class _SalesScreenState extends State<SalesScreen>
         ),
       );
 
-    final totalGanancia = sorted.fold<double>(
-      0.0,
-      (sum, p) => sum + p.gananciaTotal,
-    );
+    // Ganancia en CUP puro con fallback: si precioCostoCup == 0 usar precioCosto * valorUsd
+    final totalGanancia = sorted.fold<double>(0.0, (sum, p) {
+      final cu = p.precioCostoCup > 0 ? p.precioCostoCup : p.precioCosto * p.valorUsd;
+      return sum + (p.precioVentaCup - cu) * p.totalVendido;
+    });
     final totalGananciaColor =
         totalGanancia < 0
             ? PdfColor.fromHex('#DC2626')
@@ -1523,10 +1527,13 @@ class _SalesScreenState extends State<SalesScreen>
           ],
         ),
         ...sorted.map((p) {
+          final costoUnitPdf = p.precioCostoCup > 0 ? p.precioCostoCup : p.precioCosto * p.valorUsd;
+          final gananciaLinea =
+              (p.precioVentaCup - costoUnitPdf) * p.totalVendido;
           final gananciaColor =
-              p.gananciaTotal < 0
+              gananciaLinea < 0
                   ? PdfColor.fromHex('#DC2626')
-                  : p.gananciaTotal > 0
+                  : gananciaLinea > 0
                   ? PdfColor.fromHex('#15803D')
                   : PdfColor.fromHex('#334155');
           return pw.TableRow(
@@ -1536,7 +1543,7 @@ class _SalesScreenState extends State<SalesScreen>
               _pdfBodyCell('\$${p.precioVentaCup.toStringAsFixed(2)}'),
               _pdfBodyCell('\$${p.precioCostoCup.toStringAsFixed(2)}'),
               _pdfBodyCell(
-                '\$${p.gananciaTotal.toStringAsFixed(2)}',
+                '\$${gananciaLinea.toStringAsFixed(2)}',
                 isBold: true,
                 color: gananciaColor,
               ),
@@ -1743,7 +1750,7 @@ class _SalesScreenState extends State<SalesScreen>
 
       switch (_tabController.index) {
         case 2: // Suppliers
-          _loadSupplierReports();
+          // _loadSupplierReports se ejecuta automáticamente tras _loadProductSalesData
           break;
         case 3: // Desglose ventas
           if (_salesBreakdownFuture == null) {
@@ -1762,9 +1769,7 @@ class _SalesScreenState extends State<SalesScreen>
             if (!_isLoadingAnalysis && _productAnalysis.isEmpty) {
               _loadProductAnalysis();
             }
-            if (!_isLoadingSuppliers && _supplierReports.isEmpty) {
-              _loadSupplierReports();
-            }
+            // _loadSupplierReports se ejecuta automáticamente tras _loadProductSalesData
           }
           break;
       }
@@ -1884,6 +1889,9 @@ class _SalesScreenState extends State<SalesScreen>
         _isLoadingProducts = false;
         _isLoadingMetrics = false;
       });
+
+      // Siempre recalcular proveedores desde los mismos datos
+      await _loadSupplierReports();
     } catch (e) {
       setState(() {
         _isLoadingProducts = false;
@@ -1992,35 +2000,44 @@ class _SalesScreenState extends State<SalesScreen>
     if (!mounted) return;
     setState(() => _isLoadingSuppliers = true);
     try {
-      final detailedSales = await SalesService.getProductSalesWithSupplier(
-        fechaDesde: _startDate,
-        fechaHasta: _endDate,
-        idAlmacen: _selectedWarehouseId,
-      );
-
-      // Agrupación local por proveedor
+      // Usar _productSalesReports (misma fuente de datos que el tab de productos)
+      // para garantizar totales idénticos entre ambos tabs.
       final Map<int, SupplierSalesReport> groupedReports = {};
 
-      for (var sale in detailedSales) {
-        if (groupedReports.containsKey(sale.idProveedor)) {
-          final current = groupedReports[sale.idProveedor]!;
-          groupedReports[sale.idProveedor] = SupplierSalesReport(
+      for (final report in _productSalesReports) {
+        // Misma lógica de enteros truncados que la tabla de productos
+        final cantInt = report.totalVendido.truncate();
+        final precioInt = report.precioVentaCup.truncate();
+        final ingresosCup = precioInt * cantInt;
+        final costoUnitInt = (report.precioCostoCup > 0
+                ? report.precioCostoCup
+                : report.precioCosto * report.valorUsd)
+            .truncate();
+        final costoCup = costoUnitInt * cantInt;
+        final gananciaCup = ingresosCup - costoCup;
+
+        final idProv = report.idProveedor;
+        final nomProv = report.nombreProveedor;
+
+        if (groupedReports.containsKey(idProv)) {
+          final current = groupedReports[idProv]!;
+          groupedReports[idProv] = SupplierSalesReport(
             idProveedor: current.idProveedor,
             nombreProveedor: current.nombreProveedor,
-            totalVentas: current.totalVentas + sale.ingresosTotales,
-            totalCosto: current.totalCosto + sale.costoTotalVendido,
-            totalGanancia: current.totalGanancia + sale.gananciaTotal,
-            cantidadProductos: current.cantidadProductos + sale.totalVendido,
+            totalVentas: current.totalVentas + ingresosCup.toDouble(),
+            totalCosto: current.totalCosto + costoCup.toDouble(),
+            totalGanancia: current.totalGanancia + gananciaCup.toDouble(),
+            cantidadProductos: current.cantidadProductos + cantInt.toDouble(),
             margenPorcentaje: 0,
           );
         } else {
-          groupedReports[sale.idProveedor] = SupplierSalesReport(
-            idProveedor: sale.idProveedor,
-            nombreProveedor: sale.nombreProveedor,
-            totalVentas: sale.ingresosTotales,
-            totalCosto: sale.costoTotalVendido,
-            totalGanancia: sale.gananciaTotal,
-            cantidadProductos: sale.totalVendido,
+          groupedReports[idProv] = SupplierSalesReport(
+            idProveedor: idProv,
+            nombreProveedor: nomProv,
+            totalVentas: ingresosCup.toDouble(),
+            totalCosto: costoCup.toDouble(),
+            totalGanancia: gananciaCup.toDouble(),
+            cantidadProductos: cantInt.toDouble(),
             margenPorcentaje: 0,
           );
         }
@@ -2029,10 +2046,9 @@ class _SalesScreenState extends State<SalesScreen>
       // Calcular márgenes finales y convertir a lista
       final List<SupplierSalesReport> reports =
           groupedReports.values.map((item) {
-            double margen = 0;
-            if (item.totalVentas > 0) {
-              margen = (item.totalGanancia / item.totalVentas) * 100;
-            }
+            final margen = item.totalVentas > 0
+                ? (item.totalGanancia / item.totalVentas) * 100
+                : 0.0;
             return SupplierSalesReport(
               idProveedor: item.idProveedor,
               nombreProveedor: item.nombreProveedor,
@@ -2044,7 +2060,6 @@ class _SalesScreenState extends State<SalesScreen>
             );
           }).toList();
 
-      // Ordenar por total ventas descendente
       reports.sort((a, b) => b.totalVentas.compareTo(a.totalVentas));
 
       if (mounted) {
@@ -2319,7 +2334,8 @@ class _SalesScreenState extends State<SalesScreen>
                                       )['denominacion']
                                       : null;
                             });
-                            _loadSupplierReports();
+                            // Recargar productos (encadena _loadSupplierReports internamente)
+                            _loadProductSalesData();
                           },
                         ),
               ),
@@ -4318,10 +4334,17 @@ class _SalesScreenState extends State<SalesScreen>
                         b.nombreProducto.toLowerCase(),
                       ),
                     )).map((report) {
-                    // Calculate total cost CUP and profit
-                    final totalCostoCup =
-                        report.precioCostoCup * report.totalVendido;
-                    final ganancias = report.ingresosTotales - totalCostoCup;
+                    // Usar enteros para que el total coincida exactamente con lo visible
+                    final cantInt = report.totalVendido.truncate();
+                    final precioVentaInt = report.precioVentaCup.truncate();
+                    final ingresosCup = precioVentaInt * cantInt;
+                    // Costo unitario CUP (entero): usar precioCostoCup si existe,
+                    // sino convertir precioCosto(USD) * valorUsd
+                    final costoUnitarioCup = (report.precioCostoCup > 0
+                        ? report.precioCostoCup
+                        : report.precioCosto * report.valorUsd).truncate();
+                    final totalCostoCup = costoUnitarioCup * cantInt;
+                    final ganancias = ingresosCup - totalCostoCup;
 
                     return DataRow(
                       cells: [
@@ -4342,7 +4365,7 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                         DataCell(
                           Text(
-                            '\$${report.precioVentaCup.toStringAsFixed(0)}',
+                            '\$$precioVentaInt',
                             style: const TextStyle(color: AppColors.info),
                           ),
                         ),
@@ -4354,7 +4377,7 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                         DataCell(
                           Text(
-                            '\$${report.ingresosTotales.toStringAsFixed(0)}',
+                            '\$${ingresosCup.toStringAsFixed(0)}',
                             style: const TextStyle(
                               color: AppColors.success,
                               fontWeight: FontWeight.bold,
@@ -4363,7 +4386,7 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                         DataCell(
                           Text(
-                            '\$${report.precioCostoCup.toStringAsFixed(0)}',
+                            '\$${costoUnitarioCup.toStringAsFixed(0)}',
                             style: const TextStyle(color: AppColors.warning),
                           ),
                         ),
@@ -4419,7 +4442,7 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                         DataCell(
                           Text(
-                            '\$${_productSalesReports.fold(0.0, (sum, report) => sum + report.ingresosTotales).toStringAsFixed(0)}',
+                            '\$${_productSalesReports.fold(0, (sum, r) => sum + r.precioVentaCup.truncate() * r.totalVendido.truncate())}',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.success,
@@ -4429,7 +4452,10 @@ class _SalesScreenState extends State<SalesScreen>
                         const DataCell(Text('-')), // No average cost
                         DataCell(
                           Text(
-                            '\$${_productSalesReports.fold(0.0, (sum, report) => sum + (report.precioCostoCup * report.totalVendido)).toStringAsFixed(0)}',
+                            '\$${_productSalesReports.fold(0, (sum, r) {
+                              final cu = (r.precioCostoCup > 0 ? r.precioCostoCup : r.precioCosto * r.valorUsd).truncate();
+                              return sum + cu * r.totalVendido.truncate();
+                            })}',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.warning,
@@ -4437,29 +4463,21 @@ class _SalesScreenState extends State<SalesScreen>
                           ),
                         ),
                         DataCell(
-                          Text(
-                            '\$${(_productSalesReports.fold(0.0, (sum, report) => sum + report.ingresosTotales) - _productSalesReports.fold(0.0, (sum, report) => sum + (report.precioCostoCup * report.totalVendido))).toStringAsFixed(0)}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color:
-                                  (_productSalesReports.fold(
-                                                0.0,
-                                                (sum, report) =>
-                                                    sum +
-                                                    report.ingresosTotales,
-                                              ) -
-                                              _productSalesReports.fold(
-                                                0.0,
-                                                (sum, report) =>
-                                                    sum +
-                                                    (report.precioCostoCup *
-                                                        report.totalVendido),
-                                              )) >=
-                                          0
-                                      ? AppColors.success
-                                      : AppColors.error,
-                            ),
-                          ),
+                          Builder(builder: (context) {
+                            final totalIngresos = _productSalesReports.fold(0, (sum, r) => sum + r.precioVentaCup.truncate() * r.totalVendido.truncate());
+                            final totalCosto = _productSalesReports.fold(0, (sum, r) {
+                              final cu = (r.precioCostoCup > 0 ? r.precioCostoCup : r.precioCosto * r.valorUsd).truncate();
+                              return sum + cu * r.totalVendido.truncate();
+                            });
+                            final totalGan = totalIngresos - totalCosto;
+                            return Text(
+                              '\$${totalGan.toStringAsFixed(0)}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: totalGan >= 0 ? AppColors.success : AppColors.error,
+                              ),
+                            );
+                          }),
                         ),
                       ],
                     ),
@@ -5039,9 +5057,8 @@ class _SalesScreenState extends State<SalesScreen>
       });
 
       // Reload data with new date range
-      _loadProductSalesData();
+      _loadProductSalesData(); // encadena _loadSupplierReports internamente
       _loadVendorReports();
-      _loadSupplierReports();
       _loadProductAnalysis();
     }
   }

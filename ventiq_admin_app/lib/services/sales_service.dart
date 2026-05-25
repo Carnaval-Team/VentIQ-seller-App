@@ -59,6 +59,8 @@ class ProductSalesReport {
   final int idTienda;
   final int idProducto;
   final String nombreProducto;
+  final int idProveedor;
+  final String nombreProveedor;
   final double precioVentaCup;
   final double precioCosto;
   final double valorUsd;
@@ -73,6 +75,8 @@ class ProductSalesReport {
     required this.idTienda,
     required this.idProducto,
     required this.nombreProducto,
+    this.idProveedor = 0,
+    this.nombreProveedor = 'Sin Proveedor',
     required this.precioVentaCup,
     required this.precioCosto,
     required this.valorUsd,
@@ -89,6 +93,8 @@ class ProductSalesReport {
       idTienda: json['id_tienda'] ?? 0,
       idProducto: json['id_producto'] ?? 0,
       nombreProducto: json['nombre_producto'] ?? '',
+      idProveedor: (json['id_proveedor'] ?? 0) as int,
+      nombreProveedor: json['nombre_proveedor'] ?? 'Sin Proveedor',
       precioVentaCup: (json['precio_venta_cup'] ?? 0).toDouble(),
       precioCosto: (json['precio_costo'] ?? 0).toDouble(),
       valorUsd: (json['valor_usd'] ?? 1).toDouble(),
@@ -284,7 +290,7 @@ class SalesService {
       // ✅ CAMBIO: Usar fn_reporte_ventas_gananciasv5_por_presentacion que agrupa por producto-presentación
       // y usa precio_promedio de app_dat_producto_presentacion como costo real
       final response = await _supabase.rpc(
-        'fn_reporte_ventas_gananciasv5',
+        'fn_reporte_ventas_con_proveedor2',
         params: params,
       );
 
