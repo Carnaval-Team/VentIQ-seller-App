@@ -1,9 +1,21 @@
 {
-  "current_version": "2.2.2",
-  "build": 222,
+  "current_version": "2.2.3",
+  "build": 223,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.2.3",
+      "date": "2026-05-25",
+      "title": "🔢 Cálculos exactos en reportes de ventas",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Costos calculados en CUP",
+          "description": "El costo unitario ahora se toma del precio en CUP ya convertido."
+        }
+      ]
+    },
     {
       "version": "2.2.2",
       "date": "2026-05-22",
