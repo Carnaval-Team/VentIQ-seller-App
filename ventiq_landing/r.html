@@ -3,171 +3,443 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Codigo de referido - Carnaval Tienda</title>
-    <meta name="description" content="Activa tu codigo de referido para Carnaval Tienda y descarga la app desde Google Play o App Store.">
+    <title>Carnaval App — Descarga la app y empieza a disfrutar</title>
+    <meta name="description" content="Descarga Carnaval App: compras, comida y delivery desde tu celular. Activa tu invitación con un solo toque desde Google Play o App Store.">
     <meta name="robots" content="noindex, nofollow">
-    <link rel="icon" type="image/png" href="assets/images/ic.png">
+    <meta name="theme-color" content="#FF8A17">
+    <link rel="icon" type="image/png" href="assets/images/carnaval-logo.png">
+    <link rel="apple-touch-icon" href="assets/images/carnaval-logo.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            color-scheme: light dark;
+            color-scheme: light;
+            --c-orange: #FF8A17;
+            --c-orange-dark: #E5730A;
+            --c-orange-soft: #FFF1E1;
+            --c-ink: #1A1A1A;
+            --c-ink-soft: #5A5A5A;
+            --c-bg: #FFF8F1;
+            --c-white: #FFFFFF;
         }
         * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; }
         body {
-            margin: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--c-bg);
+            color: var(--c-ink);
+            -webkit-font-smoothing: antialiased;
+            -webkit-text-size-adjust: 100%;
             min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Decorative gradient blobs */
+        .bg-decor {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        .bg-decor::before,
+        .bg-decor::after {
+            content: '';
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.55;
+        }
+        .bg-decor::before {
+            width: 360px; height: 360px;
+            background: radial-gradient(circle, #FFB36A 0%, transparent 70%);
+            top: -120px; right: -120px;
+        }
+        .bg-decor::after {
+            width: 420px; height: 420px;
+            background: radial-gradient(circle, #FFD8B0 0%, transparent 70%);
+            bottom: -160px; left: -140px;
+        }
+
+        .wrap {
+            position: relative;
+            z-index: 1;
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 28px 20px 40px;
+        }
+
+        /* Top bar */
+        .topbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+        .topbar img {
+            width: 38px; height: 38px;
+            border-radius: 10px;
+            background: #E11D2A;
+            padding: 4px;
+            box-shadow: 0 6px 18px rgba(225,29,42,0.35);
+            object-fit: contain;
+        }
+        .topbar .brand {
+            font-weight: 800;
+            font-size: 18px;
+            letter-spacing: -0.2px;
+        }
+        .topbar .brand span { color: var(--c-orange); }
+
+        /* Hero card */
+        .hero {
+            background: var(--c-white);
+            border-radius: 24px;
+            padding: 28px 22px 24px;
+            box-shadow: 0 20px 50px rgba(255,138,23,0.18), 0 4px 14px rgba(0,0,0,0.04);
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 6px;
+            background: linear-gradient(90deg, #FF8A17 0%, #FFB36A 50%, #FF8A17 100%);
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--c-orange-soft);
+            color: var(--c-orange-dark);
+            font-size: 12px;
+            font-weight: 700;
+            padding: 6px 12px;
+            border-radius: 100px;
+            margin-bottom: 14px;
+            letter-spacing: 0.2px;
+            text-transform: uppercase;
+        }
+        .badge::before {
+            content: '🎁';
+            font-size: 13px;
+        }
+
+        .hero h1 {
+            margin: 0 0 10px;
+            font-size: 26px;
+            line-height: 1.2;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+        .hero h1 span { color: var(--c-orange); }
+
+        .hero p.lead {
+            margin: 0 0 18px;
+            font-size: 15px;
+            line-height: 1.55;
+            color: var(--c-ink-soft);
+        }
+
+        .hero-card {
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
-            color: #1a1a1a;
-            -webkit-text-size-adjust: 100%;
-        }
-        .card {
-            background: #ffffff;
-            border-radius: 18px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-            max-width: 420px;
             width: 100%;
-            padding: 32px 24px;
+            max-width: 320px;
+            margin: 4px auto 18px;
+            border-radius: 20px;
+            aspect-ratio: 16 / 9;
+            background: radial-gradient(circle at 30% 20%, #FF3340 0%, #E11D2A 55%, #B5121E 100%);
+            box-shadow: 0 14px 32px rgba(225,29,42,0.40), inset 0 0 0 1px rgba(255,255,255,0.08);
+            position: relative;
+            overflow: hidden;
+        }
+        .hero-card::before,
+        .hero-card::after {
+            content: '';
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(2px);
+            opacity: 0.18;
+            background: #fff;
+        }
+        .hero-card::before {
+            width: 90px; height: 90px;
+            top: -22px; right: -18px;
+        }
+        .hero-card::after {
+            width: 60px; height: 60px;
+            bottom: -14px; left: -10px;
+        }
+        .hero-card img {
+            position: relative;
+            z-index: 1;
+            width: 58%;
+            max-width: 170px;
+            height: auto;
+            filter: drop-shadow(0 10px 20px rgba(0,0,0,0.25));
+        }
+
+        /* CTA */
+        .cta {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            background: linear-gradient(135deg, #FF8A17 0%, #FF6B00 100%);
+            color: #fff;
+            border: 0;
+            padding: 16px 22px;
+            border-radius: 14px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            font-family: inherit;
+            text-decoration: none;
+            box-shadow: 0 12px 26px rgba(255,107,0,0.38);
+            transition: transform 0.08s ease, box-shadow 0.2s ease, background 0.2s ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .cta:hover { box-shadow: 0 14px 30px rgba(255,107,0,0.45); }
+        .cta:active { transform: scale(0.98); }
+        .cta svg { width: 22px; height: 22px; flex-shrink: 0; }
+        .cta.loading { pointer-events: none; opacity: 0.85; }
+
+        .cta-hint {
+            margin-top: 10px;
+            font-size: 12px;
+            color: var(--c-ink-soft);
+            line-height: 1.45;
+        }
+
+        /* Referral chip */
+        .ref-chip {
+            margin-top: 20px;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            background: var(--c-orange-soft);
+            border-radius: 14px;
+            padding: 12px 18px;
+            border: 1px dashed rgba(255,138,23,0.45);
+        }
+        .ref-chip .label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--c-orange-dark);
+            margin-bottom: 2px;
+        }
+        .ref-chip .code {
+            font-family: 'SF Mono', Consolas, 'Roboto Mono', monospace;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--c-ink);
+            letter-spacing: 2px;
+        }
+
+        /* Benefits */
+        .benefits {
+            margin-top: 26px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .benefit {
+            background: var(--c-white);
+            border-radius: 14px;
+            padding: 14px 12px;
+            text-align: left;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+        }
+        .benefit .ic {
+            width: 36px; height: 36px;
+            border-radius: 10px;
+            background: var(--c-orange-soft);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+        .benefit .t {
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.25;
+            margin-bottom: 2px;
+        }
+        .benefit .d {
+            font-size: 11.5px;
+            color: var(--c-ink-soft);
+            line-height: 1.35;
+        }
+
+        /* Status (toast) */
+        .toast {
+            position: fixed;
+            left: 50%;
+            bottom: 22px;
+            transform: translateX(-50%) translateY(120%);
+            background: #1a1a1a;
+            color: #fff;
+            padding: 12px 18px;
+            border-radius: 100px;
+            font-size: 13px;
+            font-weight: 600;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+            transition: transform 0.35s cubic-bezier(.2,.9,.3,1.2);
+            z-index: 10;
+            max-width: 90%;
             text-align: center;
         }
-        .logo {
-            width: 72px;
-            height: 72px;
-            margin: 0 auto 16px;
-            border-radius: 18px;
-            background: #fff7ed;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 36px;
+        .toast.show { transform: translateX(-50%) translateY(0); }
+        .toast .dot {
+            display: inline-block;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #4ade80;
+            margin-right: 8px;
+            vertical-align: middle;
         }
-        h1 {
-            margin: 0 0 8px;
-            font-size: 22px;
-            font-weight: 700;
-        }
-        p {
-            margin: 0 0 20px;
-            font-size: 14px;
-            color: #555;
-            line-height: 1.5;
-        }
-        .code-box {
-            font-family: "SF Mono", Consolas, "Roboto Mono", monospace;
-            font-size: 24px;
-            font-weight: 700;
-            letter-spacing: 3px;
-            background: #fff7ed;
-            border: 1px dashed #ff6b35;
-            color: #d24a00;
-            padding: 14px;
-            border-radius: 10px;
-            margin: 0 0 16px;
-            /* iOS necesita estos para que la seleccion manual funcione bien */
-            -webkit-user-select: all;
-            -moz-user-select: all;
-            -ms-user-select: all;
-            user-select: all;
-            -webkit-touch-callout: default;
-            cursor: text;
-            word-break: break-all;
-        }
-        /* Campo de respaldo: textarea visible que iOS puede seleccionar al
-           tocar/mantener pulsado. Lo dejamos pequeño pero accesible. */
+
+        /* Manual copy fallback (hidden by default) */
         .manual-copy {
             display: none;
-            margin: 0 0 16px;
+            margin-top: 14px;
         }
         .manual-copy textarea {
             width: 100%;
-            font-family: "SF Mono", Consolas, "Roboto Mono", monospace;
-            font-size: 16px; /* >=16 evita zoom al enfocar en iOS */
+            font-family: 'SF Mono', Consolas, 'Roboto Mono', monospace;
+            font-size: 16px;
             font-weight: 700;
             text-align: center;
             padding: 12px;
-            border: 1px dashed #ff6b35;
-            border-radius: 10px;
-            background: #fff7ed;
-            color: #d24a00;
+            border: 1px dashed var(--c-orange);
+            border-radius: 12px;
+            background: var(--c-orange-soft);
+            color: var(--c-orange-dark);
             resize: none;
             -webkit-appearance: none;
             appearance: none;
         }
         .manual-copy .hint {
             font-size: 11px;
-            color: #888;
+            color: var(--c-ink-soft);
             margin-top: 6px;
+            text-align: center;
         }
-        .status {
-            font-size: 13px;
-            color: #2e7d32;
-            margin: 0 0 18px;
-            min-height: 18px;
-            line-height: 1.4;
+
+        /* Footer */
+        .foot {
+            margin-top: 26px;
+            text-align: center;
+            font-size: 11.5px;
+            color: var(--c-ink-soft);
+            line-height: 1.5;
         }
-        .status.error { color: #c62828; }
-        .status.warn { color: #ef6c00; }
-        .btn {
-            display: inline-block;
-            background: #ff6b35;
-            color: #fff;
-            text-decoration: none;
-            padding: 14px 24px;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 15px;
-            width: 100%;
-            border: 0;
-            cursor: pointer;
-            transition: transform 0.08s ease, background 0.15s ease;
-            font-family: inherit;
-        }
-        .btn:hover { background: #e85a2a; }
-        .btn:active { transform: scale(0.98); }
-        .btn[disabled] { opacity: 0.5; pointer-events: none; }
-        .btn.secondary {
-            background: transparent;
-            color: #ff6b35;
-            border: 1px solid #ff6b35;
-            margin-top: 10px;
-        }
-        .small {
-            font-size: 11px;
-            color: #888;
-            margin-top: 18px;
-            line-height: 1.4;
-        }
-        .countdown {
-            font-weight: 700;
-            color: #ff6b35;
+        .foot a { color: var(--c-orange-dark); text-decoration: none; font-weight: 600; }
+
+        @media (max-width: 360px) {
+            .hero h1 { font-size: 22px; }
+            .benefits { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
-    <main class="card">
-        <div class="logo">🎁</div>
-        <h1>Tu codigo de referido</h1>
-        <p id="intro">Toca <b>Copiar</b> y luego abre la tienda para instalar la app. Al registrarte se aplicara automaticamente.</p>
-        <div id="code" class="code-box" tabindex="0">--------</div>
-        <div id="manualCopy" class="manual-copy">
-            <textarea id="manualCopyText" rows="2" readonly autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
-            <div class="hint">Manten pulsado el texto y elige "Copiar" si el boton no funciona.</div>
+    <div class="bg-decor"></div>
+
+    <div class="wrap">
+        <div class="topbar">
+            <img src="assets/images/carnaval-logo.png" alt="Carnaval App">
+            <div class="brand">Carnaval<span>·</span>App</div>
         </div>
-        <div id="status" class="status">Toca "Copiar codigo" para empezar.</div>
-        <button id="copyBtn" class="btn" type="button">Copiar codigo</button>
-        <a id="goStore" class="btn secondary" href="#" rel="noopener">Abrir tienda</a>
-        <p class="small">Te llevamos a Google Play o App Store segun tu dispositivo. Al abrir la app por primera vez se aplica solo.</p>
-    </main>
+
+        <main class="hero">
+            <div class="badge">Invitación especial</div>
+            <h1>Tu compra <span>premiada</span> empieza aquí.</h1>
+            <p class="lead">
+                Compras, comida y delivery directo a tu puerta. Descarga
+                <b>Carnaval App</b> y aprovecha los beneficios de tu invitación —
+                se activa sola al abrir la app.
+            </p>
+
+            <!-- <div class="hero-card">
+                <img src="assets/images/carnaval-logo.png" alt="Carnaval App">
+            </div> -->
+
+            <button id="ctaBtn" class="cta" type="button">
+                <svg id="ctaIcon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span id="ctaText">Descargar la app</span>
+            </button>
+            <div id="ctaHint" class="cta-hint">Te llevamos a la tienda oficial. Tu invitación se aplica al abrir la app.</div>
+
+            <div id="refChip" class="ref-chip" style="display:none">
+                <div class="label">Invitación de</div>
+                <div class="code" id="refCode">--------</div>
+            </div>
+
+            <div id="manualCopy" class="manual-copy">
+                <textarea id="manualCopyText" rows="2" readonly autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+                <div class="hint">Mantén pulsado el texto y elige "Copiar" si no se copió solo.</div>
+            </div>
+        </main>
+
+        <div class="benefits">
+            <div class="benefit">
+                <div class="ic">🛍️</div>
+                <div>
+                    <div class="t">Compras en línea</div>
+                    <div class="d">Compara precios entre tiendas y pide desde casa.</div>
+                </div>
+            </div>
+            <div class="benefit">
+                <div class="ic">🍔</div>
+                <div>
+                    <div class="t">Carnaval Food</div>
+                    <div class="d">Comida de restaurantes afiliados a tu puerta.</div>
+                </div>
+            </div>
+            <div class="benefit">
+                <div class="ic">📦</div>
+                <div>
+                    <div class="t">Envío de paquetes</div>
+                    <div class="d">Envía a otras provincias con precio automático.</div>
+                </div>
+            </div>
+            <div class="benefit">
+                <div class="ic">💳</div>
+                <div>
+                    <div class="t">Pagos seguros</div>
+                    <div class="d">Pago en Linea, Stripe o Tropipay.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="foot">
+            Disponible en <b>Google Play</b> y <b>App Store</b>.<br>
+            ¿Necesitas ayuda? <a href="contact.html">Contáctanos</a>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"><span class="dot"></span><span id="toastText">Invitación lista</span></div>
+
     <script>
         (function () {
             var PLAY_URL = "https://play.google.com/store/apps/details?id=com.carnaval24&hl=es_419";
             var APPSTORE_URL = "https://apps.apple.com/es/app/carnaval-tienda/id6742862060";
             var CLIPBOARD_PREFIX = "CARNAVAL-REF:";
 
-            // Deteccion: iOS clasico + iPadOS 13+ (UA dice "Mac" pero hay touch).
+            // Detección iOS / Android (iPadOS 13+ reporta MacIntel + touch).
             var ua = navigator.userAgent || "";
             var isIOS = /iPad|iPhone|iPod/.test(ua) ||
                 (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -180,42 +452,31 @@
             var code = raw.replace(/[^A-Z0-9]/g, "").slice(0, 16);
             var payload = CLIPBOARD_PREFIX + code;
 
-            var codeEl = document.getElementById("code");
-            var statusEl = document.getElementById("status");
-            var goStoreBtn = document.getElementById("goStore");
-            var copyBtn = document.getElementById("copyBtn");
+            var ctaBtn = document.getElementById("ctaBtn");
+            var ctaText = document.getElementById("ctaText");
+            var ctaHint = document.getElementById("ctaHint");
+            var refChip = document.getElementById("refChip");
+            var refCodeEl = document.getElementById("refCode");
+            var toast = document.getElementById("toast");
+            var toastText = document.getElementById("toastText");
             var manualBox = document.getElementById("manualCopy");
             var manualText = document.getElementById("manualCopyText");
 
-            goStoreBtn.href = STORE_URL;
-            goStoreBtn.textContent = "Abrir " + STORE_LABEL;
-            // Hasta que el usuario copie, el boton de tienda queda desactivado
-            // para forzar el orden: copiar primero -> abrir tienda. Asi cuando
-            // la app arranca, el portapapeles tiene el codigo seguro.
-            goStoreBtn.setAttribute("aria-disabled", "true");
-            goStoreBtn.setAttribute("disabled", "disabled");
+            // Etiqueta del CTA según plataforma
+            ctaText.textContent = isIOS
+                ? "Descargar en App Store"
+                : (isAndroid ? "Descargar en Google Play" : "Descargar la app");
 
-            if (!code) {
-                codeEl.textContent = "(sin codigo)";
-                statusEl.textContent = "No se detecto codigo. Aun puedes descargar la app.";
-                statusEl.classList.add("error");
-                copyBtn.style.display = "none";
-                goStoreBtn.removeAttribute("aria-disabled");
-                goStoreBtn.removeAttribute("disabled");
-                return;
+            // Si trae código, lo mostramos como detalle (no como centro de la página).
+            if (code) {
+                refChip.style.display = "inline-flex";
+                refCodeEl.textContent = code;
+                manualText.value = payload;
+            } else {
+                ctaHint.textContent = "Te llevamos a la tienda oficial.";
             }
-            codeEl.textContent = code;
-            manualText.value = payload;
 
-            // -------- Estrategias de copia (en orden) ----------
-            // 1) navigator.clipboard.writeText: la moderna. iOS Safari la
-            //    soporta DESDE iOS 13.4, PERO solo dentro de un user gesture.
-            //    Por eso la llamamos exclusivamente desde el click del boton.
-            // 2) execCommand('copy') con un textarea seleccionado a mano.
-            //    Funciona en Safari viejo siempre que el textarea sea editable
-            //    y que el rango este seleccionado en el momento del click.
-            // 3) Como ultima salida, mostramos el textarea visible para que el
-            //    usuario haga long-press y use el menu nativo de iOS.
+            // ---------- Estrategias de copia (silenciosas) ----------
             function copyViaClipboardApi() {
                 if (!navigator.clipboard || !navigator.clipboard.writeText) {
                     return Promise.reject(new Error("no-clipboard-api"));
@@ -226,11 +487,6 @@
             function copyViaExecCommand() {
                 return new Promise(function (resolve, reject) {
                     try {
-                        // iOS exige que el campo sea visible y editable durante
-                        // la seleccion. Lo montamos fuera de la viewport con
-                        // tamaño no-cero, sin readonly, y seleccionamos con
-                        // setSelectionRange (en Safari .select() a veces no
-                        // selecciona realmente).
                         var ta = document.createElement("textarea");
                         ta.value = payload;
                         ta.contentEditable = "true";
@@ -244,12 +500,9 @@
                         ta.style.border = "0";
                         ta.style.opacity = "0";
                         ta.style.pointerEvents = "none";
-                        // Evita el zoom + scroll molesto al enfocar en iOS.
                         ta.style.fontSize = "16px";
                         document.body.appendChild(ta);
 
-                        // Truco iOS: usar createRange + Selection en lugar de
-                        // .select() para que execCommand encuentre seleccion.
                         var range = document.createRange();
                         range.selectNodeContents(ta);
                         var sel = window.getSelection();
@@ -268,98 +521,88 @@
             }
 
             function tryCopy() {
-                // En iOS preferimos primero la API moderna (con user gesture
-                // funciona desde 13.4); si falla, caemos a execCommand.
                 return copyViaClipboardApi().catch(function () {
                     return copyViaExecCommand();
                 });
             }
 
-            function unlockStoreButton() {
-                goStoreBtn.removeAttribute("aria-disabled");
-                goStoreBtn.removeAttribute("disabled");
+            // Toast helper
+            var toastTimer = null;
+            function showToast(text) {
+                toastText.textContent = text;
+                toast.classList.add("show");
+                clearTimeout(toastTimer);
+                toastTimer = setTimeout(function () {
+                    toast.classList.remove("show");
+                }, 2200);
             }
 
-            function markCopied() {
-                statusEl.textContent =
-                    "Codigo copiado. Toca 'Abrir " + STORE_LABEL +
-                    "' e instala la app: al abrirla el codigo se aplica solo.";
-                statusEl.classList.remove("error");
-                statusEl.classList.remove("warn");
-                copyBtn.textContent = "Copiado ✔ (volver a copiar)";
-                unlockStoreButton();
+            function openStore() {
+                // Pequeña pausa para que el toast sea visible antes de salir.
+                setTimeout(function () {
+                    window.location.href = STORE_URL;
+                }, 350);
             }
 
-            function markManual() {
-                // Si la copia automatica fallo, mostramos el textarea para
-                // que el usuario lo copie con long-press. Igual habilitamos el
-                // boton de tienda para no bloquearlo.
-                manualBox.style.display = "block";
-                statusEl.textContent =
-                    "Tu navegador no permitio copiar automaticamente. " +
-                    "Manten pulsado el cuadro de abajo y elige 'Copiar', " +
-                    "luego abre " + STORE_LABEL + ".";
-                statusEl.classList.remove("error");
-                statusEl.classList.add("warn");
-                // Selecciona el contenido del textarea para que el long-press
-                // muestre el menu de inmediato en iOS.
-                try {
-                    manualText.focus({ preventScroll: true });
-                    manualText.setSelectionRange(0, manualText.value.length);
-                } catch (_) {}
-                unlockStoreButton();
-            }
+            function handleCta() {
+                ctaBtn.classList.add("loading");
 
-            copyBtn.addEventListener("click", function () {
-                copyBtn.disabled = true;
+                // Si no hay código, vamos directo a la tienda.
+                if (!code) {
+                    showToast("Abriendo " + STORE_LABEL + "…");
+                    openStore();
+                    return;
+                }
+
+                // Hay código: intentamos copiar y luego abrir la tienda.
                 tryCopy().then(function () {
-                    copyBtn.disabled = false;
-                    markCopied();
+                    showToast("Invitación copiada · abriendo " + STORE_LABEL);
+                    openStore();
                 }).catch(function () {
-                    copyBtn.disabled = false;
-                    markManual();
-                });
-            });
-
-            // Permitir que tocar la caja del codigo tambien intente copiar
-            // (atajo para usuarios que esperan "tocar = copiar").
-            codeEl.addEventListener("click", function () {
-                copyBtn.click();
-            });
-
-            // En Android Chrome (y desktop) intentamos copia automatica al
-            // entrar a la pagina: tienen permisos mas laxos y mejora la UX.
-            // En iOS NO lo hacemos: Safari rechaza writeText sin gesto y nos
-            // dejaria con un estado de error que confunde al usuario.
-            if (!isIOS) {
-                tryCopy().then(markCopied).catch(function () {
-                    statusEl.textContent =
-                        "Toca 'Copiar codigo' y luego 'Abrir " + STORE_LABEL + "'.";
-                    statusEl.classList.remove("error");
+                    // Si la copia automática falla, mostramos el fallback manual
+                    // pero NO bloqueamos la apertura de la tienda: se ofrece la
+                    // tienda al toque siguiente.
+                    ctaBtn.classList.remove("loading");
+                    manualBox.style.display = "block";
+                    showToast("Copia tu código y toca de nuevo para abrir " + STORE_LABEL);
+                    ctaText.textContent = "Abrir " + STORE_LABEL;
+                    // En el próximo click, ir directo a la tienda.
+                    ctaBtn.removeEventListener("click", handleCta);
+                    ctaBtn.addEventListener("click", function () {
+                        // Intento final silencioso por si el usuario ya seleccionó.
+                        tryCopy().catch(function () {});
+                        openStore();
+                    }, { once: true });
+                    try {
+                        manualText.focus({ preventScroll: true });
+                        manualText.setSelectionRange(0, manualText.value.length);
+                    } catch (_) {}
                 });
             }
 
-            // El textarea manual: al recibir foco/click seleccionamos todo
-            // para que el long-press de iOS abra el menu sobre la seleccion.
-            manualText.addEventListener("focus", function () {
-                try {
-                    manualText.setSelectionRange(0, manualText.value.length);
-                } catch (_) {}
-            });
-            manualText.addEventListener("click", function () {
-                try {
-                    manualText.setSelectionRange(0, manualText.value.length);
-                } catch (_) {}
-            });
+            ctaBtn.addEventListener("click", handleCta);
 
-            // Si el usuario vuelve a la pagina desde la tienda (back), el
-            // portapapeles puede haberse perdido (algunos navegadores lo
-            // limpian). Reintentamos copiar silenciosamente.
+            // En Android/desktop, intento silencioso de pre-copia al cargar
+            // (mejora UX si el botón del usuario toca demasiado rápido). En iOS
+            // se omite porque Safari rechaza writeText sin gesto.
+            if (!isIOS && code) {
+                tryCopy().catch(function () { /* no-op */ });
+            }
+
+            // Si el usuario vuelve desde la tienda (back), refrescamos el portapapeles
+            // por si el navegador lo limpió.
             window.addEventListener("pageshow", function (ev) {
-                if (ev.persisted) {
-                    // No tocamos UI: solo intentamos refrescar el portapapeles.
+                if (ev.persisted && code) {
                     tryCopy().catch(function () { /* no-op */ });
                 }
+            });
+
+            // Selección automática del textarea de fallback (long-press en iOS).
+            manualText.addEventListener("focus", function () {
+                try { manualText.setSelectionRange(0, manualText.value.length); } catch (_) {}
+            });
+            manualText.addEventListener("click", function () {
+                try { manualText.setSelectionRange(0, manualText.value.length); } catch (_) {}
             });
         })();
     </script>
