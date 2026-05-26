@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../config/app_colors.dart';
 import '../models/wapi_envio_log.dart';
@@ -546,7 +547,8 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
                 if (p.nextRunAt != null) ...[
                   const SizedBox(height: 2),
                   Text(
-                    'Próximo envío: ${p.nextRunAt!.toLocal()}',
+                    'Próximo envío: ${_formatNextRun(p.nextRunAt!)} '
+                    '(${p.timezone})',
                     style: const TextStyle(
                         fontSize: 11, color: AppColors.textLight),
                   ),
@@ -565,6 +567,16 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
         ],
       ),
     );
+  }
+
+  /// Formatea `nextRunAt` (UTC en el modelo) a la zona local del dispositivo
+  /// en un formato legible — la zona IANA en la que se programó se muestra
+  /// aparte para que el usuario entienda la correspondencia.
+  String _formatNextRun(DateTime utc) {
+    final local = utc.toLocal();
+    // Sin locale: evita depender de initializeDateFormatting, que no se llama
+    // en ningún sitio del proyecto.
+    return DateFormat('dd/MM/yyyy HH:mm').format(local);
   }
 
   Widget _buildLogsList() {

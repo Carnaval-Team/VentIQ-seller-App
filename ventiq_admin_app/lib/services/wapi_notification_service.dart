@@ -6,6 +6,7 @@ import '../models/wapi_envio_log.dart';
 import '../models/wapi_group.dart';
 import '../models/wapi_programacion.dart';
 import '../models/wapi_session.dart';
+import '../utils/timezone_helper.dart';
 
 /// Servicio que centraliza todas las operaciones del módulo
 /// "Notificación a Clientes" (difusión WhatsApp).
@@ -240,16 +241,19 @@ class WapiNotificationService {
     required bool activa,
     int delayMinSeconds = 30,
     int delayMaxSeconds = 90,
-    String timezone = 'America/Mexico_City',
+    // Si no se pasa, detectamos la zona IANA del dispositivo automáticamente.
+    // Pasar un valor explícito sólo si el cliente eligió otra zona manualmente.
+    String? timezone,
     int? idExistente,
   }) async {
+    final tz = timezone ?? await TimezoneHelper.getLocalTimezone();
     final horaStr =
         '${hora.hour.toString().padLeft(2, '0')}:${hora.minute.toString().padLeft(2, '0')}:00';
     final payload = {
       'id_tienda': idTienda,
       'id_sesion': idSesion,
       'hora_envio': horaStr,
-      'timezone': timezone,
+      'timezone': tz,
       'activa': activa,
       'delay_min_seconds': delayMinSeconds,
       'delay_max_seconds': delayMaxSeconds,

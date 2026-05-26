@@ -67,6 +67,9 @@ dependencies:
   flutter_map: ^6.1.0
   latlong2: ^0.9.1
 
+  # Detección de zona horaria IANA del dispositivo (para programaciones WAPI)
+  flutter_timezone: ^5.0.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

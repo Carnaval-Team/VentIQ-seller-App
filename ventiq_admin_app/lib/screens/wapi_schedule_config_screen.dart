@@ -5,6 +5,7 @@ import '../models/wapi_destinatario.dart';
 import '../models/wapi_programacion.dart';
 import '../models/wapi_session.dart';
 import '../services/wapi_notification_service.dart';
+import '../utils/timezone_helper.dart';
 import '../widgets/wapi_destinatario_picker.dart';
 import 'wapi_product_selector_screen.dart';
 
@@ -40,6 +41,10 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
 
   bool _saving = false;
 
+  /// Zona IANA detectada del dispositivo (ej. 'America/Havana').
+  /// Si la programación ya existe y trae otra zona, mostramos ambas.
+  String? _detectedTz;
+
   @override
   void initState() {
     super.initState();
@@ -57,6 +62,13 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
     } else {
       _sesion = widget.sesiones.first;
     }
+    _resolveTimezone();
+  }
+
+  Future<void> _resolveTimezone() async {
+    final tz = await TimezoneHelper.getLocalTimezone();
+    if (!mounted) return;
+    setState(() => _detectedTz = tz);
   }
 
   Future<void> _loadExistingDestinatarios() async {
@@ -116,6 +128,9 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
     }
     setState(() => _saving = true);
     try {
+      // Asegura que la zona ya esté resuelta antes de guardar (evita
+      // condición de carrera si el usuario toca "Guardar" muy rápido).
+      final tz = _detectedTz ?? await TimezoneHelper.getLocalTimezone();
       await _service.saveProgramacion(
         idTienda: widget.idTienda,
         idSesion: _sesion!.id,
@@ -125,6 +140,7 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
         activa: _activa,
         delayMinSeconds: _delayMin,
         delayMaxSeconds: _delayMax,
+        timezone: tz,
         idExistente: widget.existente?.id,
       );
       if (!mounted) return;
@@ -166,10 +182,17 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
               _InfoBanner(
                 text:
                     'Esta programación se ejecutará una vez al día a la hora '
-                    'configurada. Los mensajes se enviarán con un delay '
-                    'aleatorio entre $_delayMin–$_delayMax segundos para '
-                    'reducir el riesgo de bloqueo por WhatsApp.',
+                    'configurada en tu zona horaria local. Los mensajes se '
+                    'enviarán con un delay aleatorio entre $_delayMin–$_delayMax '
+                    'segundos para reducir el riesgo de bloqueo por WhatsApp.',
               ),
+              if (_detectedTz != null) ...[
+                const SizedBox(height: 8),
+                _TimezoneNotice(
+                  detected: _detectedTz!,
+                  saved: widget.existente?.timezone,
+                ),
+              ],
               const SizedBox(height: 14),
               _Card(
                 title: '1. Bot a usar',
@@ -393,6 +416,46 @@ class _Card extends StatelessWidget {
                   color: AppColors.textPrimary)),
           const SizedBox(height: 10),
           child,
+        ],
+      ),
+    );
+  }
+}
+
+/// Muestra la zona horaria detectada del dispositivo y, si el registro
+/// existente tiene otra zona guardada, advierte al usuario.
+class _TimezoneNotice extends StatelessWidget {
+  final String detected;
+  final String? saved;
+  const _TimezoneNotice({required this.detected, this.saved});
+
+  @override
+  Widget build(BuildContext context) {
+    final mismatch = saved != null && saved != detected;
+    final color = mismatch ? AppColors.warning : AppColors.success;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(mismatch ? Icons.warning_amber_rounded : Icons.public,
+              color: color, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              mismatch
+                  ? 'Zona detectada: $detected. La programación está guardada en '
+                      '$saved — al guardar se actualizará a tu zona actual.'
+                  : 'Zona horaria detectada: $detected. La hora se interpreta '
+                      'en esta zona.',
+              style: const TextStyle(fontSize: 12, color: AppColors.textPrimary),
+            ),
+          ),
         ],
       ),
     );
