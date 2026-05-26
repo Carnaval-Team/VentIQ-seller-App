@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/carnaval_service.dart';
+import '../services/inventory_service.dart';
 import '../config/app_colors.dart';
 
 class ProductSyncSheet extends StatefulWidget {
@@ -19,88 +21,252 @@ class ProductSyncSheet extends StatefulWidget {
 class _ProductSyncSheetState extends State<ProductSyncSheet> {
   bool _isLoading = true;
   bool _isSyncing = false;
-  List<Map<String, dynamic>> _availableProducts = [];
+
+  // Paso 1: almacenes
+  List<Map<String, dynamic>> _warehouses = [];
+  Map<String, dynamic>? _selectedWarehouse;
+
+  // Paso 2: zonas del almacén seleccionado
+  List<Map<String, dynamic>> _zones = [];
+  Map<String, dynamic>? _selectedZone;
+  bool _loadingZones = false;
+
+  // Paso 3: productos sin sync (todos) y los filtrados por zona
+  List<Map<String, dynamic>> _allUnsyncedProducts = [];
+  List<Map<String, dynamic>> _zoneProducts = [];
+  bool _loadingZoneProducts = false;
+
   List<Map<String, dynamic>> _categories = [];
+
+  // Búsqueda de productos
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   // Lista de productos pendientes por sincronizar
   // Cada item es un mapa: {'product': Map, 'category': Map, 'location': Map}
   final List<Map<String, dynamic>> _pendingProducts = [];
 
-  Map<String, dynamic>? _selectedProduct;
+  final Set<int> _selectedProductIds = {};
   Map<String, dynamic>? _selectedCategory;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _searchController.addListener(() {
+      setState(() => _searchQuery = _searchController.text.trim().toLowerCase());
+    });
+  }
+
+  List<Map<String, dynamic>> get _selectedProducts {
+    return _zoneProducts
+        .where((p) => _selectedProductIds.contains(p['id'] as int))
+        .toList();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final products = await CarnavalService.getUnsyncedProducts(
-        widget.storeId,
-        widget.carnavalStoreId,
-      );
-      final categories = await CarnavalService.getCarnavalCategories();
+      final results = await Future.wait([
+        CarnavalService.getUnsyncedProducts(
+          widget.storeId,
+          widget.carnavalStoreId,
+        ),
+        CarnavalService.getCarnavalCategories(),
+        _fetchWarehouses(),
+      ]);
 
       if (mounted) {
         setState(() {
-          _availableProducts = products;
-          _categories = categories;
+          _allUnsyncedProducts = results[0] as List<Map<String, dynamic>>;
+          _categories = results[1] as List<Map<String, dynamic>>;
+          _warehouses = results[2] as List<Map<String, dynamic>>;
+          if (_warehouses.length == 1) {
+            _selectedWarehouse = _warehouses.first;
+          }
         });
+        // Si ya hay almacén auto-seleccionado, cargar zonas
+        if (_selectedWarehouse != null) {
+          await _onWarehouseChanged(_selectedWarehouse!);
+        }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error al cargar datos: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar datos: $e')),
+        );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _addToPending() async {
-    if (_selectedProduct == null || _selectedCategory == null) return;
+  Future<List<Map<String, dynamic>>> _fetchWarehouses() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('app_dat_almacen')
+          .select('id, denominacion')
+          .eq('id_tienda', widget.storeId)
+          .order('denominacion');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error cargando almacenes: $e');
+      return [];
+    }
+  }
 
-    // Mostrar diálogo de selección de ubicación
-    final location = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder:
-          (context) => _LocationSelectionDialog(
-            storeId: widget.storeId,
-            productId: _selectedProduct!['id'],
-          ),
-    );
+  Future<void> _onWarehouseChanged(Map<String, dynamic> warehouse) async {
+    setState(() {
+      _selectedWarehouse = warehouse;
+      _selectedZone = null;
+      _zones = [];
+      _zoneProducts = [];
+      _selectedProductIds.clear();
+      _searchController.clear();
+      _loadingZones = true;
+    });
+    try {
+      final zones = await InventoryService.getWarehouseZones(
+        warehouse['id'] as int,
+      );
+      if (mounted) {
+        setState(() {
+          _zones = zones;
+          _loadingZones = false;
+          if (_zones.length == 1) {
+            _selectedZone = _zones.first;
+          }
+        });
+        if (_selectedZone != null) {
+          await _onZoneChanged(_selectedZone!);
+        }
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loadingZones = false);
+    }
+  }
 
-    if (location == null) return; // Usuario canceló
+  Future<void> _onZoneChanged(Map<String, dynamic> zone) async {
+    setState(() {
+      _selectedZone = zone;
+      _zoneProducts = [];
+      _selectedProductIds.clear();
+      _searchController.clear();
+      _loadingZoneProducts = true;
+    });
+    try {
+      final zoneInventory = await InventoryService.getZoneProducts(
+        idAlmacen: _selectedWarehouse!['id'] as int,
+        idUbicacion: zone['id'] as int,
+      );
+      // Cruzar con _allUnsyncedProducts para tener imagen y datos completos
+      final zoneIds = zoneInventory.map((p) => p.idProducto).toSet();
+      final pendingIds = _pendingProducts.map((p) => p['product']['id']).toSet();
+      if (mounted) {
+        setState(() {
+          _zoneProducts = _allUnsyncedProducts
+              .where((p) =>
+                  zoneIds.contains(p['id']) && !pendingIds.contains(p['id']))
+              .toList();
+          _loadingZoneProducts = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loadingZoneProducts = false);
+    }
+  }
+
+  List<Map<String, dynamic>> get _filteredProducts {
+    if (_searchQuery.isEmpty) return _zoneProducts;
+    return _zoneProducts.where((p) {
+      final nombre = (p['denominacion'] ?? '').toString().toLowerCase();
+      return nombre.contains(_searchQuery);
+    }).toList();
+  }
+
+  void _toggleProductSelection(Map<String, dynamic> product) {
+    setState(() {
+      final id = product['id'] as int;
+      if (_selectedProductIds.contains(id)) {
+        _selectedProductIds.remove(id);
+      } else {
+        _selectedProductIds.add(id);
+      }
+    });
+  }
+
+  void _addToPending() {
+    if (_selectedProductIds.isEmpty ||
+        _selectedCategory == null ||
+        _selectedZone == null) return;
+
+    final location = {
+      'id_ubicacion': _selectedZone!['id'],
+      'almacen': _selectedWarehouse!['denominacion'],
+      'ubicacion': _selectedZone!['denominacion'],
+    };
 
     setState(() {
-      _pendingProducts.add({
-        'product': _selectedProduct,
-        'category': _selectedCategory,
-        'location': location,
-      });
-
-      // Remover de disponibles para evitar duplicados en la selección
-      _availableProducts.removeWhere((p) => p['id'] == _selectedProduct!['id']);
-
-      // Limpiar selección
-      _selectedProduct = null;
-      // Mantener categoría seleccionada por comodidad
+      for (final product in _selectedProducts) {
+        _pendingProducts.add({
+          'product': product,
+          'category': _selectedCategory,
+          'location': location,
+        });
+        _zoneProducts.removeWhere((p) => p['id'] == product['id']);
+        _allUnsyncedProducts.removeWhere((p) => p['id'] == product['id']);
+      }
+      _selectedProductIds.clear();
+      _searchController.clear();
     });
   }
 
   void _removeFromPending(int index) {
     setState(() {
       final item = _pendingProducts[index];
-      _availableProducts.add(item['product']);
-      // Reordenar disponibles por nombre si se desea, o dejar al final
+      _allUnsyncedProducts.add(item['product']);
+      // Si la zona del item coincide con la zona actual, devolverlo también a _zoneProducts
+      final locId = item['location']['id_ubicacion'];
+      if (_selectedZone != null && locId == _selectedZone!['id']) {
+        _zoneProducts.add(item['product']);
+      }
       _pendingProducts.removeAt(index);
     });
+  }
+
+  void _showImageZoom(String imageUrl) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: GestureDetector(
+          onTap: () => Navigator.of(context).pop(),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(
+              imageUrl,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => Container(
+                color: Colors.grey.shade900,
+                padding: const EdgeInsets.all(32),
+                child: const Icon(
+                  Icons.broken_image,
+                  color: Colors.white54,
+                  size: 64,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _syncAll() async {
@@ -110,9 +276,6 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
 
     int successCount = 0;
     int failCount = 0;
-    // Lista de mensajes específicos por producto fallido. Útil para
-    // diagnosticar errores de integridad (producto/ubicación de otra tienda)
-    // que vienen de _validateRelationIntegrity en CarnavalService.
     final List<String> failures = [];
 
     try {
@@ -135,21 +298,15 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
             failures.add('$productName: ya sincronizado o sin datos');
           }
         } catch (e) {
-          // Capturamos por-item para no abortar el batch entero ante un
-          // único fallo de validación (producto cruzado, ubicación de otra
-          // tienda, etc.).
           failCount++;
-          // Limpiar el prefijo "Exception: " del toString de Dart
           final msg = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
           failures.add('$productName: $msg');
         }
       }
 
       if (mounted) {
-        Navigator.of(context).pop(true); // Retornar true para recargar
+        Navigator.of(context).pop(true);
 
-        // Construir mensaje resumido. Si hay fallos, mostrar hasta 3 razones
-        // específicas para que el usuario sepa qué corregir.
         final buffer = StringBuffer(
           'Sincronización finalizada: $successCount exitosos, $failCount fallidos',
         );
@@ -182,15 +339,12 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isSyncing = false);
-      }
+      if (mounted) setState(() => _isSyncing = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Altura dinámica: 80% de la pantalla o ajuste al contenido
     return Container(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -233,8 +387,97 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Sección de Selección
-                    if (_availableProducts.isEmpty && _pendingProducts.isEmpty)
+                    // ── Selector de Almacén ──────────────────────────────────
+                    if (_warehouses.isNotEmpty) ...[
+                      const Text(
+                        'Almacén',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<Map<String, dynamic>>(
+                        decoration: InputDecoration(
+                          labelText: _warehouses.length == 1
+                              ? null
+                              : 'Seleccionar Almacén',
+                          border: const OutlineInputBorder(),
+                          prefixIcon: const Icon(Icons.warehouse_outlined),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                        ),
+                        value: _selectedWarehouse,
+                        isExpanded: true,
+                        items: _warehouses
+                            .map(
+                              (w) => DropdownMenuItem(
+                                value: w,
+                                child: Text(
+                                  w['denominacion'] ?? '',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value != null) _onWarehouseChanged(value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    // ── Selector de Zona ─────────────────────────────────────
+                    if (_selectedWarehouse != null) ...[
+                      const Text(
+                        'Zona / Ubicación',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_loadingZones)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else
+                        DropdownButtonFormField<Map<String, dynamic>>(
+                          decoration: InputDecoration(
+                            labelText:
+                                _zones.length == 1 ? null : 'Seleccionar Zona',
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Icon(Icons.location_on_outlined),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                          ),
+                          value: _selectedZone,
+                          isExpanded: true,
+                          items: _zones
+                              .map(
+                                (z) => DropdownMenuItem(
+                                  value: z,
+                                  child: Text(
+                                    z['denominacion'] ?? '',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) {
+                            if (value != null) _onZoneChanged(value);
+                          },
+                        ),
+                      const SizedBox(height: 20),
+                    ],
+
+                    // ── Sección Agregar Producto ─────────────────────────────
+                    if (_allUnsyncedProducts.isEmpty && _pendingProducts.isEmpty)
                       const Center(
                         child: Padding(
                           padding: EdgeInsets.all(32.0),
@@ -245,42 +488,64 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
                           ),
                         ),
                       )
-                    else if (_availableProducts.isNotEmpty) ...[
+                    else if (_selectedZone != null) ...[
                       const Text(
-                        'Agregar Producto',
+                        'Productos en esta Zona',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
 
-                      // Selector de Producto
-                      DropdownButtonFormField<Map<String, dynamic>>(
-                        decoration: const InputDecoration(
-                          labelText: 'Seleccionar Producto',
-                          border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.symmetric(
+                      if (_loadingZoneProducts)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else ...[                      // Campo de búsqueda
+                      TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: 'Buscar producto por nombre…',
+                          prefixIcon: const Icon(Icons.search),
+                          border: const OutlineInputBorder(),
+                          contentPadding: const EdgeInsets.symmetric(
                             horizontal: 12,
-                            vertical: 12,
+                            vertical: 10,
+                          ),
+                          suffixIcon: _searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() => _selectedProductIds.clear());
+                                  },
+                                )
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Lista de productos de la zona (selección múltiple)
+                      _ProductPickerList(
+                        products: _filteredProducts,
+                        selectedIds: _selectedProductIds,
+                        onToggle: _toggleProductSelection,
+                        onImageTap: (imageUrl) => _showImageZoom(imageUrl),
+                      ),
+                      if (_selectedProductIds.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            '${_selectedProductIds.length} producto(s) seleccionado(s)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                        value: _selectedProduct,
-                        isExpanded: true,
-                        items:
-                            _availableProducts.map((product) {
-                              return DropdownMenuItem(
-                                value: product,
-                                child: Text(
-                                  "${product['denominacion']} (ID: ${product['id']})",
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              );
-                            }).toList(),
-                        onChanged: (value) {
-                          setState(() => _selectedProduct = value);
-                        },
-                      ),
 
                       const SizedBox(height: 12),
 
@@ -296,9 +561,9 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
                         ),
                         value: _selectedCategory,
                         isExpanded: true,
-                        items:
-                            _categories.map((category) {
-                              return DropdownMenuItem(
+                        items: _categories
+                            .map(
+                              (category) => DropdownMenuItem(
                                 value: category,
                                 child: Row(
                                   children: [
@@ -311,12 +576,11 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
                                           category['icon'],
                                           width: 20,
                                           height: 20,
-                                          errorBuilder:
-                                              (context, error, stackTrace) =>
-                                                  const Icon(
-                                                    Icons.category,
-                                                    size: 20,
-                                                  ),
+                                          errorBuilder: (_, __, ___) =>
+                                              const Icon(
+                                                Icons.category,
+                                                size: 20,
+                                              ),
                                         ),
                                       ),
                                     Expanded(
@@ -327,8 +591,9 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
                                     ),
                                   ],
                                 ),
-                              );
-                            }).toList(),
+                              ),
+                            )
+                            .toList(),
                         onChanged: (value) {
                           setState(() => _selectedCategory = value);
                         },
@@ -340,11 +605,11 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed:
-                              (_selectedProduct != null &&
-                                      _selectedCategory != null)
-                                  ? _addToPending
-                                  : null,
+                          onPressed: (_selectedProductIds.isNotEmpty &&
+                                  _selectedCategory != null &&
+                                  _selectedZone != null)
+                              ? _addToPending
+                              : null,
                           icon: const Icon(Icons.add_circle_outline),
                           label: const Text('Agregar a la lista'),
                           style: ElevatedButton.styleFrom(
@@ -355,11 +620,12 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
                           ),
                         ),
                       ),
+                      ], // end if !_loadingZoneProducts
                     ],
 
                     const SizedBox(height: 24),
 
-                    // Lista de Pendientes
+                    // ── Lista de Pendientes ──────────────────────────────────
                     if (_pendingProducts.isNotEmpty) ...[
                       Row(
                         children: [
@@ -399,29 +665,14 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
                           final item = _pendingProducts[index];
                           final product = item['product'];
                           final category = item['category'];
-
                           final location = item['location'];
                           return Card(
                             margin: const EdgeInsets.only(bottom: 8),
                             child: ListTile(
-                              leading:
-                                  product['imagen'] != null
-                                      ? Container(
-                                        width: 40,
-                                        height: 40,
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                          image: DecorationImage(
-                                            image: NetworkImage(
-                                              product['imagen'],
-                                            ),
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
-                                      )
-                                      : const Icon(Icons.image_not_supported),
+                              leading: _ProductThumbnail(
+                                imageUrl: product['imagen'],
+                                size: 40,
+                              ),
                               title: Text(product['denominacion']),
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -439,7 +690,7 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
                                       const SizedBox(width: 4),
                                       Expanded(
                                         child: Text(
-                                          '${location['almacen']} - ${location['ubicacion']}',
+                                          '${location['almacen']} › ${location['ubicacion']}',
                                           style: const TextStyle(
                                             fontSize: 12,
                                             color: Colors.grey,
@@ -468,7 +719,7 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
               ),
             ),
 
-          // Footer con Botón Sincronizar
+          // Footer
           if (_pendingProducts.isNotEmpty)
             Container(
               padding: const EdgeInsets.all(16),
@@ -493,23 +744,22 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child:
-                      _isSyncing
-                          ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                          : Text(
-                            'Sincronizar ${_pendingProducts.length} Productos',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                  child: _isSyncing
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
                           ),
+                        )
+                      : Text(
+                          'Sincronizar ${_pendingProducts.length} Productos',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -519,132 +769,143 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
   }
 }
 
-// Dialog for selecting product location
-class _LocationSelectionDialog extends StatefulWidget {
-  final int storeId;
-  final int productId;
+// ─────────────────────────────────────────────────────────────────────────────
+// Widget auxiliar: lista de selección de producto con foto
+// ─────────────────────────────────────────────────────────────────────────────
+class _ProductPickerList extends StatelessWidget {
+  final List<Map<String, dynamic>> products;
+  final Set<int> selectedIds;
+  final ValueChanged<Map<String, dynamic>> onToggle;
+  final ValueChanged<String> onImageTap;
 
-  const _LocationSelectionDialog({
-    required this.storeId,
-    required this.productId,
+  const _ProductPickerList({
+    required this.products,
+    required this.selectedIds,
+    required this.onToggle,
+    required this.onImageTap,
   });
 
   @override
-  State<_LocationSelectionDialog> createState() =>
-      __LocationSelectionDialogState();
-}
-
-class __LocationSelectionDialogState extends State<_LocationSelectionDialog> {
-  bool _isLoading = true;
-  List<Map<String, dynamic>> _locations = [];
-  String? _errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadLocations();
-  }
-
-  Future<void> _loadLocations() async {
-    try {
-      final locations = await CarnavalService.getProductLocations(
-        widget.storeId,
-        widget.productId,
-      );
-
-      if (mounted) {
-        setState(() {
-          _locations = locations;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = 'Error al cargar ubicaciones: $e';
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Seleccionar Ubicación'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child:
-            _isLoading
-                ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32.0),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-                : _errorMessage != null
-                ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(
-                      _errorMessage!,
-                      style: const TextStyle(color: Colors.red),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                )
-                : _locations.isEmpty
-                ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Text(
-                      'No se encontraron ubicaciones para este producto',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                )
-                : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _locations.length,
-                  itemBuilder: (context, index) {
-                    final location = _locations[index];
-                    final stock = location['cantidad_existente'] ?? 0;
-
-                    return ListTile(
-                      leading: const Icon(
-                        Icons.location_on,
-                        color: AppColors.primary,
-                      ),
-                      title: Text(
-                        location['almacen'] ?? 'Sin almacén',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(location['ubicacion'] ?? 'Sin ubicación'),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Stock: $stock',
-                            style: TextStyle(
-                              color: Colors.grey.shade700,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      onTap: () => Navigator.of(context).pop(location),
-                    );
-                  },
-                ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
+    if (products.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Text(
+          'No hay productos que coincidan con la búsqueda.',
+          style: TextStyle(color: Colors.grey),
         ),
-      ],
+      );
+    }
+
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 260),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: ListView.separated(
+          shrinkWrap: true,
+          itemCount: products.length,
+          separatorBuilder: (_, __) =>
+              const Divider(height: 1, indent: 56),
+          itemBuilder: (context, index) {
+            final p = products[index];
+            final id = p['id'] as int;
+            final isSelected = selectedIds.contains(id);
+            final imageUrl = p['imagen'] as String?;
+            return ListTile(
+              dense: true,
+              selected: isSelected,
+              selectedTileColor: AppColors.primary.withOpacity(0.08),
+              leading: GestureDetector(
+                onTap: (imageUrl != null && imageUrl.isNotEmpty)
+                    ? () => onImageTap(imageUrl)
+                    : null,
+                child: Stack(
+                  children: [
+                    _ProductThumbnail(imageUrl: imageUrl, size: 36),
+                    if (imageUrl != null && imageUrl.isNotEmpty)
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                          padding: const EdgeInsets.all(1),
+                          child: const Icon(
+                            Icons.zoom_in,
+                            size: 10,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              title: Text(
+                p['denominacion'] ?? '',
+                style: const TextStyle(fontSize: 14),
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                'ID: $id',
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+              trailing: isSelected
+                  ? Icon(Icons.check_circle, color: AppColors.primary)
+                  : const Icon(Icons.check_circle_outline,
+                      color: Colors.grey, size: 20),
+              onTap: () => onToggle(p),
+            );
+          },
+        ),
+      ),
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Widget auxiliar: miniatura de producto
+// ─────────────────────────────────────────────────────────────────────────────
+class _ProductThumbnail extends StatelessWidget {
+  final String? imageUrl;
+  final double size;
+
+  const _ProductThumbnail({required this.imageUrl, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    if (imageUrl != null && imageUrl!.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Image.network(
+          imageUrl!,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _placeholder(size),
+        ),
+      );
+    }
+    return _placeholder(size);
+  }
+
+  Widget _placeholder(double size) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Icon(
+          Icons.image_not_supported_outlined,
+          size: size * 0.55,
+          color: Colors.grey,
+        ),
+      );
+}
+

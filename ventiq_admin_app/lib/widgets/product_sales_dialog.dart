@@ -313,13 +313,16 @@ class _ProductSalesDialogState extends State<ProductSalesDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 400),
+        constraints: BoxConstraints(
+          maxWidth: 400,
+          maxHeight: MediaQuery.of(context).size.height * 0.88,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Header con imagen del producto
             Container(
-              height: 180,
+              height: 160,
               decoration: BoxDecoration(
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(20),
@@ -346,11 +349,12 @@ class _ProductSalesDialogState extends State<ProductSalesDialog> {
                       : null,
             ),
 
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                   // Nombre del producto
                   Text(
                     widget.product['name'] ?? 'Sin nombre',
@@ -590,7 +594,8 @@ class _ProductSalesDialogState extends State<ProductSalesDialog> {
                       ),
                     ),
                   ],
-                ],
+                  ],
+                ),
               ),
             ),
           ],
