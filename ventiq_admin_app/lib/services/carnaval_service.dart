@@ -566,7 +566,7 @@ class CarnavalService {
       // 1. Obtener productos locales con imagen
       final localProductsResponse = await _supabase
           .from('app_dat_producto')
-          .select('id, denominacion, imagen')
+          .select('id, denominacion, imagen, sku, descripcion')
           .eq('id_tienda', storeId)
           .neq('imagen', ''); // No debe estar vacía
 

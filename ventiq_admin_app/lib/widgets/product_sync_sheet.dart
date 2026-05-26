@@ -851,9 +851,28 @@ class _ProductPickerList extends StatelessWidget {
                 style: const TextStyle(fontSize: 14),
                 overflow: TextOverflow.ellipsis,
               ),
-              subtitle: Text(
-                'ID: $id',
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (p['sku'] != null && (p['sku'] as String).isNotEmpty)
+                    Text(
+                      'SKU: ${p['sku']}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  if (p['descripcion'] != null &&
+                      (p['descripcion'] as String).isNotEmpty)
+                    Text(
+                      p['descripcion'],
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
+                    ),
+                ],
               ),
               trailing: isSelected
                   ? Icon(Icons.check_circle, color: AppColors.primary)
