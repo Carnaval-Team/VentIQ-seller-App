@@ -18,7 +18,8 @@
       "mcp__ide__getDiagnostics",
       "Bash(sales)",
       "Bash(order)",
-      "Bash(paquet\")"
+      "Bash(paquet\")",
+      "WebFetch(domain:pub.dev)"
     ]
   },
   "disabledMcpjsonServers": [

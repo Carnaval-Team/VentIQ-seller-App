@@ -94,7 +94,12 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
       ));
     }
 
-    rows.sort((a, b) => b.summary.comisionCup.compareTo(a.summary.comisionCup));
+    // Orden principal: cantidad de referidos (desc). Desempate: comisión CUP (desc).
+    rows.sort((a, b) {
+      final byReferred = b.referredCount.compareTo(a.referredCount);
+      if (byReferred != 0) return byReferred;
+      return b.summary.comisionCup.compareTo(a.summary.comisionCup);
+    });
 
     if (mounted) {
       setState(() {

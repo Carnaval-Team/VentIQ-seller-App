@@ -1,0 +1,937 @@
+# 04 - Security Design
+
+## 4.1 Security Overview
+
+```mermaid
+flowchart TB
+    subgraph External["External Threats"]
+        A1[Unauthorized Access]
+        A2[Data Breach]
+        A3[DDoS Attack]
+        A4[Injection Attack]
+    end
+    
+    subgraph Defense["Defense Layers"]
+        D1[Authentication]
+        D2[Encryption]
+        D3[Rate Limiting]
+        D4[Input Validation]
+        D5[Audit Logging]
+    end
+    
+    A1 --> D1
+    A2 --> D2
+    A3 --> D3
+    A4 --> D4
+    
+    D1 --> APP[Application]
+    D2 --> APP
+    D3 --> APP
+    D4 --> APP
+    APP --> D5
+```
+
+## 4.2 Authentication
+
+### API Key Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant G as Auth Guard
+    participant S as Service
+    participant DB as Database
+    
+    C->>G: Request + X-API-Key
+    G->>G: Hash API Key
+    G->>DB: Find by hash
+    alt Key Valid
+        DB-->>G: API Key record
+        G->>G: Check permissions
+        G->>G: Check expiration
+        G->>S: Forward request
+        S-->>C: Response
+    else Key Invalid
+        G-->>C: 401 Unauthorized
+    end
+```
+
+### API Key Format
+
+```
+Format: owa_<32-character-random-string>
+Example: owa_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6
+
+Storage: SHA-256 hash only (never store plain key)
+```
+
+### Permission Model
+
+| Permission | Description |
+|------------|-------------|
+| `*` | Full access (admin) |
+| `sessions:read` | View sessions |
+| `sessions:write` | Create/delete sessions |
+| `messages:send` | Send messages |
+| `messages:read` | Read message history |
+| `webhooks:manage` | CRUD webhooks |
+| `contacts:read` | View contacts |
+| `groups:read` | View groups |
+| `groups:write` | Manage groups |
+
+## 4.3 IP Whitelisting
+
+IP whitelisting adds an extra security layer by restricting API key access to specific IP addresses.
+
+### IP Whitelist Flow
+
+```mermaid
+flowchart TB
+    REQ[Incoming Request] --> AUTH[API Key Valid?]
+    AUTH -->|No| R401[401 Unauthorized]
+    AUTH -->|Yes| WL{IP Whitelist Enabled?}
+    WL -->|No| ALLOW[Allow Request]
+    WL -->|Yes| CHECK{IP in Whitelist?}
+    CHECK -->|No| R403[403 Forbidden]
+    CHECK -->|Yes| ALLOW
+    ALLOW --> PROCESS[Process Request]
+```
+
+### Configuration
+
+```typescript
+// API to manage IP whitelist
+interface IpWhitelistEntry {
+  id: string;
+  apiKeyId: string;
+  ipAddress: string;      // Single IP: "203.0.113.50"
+  cidrRange?: string;     // CIDR: "10.0.0.0/24"
+  description?: string;
+  active: boolean;
+  createdAt: Date;
+}
+```
+
+### API Endpoints
+
+#### Add IP to Whitelist
+
+```http
+POST /api/auth/api-keys/:apiKeyId/whitelist
+```
+
+**Request Body:**
+```json
+{
+  "ipAddress": "203.0.113.50",
+  "description": "Production server"
+}
+```
+
+**For CIDR Range:**
+```json
+{
+  "ipAddress": "10.0.0.0",
+  "cidrRange": "10.0.0.0/24",
+  "description": "Internal network"
+}
+```
+
+#### List Whitelisted IPs
+
+```http
+GET /api/auth/api-keys/:apiKeyId/whitelist
+```
+
+#### Remove IP from Whitelist
+
+```http
+DELETE /api/auth/api-keys/:apiKeyId/whitelist/:entryId
+```
+
+### Implementation
+
+```typescript
+// IP Whitelist Guard
+@Injectable()
+export class IpWhitelistGuard implements CanActivate {
+  constructor(
+    private readonly ipWhitelistService: IpWhitelistService,
+  ) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest();
+    const apiKeyId = request.apiKey?.id;
+
+    if (!apiKeyId) {
+      return true; // Let other guards handle missing API key
+    }
+
+    const clientIp = this.getClientIp(request);
+    const whitelist = await this.ipWhitelistService.getByApiKey(apiKeyId);
+
+    // If no whitelist entries, allow all IPs
+    if (whitelist.length === 0) {
+      return true;
+    }
+
+    // Check if IP matches any whitelist entry
+    const isAllowed = whitelist.some(entry =>
+      this.ipMatches(clientIp, entry)
+    );
+
+    if (!isAllowed) {
+      throw new ForbiddenException({
+        code: 'IP_NOT_WHITELISTED',
+        message: `IP address ${clientIp} is not in the whitelist`,
+      });
+    }
+
+    return true;
+  }
+
+  private getClientIp(request: Request): string {
+    // Handle proxies (X-Forwarded-For, X-Real-IP)
+    const forwarded = request.headers['x-forwarded-for'];
+    if (forwarded) {
+      return (forwarded as string).split(',')[0].trim();
+    }
+    return request.headers['x-real-ip'] as string ||
+           request.socket.remoteAddress ||
+           '';
+  }
+
+  private ipMatches(clientIp: string, entry: IpWhitelistEntry): boolean {
+    if (!entry.active) return false;
+
+    if (entry.cidrRange) {
+      return this.ipInCidr(clientIp, entry.cidrRange);
+    }
+
+    return clientIp === entry.ipAddress;
+  }
+
+  private ipInCidr(ip: string, cidr: string): boolean {
+    // IPv4-only example. For IPv6 support, use a library like ipaddr.js.
+    const [range, bits] = cidr.split('/');
+    const mask = ~(2 ** (32 - parseInt(bits)) - 1);
+
+    const ipNum = this.ipToNumber(ip);
+    const rangeNum = this.ipToNumber(range);
+
+    return (ipNum & mask) === (rangeNum & mask);
+  }
+
+  private ipToNumber(ip: string): number {
+    return ip.split('.').reduce(
+      (acc, octet) => (acc << 8) + parseInt(octet), 0
+    ) >>> 0;
+  }
+}
+```
+
+### Best Practices
+
+| Practice | Description |
+|----------|-------------|
+| **Use CIDR notation** | For IP ranges, use CIDR instead of multiple entries |
+| **Trusted Proxies** | Configure trusted proxies for accurate client IP |
+| **Regular Review** | Review whitelist entries regularly |
+| **Audit Logging** | Log all blocked attempts for monitoring |
+| **Fallback Plan** | Prepare a process to update the whitelist when IPs change |
+
+### IPv6 Support
+
+For IPv6, use a library that supports IPv6 parsing (e.g., `ipaddr.js`) when performing `ipInCidr`.
+
+## 4.4 Data Encryption
+
+### Encryption Strategy
+
+```mermaid
+flowchart LR
+    subgraph Transit["In Transit"]
+        TLS[TLS 1.3]
+    end
+    
+    subgraph Rest["At Rest"]
+        AES[AES-256-GCM]
+    end
+    
+    subgraph Sensitive["Sensitive Data"]
+        AUTH[Auth State]
+        PROXY[Proxy Credentials]
+        SECRET[Webhook Secrets]
+    end
+    
+    Sensitive --> AES
+    AES --> DB[(Database)]
+    Client --> TLS --> Server
+```
+
+### What Gets Encrypted
+
+| Data | Encrypted | Method |
+|------|-----------|--------|
+| API Keys | Yes | SHA-256 hash |
+| Auth State | Yes | AES-256-GCM |
+| Webhook Secrets | Yes | AES-256-GCM |
+| Proxy Passwords | Yes | AES-256-GCM |
+| Message Content | Optional | AES-256-GCM |
+| Session Config | No | - |
+
+## 4.5 Input Validation
+
+### Validation Rules
+
+```mermaid
+flowchart TB
+    INPUT[User Input] --> V1{Type Check}
+    V1 -->|Pass| V2{Length Check}
+    V1 -->|Fail| ERR[400 Error]
+    V2 -->|Pass| V3{Format Check}
+    V2 -->|Fail| ERR
+    V3 -->|Pass| V4{Sanitize}
+    V3 -->|Fail| ERR
+    V4 --> SAFE[Safe Input]
+```
+
+### Validation Examples
+
+| Field | Rules |
+|-------|-------|
+| `chatId` | Pattern: `^\d+@(c\.us\|g\.us)$` |
+| `phone` | Pattern: `^\d{10,15}$` |
+| `url` | Valid URL, HTTPS only for webhooks |
+| `text` | Max 65536 chars, sanitized |
+| `sessionName` | Alphanumeric + hyphen, 3-50 chars |
+
+### DTO Validation
+
+```typescript
+// Example DTO with validation
+import { IsString, IsUrl, Matches, MaxLength } from 'class-validator';
+
+export class SendTextDto {
+  @IsString()
+  @Matches(/^\d+@(c\.us|g\.us)$/, {
+    message: 'Invalid chatId format',
+  })
+  chatId: string;
+
+  @IsString()
+  @MaxLength(65536)
+  text: string;
+}
+
+export class CreateWebhookDto {
+  @IsUrl({ protocols: ['https'], require_protocol: true })
+  url: string;
+
+  @IsArray()
+  @IsIn(['message.received', 'message.sent', 'session.status'], { each: true })
+  events: string[];
+}
+```
+
+## 4.6 Rate Limiting
+
+### Rate Limit Configuration
+
+```mermaid
+flowchart LR
+    REQ[Request] --> RL{Rate Limiter}
+    RL -->|Under Limit| APP[Application]
+    RL -->|Over Limit| ERR[429 Too Many Requests]
+    
+    subgraph Limits["Limit Tiers"]
+        T1[Global: 1000/min]
+        T2[Per Key: 100/min]
+        T3[Per Endpoint: varies]
+    end
+```
+
+### Endpoint Limits
+
+| Endpoint Category | Rate Limit | Window |
+|-------------------|------------|--------|
+| Session Create | 5 | 1 minute |
+| Session Read | 60 | 1 minute |
+| Message Send | 30 | 1 minute |
+| Message Read | 60 | 1 minute |
+| Webhook CRUD | 10 | 1 minute |
+| Health Check | 120 | 1 minute |
+
+### Response Headers
+
+```http
+X-RateLimit-Limit: 30
+X-RateLimit-Remaining: 25
+X-RateLimit-Reset: 1706868060
+Retry-After: 45
+```
+
+## 4.7 CORS Configuration
+
+### CORS Settings
+
+```typescript
+// Secure CORS configuration
+const corsOptions = {
+  origin: (origin, callback) => {
+    const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [];
+    
+    // Allow requests with no origin (mobile apps, Postman)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'X-API-Key', 'X-Request-ID'],
+  exposedHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining'],
+  maxAge: 86400, // 24 hours
+};
+```
+
+## 4.8 Webhook Security
+
+### Webhook Signature
+
+```mermaid
+sequenceDiagram
+    participant OW as OpenWA
+    participant WH as Webhook Endpoint
+    
+    OW->>OW: Create payload
+    OW->>OW: Sign with HMAC-SHA256
+    OW->>WH: POST + X-OpenWA-Signature
+    WH->>WH: Verify signature
+    WH->>WH: Process if valid
+    WH-->>OW: 200 OK
+```
+
+### Signature Verification
+
+```typescript
+// OpenWA: Generate signature
+function signPayload(payload: object, secret: string): string {
+  const hmac = crypto.createHmac('sha256', secret);
+  hmac.update(JSON.stringify(payload));
+  return 'sha256=' + hmac.digest('hex');
+}
+
+// Client: Verify signature
+function verifySignature(
+  payload: string,
+  signature: string,
+  secret: string
+): boolean {
+  const expected = 'sha256=' + crypto
+    .createHmac('sha256', secret)
+    .update(payload)
+    .digest('hex');
+  
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expected)
+  );
+}
+```
+
+## 4.9 Security Headers
+
+### Recommended Headers
+
+```typescript
+// Helmet configuration
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+  },
+  noSniff: true,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}));
+```
+
+### Security Headers Checklist
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `Strict-Transport-Security` | `max-age=31536000` | Force HTTPS |
+| `X-Content-Type-Options` | `nosniff` | Prevent MIME sniffing |
+| `X-Frame-Options` | `DENY` | Prevent clickjacking |
+| `X-XSS-Protection` | `1; mode=block` | XSS filter |
+| `Referrer-Policy` | `strict-origin` | Control referrer |
+
+## 4.10 Audit Logging
+
+### What Gets Logged
+
+```mermaid
+flowchart TB
+    subgraph Events["Logged Events"]
+        AUTH[Authentication attempts]
+        SESS[Session operations]
+        MSG[Message sends]
+        WH[Webhook changes]
+        ERR[Security errors]
+    end
+    
+    Events --> LOG[Audit Log]
+    LOG --> STORE[(Storage)]
+    LOG --> ALERT[Alerts]
+```
+
+### Log Format
+
+```json
+{
+  "timestamp": "2025-02-02T10:00:00.000Z",
+  "level": "info",
+  "event": "api.request",
+  "requestId": "uuid",
+  "apiKeyId": "uuid",
+  "ip": "192.168.1.1",
+  "method": "POST",
+  "path": "/api/sessions/sess_123/messages/send-text",
+  "statusCode": 200,
+  "responseTime": 150,
+  "userAgent": "MyApp/1.0"
+}
+```
+
+### Security Alerts
+
+| Event | Severity | Action |
+|-------|----------|--------|
+| Multiple failed auth | High | Alert + temp block |
+| Rate limit exceeded | Medium | Log + block |
+| Invalid signature | Medium | Log |
+| Unusual activity | Low | Log |
+
+## 4.11 Security Checklist
+
+### Development
+
+- [ ] Input validation on all endpoints
+- [ ] SQL injection prevention (parameterized queries)
+- [ ] XSS prevention (output encoding)
+- [ ] CSRF protection (if using cookies)
+- [ ] Secure dependencies (npm audit)
+- [ ] No secrets in code
+
+### Deployment
+
+- [ ] HTTPS only (TLS 1.2+)
+- [ ] Security headers configured
+- [ ] Rate limiting enabled
+- [ ] CORS properly configured
+- [ ] Firewall rules set
+- [ ] Regular security updates
+
+### Operations
+
+- [ ] Audit logging enabled
+- [ ] Log monitoring setup
+- [ ] Backup encryption
+- [ ] Incident response plan
+- [ ] Regular security audits
+
+---
+
+## 4.12 Secrets Management
+
+### Secrets Inventory
+
+| Secret Type | Storage | Rotation |
+|-------------|---------|----------|
+| Database credentials | Environment variable | 90 days |
+| Redis password | Environment variable | 90 days |
+| Encryption key | Environment variable | 365 days |
+| API master key | Environment variable | 180 days |
+| Webhook secrets | Database (encrypted) | Per webhook |
+| Session auth state | File system (default) / Database (optional, encrypted) | Never (tied to WA session) |
+
+### Environment Variables Security
+
+```bash
+# ❌ BAD: Secrets in code or docker-compose.yml
+DATABASE_URL=postgresql://user:password123@localhost:5432/db
+
+# ✅ GOOD: Use .env file (not committed)
+DATABASE_URL=${DATABASE_URL}
+
+# ✅ BETTER: Use Docker secrets or vault
+docker secret create db_password ./secret.txt
+```
+
+### Docker Secrets
+
+```yaml
+# docker-compose.prod.yml
+version: '3.8'
+
+services:
+  app:
+    image: openwa:latest
+    secrets:
+      - db_password
+      - encryption_key
+      - api_master_key
+    environment:
+      - DATABASE_PASSWORD_FILE=/run/secrets/db_password
+      - ENCRYPTION_KEY_FILE=/run/secrets/encryption_key
+
+secrets:
+  db_password:
+    external: true
+  encryption_key:
+    external: true
+  api_master_key:
+    external: true
+```
+
+### Reading Secrets in Application
+
+```typescript
+// config/secrets.ts
+import { readFileSync, existsSync } from 'fs';
+
+export function getSecret(name: string): string {
+  // Try file-based secret first (Docker secrets)
+  const filePath = process.env[`${name}_FILE`];
+  if (filePath && existsSync(filePath)) {
+    return readFileSync(filePath, 'utf8').trim();
+  }
+  
+  // Fall back to environment variable
+  const envValue = process.env[name];
+  if (!envValue) {
+    throw new Error(`Secret ${name} not configured`);
+  }
+  
+  return envValue;
+}
+
+// Usage
+const encryptionKey = getSecret('ENCRYPTION_KEY');
+const dbPassword = getSecret('DATABASE_PASSWORD');
+```
+
+### Key Rotation Procedure
+
+```mermaid
+flowchart TB
+    A[Generate New Key] --> B[Update Secret Store]
+    B --> C[Deploy with Both Keys]
+    C --> D[Re-encrypt Data with New Key]
+    D --> E[Verify All Data Accessible]
+    E --> F[Remove Old Key]
+    F --> G[Deploy with New Key Only]
+```
+
+```typescript
+// Key rotation for encrypted data
+async function rotateEncryptionKey(
+  oldKey: string,
+  newKey: string
+): Promise<void> {
+  // 1. Get all encrypted records
+  const sessions = await sessionRepo.find();
+  
+  for (const session of sessions) {
+    // 2. Decrypt with old key
+    const authState = decrypt(session.authState, oldKey);
+    
+    // 3. Re-encrypt with new key
+    session.authState = encrypt(authState, newKey);
+    
+    await sessionRepo.save(session);
+  }
+  
+  logger.log('Key rotation completed', { 
+    recordsUpdated: sessions.length 
+  });
+}
+```
+
+## 4.13 Dependency Security
+
+### npm Audit Workflow
+
+```bash
+# Check for vulnerabilities
+npm audit
+
+# Auto-fix non-breaking vulnerabilities
+npm audit fix
+
+# View detailed report
+npm audit --json > audit-report.json
+```
+
+### GitHub Dependabot Configuration
+
+```yaml
+# .github/dependabot.yml
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      development-dependencies:
+        dependency-type: "development"
+      production-dependencies:
+        dependency-type: "production"
+    ignore:
+      # Major version updates require manual review
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+```
+
+### Security Scanning in CI
+
+```yaml
+# .github/workflows/security.yml
+name: Security Scan
+
+on:
+  push:
+    branches: [main, develop]
+  schedule:
+    - cron: '0 0 * * 1'  # Weekly on Monday
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+        
+      - name: Run Snyk security scan
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+          
+      - name: SAST with CodeQL
+        uses: github/codeql-action/analyze@v2
+```
+
+### Allowed/Blocked Packages
+
+```json
+// package.json
+{
+  "overrides": {
+    // Force specific version for security fix
+    "lodash": "^4.17.21"
+  },
+  "scripts": {
+    "preinstall": "npx npm-force-resolutions"
+  }
+}
+```
+
+### Vulnerability Response Matrix
+
+| Severity | Response Time | Action |
+|----------|---------------|--------|
+| Critical | 24 hours | Immediate patch or disable |
+| High | 72 hours | Patch in next release |
+| Medium | 2 weeks | Plan for next sprint |
+| Low | 1 month | Backlog item |
+
+## 4.14 Incident Response
+
+### Incident Severity Levels
+
+| Level | Description | Example | Response Time |
+|-------|-------------|---------|---------------|
+| P1 - Critical | Service down, data breach | Auth bypass, data leak | 15 minutes |
+| P2 - High | Major feature broken | Session creation fails | 1 hour |
+| P3 - Medium | Partial degradation | Slow webhook delivery | 4 hours |
+| P4 - Low | Minor issue | UI glitch | 24 hours |
+
+### Incident Response Flow
+
+```mermaid
+flowchart TB
+    DETECT[Detect Incident] --> ASSESS[Assess Severity]
+    ASSESS --> CONTAIN[Contain Threat]
+    CONTAIN --> NOTIFY[Notify Stakeholders]
+    NOTIFY --> INVESTIGATE[Investigate Root Cause]
+    INVESTIGATE --> REMEDIATE[Remediate]
+    REMEDIATE --> RECOVER[Recover Service]
+    RECOVER --> POSTMORTEM[Post-mortem]
+    POSTMORTEM --> IMPROVE[Implement Improvements]
+```
+
+### Security Incident Checklist
+
+```markdown
+## Immediate Actions (First 15 Minutes)
+- [ ] Confirm incident is real (not false positive)
+- [ ] Assess severity level
+- [ ] Create incident channel/thread
+- [ ] Assign incident commander
+
+## Containment (First Hour)
+- [ ] Identify affected systems
+- [ ] Isolate compromised components
+- [ ] Preserve evidence (logs, snapshots)
+- [ ] Block attacker if identified
+
+## Investigation
+- [ ] Timeline of events
+- [ ] Entry point identification
+- [ ] Scope of compromise
+- [ ] Data accessed/exfiltrated
+
+## Recovery
+- [ ] Patch vulnerability
+- [ ] Reset compromised credentials
+- [ ] Restore from clean backup if needed
+- [ ] Verify system integrity
+
+## Post-Incident
+- [ ] Document lessons learned
+- [ ] Update security controls
+- [ ] Notify affected users if required
+- [ ] Schedule blameless post-mortem
+```
+
+### Emergency Contacts
+
+```yaml
+# config/incident-response.yml
+contacts:
+  primary_oncall:
+    name: "On-Call Engineer"
+    phone: "+62xxx"
+    slack: "@oncall"
+    
+  security_lead:
+    name: "Security Lead"
+    email: "security@openwa.dev"
+    
+  escalation:
+    - level: 1
+      wait: 15m
+      contact: primary_oncall
+    - level: 2  
+      wait: 30m
+      contact: security_lead
+
+communication:
+  internal_channel: "#incident-response"
+  status_page: "https://status.openwa.dev"
+```
+
+### Runbooks
+
+```markdown
+## Runbook: Suspected Data Breach
+
+### Detection Signals
+- Unusual API access patterns
+- Large data exports
+- Authentication from new locations
+- Failed auth attempts spike
+
+### Immediate Steps
+1. Rotate all API keys for affected accounts
+2. Enable IP whitelisting if not already
+3. Check audit logs for scope
+4. Snapshot affected database
+
+### Evidence Collection
+- Export API access logs: `npm run logs:export --since="2h"`
+- Database query logs
+- Network traffic captures
+- System metrics at incident time
+```
+
+### Post-Mortem Template
+
+```markdown
+# Incident Post-Mortem: [Title]
+
+**Date:** YYYY-MM-DD
+**Severity:** P1/P2/P3
+**Duration:** X hours
+**Author:** [Name]
+
+## Summary
+Brief description of what happened.
+
+## Impact
+- Users affected: X
+- Data compromised: None/Partial/Full
+- Revenue impact: $X
+
+## Timeline
+| Time (UTC) | Event |
+|------------|-------|
+| 10:00 | Alert triggered |
+| 10:05 | Incident confirmed |
+| 10:15 | Containment started |
+| 11:00 | Root cause identified |
+| 12:00 | Service restored |
+
+## Root Cause
+Technical explanation of what went wrong.
+
+## What Went Well
+- Detection was quick
+- Communication was clear
+
+## What Went Wrong
+- Missing monitoring for X
+- Delayed response due to Y
+
+## Action Items
+| Item | Owner | Due Date | Status |
+|------|-------|----------|--------|
+| Add monitoring for X | @eng | 2026-02-15 | Open |
+| Update runbook | @security | 2026-02-10 | Open |
+
+## Lessons Learned
+Key takeaways for preventing future incidents.
+```
+---
+
+<div align="center">
+
+[← 03 - System Architecture](./03-system-architecture.md) · [Documentation Index](./README.md) · [Next: 05 - Database Design →](./05-database-design.md)
+
+</div>

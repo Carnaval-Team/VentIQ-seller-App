@@ -126,6 +126,19 @@ class _AdminDrawerState extends State<AdminDrawer> {
     }
   }
 
+  /// Verificar si la tienda tiene acceso al módulo "Notificación a Clientes"
+  /// (Difusión WhatsApp) — requiere plan Pro o Avanzado.
+  Future<bool> _hasWapiAccess() async {
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      if (storeId == null) return false;
+      return await SubscriptionService().hasProPlan(storeId);
+    } catch (e) {
+      print('❌ Error verificando acceso WAPI: $e');
+      return false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Drawer(
@@ -466,6 +479,32 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
                 const Divider(height: 1),
+
+                // Notificación a Clientes — Difusión WhatsApp (Plan Pro / Avanzado)
+                FutureBuilder<bool>(
+                  future: _hasWapiAccess(),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.campaign,
+                            title: 'Notificación a Clientes',
+                            subtitle: 'Difusión por WhatsApp',
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.pushNamed(
+                                  context, '/wapi-notifications');
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
 
                 // Órdenes Carnaval (solo si admin_carnaval = true)
                 FutureBuilder<bool>(
