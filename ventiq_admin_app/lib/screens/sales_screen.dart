@@ -193,9 +193,9 @@ class _SalesScreenState extends State<SalesScreen>
     IconData icon = Icons.more_vert;
     Future<void> Function()? action;
 
-    debugPrint(
+    /* debugPrint(
       '🔍 FAB: Tab ${_tabController.index}, SupplierReports: ${_supplierReports.length}',
-    );
+    ); */
 
     switch (_tabController.index) {
       case 0: // Tiempo Real
@@ -237,9 +237,9 @@ class _SalesScreenState extends State<SalesScreen>
         break;
 
       case 2: // Proveedores
-        debugPrint(
+        /* debugPrint(
           '🔍 FAB: En tab Proveedores, _supplierReports.isNotEmpty: ${_supplierReports.isNotEmpty}',
-        );
+        ); */
         isLoading = _isExportingPDF;
         label = _isExportingPDF ? 'Exportando...' : 'Exportar Resumen';
         icon = Icons.download_outlined;
@@ -289,9 +289,9 @@ class _SalesScreenState extends State<SalesScreen>
       }
     }
 
-    debugPrint(
+    /* debugPrint(
       '🔍 FAB: onPressed=$onPressed, isLoading=$isLoading, label=$label',
-    );
+    ); */
 
     final isDisabled = onPressed == null && !isLoading;
     final backgroundColor = isDisabled ? Colors.grey : AppColors.primary;
@@ -2005,16 +2005,11 @@ class _SalesScreenState extends State<SalesScreen>
       final Map<int, SupplierSalesReport> groupedReports = {};
 
       for (final report in _productSalesReports) {
-        // Misma lógica de enteros truncados que la tabla de productos
-        final cantInt = report.totalVendido.truncate();
-        final precioInt = report.precioVentaCup.truncate();
-        final ingresosCup = precioInt * cantInt;
-        final costoUnitInt = (report.precioCostoCup > 0
-                ? report.precioCostoCup
-                : report.precioCosto * report.valorUsd)
-            .truncate();
-        final costoCup = costoUnitInt * cantInt;
-        final gananciaCup = ingresosCup - costoCup;
+        // Mismo cálculo local que el tab de productos: precio.round() × cantidad exacta.
+        final ingresos = (report.precioVentaCup.round() * report.totalVendido).roundToDouble();
+        final costo = (report.precioCostoCup.round() * report.totalVendido).roundToDouble();
+        final ganancia = ingresos - costo;
+        final cantidad = report.totalVendido;
 
         final idProv = report.idProveedor;
         final nomProv = report.nombreProveedor;
@@ -2024,20 +2019,20 @@ class _SalesScreenState extends State<SalesScreen>
           groupedReports[idProv] = SupplierSalesReport(
             idProveedor: current.idProveedor,
             nombreProveedor: current.nombreProveedor,
-            totalVentas: current.totalVentas + ingresosCup.toDouble(),
-            totalCosto: current.totalCosto + costoCup.toDouble(),
-            totalGanancia: current.totalGanancia + gananciaCup.toDouble(),
-            cantidadProductos: current.cantidadProductos + cantInt.toDouble(),
+            totalVentas: current.totalVentas + ingresos,
+            totalCosto: current.totalCosto + costo,
+            totalGanancia: current.totalGanancia + ganancia,
+            cantidadProductos: current.cantidadProductos + cantidad,
             margenPorcentaje: 0,
           );
         } else {
           groupedReports[idProv] = SupplierSalesReport(
             idProveedor: idProv,
             nombreProveedor: nomProv,
-            totalVentas: ingresosCup.toDouble(),
-            totalCosto: costoCup.toDouble(),
-            totalGanancia: gananciaCup.toDouble(),
-            cantidadProductos: cantInt.toDouble(),
+            totalVentas: ingresos,
+            totalCosto: costo,
+            totalGanancia: ganancia,
+            cantidadProductos: cantidad,
             margenPorcentaje: 0,
           );
         }
@@ -4334,16 +4329,12 @@ class _SalesScreenState extends State<SalesScreen>
                         b.nombreProducto.toLowerCase(),
                       ),
                     )).map((report) {
-                    // Usar enteros para que el total coincida exactamente con lo visible
-                    final cantInt = report.totalVendido.truncate();
-                    final precioVentaInt = report.precioVentaCup.truncate();
-                    final ingresosCup = precioVentaInt * cantInt;
-                    // Costo unitario CUP (entero): usar precioCostoCup si existe,
-                    // sino convertir precioCosto(USD) * valorUsd
-                    final costoUnitarioCup = (report.precioCostoCup > 0
-                        ? report.precioCostoCup
-                        : report.precioCosto * report.valorUsd).truncate();
-                    final totalCostoCup = costoUnitarioCup * cantInt;
+                    // Cálculo local: precio(redondeado) × cantidad exacta.
+                    // NO se trunca la cantidad porque puede ser fraccionaria (peso, litros…).
+                    final precioVentaInt = report.precioVentaCup.round();
+                    final costoUnitarioCup = report.precioCostoCup.round();
+                    final ingresosCup = (precioVentaInt * report.totalVendido).round();
+                    final totalCostoCup = (costoUnitarioCup * report.totalVendido).round();
                     final ganancias = ingresosCup - totalCostoCup;
 
                     return DataRow(
@@ -4371,7 +4362,7 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                         DataCell(
                           Text(
-                            '${report.totalVendido.toStringAsFixed(0)}',
+                            _formatCantidadDecimal(report.totalVendido),
                             style: const TextStyle(color: AppColors.primary),
                           ),
                         ),
@@ -4433,7 +4424,7 @@ class _SalesScreenState extends State<SalesScreen>
                         const DataCell(Text('-')), // No average price
                         DataCell(
                           Text(
-                            '${_productSalesReports.fold(0.0, (sum, report) => sum + report.totalVendido).toStringAsFixed(0)}',
+                            _formatCantidadDecimal(_productSalesReports.fold(0.0, (sum, report) => sum + report.totalVendido)),
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.primary,
@@ -4442,7 +4433,7 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                         DataCell(
                           Text(
-                            '\$${_productSalesReports.fold(0, (sum, r) => sum + r.precioVentaCup.truncate() * r.totalVendido.truncate())}',
+                            '\$${_productSalesReports.fold(0, (sum, r) => sum + (r.precioVentaCup.round() * r.totalVendido).round())}',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.success,
@@ -4452,10 +4443,7 @@ class _SalesScreenState extends State<SalesScreen>
                         const DataCell(Text('-')), // No average cost
                         DataCell(
                           Text(
-                            '\$${_productSalesReports.fold(0, (sum, r) {
-                              final cu = (r.precioCostoCup > 0 ? r.precioCostoCup : r.precioCosto * r.valorUsd).truncate();
-                              return sum + cu * r.totalVendido.truncate();
-                            })}',
+                            '\$${_productSalesReports.fold(0, (sum, r) => sum + (r.precioCostoCup.round() * r.totalVendido).round())}',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.warning,
@@ -4464,11 +4452,8 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                         DataCell(
                           Builder(builder: (context) {
-                            final totalIngresos = _productSalesReports.fold(0, (sum, r) => sum + r.precioVentaCup.truncate() * r.totalVendido.truncate());
-                            final totalCosto = _productSalesReports.fold(0, (sum, r) {
-                              final cu = (r.precioCostoCup > 0 ? r.precioCostoCup : r.precioCosto * r.valorUsd).truncate();
-                              return sum + cu * r.totalVendido.truncate();
-                            });
+                            final totalIngresos = _productSalesReports.fold(0, (sum, r) => sum + (r.precioVentaCup.round() * r.totalVendido).round());
+                            final totalCosto = _productSalesReports.fold(0, (sum, r) => sum + (r.precioCostoCup.round() * r.totalVendido).round());
                             final totalGan = totalIngresos - totalCosto;
                             return Text(
                               '\$${totalGan.toStringAsFixed(0)}',

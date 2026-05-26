@@ -785,6 +785,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
   Future<void> _performLogout() async {
     try {
       print('🔐 Iniciando logout...');
+      SubscriptionService().invalidateCache();
       final authService = AuthService();
 
       // Usar AuthService.signOut() que limpia TODO correctamente

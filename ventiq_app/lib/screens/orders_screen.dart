@@ -5317,7 +5317,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
   // ── operaciones locales (sin tocar Supabase) ──────────────────
 
   void _updateQtyLocal(OrderItem item, double delta) {
-    final newQty = item.cantidad + delta;
+    _setQtyLocal(item, item.cantidad + delta);
+  }
+
+  void _setQtyLocal(OrderItem item, double newQty) {
     if (newQty <= 0) {
       _removeItemLocal(item);
       return;
@@ -5346,8 +5349,21 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
             'nueva_cantidad': newQty,
           });
         }
+      } else {
+        // Item nuevo aún no guardado: mantener sincronizada la operación 'add'
+        final opIdx = _pendingOps.indexWhere(
+          (o) => o['op'] == 'add' && o['item_id'] == item.id,
+        );
+        if (opIdx != -1) {
+          _pendingOps[opIdx]['payload']['cantidad'] = newQty;
+        }
       }
     });
+  }
+
+  void _setAddQuantity(double quantity) {
+    if (quantity <= 0) return;
+    setState(() => _addQuantity = quantity.clamp(1, 9999).toDouble());
   }
 
   void _removeItemLocal(OrderItem item) {
@@ -6531,21 +6547,15 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                 enabled: !_isSaving,
                 onTap: () => _updateQtyLocal(item, -1),
               ),
-              Container(
-                constraints: const BoxConstraints(minWidth: 36),
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  item.cantidad % 1 == 0
-                      ? item.cantidad.toInt().toString()
-                      : item.cantidad.toStringAsFixed(1),
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1F2937),
-                  ),
-                ),
+              const SizedBox(width: 6),
+              _QuantityTextField(
+                value: item.cantidad,
+                enabled: !_isSaving,
+                width: 64,
+                fontSize: 15,
+                onChanged: (value) => _setQtyLocal(item, value),
               ),
+              const SizedBox(width: 6),
               _CtrlButton(
                 icon: Icons.add,
                 color: const Color(0xFF0EA5E9),
@@ -7010,26 +7020,22 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                   icon: Icons.remove,
                   color: const Color(0xFF6B7280),
                   enabled: _addQuantity > 1,
-                  onTap:
-                      () => setState(
-                        () => _addQuantity = (_addQuantity - 1).clamp(1, 9999),
-                      ),
+                  onTap: () => _setAddQuantity(_addQuantity - 1),
                 ),
-                const SizedBox(width: 16),
-                Text(
-                  _addQuantity.toInt().toString(),
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1F2937),
-                  ),
+                const SizedBox(width: 12),
+                _QuantityTextField(
+                  value: _addQuantity,
+                  enabled: true,
+                  width: 86,
+                  fontSize: 18,
+                  onChanged: _setAddQuantity,
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 _CtrlButton(
                   icon: Icons.add,
                   color: const Color(0xFF0EA5E9),
                   enabled: true,
-                  onTap: () => setState(() => _addQuantity++),
+                  onTap: () => _setAddQuantity(_addQuantity + 1),
                 ),
               ],
             ),
@@ -7178,7 +7184,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                           Row(
                             children: [
                               Text(
-                                '${_addQuantity.toInt()} × \$${precioFinal.toStringAsFixed(2)}',
+                                '${PriceUtils.formatQuantity(_addQuantity)} × \$${precioFinal.toStringAsFixed(2)}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -7273,6 +7279,141 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+// Campo compacto para capturar cantidades manuales sin perder los botones +/-.
+class _QuantityTextField extends StatefulWidget {
+  final double value;
+  final bool enabled;
+  final ValueChanged<double> onChanged;
+  final double width;
+  final double fontSize;
+
+  const _QuantityTextField({
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+    this.width = 64,
+    this.fontSize = 15,
+  });
+
+  @override
+  State<_QuantityTextField> createState() => _QuantityTextFieldState();
+}
+
+class _QuantityTextFieldState extends State<_QuantityTextField> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+
+  String _formatQuantity(double value) {
+    if (value % 1 == 0) return value.toInt().toString();
+    return value
+        .toStringAsFixed(3)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: _formatQuantity(widget.value));
+    _focusNode = FocusNode()..addListener(_handleFocusChange);
+  }
+
+  @override
+  void didUpdateWidget(covariant _QuantityTextField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_focusNode.hasFocus && oldWidget.value != widget.value) {
+      _controller.text = _formatQuantity(widget.value);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_handleFocusChange);
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChange() {
+    if (_focusNode.hasFocus) {
+      _controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _controller.text.length,
+      );
+      return;
+    }
+    _commitValue();
+  }
+
+  void _commitValue() {
+    final normalized = _controller.text.trim().replaceAll(',', '.');
+    final parsed = double.tryParse(normalized);
+    if (parsed == null || parsed <= 0) {
+      _controller.text = _formatQuantity(widget.value);
+      return;
+    }
+
+    final nextValue = parsed.clamp(0.01, 9999).toDouble();
+    _controller.text = _formatQuantity(nextValue);
+    widget.onChanged(nextValue);
+  }
+
+  void _emitLiveValue(String value) {
+    final parsed = double.tryParse(value.trim().replaceAll(',', '.'));
+    if (parsed == null || parsed <= 0) return;
+
+    final nextValue = parsed.clamp(0.01, 9999).toDouble();
+    widget.onChanged(nextValue);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: widget.width,
+      height: 36,
+      child: TextField(
+        controller: _controller,
+        focusNode: _focusNode,
+        enabled: widget.enabled,
+        textAlign: TextAlign.center,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textInputAction: TextInputAction.done,
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
+        ],
+        style: TextStyle(
+          fontSize: widget.fontSize,
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF1F2937),
+        ),
+        decoration: InputDecoration(
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 6,
+            vertical: 8,
+          ),
+          filled: true,
+          fillColor: widget.enabled ? Colors.white : Colors.grey[100],
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.grey[300]!),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.grey[300]!),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFF0EA5E9), width: 1.4),
+          ),
+        ),
+        onSubmitted: (_) => _commitValue(),
+        onChanged: _emitLiveValue,
       ),
     );
   }

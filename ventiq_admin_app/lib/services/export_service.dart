@@ -1359,6 +1359,7 @@ class ExportService {
     bool includeMarca = false,
     bool includeDescripcionCorta = false,
     bool includeDescripcion = false,
+    bool includePrecios = false,
   }) async {
     try {
       final now = DateTime.now();
@@ -1379,6 +1380,7 @@ class ExportService {
           includeMarca: includeMarca,
           includeDescripcionCorta: includeDescripcionCorta,
           includeDescripcion: includeDescripcion,
+          includePrecios: includePrecios,
         );
         mimeType =
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -1491,6 +1493,7 @@ class ExportService {
                       includeMarca: includeMarca,
                       includeDescripcionCorta: includeDescripcionCorta,
                       includeDescripcion: includeDescripcion,
+                      includePrecios: includePrecios,
                     ),
                   );
 
@@ -1759,6 +1762,7 @@ class ExportService {
     bool includeMarca = false,
     bool includeDescripcionCorta = false,
     bool includeDescripcion = false,
+    bool includePrecios = false,
   }) async {
     final excel = Excel.createExcel();
 
@@ -1793,11 +1797,13 @@ class ExportService {
           almacenName,
           ubicacionName,
           inventoryProducts,
+          rawData: productos,
           includeSku: includeSku,
           includeNombreCorto: includeNombreCorto,
           includeMarca: includeMarca,
           includeDescripcionCorta: includeDescripcionCorta,
           includeDescripcion: includeDescripcion,
+          includePrecios: includePrecios,
         );
       }
     }
@@ -1957,11 +1963,13 @@ class ExportService {
     String almacenName,
     String ubicacionName,
     List<InventoryProduct> products, {
+    List<Map<String, dynamic>>? rawData,
     bool includeSku = false,
     bool includeNombreCorto = false,
     bool includeMarca = false,
     bool includeDescripcionCorta = false,
     bool includeDescripcion = false,
+    bool includePrecios = false,
   }) {
     // Crear lista de encabezados dinámicamente
     final headers = <String>['Nombre'];
@@ -1995,6 +2003,17 @@ class ExportService {
       'Ventas',
       'Cant. Final',
     ]);
+    if (includePrecios) {
+      headers.addAll([
+        'Costo USD',
+        'Costo CUP',
+        'P.Venta USD',
+        'P.Venta CUP',
+        'Ganancia USD',
+        'Ganancia CUP',
+        '%Ganancia',
+      ]);
+    }
 
     // Configurar anchos de columna dinámicamente
     sheet.setColumnWidth(0, 30); // Nombre del Producto
@@ -2021,9 +2040,14 @@ class ExportService {
       currentCol++;
     }
 
-    // Columnas numéricas
+    // Columnas numéricas de cantidades
     for (int i = 0; i < 5; i++) {
       sheet.setColumnWidth(currentCol + i, 12);
+    }
+    if (includePrecios) {
+      for (int i = 0; i < 7; i++) {
+        sheet.setColumnWidth(currentCol + 5 + i, 13);
+      }
     }
 
     int currentRow = 0;
@@ -2103,14 +2127,37 @@ class ExportService {
         product.cantidadFinal.toStringAsFixed(1),
       ]);
 
+      if (includePrecios && rawData != null) {
+        final raw = rawData.firstWhere(
+          (r) => r['id_producto'] == product.idProducto,
+          orElse: () => {},
+        );
+        final _fmt2 = (dynamic v) =>
+            (v as num?)?.toDouble().toStringAsFixed(2) ?? '0.00';
+        final _fmt1 = (dynamic v) =>
+            (v as num?)?.toDouble().toStringAsFixed(1) ?? '0.0';
+        rowData.addAll([
+          _fmt2(raw['precio_costo_usd']),
+          _fmt2(raw['precio_costo_cup']),
+          _fmt2(raw['precio_venta_usd_calc']),
+          _fmt2(raw['precio_venta_cup_actual']),
+          _fmt2(raw['ganancia_usd']),
+          _fmt2(raw['ganancia_cup']),
+          '${_fmt1(raw['ganancia_pct'])}%',
+        ]);
+      }
+
+      // Índice de Cant. Final: siempre la 5ª columna numérica (offset fijo)
+      final cantFinalIndex = rowData.length - 1 - (includePrecios ? 7 : 0);
+
       for (int i = 0; i < rowData.length; i++) {
         final cell = sheet.cell(
           CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow),
         );
         cell.value = TextCellValue(rowData[i]);
 
-        // Aplicar color basado en el stock en la última columna (Cant. Final)
-        if (i == rowData.length - 1) {
+        // Aplicar color basado en el stock en la columna Cant. Final
+        if (i == cantFinalIndex) {
           final cantidad = product.cantidadFinal;
           if (cantidad <= 0) {
             cell.cellStyle = CellStyle(backgroundColorHex: ExcelColor.red);
@@ -2173,6 +2220,7 @@ class ExportService {
     bool includeMarca = false,
     bool includeDescripcionCorta = false,
     bool includeDescripcion = false,
+    bool includePrecios = false,
   }) {
     // Crear lista de encabezados dinámicamente
     final headers = <String>['Nombre'];
@@ -2210,14 +2258,28 @@ class ExportService {
 
     // Agregar columnas numéricas
     headers.addAll([
-      'Cant. Inicial',
+      'Cant. Ini',
       'Entradas',
-      'Extracciones',
+      'Extracc.',
       'Ventas',
-      'Cant. Final',
+      'Cant. Fin',
     ]);
     for (int i = 0; i < 5; i++) {
       columnWidths[columnIndex + i] = const pw.FlexColumnWidth(1);
+    }
+    if (includePrecios) {
+      headers.addAll([
+        'Costo USD',
+        'Costo CUP',
+        'P.Vta USD',
+        'P.Vta CUP',
+        'Gan. USD',
+        'Gan. CUP',
+        '%Gan.',
+      ]);
+      for (int i = 0; i < 7; i++) {
+        columnWidths[columnIndex + 5 + i] = const pw.FlexColumnWidth(1.1);
+      }
     }
 
     return pw.Table(
@@ -2275,6 +2337,21 @@ class ExportService {
                     0)
                 .toStringAsFixed(1),
           ]);
+
+          if (includePrecios) {
+            final _f2 = (String k) =>
+                (double.tryParse(producto[k]?.toString() ?? '0') ?? 0)
+                    .toStringAsFixed(2);
+            rowData.addAll([
+              _f2('precio_costo_usd'),
+              _f2('precio_costo_cup'),
+              _f2('precio_venta_usd_calc'),
+              _f2('precio_venta_cup_actual'),
+              _f2('ganancia_usd'),
+              _f2('ganancia_cup'),
+              '${(double.tryParse(producto['ganancia_pct']?.toString() ?? '0') ?? 0).toStringAsFixed(1)}%',
+            ]);
+          }
 
           return pw.TableRow(
             children:

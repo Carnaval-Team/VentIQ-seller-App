@@ -5,10 +5,44 @@ import '../models/subscription_history.dart';
 import 'store_selector_service.dart';
 
 class SubscriptionService {
+  // ── Singleton ──────────────────────────────────────────────────────────────
+  static final SubscriptionService _instance = SubscriptionService._internal();
+  factory SubscriptionService() => _instance;
+  SubscriptionService._internal();
+  // ── Caché en memoria con TTL de 30 min ────────────────────────────────────
+  static const Duration _cacheTTL = Duration(minutes: 30);
+  final Map<int, Subscription?> _activeCache = {};
+  final Map<int, DateTime> _activeCacheTime = {};
+  final Map<int, Subscription?> _currentCache = {};
+  final Map<int, DateTime> _currentCacheTime = {};
+
+  /// Invalida el caché para una tienda (llamar al hacer logout o cambio de plan)
+  void invalidateCache([int? idTienda]) {
+    if (idTienda != null) {
+      _activeCache.remove(idTienda);
+      _activeCacheTime.remove(idTienda);
+      _currentCache.remove(idTienda);
+      _currentCacheTime.remove(idTienda);
+      print('🗑️ Caché de suscripción invalidado para tienda $idTienda');
+    } else {
+      _activeCache.clear();
+      _activeCacheTime.clear();
+      _currentCache.clear();
+      _currentCacheTime.clear();
+      print('🗑️ Caché de suscripción invalidado completamente');
+    }
+  }
+
   final _supabase = Supabase.instance.client;
 
   /// Obtiene la suscripción más reciente de una tienda (activa o vencida)
   Future<Subscription?> getCurrentSubscription(int idTienda) async {
+    // Devolver desde caché si está vigente
+    final cachedTime = _currentCacheTime[idTienda];
+    if (cachedTime != null && DateTime.now().difference(cachedTime) < _cacheTTL) {
+      print('⚡ [CACHÉ] getCurrentSubscription tienda $idTienda');
+      return _currentCache[idTienda];
+    }
     try {
       print('🔍 Obteniendo suscripción actual para tienda: $idTienda');
 
@@ -40,7 +74,10 @@ class SubscriptionService {
       }
 
       print('✅ Suscripción encontrada para tienda $idTienda');
-      return Subscription.fromJson(response);
+      final result = Subscription.fromJson(response);
+      _currentCache[idTienda] = result;
+      _currentCacheTime[idTienda] = DateTime.now();
+      return result;
     } catch (e) {
       print('❌ Error obteniendo suscripción actual: $e');
       return null;
@@ -49,6 +86,12 @@ class SubscriptionService {
 
   /// Obtiene la suscripción activa de una tienda
   Future<Subscription?> getActiveSubscription(int idTienda) async {
+    // Devolver desde caché si está vigente
+    final cachedTime = _activeCacheTime[idTienda];
+    if (cachedTime != null && DateTime.now().difference(cachedTime) < _cacheTTL) {
+      print('⚡ [CACHÉ] getActiveSubscription tienda $idTienda');
+      return _activeCache[idTienda];
+    }
     try {
       print('🔍 Obteniendo suscripción activa para tienda: $idTienda');
 
@@ -90,6 +133,8 @@ class SubscriptionService {
         print(
           '✅ Suscripción activa encontrada: ${subscription.planDenominacion}',
         );
+        _activeCache[idTienda] = subscription;
+        _activeCacheTime[idTienda] = DateTime.now();
         return subscription;
       } catch (e) {
         print('❌ Error procesando datos de suscripción: $e');
