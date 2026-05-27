@@ -1,34 +1,15 @@
-CREATE OR REPLACE FUNCTION fn_registrar_cambio_estado_operacion_mejorado(
-    p_id_operacion BIGINT,
-    p_nuevo_estado SMALLINT,
-    p_uuid_usuario UUID DEFAULT NULL
-)
-RETURNS jsonb
-LANGUAGE plpgsql
-AS $$
 DECLARE 
     v_productos_extraidos RECORD;
     v_existente_estado RECORD;
     v_inventario_actual RECORD;
     v_ingrediente RECORD;
     v_cantidad_ingrediente_devolver NUMERIC;
-    v_ultimo_inventario RECORD;
+    v_ultimo_inventario RECORD;  -- Para almacenar el último registro de inventario
     v_es_recepcion BOOLEAN := FALSE;
-    v_response jsonb;
 BEGIN
-    -- Inicializar respuesta
-    v_response := jsonb_build_object(
-        'success', false,
-        'message', '',
-        'operation_id', p_id_operacion,
-        'new_state', p_nuevo_estado
-    );
-
     -- Primero, validar que el estado sea válido
     IF p_nuevo_estado NOT IN (1, 2, 3, 4) THEN
-        v_response := jsonb_set(v_response, '{success}', 'false');
-        v_response := jsonb_set(v_response, '{message}', '"Estado de operación inválido. Solo se permiten 1 (Pendiente), 2 (Completada), 3 (Devuelta), 4 (Cancelada)"');
-        RETURN v_response;
+        RAISE EXCEPTION 'Estado de operación inválido. Solo se permiten 1 (Pendiente), 2 (Completada), 3 (Devuelta), 4 (Cancelada)';
     END IF;
 
     -- Verificar si ya existe un estado para esta operación
@@ -40,9 +21,7 @@ BEGIN
 
     -- Si el estado es el mismo que el último registrado, no hacer nada
     IF v_existente_estado.estado = p_nuevo_estado THEN
-        v_response := jsonb_set(v_response, '{success}', 'true');
-        v_response := jsonb_set(v_response, '{message}', '"La operación ya tiene este estado"');
-        RETURN v_response;
+        RETURN;
     END IF;
 
     -- Insertar nuevo estado de operación
@@ -58,16 +37,16 @@ BEGIN
         NOW()
     );
 
-    -- Recepciones: al cancelar (4) o devolver (3) NO se retorna stock al inventario.
-    -- Cancelar una recepción revierte el hecho de haber recibido mercancía, no debe sumar existencias.
+    -- Si la operación es una RECEPCIÓN, al marcarla como Devuelta (3) o Cancelada (4)
+    -- NO se debe retornar stock al inventario (se está cancelando la recepción).
     SELECT EXISTS (
         SELECT 1
         FROM app_dat_operacion_recepcion orp
         WHERE orp.id_operacion = p_id_operacion
     ) INTO v_es_recepcion;
 
-    -- Si es devolución o cancelación de una operación con EXTRACCIÓN, devolver stock.
-    -- Las recepciones solo cambian de estado; no insertan movimientos de inventario aquí.
+    -- Si es una devolución o cancelación, devolver productos al inventario
+    -- (solo aplica para operaciones con extracción; NO para recepciones).
     IF p_nuevo_estado IN (3, 4) AND NOT v_es_recepcion THEN
         -- Recuperar los productos extraídos originalmente
         FOR v_productos_extraidos IN (
@@ -164,7 +143,7 @@ BEGIN
                 -- Si no existe inventario previo del ingrediente, usar valores por defecto
                 IF v_ultimo_inventario IS NULL THEN
                     v_ultimo_inventario.cantidad_final := 0;
-                    v_ultimo_inventario.id_presentacion := NULL;
+                    v_ultimo_inventario.id_presentacion := NULL; -- O puedes usar un valor por defecto si lo tienes
                     v_ultimo_inventario.id_ubicacion := NULL;
                     v_ultimo_inventario.sku_producto := NULL;
                     v_ultimo_inventario.sku_ubicacion := NULL;
@@ -187,7 +166,7 @@ BEGIN
                     v_ingrediente.id_ingrediente,
                     COALESCE(v_ultimo_inventario.id_variante, NULL),
                     COALESCE(v_ultimo_inventario.id_opcion_variante, NULL),
-                    v_ultimo_inventario.id_presentacion,
+                    v_ultimo_inventario.id_presentacion,  -- Usar el id_presentacion del último inventario
                     COALESCE(v_ultimo_inventario.id_ubicacion, NULL),
                     COALESCE(v_ultimo_inventario.cantidad_final, 0),
                     COALESCE(v_ultimo_inventario.cantidad_final, 0) + v_cantidad_ingrediente_devolver,
@@ -202,15 +181,4 @@ BEGIN
             END LOOP;
         END LOOP;
     END IF;
-
-    -- Retornar respuesta exitosa
-    v_response := jsonb_set(v_response, '{success}', 'true');
-    v_response := jsonb_set(v_response, '{message}', '"Operación actualizada exitosamente"');
-    
-    RETURN v_response;
-EXCEPTION WHEN OTHERS THEN
-    v_response := jsonb_set(v_response, '{success}', 'false');
-    v_response := jsonb_set(v_response, '{message}', to_jsonb(SQLERRM));
-    RETURN v_response;
 END;
-$$;
