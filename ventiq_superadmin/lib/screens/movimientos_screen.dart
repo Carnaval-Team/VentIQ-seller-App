@@ -36,6 +36,12 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
   int _inventarioTotal = 0;
   int _operacionesTotal = 0;
 
+  // KPIs para las cards (efecto odómetro)
+  double _kpiOrdenes = 0;
+  double _kpiDinero = 0;
+  double _kpiEntradas = 0;
+  double _kpiSalidas = 0;
+
   // Flash highlight tracking (items recently moved/inserted).
   // Inventario: 'up' subió de posición, 'down' bajó, 'new' nuevo.
   final Map<String, String> _flashInv = {};
@@ -149,9 +155,28 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
       _diffApplyInventario(inv);
       _diffApplyOperaciones(ops);
 
+      // Calcular KPIs
+      double totalDinero = 0;
+      for (final o in ops) {
+        totalDinero += o.total;
+      }
+      double totalEntradas = 0;
+      double totalSalidas = 0;
+      for (final m in inv) {
+        if (m.subio) {
+          totalEntradas += m.variacion.abs();
+        } else if (m.bajo) {
+          totalSalidas += m.variacion.abs();
+        }
+      }
+
       setState(() {
         _inventarioTotal = inv.isEmpty ? 0 : inv.first.totalCount;
         _operacionesTotal = ops.isEmpty ? 0 : ops.first.totalCount;
+        _kpiOrdenes = _operacionesTotal.toDouble();
+        _kpiDinero = totalDinero;
+        _kpiEntradas = totalEntradas;
+        _kpiSalidas = totalSalidas;
       });
     } finally {
       if (mounted) setState(() => _loadingData = false);
@@ -211,10 +236,12 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
         _flashInvKey(n.clave, wentUp ? 'up' : 'down');
       } else {
         // Misma posición pero pudo cambiar cantidad → actualizar en sitio
-        if (_inventarioUI[i].cantidadFinal != n.cantidadFinal ||
-            _inventarioUI[i].variacion != n.variacion) {
+        final prev = _inventarioUI[i];
+        if (prev.cantidadFinal != n.cantidadFinal ||
+            prev.variacion != n.variacion) {
+          final wentUpQty = n.cantidadFinal > prev.cantidadFinal;
           _inventarioUI[i] = n;
-          _flashInvKey(n.clave, n.cantidadFinal > _inventarioUI[i].cantidadFinal ? 'up' : 'down');
+          _flashInvKey(n.clave, wentUpQty ? 'up' : 'down');
         }
       }
     }
@@ -308,6 +335,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
           : Column(
               children: [
                 _buildHeaderBar(),
+                _buildKpiBar(),
                 Expanded(
                   child: LayoutBuilder(
                     builder: (ctx, c) {
@@ -333,6 +361,75 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                 ),
               ],
             ),
+    );
+  }
+
+  Widget _buildKpiBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border(bottom: BorderSide(color: AppColors.divider)),
+      ),
+      child: LayoutBuilder(
+        builder: (ctx, c) {
+          final isNarrow = c.maxWidth < 700;
+          final cards = [
+            _KpiCard(
+              icon: Icons.receipt_long,
+              label: 'Órdenes',
+              value: _kpiOrdenes,
+              color: AppColors.primary,
+              isCurrency: false,
+              decimals: 0,
+            ),
+            _KpiCard(
+              icon: Icons.attach_money,
+              label: 'Dinero',
+              value: _kpiDinero,
+              color: AppColors.success,
+              isCurrency: true,
+              decimals: 2,
+            ),
+            _KpiCard(
+              icon: Icons.arrow_downward,
+              label: 'Entradas',
+              value: _kpiEntradas,
+              color: AppColors.info,
+              isCurrency: false,
+              decimals: 0,
+            ),
+            _KpiCard(
+              icon: Icons.arrow_upward,
+              label: 'Salidas',
+              value: _kpiSalidas,
+              color: AppColors.error,
+              isCurrency: false,
+              decimals: 0,
+            ),
+          ];
+          if (isNarrow) {
+            return Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: cards
+                  .map((w) => SizedBox(
+                        width: (c.maxWidth - 8) / 2,
+                        child: w,
+                      ))
+                  .toList(),
+            );
+          }
+          return Row(
+            children: [
+              for (int i = 0; i < cards.length; i++) ...[
+                Expanded(child: cards[i]),
+                if (i != cards.length - 1) const SizedBox(width: 12),
+              ],
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -933,6 +1030,298 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
           idTienda: _selectedStore!.id,
         );
       },
+    );
+  }
+}
+
+class _KpiCard extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final double value;
+  final Color color;
+  final bool isCurrency;
+  final int decimals;
+
+  const _KpiCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.isCurrency,
+    required this.decimals,
+  });
+
+  @override
+  State<_KpiCard> createState() => _KpiCardState();
+}
+
+class _KpiCardState extends State<_KpiCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _pulseCtrl;
+  late Animation<double> _pulseAnim;
+  double _displayValue = 0;
+  int _flashDir = 0; // 1 sube, -1 baja, 0 sin cambio
+
+  @override
+  void initState() {
+    super.initState();
+    _displayValue = widget.value;
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _pulseAnim = CurvedAnimation(
+      parent: _pulseCtrl,
+      curve: Curves.easeOut,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _KpiCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value) {
+      _flashDir = widget.value > oldWidget.value
+          ? 1
+          : widget.value < oldWidget.value
+              ? -1
+              : 0;
+      _displayValue = widget.value;
+      _pulseCtrl.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _pulseAnim,
+      builder: (ctx, child) {
+        final t = _pulseAnim.value;
+        final glow = (1 - t).clamp(0.0, 1.0);
+        final scale = 1.0 + (0.04 * (1 - (t * 2 - 1).abs())).clamp(0.0, 0.04);
+        final flashColor = _flashDir > 0
+            ? AppColors.success
+            : _flashDir < 0
+                ? AppColors.error
+                : widget.color;
+        return Transform.scale(
+          scale: scale,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: widget.color.withOpacity(0.15 + 0.45 * glow),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: flashColor.withOpacity(0.05 + 0.35 * glow),
+                  blurRadius: 12 + 12 * glow,
+                  spreadRadius: 0.5 + 1.5 * glow,
+                ),
+              ],
+            ),
+            child: child,
+          ),
+        );
+      },
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: widget.color.withOpacity(0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(widget.icon, color: widget.color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  widget.label,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                _OdometerNumber(
+                  value: _displayValue,
+                  decimals: widget.decimals,
+                  prefix: widget.isCurrency ? '\$' : '',
+                  color: AppColors.textPrimary,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Efecto Odómetro / Rolling Numbers Animation:
+/// Cada dígito se anima verticalmente cuando cambia, simulando
+/// el rodillo de un odómetro mecánico.
+class _OdometerNumber extends StatefulWidget {
+  final double value;
+  final int decimals;
+  final String prefix;
+  final Color color;
+
+  const _OdometerNumber({
+    required this.value,
+    required this.decimals,
+    required this.prefix,
+    required this.color,
+  });
+
+  @override
+  State<_OdometerNumber> createState() => _OdometerNumberState();
+}
+
+class _OdometerNumberState extends State<_OdometerNumber> {
+  late double _from;
+  late double _to;
+
+  @override
+  void initState() {
+    super.initState();
+    _from = widget.value;
+    _to = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(covariant _OdometerNumber oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value) {
+      _from = oldWidget.value;
+      _to = widget.value;
+    }
+  }
+
+  String _formatNumber(double v) {
+    if (widget.decimals == 0) {
+      // Separador de miles
+      final intStr = v.round().toString();
+      final buf = StringBuffer();
+      for (int i = 0; i < intStr.length; i++) {
+        final remaining = intStr.length - i;
+        buf.write(intStr[i]);
+        if (remaining > 1 && remaining % 3 == 1) buf.write(',');
+      }
+      return buf.toString();
+    }
+    final parts = v.toStringAsFixed(widget.decimals).split('.');
+    final intStr = parts[0];
+    final buf = StringBuffer();
+    for (int i = 0; i < intStr.length; i++) {
+      final remaining = intStr.length - i;
+      buf.write(intStr[i]);
+      if (remaining > 1 && remaining % 3 == 1) buf.write(',');
+    }
+    return '${buf.toString()}.${parts[1]}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: _from, end: _to),
+      duration: const Duration(milliseconds: 900),
+      curve: Curves.easeOutCubic,
+      builder: (ctx, animatedValue, _) {
+        final text = '${widget.prefix}${_formatNumber(animatedValue)}';
+        final targetText = '${widget.prefix}${_formatNumber(_to)}';
+        // Mostrar el texto animado (rolling), pero asegurar largo con target.
+        return SizedBox(
+          height: 24,
+          child: ClipRect(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (int i = 0; i < text.length; i++)
+                  _OdometerDigit(
+                    character: text[i],
+                    color: widget.color,
+                  ),
+                if (text.length < targetText.length)
+                  SizedBox(width: (targetText.length - text.length) * 2.0),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _OdometerDigit extends StatelessWidget {
+  final String character;
+  final Color color;
+  const _OdometerDigit({required this.character, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDigit = character.codeUnitAt(0) >= 48 &&
+        character.codeUnitAt(0) <= 57;
+    final style = TextStyle(
+      fontSize: 20,
+      fontWeight: FontWeight.bold,
+      color: color,
+      fontFeatures: const [FontFeature.tabularFigures()],
+      height: 1.1,
+    );
+    if (!isDigit) {
+      return Text(character, style: style);
+    }
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 320),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, anim) {
+        final isIncoming = child.key == ValueKey(character);
+        final beginOffset = isIncoming
+            ? const Offset(0, 1.0)
+            : const Offset(0, -1.0);
+        return ClipRect(
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: beginOffset,
+              end: Offset.zero,
+            ).animate(anim),
+            child: FadeTransition(opacity: anim, child: child),
+          ),
+        );
+      },
+      layoutBuilder: (currentChild, previousChildren) {
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            ...previousChildren,
+            if (currentChild != null) currentChild,
+          ],
+        );
+      },
+      child: Text(
+        character,
+        key: ValueKey(character),
+        style: style,
+      ),
     );
   }
 }

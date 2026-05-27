@@ -1,9 +1,51 @@
 {
-  "current_version": "2.2.3",
-  "build": 223,
+  "current_version": "2.2.4",
+  "build": 224,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.2.4",
+      "date": "2026-05-27",
+      "title": "📲 Tu catálogo, directo al WhatsApp de tus clientes",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Conecta tu WhatsApp en segundos con QR",
+          "description": "Vincula uno o varios números de WhatsApp escaneando un código QR desde la app. Sin instalar nada extra: tu tienda queda lista para comunicarse con clientes y grupos directamente desde Inventtia."
+        },
+        {
+          "type": "feature",
+          "title": "Envío automático diario de tu catálogo",
+          "description": "Programa la hora a la que quieres que tus productos lleguen cada día a tus clientes. Tú eliges qué artículos enviar, a quién y cuándo: el sistema se encarga del resto, todos los días, sin que muevas un dedo."
+        },
+        {
+          "type": "feature",
+          "title": "Selecciona productos a la medida de cada campaña",
+          "description": "Arma listas de productos personalizadas para tus envíos. Promociona novedades, ofertas del día o líneas específicas con un par de toques, y reutiliza tus selecciones cuando lo necesites."
+        },
+        {
+          "type": "feature",
+          "title": "Destinatarios: contactos y grupos en un solo lugar",
+          "description": "Elige fácilmente a quién enviar: clientes individuales, grupos de WhatsApp o ambos. Un selector visual te permite buscar, marcar y guardar tus destinatarios favoritos para próximas campañas."
+        },
+        {
+          "type": "feature",
+          "title": "Historial de envíos para que nada se pierda",
+          "description": "Consulta en cualquier momento qué se envió, a quién y cuándo. Ten total visibilidad de tus campañas de WhatsApp y comprueba el alcance de cada envío programado."
+        },
+        {
+          "type": "improvement",
+          "title": "Envíos con ritmo natural para mayor entregabilidad",
+          "description": "Configura un retardo aleatorio entre mensajes para que tus envíos se vean naturales y se entreguen mejor, cuidando la reputación de tu número de WhatsApp."
+        },
+        {
+          "type": "improvement",
+          "title": "Disponible en Plan Pro y Avanzado",
+          "description": "La conexión con WhatsApp y los envíos automáticos están incluidos en los planes Pro y Avanzado de Inventtia, llevando tu comunicación con clientes al siguiente nivel."
+        }
+      ]
+    },
     {
       "version": "2.2.3",
       "date": "2026-05-25",
