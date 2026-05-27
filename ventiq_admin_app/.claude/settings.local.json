@@ -19,7 +19,8 @@
       "Bash(sales)",
       "Bash(order)",
       "Bash(paquet\")",
-      "WebFetch(domain:pub.dev)"
+      "WebFetch(domain:pub.dev)",
+      "Bash(git log *)"
     ]
   },
   "disabledMcpjsonServers": [
