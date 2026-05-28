@@ -196,14 +196,20 @@ export async function dispatchProducts(args: {
     .in("id", productIds);
   if (prodErr) throw new Error(`Error cargando productos: ${prodErr.message}`);
 
-  // Cargar precio venta (último vigente por producto)
+  // Cargar precio venta (último vigente por producto).
+  // `app_dat_precio_venta` es un histórico: cada producto puede tener N filas
+  // (una por cada cambio de precio). El precio actual es el de mayor `id`.
+  // Traemos todo el histórico ordenado por id desc y nos quedamos con la
+  // primera ocurrencia por producto (la más reciente).
   const { data: precios } = await admin
     .from("app_dat_precio_venta")
-    .select("id_producto, precio_venta_cup, precio_venta_usd")
-    .in("id_producto", productIds);
+    .select("id, id_producto, precio_venta_cup, precio_venta_usd")
+    .in("id_producto", productIds)
+    .order("id", { ascending: false });
 
   const precioMap = new Map<number, number>();
   (precios ?? []).forEach((p: any) => {
+    if (precioMap.has(p.id_producto)) return; // ya tenemos el más reciente
     precioMap.set(
       p.id_producto,
       Number(p.precio_venta_cup ?? p.precio_venta_usd ?? 0),
