@@ -55,8 +55,8 @@ class WapiProgramacion {
       horaEnvio: parseHora(j['hora_envio'] as String?),
       timezone: (j['timezone'] ?? 'America/Mexico_City') as String,
       activa: (j['activa'] ?? true) as bool,
-      delayMinSeconds: (j['delay_min_seconds'] as num?)?.toInt() ?? 30,
-      delayMaxSeconds: (j['delay_max_seconds'] as num?)?.toInt() ?? 90,
+      delayMinSeconds: (j['delay_min_seconds'] as num?)?.toInt() ?? 5,
+      delayMaxSeconds: (j['delay_max_seconds'] as num?)?.toInt() ?? 10,
       lastRunAt:
           j['last_run_at'] != null ? DateTime.tryParse(j['last_run_at']) : null,
       nextRunAt:

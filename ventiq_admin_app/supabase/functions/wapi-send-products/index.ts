@@ -5,19 +5,21 @@
 //   product_ids: number[],
 //   destinations: Array<{ tipo: 'numero'|'grupo', chat_id: string, etiqueta?: string }>,
 //   message_template?: string,
-//   delay_min_seconds?: number,   // anti-ban (default 30)
-//   delay_max_seconds?: number,   // anti-ban (default 90)
+//   delay_min_seconds?: number,   // anti-ban (default 5)
+//   delay_max_seconds?: number,   // anti-ban (default 10)
 //   tipo_envio?: 'manual'|'programado'
 // }
 //
-// Envío asíncrono vía /messages/send-bulk de la API WAPI.
-// La API WAPI (en el servidor remoto) procesa el batch con jitter aleatorio
-// entre mensajes — el teléfono del usuario NO necesita estar encendido.
-// Anti-ban:
-//   - delayBetweenMessages: rango aleatorio (30s–90s por defecto)
-//   - randomizeDelay: true (la API añade jitter ±30%)
-//   - Mensaje con caption customizado por producto
-//   - stopOnError: false (no aborta todo si uno falla)
+// Estrategia anti-ban actual:
+//   1. Por producto: se envía la misma imagen a TODOS los destinatarios
+//      seleccionados en PARALELO (cap MAX_PARALLEL_FANOUT). Esto explota el
+//      hecho de que mandar el mismo contenido a varios chats al mismo tiempo
+//      es indistinguible de un broadcast humano; el ban viene de "muchas
+//      cosas distintas en poco tiempo".
+//   2. Entre productos: delay aleatorio en [delay_min, delay_max].
+//   3. Defaults 5–10s alineados con el techo recomendado de 20 msgs/min/sesión
+//      (con cap 5 paralelos: ráfaga ≤5, promedio ≤40/min — sólo se acerca al
+//      techo si seleccionas muchos grupos).
 //
 import { handleOptions, okResponse, errorResponse } from "../_shared/cors.ts";
 import {
@@ -370,40 +372,49 @@ export async function dispatchProducts(args: {
     .insert(logRows)
     .select("id");
 
-  // Anti-ban: rango de delays aleatorios entre mensajes (mínimo 10s).
-  const minMs = Math.max(10_000, delayMin * 1000);
-  const maxMs = Math.max(minMs + 5_000, delayMax * 1000);
+  // Anti-ban: rango de delays aleatorios entre lotes (mínimo 5s).
+  // El delay aplica ENTRE productos, no entre destinatarios del mismo producto
+  // (esos van en paralelo dentro de MAX_PARALLEL_FANOUT).
+  const minMs = Math.max(5_000, delayMin * 1000);
+  const maxMs = Math.max(minMs + 1_000, delayMax * 1000);
+
+  // Cuántos destinos del mismo producto se disparan a la vez. Mantenerlo
+  // bajo evita ráfagas que crucen el techo de 60 req/min de OpenWA y los
+  // 20 msgs/min/sesión recomendados para evitar bans.
+  const MAX_PARALLEL_FANOUT = 5;
 
   // Generamos un batchId único para correlación interna (no se envía al WAPI)
   const batchId = `b_${idTienda}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
   const logIds = (insertedLogs ?? []).map((l: any) => l.id);
 
-  // Log del primer mensaje para diagnóstico
+  // Reagrupar mensajes por id_producto. Conservar el índice global para
+  // mapear correctamente al logId correspondiente.
+  type Indexed = { idx: number; msg: typeof messages[number]; logId: number | null };
+  const grouped = new Map<number, Indexed[]>();
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    const arr = grouped.get(m._meta.id_producto) ?? [];
+    arr.push({ idx: i, msg: m, logId: logIds[i] ?? null });
+    grouped.set(m._meta.id_producto, arr);
+  }
+  const productOrder = Array.from(grouped.keys());
+
   if (messages[0]) {
     const m0 = messages[0];
     console.log(
       `[wapi-send-products] batchId=${batchId} session=${wapiSessionId} ` +
-        `msgs=${messages.length} sample chatId=${m0.chatId} ` +
-        `imageUrl=${m0.content.image.url} captionLen=${m0.content.caption.length}`,
+        `productos=${productOrder.length} msgs=${messages.length} ` +
+        `fanout=${MAX_PARALLEL_FANOUT} delay=[${minMs / 1000}s..${maxMs / 1000}s] ` +
+        `sample chatId=${m0.chatId} captionLen=${m0.content.caption.length}`,
     );
   }
 
-  // El endpoint /messages/send-bulk del build actual de OpenWA devuelve 400
-  // sin importar el schema (probado: con `content.image.url`, con `url` plano,
-  // con `recipients`, con `chats`, con `text`-only). Está documentado pero no
-  // implementado. Vamos directamente al envío individual con delays manuales
-  // (anti-ban garantizado por nosotros).
-  console.log(
-    `[wapi-send-products] enviando ${messages.length} mensaje(s) con delays ` +
-      `[${minMs / 1000}s..${maxMs / 1000}s] aleatorios.`,
-  );
-
   let enviados = 0;
   let fallidos = 0;
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i];
-    const logId = logIds[i];
 
+  // Helper: dispara UN mensaje y actualiza su log row. Devuelve success bool.
+  const dispatchOne = async (it: Indexed): Promise<boolean> => {
+    const m = it.msg;
     const single = await wapi.sendImage(
       wapiSessionId,
       m.chatId,
@@ -411,37 +422,55 @@ export async function dispatchProducts(args: {
       m.content.caption,
       m.content.image.mimetype,
     );
-
     if (single.success) {
-      enviados++;
-      if (logId) {
+      if (it.logId) {
         await admin.from("app_wapi_envio_log")
           .update({
             estado: "enviado",
             sent_at: new Date().toISOString(),
             mensaje_id: single.data?.messageId ?? null,
           })
-          .eq("id", logId);
+          .eq("id", it.logId);
       }
-    } else {
-      fallidos++;
-      console.error(
-        `[wapi-send-products] fallido msg ${i + 1}/${messages.length} ` +
-          `(${single.error?.code}): ${single.error?.message}`,
-      );
-      if (logId) {
-        await admin.from("app_wapi_envio_log")
-          .update({
-            estado: "fallido",
-            error_code: single.error?.code ?? "SEND_ERROR",
-            error_message: single.error?.message ?? "Error desconocido",
-          })
-          .eq("id", logId);
+      return true;
+    }
+    console.error(
+      `[wapi-send-products] fallido idx=${it.idx} chat=${m.chatId} ` +
+        `(${single.error?.code}): ${single.error?.message}`,
+    );
+    if (it.logId) {
+      await admin.from("app_wapi_envio_log")
+        .update({
+          estado: "fallido",
+          error_code: single.error?.code ?? "SEND_ERROR",
+          error_message: single.error?.message ?? "Error desconocido",
+        })
+        .eq("id", it.logId);
+    }
+    return false;
+  };
+
+  for (let p = 0; p < productOrder.length; p++) {
+    const idProd = productOrder[p];
+    const targets = grouped.get(idProd) ?? [];
+
+    // Dentro del mismo producto, lanzar en sub-lotes paralelos.
+    for (let off = 0; off < targets.length; off += MAX_PARALLEL_FANOUT) {
+      const slice = targets.slice(off, off + MAX_PARALLEL_FANOUT);
+      const results = await Promise.allSettled(slice.map(dispatchOne));
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value) enviados++;
+        else fallidos++;
+      }
+      // Mini-pausa entre sub-lotes del mismo producto (1s) para no abrir
+      // demasiadas conexiones simultáneas al WAPI.
+      if (off + MAX_PARALLEL_FANOUT < targets.length) {
+        await new Promise((res) => setTimeout(res, 1_000));
       }
     }
 
-    // Delay aleatorio entre [minMs, maxMs] antes del siguiente envío.
-    if (i < messages.length - 1) {
+    // Delay aleatorio entre productos (no después del último).
+    if (p < productOrder.length - 1) {
       const jitter = minMs + Math.floor(Math.random() * (maxMs - minMs));
       await new Promise((res) => setTimeout(res, jitter));
     }
@@ -451,7 +480,8 @@ export async function dispatchProducts(args: {
     enviados,
     fallidos,
     batch_id: batchId,
-    mode: "send-image-loop",
+    mode: "fanout-per-product",
+    fanout: MAX_PARALLEL_FANOUT,
   };
 }
 
@@ -497,16 +527,19 @@ Deno.serve(async (req) => {
     return errorResponse("La sesión no está conectada a WhatsApp", 409, "NOT_CONNECTED");
   }
 
-  const delayMin = Math.max(10, Number(body.delay_min_seconds ?? 30));
-  const delayMax = Math.max(delayMin + 5, Number(body.delay_max_seconds ?? 90));
+  const delayMin = Math.max(5, Number(body.delay_min_seconds ?? 5));
+  const delayMax = Math.max(delayMin + 1, Number(body.delay_max_seconds ?? 10));
 
   // Fire-and-forget: el envío puede tardar varios minutos (delays anti-ban
   // entre mensajes). Respondemos inmediatamente al cliente y procesamos el
   // batch en segundo plano vía EdgeRuntime.waitUntil(). El usuario podrá
   // seguir trabajando en la app y revisar el progreso en el historial.
   const totalMensajes = productIds.length * destinations.length;
+  // Con fan-out paralelo por producto, el tiempo de pared depende del
+  // número de productos (no del total de mensajes): un delay aleatorio
+  // se aplica ENTRE productos. Sub-lotes paralelos añaden ~1s extra.
   const estimadoSeg = Math.round(
-    (totalMensajes - 1) * ((delayMin + delayMax) / 2),
+    Math.max(0, productIds.length - 1) * ((delayMin + delayMax) / 2),
   );
 
   const job = dispatchProducts({

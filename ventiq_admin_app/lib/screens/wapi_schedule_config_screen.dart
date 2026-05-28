@@ -33,8 +33,8 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
   WapiSession? _sesion;
   TimeOfDay _hora = const TimeOfDay(hour: 10, minute: 0);
   bool _activa = true;
-  int _delayMin = 30;
-  int _delayMax = 90;
+  int _delayMin = 5;
+  int _delayMax = 10;
 
   Set<int> _productIds = {};
   List<WapiDestinatario> _destinatarios = [];
@@ -91,6 +91,7 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
     final ids = await Navigator.of(context).push<List<int>>(
       MaterialPageRoute(
         builder: (_) => WapiProductSelectorScreen(
+          idTienda: widget.idTienda,
           mode: WapiProductSelectorMode.schedule,
           initialSelected: _productIds,
         ),
@@ -122,8 +123,12 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
       _toast('Selecciona al menos un destinatario');
       return;
     }
-    if (_delayMax < _delayMin + 5) {
-      _toast('El delay máximo debe ser al menos 5 s mayor que el mínimo');
+    if (_delayMax < _delayMin + 1) {
+      _toast('El delay máximo debe ser mayor que el mínimo');
+      return;
+    }
+    if (_delayMin < 5) {
+      _toast('El delay mínimo no puede ser menor a 5 s');
       return;
     }
     setState(() => _saving = true);
@@ -342,7 +347,7 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
                               isDense: true,
                             ),
                             onChanged: (v) =>
-                                _delayMin = int.tryParse(v) ?? 30,
+                                _delayMin = int.tryParse(v) ?? 5,
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -356,7 +361,7 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
                               isDense: true,
                             ),
                             onChanged: (v) =>
-                                _delayMax = int.tryParse(v) ?? 90,
+                                _delayMax = int.tryParse(v) ?? 10,
                           ),
                         ),
                       ],
