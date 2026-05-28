@@ -73,6 +73,15 @@ class PromotionService {
           promotionsData
               .map((promotionData) {
                 try {
+                  final dynamic rawTypeId =
+                      promotionData['id_tipo_promocion'] ??
+                      promotionData['idTipoPromocion'] ??
+                      promotionData['tipo_promocion_id'] ??
+                      promotionData['id_tipo'] ??
+                      promotionData['tipo_id'];
+                  final typeIdString =
+                      rawTypeId != null ? rawTypeId.toString() : null;
+
                   // Mapear los campos de la función RPC al formato esperado por el modelo
                   final mappedData = {
                     'id': promotionData['id']?.toString(),
@@ -94,7 +103,9 @@ class PromotionService {
                         promotionData['tipo_promocion'], // Nombre del tipo
                     'tienda': promotionData['tienda'], // Nombre de la tienda
                     'id_tienda': storeIdInt.toString(),
-                    'id_tipo_promocion': '1', // Valor por defecto
+                    // CRÍTICO: usar el tipo REAL retornado por el RPC.
+                    // No forzar defaults: eso hace que al editar se modifique el tipo sin tocarlo.
+                    'id_tipo_promocion': typeIdString,
                     'created_at': DateTime.now().toIso8601String(),
                   };
 
