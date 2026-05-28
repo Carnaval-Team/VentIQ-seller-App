@@ -328,7 +328,8 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
     // 1. Selector productos
     final productIds = await Navigator.of(context).push<List<int>>(
       MaterialPageRoute(
-        builder: (_) => const WapiProductSelectorScreen(
+        builder: (_) => WapiProductSelectorScreen(
+          idTienda: _idTienda!,
           mode: WapiProductSelectorMode.manual,
         ),
       ),

@@ -174,8 +174,8 @@ class WapiNotificationService {
     required List<int> productIds,
     required List<WapiDestinatario> destinations,
     String? template,
-    int delayMinSeconds = 30,
-    int delayMaxSeconds = 90,
+    int delayMinSeconds = 5,
+    int delayMaxSeconds = 10,
   }) async {
     final destPayload = destinations
         .map((d) => {
@@ -239,8 +239,8 @@ class WapiNotificationService {
     required List<int> productIds,
     required List<int> destinatarioIds,
     required bool activa,
-    int delayMinSeconds = 30,
-    int delayMaxSeconds = 90,
+    int delayMinSeconds = 5,
+    int delayMaxSeconds = 10,
     // Si no se pasa, detectamos la zona IANA del dispositivo automáticamente.
     // Pasar un valor explícito sólo si el cliente eligió otra zona manualmente.
     String? timezone,

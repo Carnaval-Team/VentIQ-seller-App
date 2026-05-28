@@ -20,7 +20,8 @@
       "Bash(order)",
       "Bash(paquet\")",
       "WebFetch(domain:pub.dev)",
-      "Bash(git log *)"
+      "Bash(git log *)",
+      "Bash(findstr /I marketplace)"
     ]
   },
   "disabledMcpjsonServers": [

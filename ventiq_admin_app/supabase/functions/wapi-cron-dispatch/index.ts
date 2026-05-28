@@ -75,8 +75,8 @@ Deno.serve(async (req) => {
       wapiSessionId: prog.sesion.wapi_session_id,
       productIds,
       destinations,
-      delayMin: prog.delay_min_seconds ?? 30,
-      delayMax: prog.delay_max_seconds ?? 90,
+      delayMin: prog.delay_min_seconds ?? 5,
+      delayMax: prog.delay_max_seconds ?? 10,
       tipoEnvio: "programado",
       idProgramacion: idProg,
     });
