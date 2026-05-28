@@ -173,12 +173,15 @@ class ImportadoraFacturasService {
         'created_at': DateTime.now().toIso8601String(),
       });
 
+      final refRecarga = observacion != null && observacion.isNotEmpty
+          ? 'Recarga de saldo: \$${monto.toStringAsFixed(2)} — $observacion'
+          : 'Recarga de saldo: \$${monto.toStringAsFixed(2)}';
       await _upsertSaldo(
         storeId,
         nuevoSaldo,
         saldoActual,
         'recarga',
-        'Recarga de saldo: \$${monto.toStringAsFixed(2)}',
+        refRecarga,
       );
 
       print('✅ Recarga de \$${monto.toStringAsFixed(2)} registrada. Nuevo saldo: \$${nuevoSaldo.toStringAsFixed(2)}');
@@ -195,12 +198,22 @@ class ImportadoraFacturasService {
       final storeId = await _userPrefs.getIdTienda();
       if (storeId == null) throw Exception('No se pudo obtener ID de tienda');
 
-      final response = await _supabase
-          .from('imp_hist_saldo')
-          .select()
-          .eq('idtienda', storeId)
-          .order('created_at', ascending: false)
-          .limit(100);
+      List<dynamic> response;
+      try {
+        response = await _supabase
+            .from('imp_hist_saldo')
+            .select('*, recarga:imp_dat_recarga_saldo(observacion)')
+            .eq('idtienda', storeId)
+            .order('created_at', ascending: false)
+            .limit(100);
+      } catch (_) {
+        response = await _supabase
+            .from('imp_hist_saldo')
+            .select()
+            .eq('idtienda', storeId)
+            .order('created_at', ascending: false)
+            .limit(100);
+      }
 
       return response
           .map<HistorialSaldo>((j) => HistorialSaldo.fromJson(j))
@@ -220,7 +233,7 @@ class ImportadoraFacturasService {
 
       final response = await _supabase
           .from('imp_dat_factura')
-          .select('*, estado:id_estado(denominacion, color)')
+          .select('*, estado:id_estado(denominacion, color), fotos:imp_dat_factura_foto(id, id_factura, foto_url, numero_pagina, created_at)')
           .eq('idtienda', storeId)
           .order('created_at', ascending: false);
 
@@ -233,11 +246,67 @@ class ImportadoraFacturasService {
     }
   }
 
+  Future<List<FacturaFoto>> getFotosFactura(int idFactura) async {
+    try {
+      final response = await _supabase
+          .from('imp_dat_factura_foto')
+          .select()
+          .eq('id_factura', idFactura)
+          .order('numero_pagina', ascending: true);
+      return response.map<FacturaFoto>((j) => FacturaFoto.fromJson(j)).toList();
+    } catch (e) {
+      print('❌ Error obteniendo fotos de factura: $e');
+      rethrow;
+    }
+  }
+
+  Future<FacturaFoto> agregarFotoFactura({
+    required int idFactura,
+    required Uint8List bytes,
+    required String fileName,
+    required int numeroPagina,
+    String mimeType = 'image/jpeg',
+    String? nombreArchivo,
+  }) async {
+    try {
+      final url = await uploadFacturaFoto(bytes, fileName, contentType: mimeType);
+      if (url == null) throw Exception('No se pudo subir el archivo');
+
+      final response = await _supabase
+          .from('imp_dat_factura_foto')
+          .insert({
+            'id_factura': idFactura,
+            'foto_url': url,
+            'numero_pagina': numeroPagina,
+            'mime_type': mimeType,
+            'nombre_archivo': nombreArchivo ?? fileName,
+          })
+          .select()
+          .single();
+
+      print('✅ Archivo p.$numeroPagina añadido a factura $idFactura ($mimeType)');
+      return FacturaFoto.fromJson(response);
+    } catch (e) {
+      print('❌ Error añadiendo archivo: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> eliminarFotoFactura(int idFoto) async {
+    try {
+      await _supabase.from('imp_dat_factura_foto').delete().eq('id', idFoto);
+      print('✅ Foto $idFoto eliminada');
+    } catch (e) {
+      print('❌ Error eliminando foto: $e');
+      rethrow;
+    }
+  }
+
   Future<ImportadoraFactura> crearFactura({
     required String numeroFactura,
     required double valor,
     required DateTime fechaProcesamiento,
-    String? fotoUrl,
+    List<({Uint8List bytes, String nombre, String mimeType})> fotosEntradas = const [],
   }) async {
     try {
       final storeId = await _userPrefs.getIdTienda();
@@ -265,7 +334,6 @@ class ImportadoraFacturasService {
         'valor': valor,
         'fecha_procesamiento':
             fechaProcesamiento.toIso8601String().split('T').first,
-        'foto_url': fotoUrl,
         'id_estado': estadoInicial.id,
         'created_at': DateTime.now().toIso8601String(),
       };
@@ -280,6 +348,19 @@ class ImportadoraFacturasService {
       print('🔍 Respuesta insert factura: id_estado=${response['id_estado']} estado=${response['estado']}');
 
       final factura = ImportadoraFactura.fromJson(response);
+
+      // Subir archivos en orden
+      for (int i = 0; i < fotosEntradas.length; i++) {
+        final entrada = fotosEntradas[i];
+        await agregarFotoFactura(
+          idFactura: factura.id!,
+          bytes: entrada.bytes,
+          fileName: entrada.nombre,
+          numeroPagina: i + 1,
+          mimeType: entrada.mimeType,
+          nombreArchivo: entrada.nombre,
+        );
+      }
 
       await _upsertSaldo(
         storeId,
@@ -297,7 +378,7 @@ class ImportadoraFacturasService {
         'created_at': DateTime.now().toIso8601String(),
       });
 
-      print('✅ Factura #$numeroFactura creada. Saldo descontado: \$${valor.toStringAsFixed(2)}');
+      print('✅ Factura #$numeroFactura creada con ${fotosEntradas.length} foto(s). Saldo descontado: \$${valor.toStringAsFixed(2)}');
       return factura;
     } catch (e) {
       print('❌ Error creando factura: $e');
@@ -357,7 +438,7 @@ class ImportadoraFacturasService {
 
   // ==================== FOTO DE FACTURA ====================
 
-  Future<String?> uploadFacturaFoto(Uint8List imageBytes, String fileName) async {
+  Future<String?> uploadFacturaFoto(Uint8List imageBytes, String fileName, {String contentType = 'image/jpeg'}) async {
     try {
       final uniqueFileName =
           'factura_${DateTime.now().millisecondsSinceEpoch}_$fileName';
@@ -366,7 +447,7 @@ class ImportadoraFacturasService {
           .uploadBinary(
             uniqueFileName,
             imageBytes,
-            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+            fileOptions: FileOptions(contentType: contentType, cacheControl: '3600', upsert: true),
           );
       if (response.isEmpty) throw Exception('Error al subir foto de factura');
       final url = _supabase.storage.from('images_back').getPublicUrl(uniqueFileName);
@@ -375,6 +456,55 @@ class ImportadoraFacturasService {
     } catch (e) {
       print('❌ Error subiendo foto de factura: $e');
       return null;
+    }
+  }
+
+  Future<void> actualizarDetallesFactura({
+    required int idFactura,
+    required String numeroFacturaAnterior,
+    required String nuevoNumeroFactura,
+    required double valorAnterior,
+    required double nuevoValor,
+  }) async {
+    try {
+      final storeId = await _userPrefs.getIdTienda();
+      if (storeId == null) throw Exception('No se pudo obtener ID de tienda');
+
+      final diferencia = nuevoValor - valorAnterior;
+
+      if (diferencia > 0) {
+        final saldoActual = await getSaldoDisponible();
+        if (saldoActual < diferencia) {
+          throw Exception(
+            'Saldo insuficiente para aumentar el valor. Diferencia: \$${diferencia.toStringAsFixed(2)}, saldo disponible: \$${saldoActual.toStringAsFixed(2)}',
+          );
+        }
+      }
+
+      await _supabase
+          .from('imp_dat_factura')
+          .update({
+            'numero_factura': nuevoNumeroFactura,
+            'valor': nuevoValor,
+          })
+          .eq('id', idFactura);
+
+      if (diferencia != 0) {
+        final saldoActual = await getSaldoDisponible();
+        final nuevoSaldo = saldoActual - diferencia;
+        await _upsertSaldo(
+          storeId,
+          nuevoSaldo,
+          saldoActual,
+          'ajuste_factura',
+          'Ajuste Factura #$nuevoNumeroFactura: ${diferencia > 0 ? '-' : '+'}\$${diferencia.abs().toStringAsFixed(2)}',
+        );
+      }
+
+      print('✅ Factura #$nuevoNumeroFactura actualizada. Diferencia de saldo: \$${diferencia.toStringAsFixed(2)}');
+    } catch (e) {
+      print('❌ Error actualizando detalles de factura: $e');
+      rethrow;
     }
   }
 

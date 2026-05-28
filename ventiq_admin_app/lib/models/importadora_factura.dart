@@ -37,6 +37,64 @@ class EstadoFactura {
   }
 }
 
+class FacturaFoto {
+  final int? id;
+  final int idFactura;
+  final String fotoUrl;
+  final int numeroPagina;
+  final String? nombreArchivo;
+  final String mimeType;
+  final DateTime createdAt;
+
+  FacturaFoto({
+    this.id,
+    required this.idFactura,
+    required this.fotoUrl,
+    required this.numeroPagina,
+    this.nombreArchivo,
+    this.mimeType = 'image/jpeg',
+    required this.createdAt,
+  });
+
+  bool get isImage => mimeType.startsWith('image/');
+  bool get isPdf => mimeType == 'application/pdf';
+
+  String get displayName => nombreArchivo ?? 'Página $numeroPagina';
+
+  static String _mimeFromUrl(String url) {
+    final lower = url.toLowerCase().split('?').first;
+    if (lower.endsWith('.pdf'))  return 'application/pdf';
+    if (lower.endsWith('.doc'))  return 'application/msword';
+    if (lower.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (lower.endsWith('.xls'))  return 'application/vnd.ms-excel';
+    if (lower.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    if (lower.endsWith('.png'))  return 'image/png';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    if (lower.endsWith('.gif'))  return 'image/gif';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+
+  factory FacturaFoto.fromJson(Map<String, dynamic> json) {
+    final url = json['foto_url'] as String? ?? '';
+    final mimeRaw = json['mime_type'] as String?;
+    final mime = (mimeRaw != null && mimeRaw.isNotEmpty)
+        ? mimeRaw
+        : _mimeFromUrl(url);
+    return FacturaFoto(
+      id: json['id'],
+      idFactura: json['id_factura'] ?? 0,
+      fotoUrl: url,
+      numeroPagina: json['numero_pagina'] ?? 1,
+      nombreArchivo: json['nombre_archivo'],
+      mimeType: mime,
+      createdAt: DateTime.parse(
+        json['created_at'] ?? DateTime.now().toIso8601String(),
+      ),
+    );
+  }
+}
+
 class ImportadoraFactura {
   final int? id;
   final String numeroFactura;
@@ -48,6 +106,7 @@ class ImportadoraFactura {
   final String? colorEstado;
   final int idtienda;
   final DateTime createdAt;
+  final List<FacturaFoto> fotos;
 
   ImportadoraFactura({
     this.id,
@@ -60,9 +119,11 @@ class ImportadoraFactura {
     this.colorEstado,
     required this.idtienda,
     required this.createdAt,
+    this.fotos = const [],
   });
 
   factory ImportadoraFactura.fromJson(Map<String, dynamic> json) {
+    final fotosRaw = json['fotos'] as List<dynamic>?;
     return ImportadoraFactura(
       id: json['id'],
       numeroFactura: json['numero_factura'] ?? '',
@@ -78,6 +139,25 @@ class ImportadoraFactura {
       createdAt: DateTime.parse(
         json['created_at'] ?? DateTime.now().toIso8601String(),
       ),
+      fotos: fotosRaw != null
+          ? fotosRaw.map((f) => FacturaFoto.fromJson(f)).toList()
+          : [],
+    );
+  }
+
+  ImportadoraFactura copyWith({List<FacturaFoto>? fotos}) {
+    return ImportadoraFactura(
+      id: id,
+      numeroFactura: numeroFactura,
+      valor: valor,
+      fechaProcesamiento: fechaProcesamiento,
+      fotoUrl: fotoUrl,
+      idEstado: idEstado,
+      denominacionEstado: denominacionEstado,
+      colorEstado: colorEstado,
+      idtienda: idtienda,
+      createdAt: createdAt,
+      fotos: fotos ?? this.fotos,
     );
   }
 }
@@ -122,6 +202,7 @@ class HistorialSaldo {
   final double diferencia;
   final String tipoOperacion; // 'recarga', 'descuento_factura'
   final String? referencia;
+  final String? observacion;
   final int idtienda;
   final DateTime createdAt;
 
@@ -132,11 +213,14 @@ class HistorialSaldo {
     required this.diferencia,
     required this.tipoOperacion,
     this.referencia,
+    this.observacion,
     required this.idtienda,
     required this.createdAt,
   });
 
   factory HistorialSaldo.fromJson(Map<String, dynamic> json) {
+    // observacion puede venir del join con imp_dat_recarga_saldo
+    final recargaJoin = json['recarga'] as Map<String, dynamic>?;
     return HistorialSaldo(
       id: json['id'],
       montoAnterior: (json['monto_anterior'] ?? 0.0).toDouble(),
@@ -144,6 +228,7 @@ class HistorialSaldo {
       diferencia: (json['diferencia'] ?? 0.0).toDouble(),
       tipoOperacion: json['tipo_operacion'] ?? '',
       referencia: json['referencia'],
+      observacion: recargaJoin?['observacion'] as String?,
       idtienda: json['idtienda'] ?? 0,
       createdAt: DateTime.parse(
         json['created_at'] ?? DateTime.now().toIso8601String(),

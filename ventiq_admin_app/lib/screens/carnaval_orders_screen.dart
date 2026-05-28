@@ -36,6 +36,8 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   List<Map<String, dynamic>> _orders = [];
   Map<int, int> _ventiqOps = {}; // carnaval order id -> ventiq operation id
   String? _selectedStatus;
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   @override
   void initState() {
@@ -124,6 +126,8 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       pageSize: _pageSize,
       statusFilter: _selectedStatus,
       orderIdFilter: _searchOrderId,
+      dateFrom: _dateFrom,
+      dateTo: _dateTo,
     );
     setState(() {
       _orders = orders;
@@ -144,6 +148,8 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       pageSize: _pageSize,
       statusFilter: _selectedStatus,
       orderIdFilter: _searchOrderId,
+      dateFrom: _dateFrom,
+      dateTo: _dateTo,
     );
     setState(() {
       _orders.addAll(orders);
@@ -292,6 +298,8 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                         ],
                       ),
                     ),
+                    // Date range filter
+                    _buildDateRangeRow(),
                     // Status chips
                     SizedBox(
                       height: 48,
@@ -354,6 +362,106 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                     ),
                   ],
                 ),
+    );
+  }
+
+  String _fmtDate(DateTime dt) =>
+      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+
+  Widget _buildDateRangeRow() {
+    final hasFilter = _dateFrom != null || _dateTo != null;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.date_range, size: 16),
+              label: Text(
+                _dateFrom != null ? _fmtDate(_dateFrom!) : 'Desde',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _dateFrom != null ? Colors.indigo : Colors.grey[600],
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                side: BorderSide(
+                  color: _dateFrom != null ? Colors.indigo : Colors.grey.shade300,
+                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _dateFrom ?? DateTime.now(),
+                  firstDate: DateTime(2022),
+                  lastDate: _dateTo ?? DateTime.now(),
+                );
+                if (picked != null) {
+                  setState(() => _dateFrom = picked);
+                  _loadOrders();
+                }
+              },
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 6),
+            child: Text('—', style: TextStyle(color: Colors.grey)),
+          ),
+          Expanded(
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.date_range, size: 16),
+              label: Text(
+                _dateTo != null ? _fmtDate(_dateTo!) : 'Hasta',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _dateTo != null ? Colors.indigo : Colors.grey[600],
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                side: BorderSide(
+                  color: _dateTo != null ? Colors.indigo : Colors.grey.shade300,
+                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _dateTo ?? DateTime.now(),
+                  firstDate: _dateFrom ?? DateTime(2022),
+                  lastDate: DateTime.now(),
+                );
+                if (picked != null) {
+                  setState(() => _dateTo = picked);
+                  _loadOrders();
+                }
+              },
+            ),
+          ),
+          if (hasFilter) ...[
+            const SizedBox(width: 6),
+            IconButton(
+              icon: const Icon(Icons.clear, size: 18),
+              tooltip: 'Limpiar fechas',
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.red.withValues(alpha: 0.1),
+                foregroundColor: Colors.red,
+                padding: const EdgeInsets.all(6),
+                minimumSize: const Size(32, 32),
+              ),
+              onPressed: () {
+                setState(() {
+                  _dateFrom = null;
+                  _dateTo = null;
+                });
+                _loadOrders();
+              },
+            ),
+          ],
+        ],
+      ),
     );
   }
 

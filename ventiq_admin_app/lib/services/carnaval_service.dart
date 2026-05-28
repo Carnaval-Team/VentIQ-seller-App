@@ -1263,6 +1263,8 @@ class CarnavalService {
     int pageSize = 20,
     String? statusFilter,
     int? orderIdFilter,
+    DateTime? dateFrom,
+    DateTime? dateTo,
   }) async {
     try {
       final from = page * pageSize;
@@ -1287,6 +1289,15 @@ class CarnavalService {
 
       if (orderIdFilter != null) {
         query = query.eq('id', orderIdFilter);
+      }
+
+      if (dateFrom != null) {
+        query = query.gte('created_at', dateFrom.toIso8601String().split('T')[0]);
+      }
+
+      if (dateTo != null) {
+        final end = DateTime(dateTo.year, dateTo.month, dateTo.day, 23, 59, 59);
+        query = query.lte('created_at', end.toIso8601String());
       }
 
       final response = await query

@@ -4,10 +4,11 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_colors.dart';
 import '../../models/importadora_factura.dart';
 import '../../services/importadora_facturas_service.dart';
-import '../../services/image_picker_service.dart';
+import '../../services/file_picker_service.dart';
 import 'estados_factura_screen.dart';
 
 class ImportadoraFacturasScreen extends StatefulWidget {
@@ -224,144 +225,179 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
     );
   }
 
-  // ==================== AÑADIR FOTO A FACTURA EXISTENTE ====================
+  // ==================== GESTIÓN DE FOTOS (MÚLTIPLES PÁGINAS) ====================
 
-  void _showAnadirFotoDialog(ImportadoraFactura factura) {
-    Uint8List? fotoBytes;
-    String? fotoNombre;
-
+  void _showGestionFotosDialog(ImportadoraFactura factura) {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text('Foto — Factura #${factura.numeroFactura}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.screen_rotation, color: Colors.blue.shade700, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Tome la foto en modo horizontal para que la factura sea completamente visible.',
-                        style: TextStyle(fontSize: 12, color: Colors.blue.shade800),
+        builder: (ctx, setDialogState) {
+          final fotos = factura.fotos.toList()
+            ..sort((a, b) => a.numeroPagina.compareTo(b.numeroPagina));
+
+          return AlertDialog(
+            title: Text('Fotos — Factura #${factura.numeroFactura}'),
+            contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (fotos.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Column(
+                        children: [
+                          Icon(Icons.photo_library_outlined, size: 48, color: Colors.grey[400]),
+                          const SizedBox(height: 8),
+                          const Text('Sin fotos adjuntas', style: TextStyle(color: Colors.grey)),
+                        ],
+                      ),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 340),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: fotos.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (_, i) {
+                          final foto = fotos[i];
+                          return Stack(
+                            children: [
+                              foto.isImage
+                                ? GestureDetector(
+                                    onTap: () => _verFotoFactura(foto.fotoUrl),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.network(
+                                        foto.fotoUrl,
+                                        height: 130,
+                                        width: double.infinity,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Container(
+                                          height: 130,
+                                          color: Colors.grey.shade200,
+                                          child: const Icon(Icons.broken_image, color: Colors.grey, size: 40),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : GestureDetector(
+                                    onTap: () => _abrirArchivoUrl(foto.fotoUrl),
+                                    child: Container(
+                                      height: 70,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade100,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: Colors.grey.shade300),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const SizedBox(width: 16),
+                                          Icon(_iconForMime(foto.mimeType), color: AppColors.primary, size: 32),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(foto.displayName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
+                                                Text(foto.mimeType, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                                              ],
+                                            ),
+                                          ),
+                                          const Icon(Icons.open_in_new, color: Colors.grey, size: 18),
+                                          const SizedBox(width: 12),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              Positioned(
+                                top: 6, left: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
+                                  child: Text(foto.displayName.length > 20 ? 'Arch. ${foto.numeroPagina}' : foto.displayName, style: const TextStyle(color: Colors.white, fontSize: 11)),
+                                ),
+                              ),
+                              Positioned(
+                                top: 4, right: 4,
+                                child: GestureDetector(
+                                  onTap: () async {
+                                    final confirm = await showDialog<bool>(
+                                      context: ctx,
+                                      builder: (_) => AlertDialog(
+                                        title: const Text('Eliminar foto'),
+                                        content: Text('¿Eliminar la foto de la página ${foto.numeroPagina}?'),
+                                        actions: [
+                                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+                                          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar')),
+                                        ],
+                                      ),
+                                    );
+                                    if (confirm == true) {
+                                      try {
+                                        await _service.eliminarFotoFactura(foto.id!);
+                                        await _loadFacturasData();
+                                        Navigator.pop(ctx);
+                                        _showSuccess('Foto eliminada');
+                                      } catch (e) {
+                                        _showError('Error: $e');
+                                      }
+                                    }
+                                  },
+                                  child: Container(
+                                    decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                    child: const Icon(Icons.delete_outline, color: Colors.white, size: 20),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              InkWell(
-                onTap: () async {
-                  final bytes = await ImagePickerService.pickImage();
-                  if (bytes != null) {
-                    setDialogState(() {
-                      fotoBytes = bytes;
-                      fotoNombre = 'factura_${DateTime.now().millisecondsSinceEpoch}.jpg';
-                    });
-                  }
-                },
-                child: Container(
-                  width: double.infinity,
-                  height: fotoBytes != null ? 160 : 52,
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: fotoBytes != null ? AppColors.primary : Colors.grey.shade400,
+                  const Divider(height: 16),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.attach_file, size: 16),
+                    label: Text('Añadir archivo ${fotos.length + 1}'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
                     ),
-                    borderRadius: BorderRadius.circular(8),
-                    color: fotoBytes != null ? null : Colors.grey.shade50,
-                  ),
-                  child: fotoBytes != null
-                      ? Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(7),
-                              child: Image.memory(fotoBytes!, fit: BoxFit.contain),
-                            ),
-                            Positioned(
-                              top: 4,
-                              right: 4,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  GestureDetector(
-                                    onTap: () => _verFotoDesdeBytes(fotoBytes!),
-                                    child: Container(
-                                      margin: const EdgeInsets.only(right: 4),
-                                      decoration: const BoxDecoration(
-                                        color: Colors.black54,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: const Icon(Icons.zoom_in, color: Colors.white, size: 20),
-                                    ),
-                                  ),
-                                  GestureDetector(
-                                    onTap: () => setDialogState(() {
-                                      fotoBytes = null;
-                                      fotoNombre = null;
-                                    }),
-                                    child: Container(
-                                      decoration: const BoxDecoration(
-                                        color: Colors.black54,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: const Icon(Icons.close, color: Colors.white, size: 20),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        )
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
-                            Icon(Icons.add_a_photo_outlined, color: Colors.grey),
-                            SizedBox(width: 8),
-                            Text('Seleccionar foto', style: TextStyle(color: Colors.grey, fontSize: 13)),
-                          ],
-                        ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.upload, size: 16),
-              label: const Text('Guardar Foto'),
-              onPressed: fotoBytes == null
-                  ? null
-                  : () async {
+                    onPressed: () async {
+                      final picked = await FilePickerService.pickFile();
+                      if (picked == null) return;
                       Navigator.pop(ctx);
                       try {
-                        final url = await _service.uploadFacturaFoto(fotoBytes!, fotoNombre!);
-                        if (url != null) {
-                          await _service.actualizarFotoFactura(factura.id!, url);
-                          await _loadFacturasData();
-                          _showSuccess('Foto añadida correctamente');
-                        } else {
-                          _showError('No se pudo subir la foto');
-                        }
+                        await _service.agregarFotoFactura(
+                          idFactura: factura.id!,
+                          bytes: picked.bytes,
+                          fileName: picked.nombre,
+                          numeroPagina: fotos.length + 1,
+                          mimeType: picked.mimeType,
+                          nombreArchivo: picked.nombre,
+                        );
+                        await _loadFacturasData();
+                        _showSuccess('Archivo añadido (${picked.nombre})');
                       } catch (e) {
-                        _showError('Error: \$e');
+                        _showError('Error: $e');
                       }
                     },
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
             ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cerrar'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -458,9 +494,22 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
-                                    subtitle: Text(
-                                      '${_dateFmt.format(h.createdAt)}  •  Anterior: ${_currencyFmt.format(h.montoAnterior)}',
-                                      style: const TextStyle(fontSize: 12),
+                                    subtitle: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        if (h.observacion != null && h.observacion!.isNotEmpty)
+                                          Row(
+                                            children: [
+                                              const Icon(Icons.comment_outlined, size: 11, color: Colors.indigo),
+                                              const SizedBox(width: 3),
+                                              Expanded(child: Text(h.observacion!, style: const TextStyle(fontSize: 11, color: Colors.indigo))),
+                                            ],
+                                          ),
+                                        Text(
+                                          '${_dateFmt.format(h.createdAt)}  •  Anterior: ${_currencyFmt.format(h.montoAnterior)}',
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ],
                                     ),
                                     trailing: Column(
                                       mainAxisAlignment:
@@ -535,288 +584,312 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
     final numFacturaCtrl = TextEditingController();
     final valorCtrl = TextEditingController();
     DateTime selectedDate = DateTime.now();
-    Uint8List? fotoBytes;
-    String? fotoNombre;
+    final List<({Uint8List bytes, String nombre, String mimeType})> fotos = [];
 
     showDialog(
       context: context,
-      builder:
-          (ctx) => StatefulBuilder(
-            builder:
-                (ctx, setDialogState) => AlertDialog(
-                  title: const Text('Nueva Factura'),
-                  content: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.account_balance_wallet,
-                                color: AppColors.primary,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Saldo disponible: ${_currencyFmt.format(_saldoDisponible)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.primary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: numFacturaCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Número de Factura *',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: valorCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Valor *',
-                            prefixText: '\$ ',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        InkWell(
-                          onTap: () async {
-                            final picked = await showDatePicker(
-                              context: ctx,
-                              initialDate: selectedDate,
-                              firstDate: DateTime(2020),
-                              lastDate: DateTime.now().add(
-                                const Duration(days: 365),
-                              ),
-                            );
-                            if (picked != null) {
-                              setDialogState(() => selectedDate = picked);
-                            }
-                          },
-                          child: InputDecorator(
-                            decoration: const InputDecoration(
-                              labelText: 'Fecha de Procesamiento *',
-                              border: OutlineInputBorder(),
-                              suffixIcon: Icon(Icons.calendar_today),
-                            ),
-                            child: Text(_dateFmt.format(selectedDate)),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        // ---- AVISO ORIENTACIÓN ----
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.blue.shade200),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.screen_rotation,
-                                  color: Colors.blue.shade700, size: 20),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Tome la foto en modo horizontal (apaisado) para que la factura sea completamente visible.',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.blue.shade800),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        // ---- SELECTOR DE FOTO ----
-                        InkWell(
-                          onTap: () async {
-                            final bytes = await ImagePickerService.pickImage();
-                            if (bytes != null) {
-                              setDialogState(() {
-                                fotoBytes = bytes;
-                                fotoNombre = 'factura_${DateTime.now().millisecondsSinceEpoch}.jpg';
-                              });
-                            }
-                          },
-                          child: Container(
-                            width: double.infinity,
-                            height: fotoBytes != null ? 160 : 52,
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: fotoBytes != null
-                                    ? AppColors.primary
-                                    : Colors.grey.shade400,
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                              color: fotoBytes != null
-                                  ? null
-                                  : Colors.grey.shade50,
-                            ),
-                            child: fotoBytes != null
-                                ? Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(7),
-                                        child: Image.memory(
-                                          fotoBytes!,
-                                          fit: BoxFit.contain,
-                                        ),
-                                      ),
-                                      Positioned(
-                                        top: 4,
-                                        right: 4,
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            GestureDetector(
-                                              onTap: () => _verFotoDesdeBytes(fotoBytes!),
-                                              child: Container(
-                                                margin: const EdgeInsets.only(right: 4),
-                                                decoration: const BoxDecoration(
-                                                  color: Colors.black54,
-                                                  shape: BoxShape.circle,
-                                                ),
-                                                child: const Icon(
-                                                  Icons.zoom_in,
-                                                  color: Colors.white,
-                                                  size: 20,
-                                                ),
-                                              ),
-                                            ),
-                                            GestureDetector(
-                                              onTap: () => setDialogState(() {
-                                                fotoBytes = null;
-                                                fotoNombre = null;
-                                              }),
-                                              child: Container(
-                                                decoration: const BoxDecoration(
-                                                  color: Colors.black54,
-                                                  shape: BoxShape.circle,
-                                                ),
-                                                child: const Icon(
-                                                  Icons.close,
-                                                  color: Colors.white,
-                                                  size: 20,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: const [
-                                      Icon(Icons.add_a_photo_outlined,
-                                          color: Colors.grey),
-                                      SizedBox(width: 8),
-                                      Text(
-                                        'Adjuntar foto de factura (opcional)',
-                                        style: TextStyle(
-                                            color: Colors.grey, fontSize: 13),
-                                      ),
-                                    ],
-                                  ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.orange.withOpacity(0.3),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.info_outline,
-                                size: 16,
-                                color: Colors.orange,
-                              ),
-                              const SizedBox(width: 6),
-                              const Expanded(
-                                child: Text(
-                                  'El valor se descontará del saldo disponible. El estado inicial será el primero del nomenclador.',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.orange,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Nueva Factura'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cancelar'),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.account_balance_wallet, color: AppColors.primary, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Saldo disponible: ${_currencyFmt.format(_saldoDisponible)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: numFacturaCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Número de Factura *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: valorCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Valor *',
+                    prefixText: '\$ ',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: ctx,
+                      initialDate: selectedDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (picked != null) setDialogState(() => selectedDate = picked);
+                  },
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Fecha de Procesamiento *',
+                      border: OutlineInputBorder(),
+                      suffixIcon: Icon(Icons.calendar_today),
                     ),
-                    ElevatedButton(
+                    child: Text(_dateFmt.format(selectedDate)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // ---- ARCHIVOS / FOTOS (múltiples páginas) ----
+                Row(
+                  children: [
+                    const Text('Archivos adjuntos', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    TextButton.icon(
                       onPressed: () async {
-                        final numFactura = numFacturaCtrl.text.trim();
-                        final valor = double.tryParse(valorCtrl.text) ?? 0;
-                        if (numFactura.isEmpty || valor <= 0) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Complete los campos obligatorios',
-                              ),
-                            ),
-                          );
-                          return;
-                        }
-                        Navigator.pop(ctx);
-                        try {
-                          String? fotoUrl;
-                          if (fotoBytes != null && fotoNombre != null) {
-                            fotoUrl = await _service.uploadFacturaFoto(
-                              fotoBytes!,
-                              fotoNombre!,
-                            );
-                          }
-                          await _service.crearFactura(
-                            numeroFactura: numFactura,
-                            valor: valor,
-                            fechaProcesamiento: selectedDate,
-                            fotoUrl: fotoUrl,
-                          );
-                          await _loadAllData();
-                          _showSuccess('Factura #$numFactura creada');
-                        } catch (e) {
-                          _showError('$e');
+                        final picked = await FilePickerService.pickFile();
+                        if (picked != null) {
+                          setDialogState(() {
+                            fotos.add((
+                              bytes: picked.bytes,
+                              nombre: picked.nombre,
+                              mimeType: picked.mimeType,
+                            ));
+                          });
                         }
                       },
-                      child: const Text('Crear Factura'),
+                      icon: const Icon(Icons.attach_file, size: 16),
+                      label: Text('Adjuntar ${fotos.length + 1}'),
                     ),
                   ],
                 ),
+                if (fotos.isNotEmpty) ...
+                  List.generate(fotos.length, (i) {
+                    final f = fotos[i];
+                    final esImagen = f.mimeType.startsWith('image/');
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Stack(
+                        children: [
+                          esImagen
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.memory(f.bytes, height: 100, width: double.infinity, fit: BoxFit.cover),
+                                )
+                              : Container(
+                                  height: 60,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade100,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.grey.shade300),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const SizedBox(width: 12),
+                                      Icon(_iconForMime(f.mimeType), color: AppColors.primary, size: 28),
+                                      const SizedBox(width: 10),
+                                      Expanded(child: Text(f.nombre, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis)),
+                                    ],
+                                  ),
+                                ),
+                          Positioned(
+                            top: 4, left: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
+                              child: Text('${i + 1}', style: const TextStyle(color: Colors.white, fontSize: 11)),
+                            ),
+                          ),
+                          Positioned(
+                            top: 4, right: 4,
+                            child: GestureDetector(
+                              onTap: () => setDialogState(() => fotos.removeAt(i)),
+                              child: Container(
+                                decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                                child: const Icon(Icons.close, color: Colors.white, size: 20),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  })
+                else
+                  Container(
+                    width: double.infinity,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.grey.shade50,
+                    ),
+                    child: const Center(
+                      child: Text('Sin archivos adjuntos (opcional)', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Colors.orange),
+                      SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'El valor se descontará del saldo disponible. El estado inicial será el primero del nomenclador.',
+                          style: TextStyle(fontSize: 11, color: Colors.orange),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final numFactura = numFacturaCtrl.text.trim();
+                final valor = double.tryParse(valorCtrl.text) ?? 0;
+                if (numFactura.isEmpty || valor <= 0) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(content: Text('Complete los campos obligatorios')),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx);
+                try {
+                  await _service.crearFactura(
+                    numeroFactura: numFactura,
+                    valor: valor,
+                    fechaProcesamiento: selectedDate,
+                    fotosEntradas: fotos,
+                  );
+                  await _loadAllData();
+                  _showSuccess('Factura #$numFactura creada con ${fotos.length} archivo(s)');
+                } catch (e) {
+                  _showError('$e');
+                }
+              },
+              child: const Text('Crear Factura'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ==================== DIALOGO EDITAR FACTURA ====================
+
+  void _showEditarFacturaDialog(ImportadoraFactura factura) {
+    final numCtrl = TextEditingController(text: factura.numeroFactura);
+    final valorCtrl = TextEditingController(text: factura.valor.toStringAsFixed(2));
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Editar Factura #${factura.numeroFactura}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, size: 16, color: Colors.orange),
+                    const SizedBox(width: 6),
+                    const Expanded(
+                      child: Text(
+                        'Si cambia el valor, el saldo disponible se ajustará automáticamente.',
+                        style: TextStyle(fontSize: 11, color: Colors.orange),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: numCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Número de Factura *',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: valorCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Valor *',
+                  prefixText: '\$ ',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.save, size: 16),
+            label: const Text('Guardar'),
+            onPressed: () async {
+              final nuevoNumero = numCtrl.text.trim();
+              final nuevoValor = double.tryParse(valorCtrl.text) ?? 0;
+              if (nuevoNumero.isEmpty || nuevoValor <= 0) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Complete los campos obligatorios')),
+                );
+                return;
+              }
+              Navigator.pop(ctx);
+              try {
+                await _service.actualizarDetallesFactura(
+                  idFactura: factura.id!,
+                  numeroFacturaAnterior: factura.numeroFactura,
+                  nuevoNumeroFactura: nuevoNumero,
+                  valorAnterior: factura.valor,
+                  nuevoValor: nuevoValor,
+                );
+                await _loadAllData();
+                _showSuccess('Factura actualizada correctamente');
+              } catch (e) {
+                _showError('$e');
+              }
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -957,6 +1030,27 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
   }
 
   // ==================== BUILD ====================
+
+  IconData _iconForMime(String mime) {
+    if (mime == 'application/pdf') return Icons.picture_as_pdf;
+    if (mime.contains('word') || mime.contains('msword')) return Icons.description;
+    if (mime.contains('excel') || mime.contains('spreadsheet')) return Icons.table_chart;
+    if (mime.startsWith('image/')) return Icons.image;
+    return Icons.insert_drive_file;
+  }
+
+  Future<void> _abrirArchivoUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    try {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        _showError('No se pudo abrir el archivo');
+      }
+    } catch (e) {
+      if (mounted) _showError('Error al abrir: $e');
+    }
+  }
 
   Color _hexToColor(String? hex) {
     try {
@@ -1551,6 +1645,20 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (h.observacion != null && h.observacion!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.comment_outlined, size: 12, color: Colors.indigo),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(h.observacion!,
+                                    style: const TextStyle(fontSize: 12, color: Colors.indigo)),
+                              ),
+                            ],
+                          ),
+                        ),
                       if (h.referencia != null)
                         Text(h.referencia!,
                             style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
@@ -1623,12 +1731,6 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (ctx, i) => _buildFacturaCard(_facturas[i]),
               ),
-    );
-  }
-
-  void _verFotoDesdeBytes(Uint8List bytes) {
-    _mostrarVisorFoto(
-      imageWidget: Image.memory(bytes, fit: BoxFit.contain),
     );
   }
 
@@ -1764,7 +1866,6 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
 
   Widget _buildFacturaCard(ImportadoraFactura factura) {
     final estadoColor = _hexToColor(factura.colorEstado);
-    final tieneFoto = factura.fotoUrl != null && factura.fotoUrl!.isNotEmpty;
 
     return Card(
       child: Padding(
@@ -1796,24 +1897,40 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                     ],
                   ),
                 ),
-                if (tieneFoto)
+                if (factura.fotos.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: GestureDetector(
-                      onTap: () => _verFotoFactura(factura.fotoUrl!),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image.network(
-                          factura.fotoUrl!,
-                          width: 42,
-                          height: 42,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(
-                            Icons.image_not_supported_outlined,
-                            size: 42,
-                            color: Colors.grey,
+                      onTap: () => _showGestionFotosDialog(factura),
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.network(
+                              factura.fotos.first.fotoUrl,
+                              width: 42,
+                              height: 42,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.image_not_supported_outlined,
+                                size: 42,
+                                color: Colors.grey,
+                              ),
+                            ),
                           ),
-                        ),
+                          if (factura.fotos.length > 1)
+                            Positioned(
+                              bottom: 0, right: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                                child: Text(
+                                  '${factura.fotos.length}',
+                                  style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
@@ -1858,26 +1975,23 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                   ),
                 ),
                 const Spacer(),
-                if (tieneFoto)
-                  TextButton.icon(
-                    onPressed: () => _verFotoFactura(factura.fotoUrl!),
-                    icon: const Icon(Icons.receipt, size: 16),
-                    label: const Text('Ver Foto', style: TextStyle(fontSize: 12)),
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                  )
-                else
-                  TextButton.icon(
-                    onPressed: () => _showAnadirFotoDialog(factura),
-                    icon: const Icon(Icons.add_a_photo_outlined, size: 16),
-                    label: const Text('Añadir Foto', style: TextStyle(fontSize: 12)),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.grey,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
+                TextButton.icon(
+                  onPressed: () => _showGestionFotosDialog(factura),
+                  icon: Icon(
+                    factura.fotos.isNotEmpty ? Icons.photo_library_outlined : Icons.add_a_photo_outlined,
+                    size: 16,
                   ),
+                  label: Text(
+                    factura.fotos.isNotEmpty
+                        ? 'Fotos (${factura.fotos.length})'
+                        : 'Añadir Foto',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  style: TextButton.styleFrom(
+                    foregroundColor: factura.fotos.isNotEmpty ? AppColors.primary : Colors.grey,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                ),
                 TextButton.icon(
                   onPressed:
                       () => _showHistorialEstadosDialog(factura),
@@ -1886,6 +2000,25 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.grey,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                ElevatedButton.icon(
+                  onPressed: () => _showEditarFacturaDialog(factura),
+                  icon: const Icon(Icons.edit_outlined, size: 16),
+                  label: const Text(
+                    'Editar',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
                 const SizedBox(width: 4),
