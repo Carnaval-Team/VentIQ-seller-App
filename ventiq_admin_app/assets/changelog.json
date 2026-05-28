@@ -1,11 +1,11 @@
 {
-  "current_version": "2.2.5",
-  "build": 225,
+  "current_version": "2.2.6",
+  "build": 226,
 
   "app_name": "ventiq_admin",
   "changelogs": [
     {
-      "version": "2.2.5",
+      "version": "2.2.6",
       "date": "2026-05-28",
       "title": "📲 Tu catálogo, directo al WhatsApp de tus clientes",
       "changes": [
