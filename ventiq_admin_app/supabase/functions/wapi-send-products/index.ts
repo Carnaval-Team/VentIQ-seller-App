@@ -88,6 +88,29 @@ function formatPrice(n: number): string {
 }
 
 /**
+ * Convierte el nombre de una categoría en hashtag estilo `#alimentos` o
+ * `#aseo_personal`:
+ *   - todo a minúsculas
+ *   - acentos/diacríticos eliminados
+ *   - espacios y separadores → `_`
+ *   - todo lo que no sea [a-z0-9_] se descarta
+ *   - `_` duplicados se colapsan y se recortan extremos
+ * Devuelve cadena vacía si no queda nada útil.
+ */
+function categoriaToHashtag(cat: string | null | undefined): string {
+  if (!cat) return "";
+  const slug = cat
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "") // quitar acentos (combining diacritics)
+    .toLowerCase()
+    .replace(/[\s\-\/]+/g, "_") // separadores → _
+    .replace(/[^a-z0-9_]/g, "") // descartar resto
+    .replace(/_+/g, "_") // colapsar __ → _
+    .replace(/^_+|_+$/g, ""); // trim _
+  return slug ? `#${slug}` : "";
+}
+
+/**
  * Construye un caption estilo marketing: encabezado llamativo, nombre del
  * producto en negrita, descripción opcional, precio destacado, separadores
  * visuales y CTA al final. Truncado a 1020 chars (límite WhatsApp).
@@ -112,9 +135,13 @@ function buildCaption(
     return safeCaption(
       template
         .replaceAll("{nombre}", p.denominacion ?? "")
-        .replaceAll("{descripcion}", p.descripcion ?? "")
+        // {descripcion} se rellena vacío: la política actual oculta la
+        // descripción del producto en los envíos por WhatsApp (ver buildCaption
+        // por defecto). Si el template la pide, queda en blanco.
+        .replaceAll("{descripcion}", "")
         .replaceAll("{precio}", p.precio != null ? formatPrice(p.precio) : "")
-        .replaceAll("{categoria}", p.categoria ?? "")
+        // {categoria} → hashtag (#alimentos, #aseo_personal, …)
+        .replaceAll("{categoria}", categoriaToHashtag(p.categoria))
         .replaceAll("{sku}", p.sku ?? "")
         .replaceAll("{stock}", stockStr),
     );
@@ -129,12 +156,10 @@ function buildCaption(
   parts.push("");
   parts.push(`🛍️ *${p.denominacion.trim()}*`);
 
-  if (p.descripcion && p.descripcion.trim()) {
-    parts.push("");
-    // Descripción en cursiva (WhatsApp: _texto_)
-    const desc = p.descripcion.trim().replace(/\s+/g, " ");
-    parts.push(`_${desc}_`);
-  }
+  // NOTA: la descripción del producto se omite intencionalmente del caption
+  // para reducir longitud del mensaje y consumo de RAM en la sesión WAPI
+  // (captions largos inflan la cola de Puppeteer). Si en el futuro se quiere
+  // reactivar, basta con re-añadir el bloque `_${p.descripcion}_` aquí.
 
   parts.push("");
   parts.push(sep);
@@ -142,8 +167,16 @@ function buildCaption(
   if (p.precio != null && p.precio > 0) {
     parts.push(`💰 *Precio:* $${formatPrice(p.precio)} CUP`);
   }
+  // Categoría: mostramos AMBAS formas — la línea con icono (legible) y el
+  // hashtag debajo (agrupable/tap en WhatsApp).
+  //   🏷️ Alimentos
+  //   #alimentos
   if (p.categoria && p.categoria.trim()) {
     parts.push(`🏷️ ${p.categoria.trim()}`);
+  }
+  const tag = categoriaToHashtag(p.categoria);
+  if (tag) {
+    parts.push(tag);
   }
   // Stock disponible — solo mostramos cuando hay existencia real.
   // Si quedan pocas unidades añadimos un toque de urgencia.
