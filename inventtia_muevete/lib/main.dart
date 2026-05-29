@@ -21,6 +21,7 @@ import 'providers/wallet_provider.dart';
 import 'providers/address_provider.dart';
 import 'providers/plan_provider.dart';
 import 'providers/suscripcion_provider.dart';
+import 'providers/nomencladores_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/landing_screen.dart';
 import 'screens/login_screen.dart';
@@ -108,6 +109,7 @@ class MueveteApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => WalletProvider()),
         ChangeNotifierProvider(create: (_) => AddressProvider()),
         ChangeNotifierProvider(create: (_) => CargaProvider()),
+        ChangeNotifierProvider(create: (_) => NomencladoresProvider()),
         ChangeNotifierProvider(create: (_) => PlanProvider()),
         ChangeNotifierProvider(create: (_) => SuscripcionProvider()),
         ChangeNotifierProvider.value(value: MbTilesService.instance),

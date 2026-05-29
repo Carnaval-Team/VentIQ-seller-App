@@ -9,6 +9,7 @@ import '../../models/estado_carga_model.dart';
 import '../../models/oferta_carga_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/carga_provider.dart';
+import '../../providers/nomencladores_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/plan_suscripcion_widget.dart';
 import '../../widgets/route_map_widget.dart';
@@ -316,6 +317,9 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
 
   final _descripcionCtrl = TextEditingController();
   final _pesoCtrl = TextEditingController();
+  final _largoCtrl = TextEditingController();
+  final _anchoCtrl = TextEditingController();
+  final _altoCtrl = TextEditingController();
   final _precioCtrl = TextEditingController();
   final _instruccionesCtrl = TextEditingController();
   final _horasCargaCtrl = TextEditingController();
@@ -333,67 +337,43 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
 
   // Nuevos campos Truckstop — comercial / equipo
   final _refNumCtrl = TextEditingController();
-  int? _commodityId;
-  final List<String> _opcionesEquipoSel = [];
+  int? _commodityNomId;
+  final List<int> _opcionesEquipoSelIds = [];
   bool _esPrivada = false;
   int? _horasAnticipacionPublica;
+
+  // Horarios de ventana (formato 'HH:mm')
+  String? _ventanaRecogidaDesde;
+  String? _ventanaRecogidaHasta;
+  String? _ventanaEntregaDesde;
+  String? _ventanaEntregaHasta;
 
   String _tipo = 'ftl';
   String _unidadPeso = 'kg';
   double? _distanciaKm;
-  String? _tipoMercancia;
-  String? _tipoEquipo;
+  int? _tipoMercanciaId;
+  int? _tipoEquipoId;
   bool _requiereRefrigeracion = false;
   bool _requiereSeguro = false;
   DateTime? _fechaRecogida;
   DateTime? _fechaEntrega;
   String _prioridad = 'normal';
 
-  static const _mercanciaOpciones = [
-    'General',
-    'Refrigerada',
-    'Peligrosa',
-    'Sobredimensionada',
-    'Vehículos',
-    'Electrónica',
-    'Otros',
-  ];
-
-  static const _equipoOpciones = [
-    'flatbed',
-    'van',
-    'reefer',
-    'dryvan',
-    'tanker',
-    'curtain',
-  ];
-
-  static const _opcionesEquipoExtra = [
-    'liftgate',
-    'pallet_return',
-    'team_driver',
-    'blanket_wrap',
-    'tarps',
-    'straps',
-  ];
-
-  static const _commodityOpciones = <Map<String, dynamic>>[
-    {'id': 1,  'label': 'Alimentos y bebidas'},
-    {'id': 2,  'label': 'Materiales peligrosos'},
-    {'id': 3,  'label': 'Maquinaria / equipos'},
-    {'id': 4,  'label': 'Productos químicos'},
-    {'id': 5,  'label': 'Vehículos'},
-    {'id': 6,  'label': 'Electrónica'},
-    {'id': 7,  'label': 'Textiles / ropa'},
-    {'id': 8,  'label': 'Materiales de construcción'},
-    {'id': 9,  'label': 'Productos farmacéuticos'},
-    {'id': 99, 'label': 'Otros'},
-  ];
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<NomencladoresProvider>().cargar();
+    });
+  }
 
   @override
   void dispose() {
     _descripcionCtrl.dispose();
     _pesoCtrl.dispose();
+    _largoCtrl.dispose();
+    _anchoCtrl.dispose();
+    _altoCtrl.dispose();
     _precioCtrl.dispose();
     _instruccionesCtrl.dispose();
     _horasCargaCtrl.dispose();
@@ -408,6 +388,27 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
     _contactoDestinoTelCtrl.dispose();
     _refNumCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickHora(bool esRecogida, bool esDesde) async {
+    final inicial = TimeOfDay.now();
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: inicial,
+      helpText: esRecogida
+          ? (esDesde ? 'Hora inicio recogida' : 'Hora fin recogida')
+          : (esDesde ? 'Hora inicio entrega' : 'Hora fin entrega'),
+    );
+    if (picked != null && mounted) {
+      final str =
+          '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+      setState(() {
+        if (esRecogida && esDesde) _ventanaRecogidaDesde = str;
+        if (esRecogida && !esDesde) _ventanaRecogidaHasta = str;
+        if (!esRecogida && esDesde) _ventanaEntregaDesde = str;
+        if (!esRecogida && !esDesde) _ventanaEntregaHasta = str;
+      });
+    }
   }
 
   Future<void> _openPicker() async {
@@ -480,6 +481,11 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
     // IDs nomenclador: 1=FTL, 2=LTL (seed migración 022)
     final tipoCargaId = _tipo == 'ltl' ? 2 : 1;
 
+    double? parseNum(String txt) {
+      final v = double.tryParse(txt.replaceAll(',', '.'));
+      return v == null || v <= 0 ? null : v;
+    }
+
     final carga = CargaModel(
       id: 0,
       shipperId: uid,
@@ -496,12 +502,15 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
       descripcion: _descripcionCtrl.text.trim().isEmpty
           ? null
           : _descripcionCtrl.text.trim(),
-      tipoMercanciaId: null, // TODO: enlazar dropdown con app_nom_tipo_mercancia
+      tipoMercanciaId: _tipoMercanciaId,
       pesoKg: () {
         final cleaned = _pesoCtrl.text.replaceAll(',', '.');
         final v = double.tryParse(cleaned);
         return v == null ? null : (_unidadPeso == 'tonelada' ? v * 1000 : v);
       }(),
+      longitudM: parseNum(_largoCtrl.text),
+      anchoM: parseNum(_anchoCtrl.text),
+      altoM: parseNum(_altoCtrl.text),
       unidadPeso: _unidadPeso,
       horasCarga: double.tryParse(_horasCargaCtrl.text.replaceAll(',', '.')),
       horasDescarga:
@@ -512,10 +521,14 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
       instrucciones: _instruccionesCtrl.text.trim().isEmpty
           ? null
           : _instruccionesCtrl.text.trim(),
-      tipoEquipoId: null, // TODO: enlazar dropdown con app_nom_tipo_equipo
-      opcionesEquipoManejo: const [], // TODO: IDs desde app_nom_equipo_manejo_carga
+      tipoEquipoId: _tipoEquipoId,
+      opcionesEquipoManejo: _opcionesEquipoSelIds,
       fechaRecogida: _fechaRecogida,
       fechaEntrega: _fechaEntrega,
+      ventanaRecogidaDesde: _ventanaRecogidaDesde,
+      ventanaRecogidaHasta: _ventanaRecogidaHasta,
+      ventanaEntregaDesde: _ventanaEntregaDesde,
+      ventanaEntregaHasta: _ventanaEntregaHasta,
       precioOfertado: double.tryParse(_precioCtrl.text),
       // Ubicación detallada
       nombreUbicacionOrigen: _nombreUbicOrigenCtrl.text.trim().isEmpty ? null : _nombreUbicOrigenCtrl.text.trim(),
@@ -550,24 +563,31 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
       _formKey.currentState!.reset();
       setState(() {
         _tipo = 'ftl';
-        _tipoMercancia = null;
-        _tipoEquipo = null;
+        _tipoMercanciaId = null;
+        _tipoEquipoId = null;
         _requiereRefrigeracion = false;
         _requiereSeguro = false;
         _fechaRecogida = null;
         _fechaEntrega = null;
+        _ventanaRecogidaDesde = null;
+        _ventanaRecogidaHasta = null;
+        _ventanaEntregaDesde = null;
+        _ventanaEntregaHasta = null;
         _unidadPeso = 'kg';
         _distanciaKm = null;
         _latOrigen = null; _lonOrigen = null; _dirOrigen = null;
         _ciudadOrigen = null; _provinciaOrigen = null; _paisOrigen = null;
         _latDestino = null; _lonDestino = null; _dirDestino = null;
         _ciudadDestino = null; _provinciaDestino = null; _paisDestino = null;
-        _commodityId = null;
-        _opcionesEquipoSel.clear();
+        _commodityNomId = null;
+        _opcionesEquipoSelIds.clear();
         _esPrivada = false;
         _horasAnticipacionPublica = null;
         _prioridad = 'normal';
       });
+      _largoCtrl.clear();
+      _anchoCtrl.clear();
+      _altoCtrl.clear();
       _horasCargaCtrl.clear();
       _horasDescargaCtrl.clear();
       _nombreUbicOrigenCtrl.clear();
@@ -594,6 +614,7 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
   Widget build(BuildContext context) {
     final isDark = context.watch<ThemeProvider>().isDark;
     final provider = context.watch<CargaProvider>();
+    final noms = context.watch<NomencladoresProvider>();
     final textPrimary =
         isDark ? Colors.white : const Color(0xFF1A1D27);
 
@@ -699,14 +720,35 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
               maxLines: 2,
             ),
             const SizedBox(height: 10),
-            // Tipo mercancia dropdown
-            _Dropdown(
-              value: _tipoMercancia,
-              hint: 'Tipo de mercancía',
-              items: _mercanciaOpciones,
-              isDark: isDark,
-              onChanged: (v) => setState(() => _tipoMercancia = v),
-            ),
+            // Tipo mercancia dropdown — desde BD
+            noms.loading
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: LinearProgressIndicator(),
+                  )
+                : DropdownButtonFormField<int>(
+                    value: _tipoMercanciaId,
+                    dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
+                    style: TextStyle(
+                        color: isDark ? Colors.white : const Color(0xFF1A1D27),
+                        fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Tipo de mercancía',
+                      prefixIcon:
+                          const Icon(Icons.category_outlined, size: 18),
+                      hintStyle: TextStyle(
+                          color:
+                              isDark ? Colors.white38 : Colors.grey[500]),
+                    ),
+                    items: noms.tiposMercancia
+                        .map((m) => DropdownMenuItem<int>(
+                              value: m.id,
+                              child: Text(m.nombre),
+                            ))
+                        .toList(),
+                    onChanged: (v) =>
+                        setState(() => _tipoMercanciaId = v),
+                  ),
             const SizedBox(height: 10),
             Row(
               children: [
@@ -731,6 +773,46 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
                     isDark: isDark,
                     onChanged: (v) =>
                         setState(() => _unidadPeso = v ?? 'kg'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // Medidas (largo × ancho × alto)
+            _SectionLabel('Medidas (m)', isDark),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _Field(
+                    controller: _largoCtrl,
+                    hint: 'Largo',
+                    icon: Icons.straighten_outlined,
+                    isDark: isDark,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _Field(
+                    controller: _anchoCtrl,
+                    hint: 'Ancho',
+                    icon: Icons.width_normal_outlined,
+                    isDark: isDark,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _Field(
+                    controller: _altoCtrl,
+                    hint: 'Alto',
+                    icon: Icons.height_outlined,
+                    isDark: isDark,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
                   ),
                 ),
               ],
@@ -797,16 +879,39 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
             const SizedBox(height: 20),
             _SectionLabel('Equipo Requerido', isDark),
             const SizedBox(height: 8),
-            _Dropdown(
-              value: _tipoEquipo,
-              hint: 'Tipo de carrocería / equipo',
-              items: _equipoOpciones,
-              isDark: isDark,
-              onChanged: (v) => setState(() => _tipoEquipo = v),
-            ),
+            // Tipo equipo dropdown — desde BD
+            noms.loading
+                ? const SizedBox(
+                    height: 4,
+                    child: LinearProgressIndicator(),
+                  )
+                : DropdownButtonFormField<int>(
+                    value: _tipoEquipoId,
+                    dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
+                    style: TextStyle(
+                        color: isDark ? Colors.white : const Color(0xFF1A1D27),
+                        fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Tipo de carrocería / equipo',
+                      prefixIcon: const Icon(
+                          Icons.local_shipping_outlined,
+                          size: 18),
+                      hintStyle: TextStyle(
+                          color:
+                              isDark ? Colors.white38 : Colors.grey[500]),
+                    ),
+                    items: noms.tiposEquipo
+                        .map((e) => DropdownMenuItem<int>(
+                              value: e.id,
+                              child: Text(e.nombre),
+                            ))
+                        .toList(),
+                    onChanged: (v) =>
+                        setState(() => _tipoEquipoId = v),
+                  ),
 
             const SizedBox(height: 20),
-            _SectionLabel('Fechas', isDark),
+            _SectionLabel('Recogida', isDark),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -820,7 +925,40 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
                     onTap: () => _pickFecha(true),
                   ),
                 ),
-                const SizedBox(width: 10),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _DateButton(
+                    label: _ventanaRecogidaDesde == null
+                        ? 'Desde (hora)'
+                        : _ventanaRecogidaDesde!,
+                    icon: Icons.access_time_outlined,
+                    isDark: isDark,
+                    onTap: () => _pickHora(true, true),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _DateButton(
+                    label: _ventanaRecogidaHasta == null
+                        ? 'Hasta (hora)'
+                        : _ventanaRecogidaHasta!,
+                    icon: Icons.access_time_filled_outlined,
+                    isDark: isDark,
+                    onTap: () => _pickHora(true, false),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+            _SectionLabel('Entrega', isDark),
+            const SizedBox(height: 8),
+            Row(
+              children: [
                 Expanded(
                   child: _DateButton(
                     label: _fechaEntrega == null
@@ -829,6 +967,32 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
                     icon: Icons.event_outlined,
                     isDark: isDark,
                     onTap: () => _pickFecha(false),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _DateButton(
+                    label: _ventanaEntregaDesde == null
+                        ? 'Desde (hora)'
+                        : _ventanaEntregaDesde!,
+                    icon: Icons.access_time_outlined,
+                    isDark: isDark,
+                    onTap: () => _pickHora(false, true),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _DateButton(
+                    label: _ventanaEntregaHasta == null
+                        ? 'Hasta (hora)'
+                        : _ventanaEntregaHasta!,
+                    icon: Icons.access_time_filled_outlined,
+                    isDark: isDark,
+                    onTap: () => _pickHora(false, false),
                   ),
                 ),
               ],
@@ -947,63 +1111,81 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
               ],
             ),
 
-            // ── Opciones de equipo ───────────────────────────────────────
+            // ── Opciones de equipo — desde BD ────────────────────────────
             const SizedBox(height: 24),
             _SectionLabel('Opciones de Equipo', isDark),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _opcionesEquipoExtra.map((op) {
-                final sel = _opcionesEquipoSel.contains(op);
-                return FilterChip(
-                  label: Text(op,
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: sel
-                              ? Colors.white
-                              : (isDark ? Colors.white70 : Colors.grey[700]))),
-                  selected: sel,
-                  selectedColor: AppTheme.primaryColor,
-                  backgroundColor: isDark
-                      ? Colors.white.withValues(alpha: 0.06)
-                      : Colors.grey.withValues(alpha: 0.1),
-                  checkmarkColor: Colors.white,
-                  onSelected: (v) => setState(() {
-                    if (v) {
-                      _opcionesEquipoSel.add(op);
-                    } else {
-                      _opcionesEquipoSel.remove(op);
-                    }
-                  }),
-                );
-              }).toList(),
-            ),
+            noms.loading
+                ? const SizedBox(
+                    height: 4,
+                    child: LinearProgressIndicator(),
+                  )
+                : Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: noms.opcionesEquipoManejo.map((op) {
+                      final sel = _opcionesEquipoSelIds.contains(op.id);
+                      return FilterChip(
+                        label: Text(op.nombre,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: sel
+                                    ? Colors.white
+                                    : (isDark
+                                        ? Colors.white70
+                                        : Colors.grey[700]))),
+                        selected: sel,
+                        selectedColor: AppTheme.primaryColor,
+                        backgroundColor: isDark
+                            ? Colors.white.withValues(alpha: 0.06)
+                            : Colors.grey.withValues(alpha: 0.1),
+                        checkmarkColor: Colors.white,
+                        onSelected: (v) => setState(() {
+                          if (v) {
+                            _opcionesEquipoSelIds.add(op.id);
+                          } else {
+                            _opcionesEquipoSelIds.remove(op.id);
+                          }
+                        }),
+                      );
+                    }).toList(),
+                  ),
 
-            // ── Clasificación de mercancía (Commodity) ───────────────────
+            // ── Clasificación de mercancía (Commodity) — desde BD ────────
             const SizedBox(height: 24),
             _SectionLabel('Clasificación de Mercancía', isDark),
             const SizedBox(height: 8),
-            DropdownButtonFormField<int>(
-              value: _commodityId,
-              decoration: InputDecoration(
-                hintText: 'Tipo de producto (commodity)',
-                prefixIcon: const Icon(Icons.category_outlined, size: 18),
-                hintStyle: TextStyle(
-                    color: isDark ? Colors.white38 : Colors.grey[500]),
-              ),
-              dropdownColor: isDark ? const Color(0xFF2A2D3E) : Colors.white,
-              style: TextStyle(
-                  color: isDark ? Colors.white : const Color(0xFF1A1D27),
-                  fontSize: 14),
-              items: _commodityOpciones
-                  .map((c) => DropdownMenuItem<int>(
-                        value: c['id'] as int,
-                        child: Text(c['label'] as String),
-                      ))
-                  .toList(),
-              onChanged: (v) => setState(() => _commodityId = v),
-            ),
+            noms.loading
+                ? const SizedBox(
+                    height: 4,
+                    child: LinearProgressIndicator(),
+                  )
+                : DropdownButtonFormField<int>(
+                    value: _commodityNomId,
+                    decoration: InputDecoration(
+                      hintText: 'Tipo de producto (commodity)',
+                      prefixIcon:
+                          const Icon(Icons.inventory_2_outlined, size: 18),
+                      hintStyle: TextStyle(
+                          color:
+                              isDark ? Colors.white38 : Colors.grey[500]),
+                    ),
+                    dropdownColor:
+                        isDark ? const Color(0xFF2A2D3E) : Colors.white,
+                    style: TextStyle(
+                        color: isDark
+                            ? Colors.white
+                            : const Color(0xFF1A1D27),
+                        fontSize: 14),
+                    items: noms.commodities
+                        .map((c) => DropdownMenuItem<int>(
+                              value: c.id,
+                              child: Text(c.nombre),
+                            ))
+                        .toList(),
+                    onChanged: (v) =>
+                        setState(() => _commodityNomId = v),
+                  ),
 
             // ── Números de referencia ────────────────────────────────────
             const SizedBox(height: 24),
