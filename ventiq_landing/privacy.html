@@ -8,46 +8,46 @@
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://inventtia.com/privacy.html">
     <link rel="icon" type="image/png" href="assets/images/ic.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/premium.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            line-height: 1.7;
-            color: #2c3e50;
-            background: #f8f9fa;
-            padding: 20px;
+        body { padding: 40px 20px; }
+        .container.legal-container { max-width: 920px; }
+        header { padding-bottom: 24px; margin-bottom: 32px; border-bottom: 1px solid var(--border); }
+        h3 { color: var(--ink-900); margin: 24px 0 10px; font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em; }
+        p, li { margin-bottom: 12px; color: var(--text-secondary); line-height: 1.75; }
+        ul { margin-left: 1.5rem; margin-bottom: 1rem; }
+        table {
+            width: 100%; border-collapse: separate; border-spacing: 0; margin: 1.25rem 0;
+            font-size: 0.95em; border-radius: var(--radius-md); overflow: hidden;
+            box-shadow: var(--shadow-sm); border: 1px solid var(--border);
         }
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            background: white;
-            padding: 50px 40px;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        th, td { border-bottom: 1px solid var(--border); padding: 12px 14px; text-align: left; vertical-align: top; }
+        th { background: var(--gradient-primary); color: white; font-weight: 600; letter-spacing: -0.01em; }
+        tr:nth-child(even) td { background: var(--surface-2); }
+        .meta { color: var(--text-light); font-size: 0.88em; }
+        .highlight {
+            background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(245,158,11,0.04));
+            border-left: 4px solid var(--gold);
+            padding: 14px 18px; margin: 1.25rem 0; border-radius: var(--radius-md);
+            color: var(--ink-800);
         }
-        header {
-            border-bottom: 3px solid #e74c3c;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
+        a { color: var(--primary); text-decoration: none; font-weight: 500; transition: color 0.2s; }
+        a:hover { color: var(--primary-3); }
+        footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); text-align: center; color: var(--text-light); font-size: 0.88em; }
+        .back {
+            display: inline-flex; align-items: center; gap: 6px; margin-bottom: 1.5rem;
+            color: var(--primary); text-decoration: none; font-weight: 600;
+            padding: 8px 14px; border-radius: var(--radius-pill);
+            background: var(--surface-2); transition: all 0.3s var(--ease-out);
         }
-        h1 { color: #c0392b; font-size: 2em; margin-bottom: 8px; }
-        h2 { color: #c0392b; margin: 30px 0 15px; font-size: 1.4em; border-left: 4px solid #e74c3c; padding-left: 12px; }
-        h3 { color: #2c3e50; margin: 20px 0 10px; font-size: 1.1em; }
-        p, li { margin-bottom: 10px; }
-        ul { margin-left: 25px; margin-bottom: 15px; }
-        table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 0.95em; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; vertical-align: top; }
-        th { background: #c0392b; color: white; }
-        tr:nth-child(even) { background: #fafafa; }
-        .meta { color: #7f8c8d; font-size: 0.9em; }
-        .highlight { background: #fff3cd; border-left: 4px solid #f39c12; padding: 12px 15px; margin: 15px 0; border-radius: 4px; }
-        a { color: #c0392b; }
-        footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #7f8c8d; font-size: 0.9em; }
-        .back { display: inline-block; margin-bottom: 20px; color: #c0392b; text-decoration: none; }
+        .back:hover { background: var(--primary); color: white; transform: translateX(-4px); }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="container legal-container" data-reveal="up">
         <a href="index.html" class="back">&larr; Volver al inicio</a>
         <header>
             <h1>Política de Privacidad</h1>
@@ -193,5 +193,6 @@
             <a href="index.html">Inicio</a> &middot; <a href="data-safety.html">Resumen de Seguridad de Datos</a> &middot; <a href="contact.html">Contacto</a>
         </footer>
     </div>
+    <script src="assets/js/premium.js" defer></script>
 </body>
 </html>
