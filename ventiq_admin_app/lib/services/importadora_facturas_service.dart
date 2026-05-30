@@ -112,15 +112,16 @@ class ImportadoraFacturasService {
     double nuevoSaldo,
     double saldoAnterior,
     String tipoOperacion,
-    String referencia,
-  ) async {
+    String referencia, {
+    int? idRecarga,
+  }) async {
     await _supabase.from('imp_dat_saldo').upsert({
       'idtienda': storeId,
       'saldo_disponible': nuevoSaldo,
       'updated_at': DateTime.now().toIso8601String(),
     }, onConflict: 'idtienda');
 
-    await _supabase.from('imp_hist_saldo').insert({
+    final histRow = <String, dynamic>{
       'idtienda': storeId,
       'monto_anterior': saldoAnterior,
       'monto_nuevo': nuevoSaldo,
@@ -128,7 +129,10 @@ class ImportadoraFacturasService {
       'tipo_operacion': tipoOperacion,
       'referencia': referencia,
       'created_at': DateTime.now().toIso8601String(),
-    });
+    };
+    if (idRecarga != null) histRow['id_recarga'] = idRecarga;
+
+    await _supabase.from('imp_hist_saldo').insert(histRow);
   }
 
   // ==================== RECARGAS DE SALDO ====================
@@ -165,13 +169,18 @@ class ImportadoraFacturasService {
       final saldoActual = await getSaldoDisponible();
       final nuevoSaldo = saldoActual + monto;
 
-      await _supabase.from('imp_dat_recarga_saldo').insert({
-        'idtienda': storeId,
-        'monto': monto,
-        'fecha_pago': fechaPago.toIso8601String().split('T').first,
-        'observacion': observacion,
-        'created_at': DateTime.now().toIso8601String(),
-      });
+      final recargaRow = await _supabase
+          .from('imp_dat_recarga_saldo')
+          .insert({
+            'idtienda': storeId,
+            'monto': monto,
+            'fecha_pago': fechaPago.toIso8601String().split('T').first,
+            'observacion': observacion,
+            'created_at': DateTime.now().toIso8601String(),
+          })
+          .select('id')
+          .single();
+      final recargaId = recargaRow['id'] as int;
 
       final refRecarga = observacion != null && observacion.isNotEmpty
           ? 'Recarga de saldo: \$${monto.toStringAsFixed(2)} — $observacion'
@@ -182,6 +191,7 @@ class ImportadoraFacturasService {
         saldoActual,
         'recarga',
         refRecarga,
+        idRecarga: recargaId,
       );
 
       print('✅ Recarga de \$${monto.toStringAsFixed(2)} registrada. Nuevo saldo: \$${nuevoSaldo.toStringAsFixed(2)}');
@@ -189,6 +199,93 @@ class ImportadoraFacturasService {
       print('❌ Error agregando recarga: $e');
       rethrow;
     }
+  }
+
+  /// Cancela un pago (recarga): resta el monto del saldo y elimina recarga + historial.
+  Future<void> cancelarPagoRecarga({
+    required int idRecarga,
+    int? idHistorial,
+  }) async {
+    try {
+      final storeId = await _userPrefs.getIdTienda();
+      if (storeId == null) throw Exception('No se pudo obtener ID de tienda');
+
+      final recargaRow = await _supabase
+          .from('imp_dat_recarga_saldo')
+          .select('id, monto')
+          .eq('id', idRecarga)
+          .eq('idtienda', storeId)
+          .maybeSingle();
+      if (recargaRow == null) {
+        throw Exception('No se encontró el pago a cancelar');
+      }
+
+      final monto = (recargaRow['monto'] as num).toDouble();
+      final saldoActual = await getSaldoDisponible();
+      if (saldoActual < monto) {
+        throw Exception(
+          'Saldo insuficiente para cancelar este pago. '
+          'Saldo actual: \$${saldoActual.toStringAsFixed(2)}, '
+          'monto del pago: \$${monto.toStringAsFixed(2)}',
+        );
+      }
+
+      if (idHistorial != null) {
+        await _supabase
+            .from('imp_hist_saldo')
+            .delete()
+            .eq('id', idHistorial)
+            .eq('idtienda', storeId);
+      } else {
+        await _supabase
+            .from('imp_hist_saldo')
+            .delete()
+            .eq('id_recarga', idRecarga)
+            .eq('idtienda', storeId);
+      }
+
+      await _supabase
+          .from('imp_dat_recarga_saldo')
+          .delete()
+          .eq('id', idRecarga)
+          .eq('idtienda', storeId);
+
+      await _supabase.from('imp_dat_saldo').upsert({
+        'idtienda': storeId,
+        'saldo_disponible': saldoActual - monto,
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'idtienda');
+
+      print('✅ Pago recarga #$idRecarga cancelado. Monto descontado: \$${monto.toStringAsFixed(2)}');
+    } catch (e) {
+      print('❌ Error cancelando pago: $e');
+      rethrow;
+    }
+  }
+
+  /// Resuelve el id de recarga asociado a un movimiento del historial.
+  int? resolverRecargaId(HistorialSaldo historial, List<RecargaSaldo> recargas) {
+    if (historial.idRecarga != null) return historial.idRecarga;
+
+    RecargaSaldo? mejor;
+    var mejorDiff = const Duration(days: 9999);
+
+    for (final r in recargas) {
+      if (r.id == null || r.monto != historial.diferencia) continue;
+      final diff = r.createdAt.difference(historial.createdAt).abs();
+      if (diff < mejorDiff) {
+        mejorDiff = diff;
+        mejor = r;
+      }
+    }
+
+    if (mejor != null && mejorDiff.inHours <= 24) return mejor.id;
+
+    final candidatos =
+        recargas.where((r) => r.id != null && r.monto == historial.diferencia).toList();
+    if (candidatos.length == 1) return candidatos.first.id;
+
+    return null;
   }
 
   // ==================== HISTORIAL DE SALDO ====================
@@ -209,7 +306,7 @@ class ImportadoraFacturasService {
       } catch (_) {
         response = await _supabase
             .from('imp_hist_saldo')
-            .select()
+            .select('id, idtienda, monto_anterior, monto_nuevo, diferencia, tipo_operacion, referencia, id_recarga, created_at')
             .eq('idtienda', storeId)
             .order('created_at', ascending: false)
             .limit(100);

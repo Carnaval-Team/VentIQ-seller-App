@@ -203,6 +203,7 @@ class HistorialSaldo {
   final String tipoOperacion; // 'recarga', 'descuento_factura'
   final String? referencia;
   final String? observacion;
+  final int? idRecarga;
   final int idtienda;
   final DateTime createdAt;
 
@@ -214,9 +215,12 @@ class HistorialSaldo {
     required this.tipoOperacion,
     this.referencia,
     this.observacion,
+    this.idRecarga,
     required this.idtienda,
     required this.createdAt,
   });
+
+  bool get esRecarga => tipoOperacion == 'recarga';
 
   factory HistorialSaldo.fromJson(Map<String, dynamic> json) {
     // observacion puede venir del join con imp_dat_recarga_saldo
@@ -229,6 +233,7 @@ class HistorialSaldo {
       tipoOperacion: json['tipo_operacion'] ?? '',
       referencia: json['referencia'],
       observacion: recargaJoin?['observacion'] as String?,
+      idRecarga: json['id_recarga'] as int?,
       idtienda: json['idtienda'] ?? 0,
       createdAt: DateTime.parse(
         json['created_at'] ?? DateTime.now().toIso8601String(),

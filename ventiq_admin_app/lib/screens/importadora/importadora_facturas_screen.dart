@@ -118,6 +118,65 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
     );
   }
 
+  Future<void> _confirmCancelarPago(HistorialSaldo h) async {
+    if (!h.esRecarga) return;
+
+    final idRecarga = _service.resolverRecargaId(h, _recargas);
+    if (idRecarga == null) {
+      _showError('No se pudo identificar el pago asociado a este movimiento');
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancelar pago'),
+        content: Text(
+          '¿Cancelar este pago de ${_currencyFmt.format(h.diferencia)}?\n\n'
+          'El monto se descontará del saldo disponible y se eliminará del historial.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sí, cancelar'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+
+    try {
+      await _service.cancelarPagoRecarga(
+        idRecarga: idRecarga,
+        idHistorial: h.id,
+      );
+      await _loadSaldoData();
+      _showSuccess(
+        'Pago de ${_currencyFmt.format(h.diferencia)} cancelado. Saldo actualizado.',
+      );
+    } catch (e) {
+      _showError('$e');
+    }
+  }
+
+  Widget? _buildCancelarPagoButton(HistorialSaldo h) {
+    if (!h.esRecarga) return null;
+    return IconButton(
+      tooltip: 'Cancelar pago',
+      icon: Icon(Icons.cancel_outlined, color: Colors.red.shade700, size: 22),
+      onPressed: () => _confirmCancelarPago(h),
+    );
+  }
+
   // ==================== DIALOGO RECARGA ====================
 
   void _showRecargaDialog() {
@@ -467,6 +526,7 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                                 itemBuilder: (ctx, i) {
                                   final h = _historialSaldo[i];
                                   final isIngreso = h.diferencia > 0;
+                                  final cancelBtn = _buildCancelarPagoButton(h);
                                   return ListTile(
                                     leading: CircleAvatar(
                                       backgroundColor:
@@ -511,29 +571,35 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                                         ),
                                       ],
                                     ),
-                                    trailing: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Text(
-                                          '${isIngreso ? '+' : ''}${_currencyFmt.format(h.diferencia)}',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color:
-                                                isIngreso
-                                                    ? AppColors.success
-                                                    : AppColors.error,
-                                          ),
+                                        Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
+                                          children: [
+                                            Text(
+                                              '${isIngreso ? '+' : ''}${_currencyFmt.format(h.diferencia)}',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                color:
+                                                    isIngreso
+                                                        ? AppColors.success
+                                                        : AppColors.error,
+                                              ),
+                                            ),
+                                            Text(
+                                              _currencyFmt.format(h.montoNuevo),
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        Text(
-                                          _currencyFmt.format(h.montoNuevo),
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
+                                        if (cancelBtn != null) cancelBtn,
                                       ],
                                     ),
                                   );
@@ -1614,6 +1680,7 @@ class _ImportadoraFacturasScreenState extends State<ImportadoraFacturasScreen>
                       color: esIngreso ? AppColors.success : Colors.red.shade700,
                     ),
                   ),
+                  trailing: _buildCancelarPagoButton(h),
                   title: Row(
                     children: [
                       Text(
