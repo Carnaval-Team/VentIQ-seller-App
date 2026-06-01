@@ -397,6 +397,11 @@ class _UserAvatarMenu extends StatelessWidget {
       onSelected: (value) async {
         if (value == 'viajes') {
           Navigator.pushNamedAndRemoveUntil(context, auth.homeRoute, (_) => false);
+        } else if (value == 'perfil') {
+          final route = auth.profileRoute;
+          if (route != null) {
+            Navigator.pushNamed(context, route);
+          }
         } else if (value == 'logout') {
           await auth.signOut();
           if (context.mounted) {
@@ -430,6 +435,33 @@ class _UserAvatarMenu extends StatelessWidget {
             ],
           ),
         ),
+        if (auth.profileRoute != null)
+          PopupMenuItem(
+            value: 'perfil',
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.person_outline,
+                      size: 18, color: AppTheme.primaryColor),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Mi perfil',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary(isDark),
+                  ),
+                ),
+              ],
+            ),
+          ),
         const PopupMenuDivider(),
         PopupMenuItem(
           value: 'logout',
@@ -771,13 +803,13 @@ class _FeaturesSection extends StatelessWidget {
 
     void navigateCargo() {
       if (!auth.isAuthenticated) { goLogin(); return; }
-      if (auth.isShipper || auth.isCarrierCarga) {
+      if (auth.isShipper || auth.isCarrierCarga || auth.isDispatcher) {
         Navigator.pushNamed(context, auth.homeRoute);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text(
-                'Esta funcion es solo para Shippers y Transportistas de carga'),
+                'Esta función es solo para usuarios de la plataforma de carga'),
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),

@@ -34,21 +34,39 @@ class SuscripcionService {
 
   Future<bool> crearSuscripcionGratis(
       String userUuid, String tipoUsuario) async {
+    return crearSuscripcionTrial(userUuid, tipoUsuario);
+  }
+
+  /// Plan real del tipo con promoción de primer mes sin cargo.
+  Future<bool> crearSuscripcionTrial(
+      String userUuid, String tipoUsuario) async {
     try {
       debugPrint(
-          '[SuscripcionService] Creando suscripción gratis: user=$userUuid tipo=$tipoUsuario');
+          '[SuscripcionService] Creando suscripción trial: user=$userUuid tipo=$tipoUsuario');
       await _supabase.rpc(
-        'fn_crear_suscripcion_gratis',
+        'fn_crear_suscripcion_trial',
         params: {
           'p_usuario_uuid': userUuid,
           'p_tipo_usuario': tipoUsuario,
         },
       );
-      debugPrint('[SuscripcionService] Suscripción gratis creada OK');
+      debugPrint('[SuscripcionService] Suscripción trial creada OK');
       return true;
     } catch (e) {
-      debugPrint('[SuscripcionService] Error crearSuscripcionGratis: $e');
-      return false;
+      debugPrint('[SuscripcionService] Error crearSuscripcionTrial: $e');
+      try {
+        await _supabase.rpc(
+          'fn_crear_suscripcion_gratis',
+          params: {
+            'p_usuario_uuid': userUuid,
+            'p_tipo_usuario': tipoUsuario,
+          },
+        );
+        return true;
+      } catch (e2) {
+        debugPrint('[SuscripcionService] Fallback gratis falló: $e2');
+        return false;
+      }
     }
   }
 

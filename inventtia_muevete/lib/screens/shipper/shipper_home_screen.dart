@@ -11,7 +11,8 @@ import '../../providers/auth_provider.dart';
 import '../../providers/carga_provider.dart';
 import '../../providers/nomencladores_provider.dart';
 import '../../providers/theme_provider.dart';
-import '../../widgets/plan_suscripcion_widget.dart';
+import '../../widgets/carga_fechas_section.dart';
+import '../../widgets/carga_mercancia_equipo_section.dart';
 import '../../widgets/route_map_widget.dart';
 import 'cargo_location_picker_screen.dart';
 import 'carrier_directory_screen.dart';
@@ -31,7 +32,7 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 4, vsync: this);
+    _tabs = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
@@ -99,7 +100,6 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen>
             Tab(icon: Icon(Icons.list_alt_outlined), text: 'Mis Cargas'),
             Tab(icon: Icon(Icons.add_box_outlined), text: 'Publicar'),
             Tab(icon: Icon(Icons.people_alt_outlined), text: 'Transportistas'),
-            Tab(icon: Icon(Icons.workspace_premium_outlined), text: 'Mi Plan'),
           ],
           isScrollable: true,
         ),
@@ -113,7 +113,6 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen>
             _tabs.animateTo(0);
           }),
           const CarrierDirectoryScreen(embedded: true),
-          const _ShipperPlanTab(),
         ],
       ),
     );
@@ -503,6 +502,7 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
           ? null
           : _descripcionCtrl.text.trim(),
       tipoMercanciaId: _tipoMercanciaId,
+      commodityNomId: _commodityNomId,
       pesoKg: () {
         final cleaned = _pesoCtrl.text.replaceAll(',', '.');
         final v = double.tryParse(cleaned);
@@ -999,11 +999,11 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
             ),
 
             const SizedBox(height: 20),
-            _SectionLabel('Precio Ofertado (USD)', isDark),
+            _SectionLabel('Precio Ofertado', isDark),
             const SizedBox(height: 8),
             _Field(
               controller: _precioCtrl,
-              hint: 'Ej: 1500.00',
+              hint: 'Ej: 15000.00',
               icon: Icons.attach_money_outlined,
               isDark: isDark,
               keyboardType: TextInputType.number,
@@ -1396,131 +1396,12 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
           ),
 
           const SizedBox(height: 12),
-          // ── Mercancía y equipo ─────────────────────────────────────
-          _InfoCard(
+          CargaMercanciaEquipoSection(
+            carga: carga,
             isDark: isDark,
-            children: [
-              if (carga.descripcion != null)
-                _InfoRow(
-                  icon: Icons.description_outlined,
-                  label: 'Descripción',
-                  value: carga.descripcion!,
-                  textPrimary: textPrimary,
-                  textSecondary: textSecondary,
-                ),
-              if (carga.tipoMercancia != null) ...[
-                const Divider(height: 1),
-                _InfoRow(
-                  icon: Icons.category_outlined,
-                  label: 'Mercancía',
-                  value: carga.tipoMercancia!,
-                  textPrimary: textPrimary,
-                  textSecondary: textSecondary,
-                ),
-              ],
-              if (carga.commodityId != null) ...[
-                const Divider(height: 1),
-                _InfoRow(
-                  icon: Icons.inventory_2_outlined,
-                  label: 'Commodity ID',
-                  value: '${carga.commodityId}',
-                  textPrimary: textPrimary,
-                  textSecondary: textSecondary,
-                ),
-              ],
-              if (carga.pesoKg != null) ...[
-                const Divider(height: 1),
-                _InfoRow(
-                  icon: Icons.scale_outlined,
-                  label: 'Peso',
-                  value:
-                      '${carga.pesoKg!.toStringAsFixed(1)} ${carga.unidadPeso}',
-                  textPrimary: textPrimary,
-                  textSecondary: textSecondary,
-                ),
-              ],
-              if (carga.precioOfertado != null) ...[
-                const Divider(height: 1),
-                _InfoRow(
-                  icon: Icons.attach_money_outlined,
-                  label: 'Precio ofertado',
-                  value:
-                      '\$${carga.precioOfertado!.toStringAsFixed(2)} ${carga.moneda}',
-                  textPrimary: textPrimary,
-                  textSecondary: textSecondary,
-                ),
-              ],
-              if (carga.tipoEquipo != null) ...[
-                const Divider(height: 1),
-                _InfoRow(
-                  icon: Icons.local_shipping_outlined,
-                  label: 'Equipo',
-                  value: carga.tipoEquipo!.toUpperCase(),
-                  textPrimary: textPrimary,
-                  textSecondary: textSecondary,
-                ),
-              ],
-              if (carga.opcionesEquipo.isNotEmpty) ...[
-                const Divider(height: 1),
-                _InfoRow(
-                  icon: Icons.build_outlined,
-                  label: 'Opciones equipo',
-                  value: carga.opcionesEquipo.join(', '),
-                  textPrimary: textPrimary,
-                  textSecondary: textSecondary,
-                ),
-              ],
-              if (carga.requiereRefrigeracion) ...[
-                const Divider(height: 1),
-                _InfoRow(
-                  icon: Icons.ac_unit_outlined,
-                  label: 'Refrigeración',
-                  value: 'Requerida',
-                  textPrimary: textPrimary,
-                  textSecondary: textSecondary,
-                ),
-              ],
-              if (carga.requiereSeguro) ...[
-                const Divider(height: 1),
-                _InfoRow(
-                  icon: Icons.shield_outlined,
-                  label: 'Seguro',
-                  value: 'Requerido',
-                  textPrimary: textPrimary,
-                  textSecondary: textSecondary,
-                ),
-              ],
-              if (carga.horasCarga != null) ...[
-                const Divider(height: 1),
-                _InfoRow(
-                  icon: Icons.timer_outlined,
-                  label: 'Horas de carga',
-                  value: '${carga.horasCarga!.toStringAsFixed(1)} h',
-                  textPrimary: textPrimary,
-                  textSecondary: textSecondary,
-                ),
-              ],
-              if (carga.horasDescarga != null) ...[
-                const Divider(height: 1),
-                _InfoRow(
-                  icon: Icons.timer_off_outlined,
-                  label: 'Horas de descarga',
-                  value: '${carga.horasDescarga!.toStringAsFixed(1)} h',
-                  textPrimary: textPrimary,
-                  textSecondary: textSecondary,
-                ),
-              ],
-              if (carga.instrucciones != null) ...[
-                const Divider(height: 1),
-                _InfoRow(
-                  icon: Icons.note_outlined,
-                  label: 'Instrucciones',
-                  value: carga.instrucciones!,
-                  textPrimary: textPrimary,
-                  textSecondary: textSecondary,
-                ),
-              ],
-            ],
+            textPrimary: textPrimary,
+            textSecondary: textSecondary,
+            precioLabel: 'Precio ofertado',
           ),
 
           // ── Contacto en origen ─────────────────────────────────────────
@@ -1599,31 +1480,16 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
             ),
           ],
 
-          // ── Fechas ─────────────────────────────────────────────────────
-          if (carga.fechaRecogida != null || carga.fechaEntrega != null) ...[
+          if (carga.fechaRecogida != null ||
+              carga.fechaEntrega != null ||
+              carga.ventanaRecogidaDisplay != null ||
+              carga.ventanaEntregaDisplay != null) ...[
             const SizedBox(height: 12),
-            _InfoCard(
+            CargaFechasSection(
+              carga: carga,
               isDark: isDark,
-              children: [
-                if (carga.fechaRecogida != null)
-                  _InfoRow(
-                    icon: Icons.calendar_today_outlined,
-                    label: 'Recogida',
-                    value: _fmtDetalle(carga.fechaRecogida!),
-                    textPrimary: textPrimary,
-                    textSecondary: textSecondary,
-                  ),
-                if (carga.fechaEntrega != null) ...[
-                  const Divider(height: 1),
-                  _InfoRow(
-                    icon: Icons.event_available_outlined,
-                    label: 'Entrega',
-                    value: _fmtDetalle(carga.fechaEntrega!),
-                    textPrimary: textPrimary,
-                    textSecondary: textSecondary,
-                  ),
-                ],
-              ],
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
             ),
           ],
 
@@ -1659,7 +1525,7 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
             ),
           ],
 
-          const SizedBox(height: 20),
+          /* const SizedBox(height: 20),
           Text(
             'Ofertas recibidas',
             style: GoogleFonts.plusJakartaSans(
@@ -1667,8 +1533,8 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
               fontWeight: FontWeight.w700,
               color: textPrimary,
             ),
-          ),
-          const SizedBox(height: 10),
+          ), */
+          /* const SizedBox(height: 10),
 
           if (provider.loadingOfertas)
             const Center(child: CircularProgressIndicator())
@@ -1692,7 +1558,7 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
               ),
             ),
 
-          const SizedBox(height: 24),
+           */const SizedBox(height: 24),
 
           // ── Acciones del shipper ────────────────────────────────────────
           if (carga.estado == 'publicada' ||
@@ -1891,9 +1757,6 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
       backgroundColor: ok ? Colors.green[700] : AppTheme.error,
     ));
   }
-
-  String _fmtDetalle(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 }
 
 Future<bool> _confirm(
@@ -2109,45 +1972,6 @@ class _EmptyState extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Tab 4 – Mi Plan
-// ──────────────────────────────────────────────────────────────────────────────
-
-class _ShipperPlanTab extends StatelessWidget {
-  const _ShipperPlanTab();
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = context.watch<ThemeProvider>().isDark;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Suscripción y Facturación',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: isDark ? Colors.white : const Color(0xFF1A1D27),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'El ciclo de facturación cierra el día 2 de cada mes.',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 12,
-              color: isDark ? Colors.white60 : Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 16),
-          const PlanSuscripcionTile(),
-        ],
       ),
     );
   }

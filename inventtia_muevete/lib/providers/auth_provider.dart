@@ -58,6 +58,20 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Ruta del perfil según rol (gestión de plan incluida en perfiles de carga).
+  String? get profileRoute {
+    switch (_tipoUsuario) {
+      case 'shipper':
+        return '/shipper/profile';
+      case 'carrier_carga':
+        return '/carrier/profile';
+      case 'dispatcher':
+        return '/dispatcher/profile';
+      default:
+        return null;
+    }
+  }
+
   AuthProvider() {
     _user = _authService.currentUser;
     if (_user != null) {
@@ -357,11 +371,10 @@ class AuthProvider extends ChangeNotifier {
         // Solo para tipos de usuario de la plataforma de carga
         final tiposConPlan = ['shipper', 'carrier_carga', 'dispatcher'];
         if (tiposConPlan.contains(tipoUsuario)) {
-          debugPrint('[signUp] Creando suscripción gratis para tipo=$tipoUsuario...');
-          // Normalizar: 'carrier_carga' → 'carrier' para el plan
+          debugPrint('[signUp] Creando suscripción trial para tipo=$tipoUsuario...');
           final tipoPlan = tipoUsuario == 'carrier_carga' ? 'carrier' : tipoUsuario;
-          await _suscripcionService.crearSuscripcionGratis(_user!.id, tipoPlan);
-          debugPrint('[signUp] Suscripción gratis creada OK');
+          await _suscripcionService.crearSuscripcionTrial(_user!.id, tipoPlan);
+          debugPrint('[signUp] Suscripción trial creada OK');
         }
       }
 
