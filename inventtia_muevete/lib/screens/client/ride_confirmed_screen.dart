@@ -567,7 +567,10 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
           role: 'client',
         );
         tp.resetTrip();
-        Navigator.of(context).popUntil((r) => r.isFirst);
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/client/home',
+          (route) => false,
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Viaje pendiente de sincronización',
@@ -628,7 +631,10 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
 
       if (mounted) {
         tp.resetTrip();
-        Navigator.of(context).popUntil((r) => r.isFirst);
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/client/home',
+          (route) => false,
+        );
       }
     } catch (e) {
       if (mounted) {
