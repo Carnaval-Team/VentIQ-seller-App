@@ -32,6 +32,8 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final transportProvider = context.read<TransportProvider>();
       transportProvider.calculateRoute();
+      transportProvider.loadVehicleTypes();
+      transportProvider.startVehicleTypesRealtime();
       _offerController.text = transportProvider.offerPrice.toStringAsFixed(2);
     });
   }
@@ -434,8 +436,12 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
               ),
             ),
             const SizedBox(height: 14),
-            // Vehicle options from DB — horizontal scrollable
-            if (transportProvider.loadingVehicleTypes)
+            // Vehicle options from DB — horizontal scrollable.
+            // Keep showing the spinner while the list is empty so the user
+            // never sees a blank box: either the request is in flight, or it
+            // finished with no results and we'll keep retrying via realtime.
+            if (transportProvider.loadingVehicleTypes ||
+                transportProvider.vehicleTypes.isEmpty)
               const Center(
                 child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),

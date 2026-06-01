@@ -17,7 +17,9 @@
       "Bash(Get-ChildItem *)",
       "Bash(dir .\\\\inventtia_muevete\\\\docs\\\\migrations\\\\ *)",
       "mcp__ide__getDiagnostics",
-      "WebFetch(domain:vsieeihstajlrdvpuooh.supabase.co)"
+      "WebFetch(domain:vsieeihstajlrdvpuooh.supabase.co)",
+      "PowerShell(npx -y skills find \"flutter best practices\" 2>&1 | Select-Object -First 100)",
+      "WebFetch(domain:skills.sh)"
     ]
   },
   "disabledMcpjsonServers": [
