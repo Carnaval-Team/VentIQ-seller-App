@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../config/app_colors.dart';
@@ -393,6 +396,66 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
     }
   }
 
+  // ── Debug del envío automático ─────────────────────────────────────────
+  Future<void> _onDebugDispatch() async {
+    if (_idTienda == null) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    Map<String, dynamic>? snapshot;
+    Object? err;
+    try {
+      snapshot = await _service.getDispatchDebug(_idTienda!);
+    } catch (e) {
+      err = e;
+    }
+    if (!mounted) return;
+    Navigator.of(context).pop(); // cerrar loading
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: Colors.red,
+        content: Text('Error al leer debug: $err'),
+      ));
+      return;
+    }
+    await showDialog(
+      context: context,
+      builder: (_) => _DispatchDebugDialog(
+        snapshot: snapshot!,
+        onForce: _programacion == null
+            ? null
+            : () => _onForceDispatch(_programacion!.id),
+        onRefresh: () async {
+          final s = await _service.getDispatchDebug(_idTienda!);
+          return s;
+        },
+      ),
+    );
+  }
+
+  Future<void> _onForceDispatch(int idProgramacion) async {
+    try {
+      final res = await _service.forceDispatch(idProgramacion);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: AppColors.success,
+        duration: const Duration(seconds: 6),
+        content: Text(
+          '🚀 Dispatch forzado. request_id=${res['request_id']}. '
+          'Espera 5-10s y refresca el debug para ver la respuesta HTTP y los logs.',
+        ),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: Colors.red,
+        content: Text('Error al forzar dispatch: $e'),
+      ));
+    }
+  }
+
   Future<void> _onConfigureSchedule() async {
     if (!_ensureActive()) return;
     final connected =
@@ -513,10 +576,20 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
             icon: Icons.schedule,
             title: 'Envío automático diario',
             subtitle: 'Configura una difusión diaria automática',
-            action: TextButton.icon(
-              onPressed: _onConfigureSchedule,
-              icon: const Icon(Icons.settings),
-              label: Text(_programacion == null ? 'Configurar' : 'Editar'),
+            action: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Diagnosticar envío automático',
+                  icon: const Icon(Icons.bug_report, color: AppColors.warning),
+                  onPressed: _onDebugDispatch,
+                ),
+                TextButton.icon(
+                  onPressed: _onConfigureSchedule,
+                  icon: const Icon(Icons.settings),
+                  label: Text(_programacion == null ? 'Configurar' : 'Editar'),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 8),
@@ -1306,6 +1379,377 @@ class _ErrorState extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Diálogo de diagnóstico del dispatcher de envío automático.
+///
+/// Muestra:
+///   * Si los secretos de Vault están presentes.
+///   * Si el cron job pg_cron está registrado y su última ejecución.
+///   * Estado actual de la programación (next_run_at, last_run_at, timezone,
+///     overdue, etc.).
+///   * Últimas respuestas HTTP que pg_net hizo hacia la edge function.
+///   * Botón para FORZAR un envío ahora (ignora next_run_at).
+class _DispatchDebugDialog extends StatefulWidget {
+  final Map<String, dynamic> snapshot;
+  final Future<void> Function()? onForce;
+  final Future<Map<String, dynamic>> Function() onRefresh;
+  const _DispatchDebugDialog({
+    required this.snapshot,
+    required this.onForce,
+    required this.onRefresh,
+  });
+
+  @override
+  State<_DispatchDebugDialog> createState() => _DispatchDebugDialogState();
+}
+
+class _DispatchDebugDialogState extends State<_DispatchDebugDialog> {
+  late Map<String, dynamic> _snap;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _snap = widget.snapshot;
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _busy = true);
+    try {
+      final s = await widget.onRefresh();
+      if (!mounted) return;
+      setState(() => _snap = s);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _force() async {
+    if (widget.onForce == null) return;
+    setState(() => _busy = true);
+    try {
+      await widget.onForce!();
+      // Tras forzar, refrescamos con un pequeño delay para alcanzar el response
+      await Future.delayed(const Duration(seconds: 4));
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _copyJson() {
+    final pretty = const JsonEncoder.withIndent('  ').convert(_snap);
+    Clipboard.setData(ClipboardData(text: pretty));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('JSON copiado al portapapeles'),
+      duration: Duration(seconds: 2),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vaultUrl = _snap['vault_url_present'] == true;
+    final vaultTok = _snap['vault_token_present'] == true;
+    final cronJob = _snap['cron_job'] as Map?;
+    final prog = _snap['programacion'] as Map?;
+    final http = (_snap['last_http_responses'] as List?) ?? const [];
+    final runs = (_snap['last_cron_runs'] as List?) ?? const [];
+    final dbNow = _snap['db_now']?.toString() ?? '—';
+
+    return Dialog(
+      insetPadding: const EdgeInsets.all(16),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720, maxHeight: 720),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.bug_report, color: AppColors.warning),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text('Diagnóstico envío automático',
+                        style: TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w700)),
+                  ),
+                  IconButton(
+                    tooltip: 'Copiar JSON',
+                    icon: const Icon(Icons.copy, size: 20),
+                    onPressed: _copyJson,
+                  ),
+                  IconButton(
+                    tooltip: 'Refrescar',
+                    icon: const Icon(Icons.refresh, size: 20),
+                    onPressed: _busy ? null : _refresh,
+                  ),
+                ],
+              ),
+              const Divider(),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _kvRow('Hora del servidor (UTC)', dbNow),
+                      const SizedBox(height: 8),
+                      _DebugCheck(
+                        label: 'Vault: wapi_supabase_url',
+                        ok: vaultUrl,
+                        hint:
+                            'Si falla, la migración 20260527_wapi_dispatch_vault no se aplicó.',
+                      ),
+                      _DebugCheck(
+                        label: 'Vault: wapi_service_role_key',
+                        ok: vaultTok,
+                        hint:
+                            'Si falla, la migración 20260527_wapi_dispatch_vault no se aplicó.',
+                      ),
+                      _DebugCheck(
+                        label: 'pg_cron job "wapi_dispatch_diario"',
+                        ok: cronJob != null,
+                        hint: cronJob == null
+                            ? 'El cron NO está registrado. Reaplica la migración 20260525_wapi_notifications.'
+                            : 'schedule=${cronJob['schedule']} active=${cronJob['active']}',
+                      ),
+                      const SizedBox(height: 12),
+                      const Text('Programación actual',
+                          style:
+                              TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                      const SizedBox(height: 4),
+                      if (prog == null)
+                        const Text('No hay programación configurada para esta tienda.',
+                            style:
+                                TextStyle(color: AppColors.textSecondary, fontSize: 12))
+                      else ...[
+                        _kvRow('ID', '${prog['id']}'),
+                        _kvRow('Activa', '${prog['activa']}'),
+                        _kvRow('Hora envío', '${prog['hora_envio']}'),
+                        _kvRow('Timezone', '${prog['timezone']}'),
+                        _kvRow('next_run_at (UTC)', '${prog['next_run_at']}'),
+                        _kvRow('next_run_at (local TZ)',
+                            '${prog['next_run_at_local']}'),
+                        _kvRow('last_run_at', '${prog['last_run_at'] ?? '—'}'),
+                        _kvRow('overdue (ya debió ejecutarse)',
+                            '${prog['overdue']}'),
+                        _kvRow('Sesión bot status', '${prog['sesion_status']}',
+                            warnIf: prog['sesion_status'] != 'CONNECTED'),
+                        _kvRow('Productos', '${prog['productos']}'),
+                        _kvRow('Destinatarios', '${prog['destinatarios']}'),
+                      ],
+                      const SizedBox(height: 14),
+                      const Text('Últimas corridas del cron',
+                          style:
+                              TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                      const SizedBox(height: 4),
+                      if (runs.isEmpty)
+                        const Text(
+                          'Sin corridas. ¿pg_cron está habilitado en este proyecto Supabase?',
+                          style: TextStyle(
+                              color: AppColors.textSecondary, fontSize: 12),
+                        )
+                      else
+                        ...runs.take(5).map((r) => _runTile(r as Map)),
+                      const SizedBox(height: 14),
+                      const Text('Últimas respuestas HTTP (pg_net → edge)',
+                          style:
+                              TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                      const SizedBox(height: 4),
+                      if (http.isEmpty)
+                        const Text('Aún sin respuestas registradas.',
+                            style: TextStyle(
+                                color: AppColors.textSecondary, fontSize: 12))
+                      else
+                        ...http.take(5).map((r) => _httpTile(r as Map)),
+                    ],
+                  ),
+                ),
+              ),
+              const Divider(),
+              Row(
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cerrar'),
+                  ),
+                  const Spacer(),
+                  ElevatedButton.icon(
+                    icon: _busy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.flash_on),
+                    label: const Text('Forzar dispatch ahora'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.warning,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed:
+                        (widget.onForce == null || _busy) ? null : _force,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _kvRow(String k, String v, {bool warnIf = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 170,
+            child: Text(k,
+                style: const TextStyle(
+                    fontSize: 12, color: AppColors.textSecondary)),
+          ),
+          Expanded(
+            child: Text(v,
+                style: TextStyle(
+                    fontSize: 12,
+                    color: warnIf ? Colors.red : AppColors.textPrimary,
+                    fontWeight:
+                        warnIf ? FontWeight.w700 : FontWeight.w500,
+                    fontFamily: 'monospace')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _runTile(Map r) {
+    final status = r['status']?.toString() ?? '—';
+    final ok = status == 'succeeded';
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: (ok ? AppColors.success : Colors.red).withOpacity(0.06),
+        border: Border.all(
+            color: (ok ? AppColors.success : Colors.red).withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(ok ? Icons.check_circle : Icons.error,
+                size: 14, color: ok ? AppColors.success : Colors.red),
+            const SizedBox(width: 6),
+            Text('$status  •  ${r['start_time'] ?? '—'}',
+                style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+          ]),
+          if ((r['return_message'] ?? '').toString().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, left: 20),
+              child: Text(r['return_message'].toString(),
+                  style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.textSecondary,
+                      fontFamily: 'monospace')),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _httpTile(Map r) {
+    final code = r['status_code'];
+    final ok = code is num && code >= 200 && code < 300;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: (ok ? AppColors.success : Colors.red).withOpacity(0.06),
+        border: Border.all(
+            color: (ok ? AppColors.success : Colors.red).withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(ok ? Icons.check_circle : Icons.error,
+                size: 14, color: ok ? AppColors.success : Colors.red),
+            const SizedBox(width: 6),
+            Text('HTTP $code  •  id=${r['id']}  •  ${r['created'] ?? '—'}',
+                style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+          ]),
+          if ((r['error_msg'] ?? '').toString().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, left: 20),
+              child: Text('error: ${r['error_msg']}',
+                  style: const TextStyle(
+                      fontSize: 10.5,
+                      color: Colors.red,
+                      fontFamily: 'monospace')),
+            ),
+          if ((r['content'] ?? '').toString().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, left: 20),
+              child: Text(r['content'].toString(),
+                  style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.textSecondary,
+                      fontFamily: 'monospace')),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DebugCheck extends StatelessWidget {
+  final String label;
+  final bool ok;
+  final String? hint;
+  const _DebugCheck({required this.label, required this.ok, this.hint});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(ok ? Icons.check_circle : Icons.cancel,
+              color: ok ? AppColors.success : Colors.red, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600)),
+                if (hint != null && hint!.isNotEmpty)
+                  Text(hint!,
+                      style: const TextStyle(
+                          fontSize: 11, color: AppColors.textSecondary)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

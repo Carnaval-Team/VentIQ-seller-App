@@ -69,10 +69,55 @@ export async function assertStoreAccess(
   return !!s;
 }
 
-/** Detecta si el caller es la propia función dispatcher (autenticada con service role) */
+/**
+ * Detecta si el caller está usando una service_role key.
+ *
+ * Aceptamos DOS rutas equivalentes:
+ *   1. String-match exacto contra Deno.env.SUPABASE_SERVICE_ROLE_KEY
+ *      (caso normal cuando el cron en pg_cron carga el JWT desde la misma
+ *      fuente que el runtime).
+ *   2. Decodificar el payload del JWT y aceptar cualquier token con
+ *      `role === "service_role"` emitido por Supabase. Esto es necesario
+ *      porque después de una rotación de claves (HS256↔ES256) la clave
+ *      guardada en pg_vault puede ser distinta — en string-bytes — a la
+ *      del runtime, aunque ambas autoricen como service_role.
+ *
+ * Nota: NO validamos la firma aquí. Esta función sólo decide si TRATAR
+ * la request como service_role; el gateway de Supabase Edge Functions
+ * ya rechazó la request antes si la firma era inválida. Si el gateway
+ * está en modo --no-verify-jwt, entonces sí necesitamos algo más fuerte;
+ * en ese caso, comprueba que `iss === "supabase"` y `ref === <project_ref>`
+ * antes de confiar en el rol.
+ */
 export function isServiceRoleCall(req: Request): boolean {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return false;
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-  return token === SERVICE_ROLE;
+  if (!token) return false;
+
+  // Ruta rápida: match exacto contra la env var del runtime.
+  if (SERVICE_ROLE && token === SERVICE_ROLE) return true;
+
+  // Ruta robusta: decodificar el payload y aceptar role=service_role.
+  const parts = token.split(".");
+  if (parts.length !== 3) return false;
+  try {
+    // base64url → base64. Atob() de Deno acepta base64 con o sin padding,
+    // pero necesitamos cambiar los chars URL-safe (-_) por (+/).
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payloadJson = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+    const payload = JSON.parse(payloadJson) as {
+      role?: string;
+      iss?: string;
+      exp?: number;
+    };
+    if (payload.role !== "service_role") return false;
+    if (payload.iss && payload.iss !== "supabase") return false;
+    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) {
+      return false; // expirado
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }

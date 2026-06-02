@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -321,6 +323,41 @@ class WapiNotificationService {
         .from('app_wapi_programacion')
         .update({'activa': activa})
         .eq('id', idProgramacion);
+  }
+
+  // =========================================================================
+  // Debug del envío automático (cron + edge function dispatcher)
+  // =========================================================================
+
+  /// Devuelve un snapshot consolidado del estado del dispatcher para una
+  /// tienda: vault secrets, cron job, programación, últimas respuestas HTTP
+  /// y últimas corridas del cron. Útil para troubleshooting cuando el envío
+  /// automático no se dispara.
+  Future<Map<String, dynamic>> getDispatchDebug(int idTienda) async {
+    final res = await _sb.rpc(
+      'fn_wapi_dispatch_debug',
+      params: {'p_id_tienda': idTienda},
+    );
+    if (res is Map) return Map<String, dynamic>.from(res);
+    if (res is String) {
+      // Algunos drivers devuelven el JSON como string
+      final decoded = jsonDecode(res);
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    }
+    return <String, dynamic>{};
+  }
+
+  /// Fuerza un envío inmediato de una programación específica (ignora
+  /// `next_run_at`). Devuelve el `request_id` que pg_net asignó a la
+  /// llamada HTTP; tras unos segundos podemos verlo en
+  /// [getDispatchDebug] dentro de `last_http_responses`.
+  Future<Map<String, dynamic>> forceDispatch(int idProgramacion) async {
+    final res = await _sb.rpc(
+      'fn_wapi_force_dispatch',
+      params: {'p_id_programacion': idProgramacion},
+    );
+    if (res is Map) return Map<String, dynamic>.from(res);
+    return <String, dynamic>{'raw': res};
   }
 
   // =========================================================================

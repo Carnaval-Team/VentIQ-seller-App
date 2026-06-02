@@ -524,7 +524,12 @@ export async function dispatchProducts(args: {
   };
 }
 
-Deno.serve(async (req) => {
+// El handler está extraído como función nombrada para que otros módulos
+// puedan importarlo SIN que se registre un Deno.serve secundario en el
+// mismo proceso. Sólo el bloque `if (import.meta.main)` al final del
+// archivo registra el listener — y eso sólo ocurre cuando este archivo
+// es el entry-point de la edge function, no cuando lo importa otro.
+export async function handleSendProducts(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return handleOptions();
   if (req.method !== "POST") return errorResponse("Method not allowed", 405);
 
@@ -620,4 +625,14 @@ Deno.serve(async (req) => {
       `Tiempo estimado: ~${Math.ceil(estimadoSeg / 60)} min. ` +
       `Puedes seguir usando la app — revisa el historial para ver el progreso.`,
   });
-});
+}
+
+// Sólo registrar el listener cuando este archivo es el entry-point real
+// de la edge function (i.e. está siendo servido como `/wapi-send-products`).
+// Cuando otro módulo lo IMPORTA (p.ej. `wapi-cron-dispatch` para reusar
+// `dispatchProducts`), `import.meta.main` es false y NO se registra el
+// listener — así evitamos que un Deno.serve fantasma intercepte requests
+// destinadas a la otra función.
+if (import.meta.main) {
+  Deno.serve(handleSendProducts);
+}
