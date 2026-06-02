@@ -719,6 +719,7 @@ class OrderService {
           id: ci.idVariante!,
           nombre: ci.varianteNombre ?? 'Variante',
           precio: ci.precioUnitario,
+          cantidad: 0,
         );
       }
 
@@ -767,6 +768,7 @@ class OrderService {
       idCuenta: cuenta.id,
       idMesa: cuenta.idMesa,
       mesaNumero: cuenta.mesaNumero,
+      mesaZona: cuenta.mesaZona,
     );
 
     print('🍽️ Preorden hidratada desde cuenta ${cuenta.id} con ${items.length} items');
@@ -1052,9 +1054,39 @@ class OrderService {
           : null;
       final bool useMesaRpc = idMesa != null;
 
+      // En `fn_registrar_venta_mesa` el `id_variante` que viaja desde la app
+      // suele ser basura (los items de mesa cargan ProductVariant con IDs
+      // secuenciales `i+1`, no IDs reales de DB). El inventario real tiene
+      // `id_variante=null`, por lo que enviar el valor sintético hace que la
+      // RPC falle al ubicar el lote. Forzamos null para todos los productos
+      // antes de invocar la RPC de mesa.
+      if (useMesaRpc) {
+        for (final p in productos) {
+          p['id_variante'] = null;
+        }
+      }
+
+      // Denominación: en mesa la armamos como "Mesa X - Zona Y" para que la
+      // operación de venta sea identificable en reportes. Si no tenemos zona,
+      // sólo "Mesa X". Para ventas normales mantenemos el patrón anterior.
+      String denominacion;
+      if (useMesaRpc) {
+        final cuentaSvc = MesaCuentaService();
+        final numero = order.mesaNumero ??
+            cuentaSvc.activeMesaNumero ??
+            _activeMesaNumero ??
+            idMesa.toString();
+        final zona = cuentaSvc.activeMesaZona;
+        denominacion = (zona != null && zona.trim().isNotEmpty)
+            ? 'Mesa $numero - Zona $zona'
+            : 'Mesa $numero';
+      } else {
+        denominacion = 'Venta App Vendedor - ${order.id}';
+      }
+
       final rpcParams = <String, dynamic>{
         'p_codigo_promocion': orderData['promoCode'],
-        'p_denominacion': 'Venta App Vendedor - ${order.id}',
+        'p_denominacion': denominacion,
         'p_estado_inicial': 1,
         'p_id_tpv': idTpv,
         'p_observaciones':

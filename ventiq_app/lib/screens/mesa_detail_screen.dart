@@ -121,6 +121,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
         idCuenta: idCuenta,
         idMesa: _mesa!.id,
         mesaNumero: _mesa!.numero,
+        mesaZona: _mesa!.zona,
       );
 
       if (!mounted) return;
@@ -151,6 +152,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
       idCuenta: cuenta.id,
       idMesa: _mesa!.id,
       mesaNumero: _mesa!.numero,
+      mesaZona: _mesa!.zona,
     );
     await Navigator.pushNamed(
       context,

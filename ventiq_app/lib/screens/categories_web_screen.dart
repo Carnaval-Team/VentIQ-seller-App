@@ -793,9 +793,8 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0:
-        // Home en restaurante (sin cuenta activa) → /mesas
-        if (StoreConfigService.modoRestauranteSync &&
-            MesaCuentaService().activeCuentaId == null) {
+        // Home en restaurante → siempre /mesas (haya o no cuenta activa)
+        if (StoreConfigService.modoRestauranteSync) {
           Navigator.pushNamedAndRemoveUntil(
             context,
             '/mesas',

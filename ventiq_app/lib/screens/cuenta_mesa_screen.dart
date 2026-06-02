@@ -70,6 +70,7 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
         idCuenta: cuenta.id,
         idMesa: cuenta.idMesa,
         mesaNumero: cuenta.mesaNumero,
+        mesaZona: cuenta.mesaZona,
       );
     } catch (e) {
       print('❌ Error cargando cuenta ${widget.idCuenta}: $e');
@@ -85,6 +86,7 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
       idCuenta: _cuenta!.id,
       idMesa: _cuenta!.idMesa,
       mesaNumero: _cuenta!.mesaNumero,
+      mesaZona: _cuenta!.mesaZona,
     );
 
     // pushNamed (NO remove) — al volver atrás aterrizamos aquí otra vez.
@@ -212,6 +214,7 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
         idCuenta: _cuenta!.id,
         idMesa: _cuenta!.idMesa,
         mesaNumero: _cuenta!.mesaNumero,
+        mesaZona: _cuenta!.mesaZona,
       );
       _orderService.setActiveMesa(
         idMesa: _cuenta!.idMesa,

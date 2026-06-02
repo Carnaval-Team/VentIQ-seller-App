@@ -1085,9 +1085,8 @@ class _CategoriesScreenState extends State<CategoriesScreen>
 
   void _onBottomNavTap(int index) {
     switch (index) {
-      case 0: // Home — en modo restaurante (sin cuenta activa) saltar a /mesas
-        if (StoreConfigService.modoRestauranteSync &&
-            MesaCuentaService().activeCuentaId == null) {
+      case 0: // Home — en modo restaurante saltar siempre a /mesas
+        if (StoreConfigService.modoRestauranteSync) {
           Navigator.pushNamedAndRemoveUntil(
             context,
             '/mesas',

@@ -1174,10 +1174,13 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 .eq('id_producto', idProducto);
 
             if (idUbicacion != null) query = query.eq('id_ubicacion', idUbicacion);
-            if (idVariante != null) query = query.eq('id_variante', idVariante);
+            // NOTA: NO filtramos por id_variante. Los items provenientes de la vista de
+            // mesa pueden traer id_variante=1 (ID secuencial generado en el cliente, no
+            // un id real de DB). En el inventario real `id_variante` es null para estos
+            // productos, así que filtrar por ese valor sintético devuelve 0 filas.
             if (idPresentacion != null) query = query.eq('id_presentacion', idPresentacion);
 
-            final response = await query.order('created_at', ascending: false).limit(1);
+            final response = await query.order('id', ascending: false).limit(1);
 
             if (response.isNotEmpty) {
               stockActual = (response.first['cantidad_final'] as num?)?.toDouble() ?? 0.0;

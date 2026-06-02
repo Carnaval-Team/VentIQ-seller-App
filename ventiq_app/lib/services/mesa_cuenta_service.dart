@@ -33,16 +33,24 @@ class MesaCuentaService {
   int? _activeCuentaId;
   int? _activeMesaId;
   String? _activeMesaNumero;
+  String? _activeMesaZona;
 
   int? get activeCuentaId => _activeCuentaId;
   int? get activeMesaId => _activeMesaId;
   String? get activeMesaNumero => _activeMesaNumero;
+  String? get activeMesaZona => _activeMesaZona;
 
-  void setActive({required int idCuenta, required int idMesa, String? mesaNumero}) {
+  void setActive({
+    required int idCuenta,
+    required int idMesa,
+    String? mesaNumero,
+    String? mesaZona,
+  }) {
     _activeCuentaId = idCuenta;
     _activeMesaId = idMesa;
     _activeMesaNumero = mesaNumero;
-    print('🍽️ Cuenta activa: $idCuenta (Mesa $idMesa - $mesaNumero)');
+    _activeMesaZona = mesaZona;
+    print('🍽️ Cuenta activa: $idCuenta (Mesa $idMesa - $mesaNumero / zona $mesaZona)');
   }
 
   void clearActive() {
@@ -52,6 +60,7 @@ class MesaCuentaService {
     _activeCuentaId = null;
     _activeMesaId = null;
     _activeMesaNumero = null;
+    _activeMesaZona = null;
   }
 
   // ----------------------------------------------------------------------
@@ -253,5 +262,9 @@ class MesaCuentaService {
         'p_id_operacion_venta': idOperacionVenta,
       },
     );
+    // Limpiar la cuenta activa si era esta. Si no se limpia, NavigationHelper
+    // cree que sigue habiendo cuenta abierta y al pulsar Home manda a
+    // /categories en lugar de /mesas.
+    if (_activeCuentaId == idCuenta) clearActive();
   }
 }

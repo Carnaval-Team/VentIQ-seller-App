@@ -6,6 +6,7 @@ import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/currency_service.dart';
 import '../services/mesa_service.dart';
+import '../services/mesa_cuenta_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/promotion_rules.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -1394,6 +1395,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // Si era flujo de mesa, volvemos a la pantalla de la mesa.
       final idMesaOffline = _mesaSeleccionada?.id;
       _orderService.clearActiveMesa();
+      // En offline no pasamos por finalizeOrderWithDetails (donde
+      // OrderService llama a marcarCerrada + clearActive), así que limpiamos
+      // aquí la cuenta activa para que NavigationHelper.goHome regrese a
+      // /mesas en vez de a /categories.
+      MesaCuentaService().clearActive();
       if (_modoRestaurante && idMesaOffline != null) {
         Navigator.pushNamedAndRemoveUntil(
           context,
@@ -1479,6 +1485,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         // (más natural que ir a /orders global).
         final idMesa = _mesaSeleccionada?.id;
         _orderService.clearActiveMesa();
+        // Belt-and-suspenders: OrderService.finalizeOrderWithDetails ya hace
+        // clearActive() tras marcarCerrada, pero si esa rama no se ejecutó
+        // por alguna razón (cuenta no asociada, error silencioso), aquí lo
+        // garantizamos para que el Home vuelva a /mesas.
+        MesaCuentaService().clearActive();
         if (_modoRestaurante && idMesa != null) {
           Navigator.pushNamedAndRemoveUntil(
             context,
