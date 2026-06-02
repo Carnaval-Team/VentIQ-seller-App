@@ -7,6 +7,7 @@ import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/currency_service.dart';
 import '../utils/promotion_rules.dart';
+import '../utils/navigation_helper.dart';
 import 'product_details_screen.dart';
 import 'barcode_scanner_screen.dart';
 import 'assign_supplier_screen.dart';
@@ -692,8 +693,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   void _onBottomNavTap(int index) {
     switch (index) {
-      case 0: // Home (Categorías)
-        Navigator.popUntil(context, (route) => route.isFirst);
+      case 0: // Home → /mesas si modo restaurante (sin cuenta activa), /categories si no
+        NavigationHelper.goHome(context);
         break;
       case 1: // Preorden
         Navigator.popUntil(context, (route) => route.isFirst);
@@ -706,10 +707,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
       case 3: // Configuración
         Navigator.popUntil(context, (route) => route.isFirst);
         Navigator.pushNamed(context, '/settings');
-        Navigator.pushNamed(context, '/settings');
         break;
     }
-    ;
   }
 }
 

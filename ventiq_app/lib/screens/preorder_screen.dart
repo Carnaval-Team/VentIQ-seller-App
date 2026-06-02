@@ -11,6 +11,7 @@ import '../services/product_detail_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../utils/price_utils.dart';
+import '../utils/navigation_helper.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/scrolling_text.dart';
@@ -2399,9 +2400,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
   void _onBottomNavTap(int index) {
     switch (index) {
-      case 0: // Home
-        // Usar pushNamed en lugar de pushNamedAndRemoveUntil para mantener la persistencia
-        Navigator.pushNamed(context, '/categories');
+      case 0: // Home → /mesas si modo restaurante, /categories si no
+        NavigationHelper.goHome(context, removeStack: false);
         break;
       case 1: // Preorden (current)
         break;

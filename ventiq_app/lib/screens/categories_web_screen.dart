@@ -9,6 +9,8 @@ import '../services/user_preferences_service.dart';
 import '../services/changelog_service.dart';
 import '../services/currency_service.dart';
 import '../services/product_service.dart';
+import '../services/store_config_service.dart';
+import '../services/mesa_cuenta_service.dart';
 import '../models/product.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/sales_monitor_fab.dart';
@@ -791,7 +793,17 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0:
-        setState(() {});
+        // Home en restaurante (sin cuenta activa) → /mesas
+        if (StoreConfigService.modoRestauranteSync &&
+            MesaCuentaService().activeCuentaId == null) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/mesas',
+            (route) => false,
+          );
+        } else {
+          setState(() {});
+        }
         break;
       case 1:
         Navigator.pushNamed(context, '/preorder').then((_) {

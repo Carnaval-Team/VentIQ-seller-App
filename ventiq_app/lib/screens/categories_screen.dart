@@ -20,6 +20,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/smart_offline_manager.dart';
 import '../services/connectivity_service.dart';
 import '../services/product_service.dart';
+import '../services/store_config_service.dart';
+import '../services/mesa_cuenta_service.dart';
 import '../models/product.dart';
 import 'product_details_screen.dart';
 import 'dart:async';
@@ -121,7 +123,6 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       });
     }
   }
-
 
   /// Configurar listener para eventos del SmartOfflineManager
   void _setupSmartOfflineListener() {
@@ -673,7 +674,11 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  if ((_isShowSkuEnabled || _preferencesService.isShowSkuEnabledSync) && product.sku != null && product.sku!.isNotEmpty)
+                                  if ((_isShowSkuEnabled ||
+                                          _preferencesService
+                                              .isShowSkuEnabledSync) &&
+                                      product.sku != null &&
+                                      product.sku!.isNotEmpty)
                                     Text(
                                       'SKU: ${product.sku}',
                                       maxLines: 1,
@@ -771,16 +776,20 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                                 if (product.cantidadReal <= 0) {
                                   showDialog(
                                     context: context,
-                                    builder: (ctx) => AlertDialog(
-                                      title: const Text('Sin stock'),
-                                      content: const Text('Este producto no tiene stock disponible.'),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () => Navigator.of(ctx).pop(),
-                                          child: const Text('Aceptar'),
+                                    builder:
+                                        (ctx) => AlertDialog(
+                                          title: const Text('Sin stock'),
+                                          content: const Text(
+                                            'Este producto no tiene stock disponible.',
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed:
+                                                  () => Navigator.of(ctx).pop(),
+                                              child: const Text('Aceptar'),
+                                            ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
                                   );
                                   return;
                                 }
@@ -947,7 +956,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
             children: [
               _buildBody(),
               if (_isSearchOpen) _buildSearchResultsOverlay(),
-              if (showOverlays) ...[  
+              if (showOverlays) ...[
                 // USD Rate Chip positioned at bottom left
                 Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
                 // Sync Status Chip positioned at bottom left, above USD chip
@@ -969,7 +978,8 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       floatingActionButton: Builder(
         builder: (context) {
           final size = MediaQuery.of(context).size;
-          if (size.width < 300 || size.height < 400) return const SizedBox.shrink();
+          if (size.width < 300 || size.height < 400)
+            return const SizedBox.shrink();
           return const SalesMonitorFAB();
         },
       ),
@@ -1075,25 +1085,30 @@ class _CategoriesScreenState extends State<CategoriesScreen>
 
   void _onBottomNavTap(int index) {
     switch (index) {
-      case 0: // Home (current)
-        // Refresh the current screen to update badges
-        setState(() {});
+      case 0: // Home — en modo restaurante (sin cuenta activa) saltar a /mesas
+        if (StoreConfigService.modoRestauranteSync &&
+            MesaCuentaService().activeCuentaId == null) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/mesas',
+            (route) => false,
+          );
+        } else {
+          setState(() {});
+        }
         break;
       case 1: // Preorden
         Navigator.pushNamed(context, '/preorder').then((_) {
-          // Refresh when returning from preorder
           setState(() {});
         });
         break;
       case 2: // Órdenes
         Navigator.pushNamed(context, '/orders').then((_) {
-          // Refresh when returning from orders
           setState(() {});
         });
         break;
       case 3: // Configuración
         Navigator.pushNamed(context, '/settings').then((_) {
-          // Refresh when returning from settings
           setState(() {});
         });
         break;

@@ -1,9 +1,11 @@
 import '../models/order.dart';
 import '../models/product.dart';
 import '../models/payment_method.dart';
+ import '../models/mesa_cuenta.dart';
 import '../utils/promotion_rules.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
+import 'mesa_cuenta_service.dart';
 import 'turno_service.dart'; // Import TurnoService
 
 class OrderService {
@@ -14,9 +16,35 @@ class OrderService {
   Order? _currentOrder;
   final List<Order> _orders = [];
 
+  // ID de mesa activa para el flujo de modo restaurante (se setea desde
+  // MesaDetailScreen antes de empezar a agregar productos; el checkout la lee
+  // al finalizar la orden).
+  int? _activeMesaId;
+  String? _activeMesaNumero;
+
   // Getter para la orden actual
   Order? get currentOrder => _currentOrder;
   List<Order> get orders => List.from(_orders);
+
+  int? get activeMesaId => _activeMesaId;
+  String? get activeMesaNumero => _activeMesaNumero;
+
+  /// Asocia una mesa al flujo de venta actual.
+  /// Se llama desde MesaDetailScreen antes de "+ Nueva Cuenta".
+  void setActiveMesa({required int idMesa, String? numero}) {
+    _activeMesaId = idMesa;
+    _activeMesaNumero = numero;
+    print('🍽️ Mesa activa: $idMesa ($numero)');
+  }
+
+  /// Limpia la mesa activa (al cancelar/finalizar venta o al salir del modo).
+  void clearActiveMesa() {
+    if (_activeMesaId != null) {
+      print('🍽️ Mesa activa limpiada (era $_activeMesaId)');
+    }
+    _activeMesaId = null;
+    _activeMesaNumero = null;
+  }
 
   // Crear una nueva orden o obtener la actual
   Order getCurrentOrCreateOrder() {
@@ -35,7 +63,14 @@ class OrderService {
   }
 
   // Agregar item a la orden actual
-  void addItemToCurrentOrder({
+  //
+  // En modo restaurante, si hay una cuenta de mesa activa
+  // (MesaCuentaService.activeCuentaId != null), el item NO se guarda en el
+  // carrito local: se persiste directamente en BD vía
+  // `MesaCuentaService.agregarItem`. Esto evita duplicar la lógica de carrito
+  // en cada pantalla — categorías, detalles, escáner, búsqueda llaman a este
+  // mismo método y el redirect es transparente.
+  Future<void> addItemToCurrentOrder({
     required Product producto,
     ProductVariant? variante,
     required double cantidad,
@@ -44,10 +79,46 @@ class OrderService {
     double? precioUnitario,
     double? precioBase,
     Map<String, dynamic>? promotionData,
-  }) {
-    final order = getCurrentOrCreateOrder();
+  }) async {
     final precio = precioUnitario ?? (variante?.precio ?? producto.precio);
     final precioOriginal = precioBase ?? (variante?.precio ?? producto.precio);
+
+    // Modo restaurante: redirigir a la cuenta abierta de la mesa.
+    final cuentaService = MesaCuentaService();
+    final idCuentaActiva = cuentaService.activeCuentaId;
+    if (idCuentaActiva != null) {
+      final inv = inventoryData ?? const {};
+      try {
+        await cuentaService.agregarItem(
+          idCuenta: idCuentaActiva,
+          idProducto: producto.id,
+          cantidad: cantidad,
+          precioUnitario: precio,
+          idVariante: variante?.id,
+          idOpcionVariante: inv['id_opcion_variante'] is num
+              ? (inv['id_opcion_variante'] as num).toInt()
+              : null,
+          idPresentacion: inv['id_presentacion'] is num
+              ? (inv['id_presentacion'] as num).toInt()
+              : null,
+          idUbicacion: inv['id_ubicacion'] is num
+              ? (inv['id_ubicacion'] as num).toInt()
+              : null,
+          precioBase: precioOriginal,
+          promotionData: promotionData,
+          inventoryData: inventoryData,
+          skuProducto: producto.sku,
+          skuUbicacion: inv['sku_ubicacion'] as String?,
+        );
+        print('🍽️ Item "${producto.denominacion}" agregado a cuenta $idCuentaActiva');
+      } catch (e) {
+        print('❌ Error agregando item a cuenta de mesa: $e');
+        rethrow;
+      }
+      return;
+    }
+
+    final order = getCurrentOrCreateOrder();
 
     // Verificar si ya existe un item similar
     final existingItemIndex = order.items.indexWhere(
@@ -555,6 +626,25 @@ class OrderService {
         // Limpiar persistencia cuando se finaliza la orden
         clearPersistentPreorder();
 
+        // Modo restaurante: si esta venta provino de una cuenta abierta de
+        // mesa, marcarla como cerrada en BD (estado=2) y vincularla a la
+        // operación recién creada. No es bloqueante: si falla solo logueamos.
+        final cuentaService = MesaCuentaService();
+        final idCuentaActiva = cuentaService.activeCuentaId;
+        final opId = result['operationId'];
+        if (idCuentaActiva != null && opId is int) {
+          try {
+            await cuentaService.marcarCerrada(
+              idCuenta: idCuentaActiva,
+              idOperacionVenta: opId,
+            );
+            print('🍽️ Cuenta $idCuentaActiva cerrada y vinculada a operación $opId');
+          } catch (e) {
+            print('⚠️ Error marcando cuenta cerrada (venta sí registrada): $e');
+          }
+          cuentaService.clearActive();
+        }
+
         return {
           'success': true,
           'operationId': result['operationId'],
@@ -578,9 +668,108 @@ class OrderService {
   // Cancelar orden actual
   void cancelCurrentOrder() {
     _currentOrder = null;
+    // Limpiar también la mesa activa para no arrastrar contexto entre cuentas.
+    clearActiveMesa();
+    // Y la cuenta activa (si se canceló desde preorder/checkout cargado desde
+    // una cuenta de mesa).
+    MesaCuentaService().clearActive();
 
     // Limpiar persistencia cuando se cancela la orden
     clearPersistentPreorder();
+  }
+
+  // ==================== MODO RESTAURANTE: CARGAR DESDE CUENTA ABIERTA ====================
+
+  /// Hidrata `_currentOrder` con los items de una cuenta de mesa, para que el
+  /// flujo de preorden/checkout estándar funcione tal cual.
+  ///
+  /// Se llama al pulsar "Cerrar Nota" en CuentaMesaScreen — la pantalla de
+  /// preorden mostrará exactamente los productos que ya estaban en BD, y al
+  /// finalizar el checkout `_registerSaleInSupabase` enviará `p_id_cuenta_abierta`
+  /// para que la cuenta quede marcada como cerrada.
+  Future<void> loadPreorderFromCuenta(MesaCuenta cuenta) async {
+    final items = <OrderItem>[];
+
+    for (final ci in cuenta.items) {
+      // Reconstruimos un `Product` "ligero" con la info que tiene el item.
+      // No tenemos todos los campos del Product original, pero los que sí son
+      // suficientes para los cálculos del checkout (id, denominacion, precio,
+      // es_elaborado, es_servicio).
+      final product = Product(
+        id: ci.idProducto,
+        denominacion: ci.productoNombre ?? 'Producto ${ci.idProducto}',
+        sku: ci.skuProducto,
+        precio: ci.precioUnitario,
+        cantidad: 0,
+        esRefrigerado: false,
+        esFragil: false,
+        esPeligroso: false,
+        esVendible: true,
+        esComprable: false,
+        esInventariable: !ci.productoEsServicio,
+        esPorLotes: false,
+        esElaborado: ci.productoEsElaborado,
+        esServicio: ci.productoEsServicio,
+        categoria: '',
+      );
+
+      ProductVariant? variante;
+      if (ci.idVariante != null) {
+        variante = ProductVariant(
+          id: ci.idVariante!,
+          nombre: ci.varianteNombre ?? 'Variante',
+          precio: ci.precioUnitario,
+        );
+      }
+
+      // Recomponer inventoryData con los ids relevantes (para que el flujo de
+      // venta los reenvíe a fn_registrar_venta_mesa).
+      final invData = <String, dynamic>{
+        if (ci.inventoryData != null) ...ci.inventoryData!,
+        if (ci.idUbicacion != null) 'id_ubicacion': ci.idUbicacion,
+        if (ci.idPresentacion != null) 'id_presentacion': ci.idPresentacion,
+        if (ci.idVariante != null) 'id_variante': ci.idVariante,
+        if (ci.idOpcionVariante != null) 'id_opcion_variante': ci.idOpcionVariante,
+        if (ci.skuProducto != null) 'sku_producto': ci.skuProducto,
+        if (ci.skuUbicacion != null) 'sku_ubicacion': ci.skuUbicacion,
+        // Marcador para que sepamos que esto vino de una cuenta abierta.
+        'from_cuenta_item_id': ci.id,
+      };
+
+      items.add(OrderItem(
+        id: 'CUENTAITEM-${ci.id}',
+        producto: product,
+        variante: variante,
+        cantidad: ci.cantidad,
+        precioUnitario: ci.precioUnitario,
+        precioBase: ci.precioBase,
+        ubicacionAlmacen: ci.ubicacionNombre ?? '',
+        inventoryData: invData,
+        promotionData: ci.promotionData,
+      ));
+    }
+
+    _currentOrder = Order(
+      id: 'CUENTA-${cuenta.id}',
+      fechaCreacion: cuenta.createdAt,
+      items: items,
+      total: 0.0,
+      status: OrderStatus.borrador,
+      idMesa: cuenta.idMesa,
+      mesaNumero: cuenta.mesaNumero,
+    );
+    _updateOrderTotal(_currentOrder!);
+
+    // Mantener mesa + cuenta activas para que el checkout las propague.
+    _activeMesaId = cuenta.idMesa;
+    _activeMesaNumero = cuenta.mesaNumero;
+    MesaCuentaService().setActive(
+      idCuenta: cuenta.id,
+      idMesa: cuenta.idMesa,
+      mesaNumero: cuenta.mesaNumero,
+    );
+
+    print('🍽️ Preorden hidratada desde cuenta ${cuenta.id} con ${items.length} items');
   }
 
   // Obtener orden por ID
@@ -855,8 +1044,15 @@ class OrderService {
         // }
       }
 
-      // Preparar parámetros para fn_registrar_venta
-      final rpcParams = {
+      // Preparar parámetros base. Si la orden está asociada a una mesa,
+      // usamos `fn_registrar_venta_mesa` (que acepta p_id_mesa); si no,
+      // mantenemos el flujo original con `fn_registrar_venta`.
+      final int? idMesa = (orderData['idMesa'] is num)
+          ? (orderData['idMesa'] as num).toInt()
+          : null;
+      final bool useMesaRpc = idMesa != null;
+
+      final rpcParams = <String, dynamic>{
         'p_codigo_promocion': orderData['promoCode'],
         'p_denominacion': 'Venta App Vendedor - ${order.id}',
         'p_estado_inicial': 1,
@@ -866,9 +1062,12 @@ class OrderService {
         'p_productos': productos,
         'p_uuid': userId,
         'p_id_cliente': orderData['idCliente'],
+        if (useMesaRpc) 'p_id_mesa': idMesa,
       };
 
-      print('=== PARAMETROS RPC fn_registrar_venta ===');
+      final rpcName = useMesaRpc ? 'fn_registrar_venta_mesa' : 'fn_registrar_venta';
+
+      print('=== PARAMETROS RPC $rpcName ===');
       print('p_codigo_promocion: ${rpcParams['p_codigo_promocion']}');
       print('p_denominacion: ${rpcParams['p_denominacion']}');
       print('p_estado_inicial: ${rpcParams['p_estado_inicial']}');
@@ -876,16 +1075,17 @@ class OrderService {
       print('p_observaciones: ${rpcParams['p_observaciones']}');
       print('p_uuid: ${rpcParams['p_uuid']}');
       print('p_productos (${productos.length} items): $productos');
-      print('order_cli ${orderData['idCliente']}');
+      print('p_id_cliente: ${rpcParams['p_id_cliente']}');
+      if (useMesaRpc) print('p_id_mesa: ${rpcParams['p_id_mesa']}');
       print('========================================');
 
-      // Llamar a fn_registrar_venta
+      // Llamar al RPC apropiado
       final response = await Supabase.instance.client.rpc(
-        'fn_registrar_venta',
+        rpcName,
         params: rpcParams,
       );
 
-      print('Respuesta fn_registrar_venta: $response');
+      print('Respuesta $rpcName: $response');
 
       if (response != null && response['status'] == 'success') {
         // After successful order creation, register payments
@@ -1122,6 +1322,60 @@ class OrderService {
     }
   }
 
+  /// Lista órdenes asociadas a una mesa específica usando `listar_ordenes_mesa`.
+  ///
+  /// A diferencia de [listOrdersFromSupabase], **no muta** la lista interna
+  /// `_orders` — retorna las órdenes transformadas para que la vista de mesa
+  /// las muestre sin afectar la pantalla general de órdenes.
+  Future<List<Order>> listOrdersForMesa(int idMesa) async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      final idTpv = await userPrefs.getIdTpv();
+
+      print('=== LISTAR ORDENES POR MESA ===');
+      print('idTienda: $idTienda, idTpv: $idTpv, idMesa: $idMesa');
+
+      final response = await Supabase.instance.client.rpc(
+        'listar_ordenes_mesa',
+        params: {
+          'con_inventario_param': true,
+          'fecha_desde_param': null,
+          'fecha_hasta_param': null,
+          'id_estado_param': null,
+          'id_tienda_param': idTienda,
+          'id_tipo_operacion_param': null,
+          'id_tpv_param': idTpv,
+          'id_usuario_param': null, // todos los vendedores de la mesa
+          'limite_param': 0,
+          'pagina_param': 1,
+          'solo_pendientes_param': false,
+          'id_mesa_param': idMesa,
+        },
+      );
+
+      if (response is! List || response.isEmpty) {
+        print('Sin órdenes para mesa $idMesa');
+        return <Order>[];
+      }
+
+      // Hacemos un snapshot de `_orders`, ejecutamos la transformación para que
+      // construya entidades Order completas, copiamos el resultado y restauramos
+      // la lista original. Así reutilizamos toda la lógica sin duplicarla.
+      final List<Order> snapshot = List<Order>.from(_orders);
+      _transformSupabaseToOrders(response);
+      final List<Order> result = List<Order>.from(_orders);
+      _orders
+        ..clear()
+        ..addAll(snapshot);
+      return result;
+    } catch (e, stackTrace) {
+      print('❌ Error listando órdenes de mesa $idMesa: $e');
+      print(stackTrace);
+      return <Order>[];
+    }
+  }
+
   // Obtener estado de orden de Carnaval
   Future<String?> getCarnavalOrderStatus(String carnavalOrderId) async {
     try {
@@ -1323,6 +1577,20 @@ class OrderService {
           finalTotal = (montoReal - montoDescontado).clamp(0, double.maxFinite);
         }
 
+        // Extraer datos de mesa (sólo presente en respuestas de listar_ordenes_mesa)
+        final mesaData = supabaseOrder['detalles']?['mesa'];
+        int? idMesa;
+        String? mesaNumero;
+        if (mesaData is Map<String, dynamic>) {
+          final rawId = mesaData['id_mesa'];
+          if (rawId is num) {
+            idMesa = rawId.toInt();
+          } else if (rawId != null) {
+            idMesa = int.tryParse(rawId.toString());
+          }
+          mesaNumero = mesaData['numero']?.toString();
+        }
+
         // Crear orden desde los datos de Supabase
         final order = Order(
           id: 'ORD-${supabaseOrder['id_operacion']}',
@@ -1345,6 +1613,8 @@ class OrderService {
           paqueteria:
               supabaseOrder['detalles']?['paqueteria']
                   as Map<String, dynamic>?,
+          idMesa: idMesa,
+          mesaNumero: mesaNumero,
         );
 
         _orders.add(order);

@@ -19,6 +19,9 @@ class Order {
   final String? sellerName;
   final String? tpvName;
   final Map<String, dynamic>? paqueteria; // Datos del paquete (si la orden es de paquetería)
+  // Modo restaurante: si la orden está asociada a una mesa
+  final int? idMesa;
+  final String? mesaNumero;
   bool isOfflineOrder; // Campo para marcar órdenes offline
 
   Order({
@@ -38,6 +41,8 @@ class Order {
     this.sellerName,
     this.tpvName,
     this.paqueteria,
+    this.idMesa,
+    this.mesaNumero,
     this.isOfflineOrder = false, // Por defecto false
   });
 
@@ -68,6 +73,8 @@ class Order {
     String? sellerName,
     String? tpvName,
     Map<String, dynamic>? paqueteria,
+    int? idMesa,
+    String? mesaNumero,
     bool? isOfflineOrder,
   }) {
     return Order(
@@ -87,6 +94,8 @@ class Order {
       sellerName: sellerName ?? this.sellerName,
       tpvName: tpvName ?? this.tpvName,
       paqueteria: paqueteria ?? this.paqueteria,
+      idMesa: idMesa ?? this.idMesa,
+      mesaNumero: mesaNumero ?? this.mesaNumero,
       isOfflineOrder: isOfflineOrder ?? this.isOfflineOrder,
     );
   }
@@ -110,6 +119,8 @@ class Order {
       'sellerName': sellerName,
       'tpvName': tpvName,
       'paqueteria': paqueteria,
+      'idMesa': idMesa,
+      'mesaNumero': mesaNumero,
       'isOfflineOrder': isOfflineOrder,
     };
   }
@@ -139,6 +150,8 @@ class Order {
       sellerName: json['sellerName'] as String?,
       tpvName: json['tpvName'] as String?,
       paqueteria: json['paqueteria'] as Map<String, dynamic>?,
+      idMesa: json['idMesa'] is num ? (json['idMesa'] as num).toInt() : null,
+      mesaNumero: json['mesaNumero'] as String?,
       isOfflineOrder: json['isOfflineOrder'] as bool? ?? false,
     );
   }

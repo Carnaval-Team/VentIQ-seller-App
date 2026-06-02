@@ -22,6 +22,7 @@ import '../services/currency_service.dart';
 import '../utils/platform_utils.dart';
 import '../utils/pdf_download.dart';
 import '../utils/connection_error_handler.dart';
+import '../utils/navigation_helper.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/sales_monitor_fab.dart';
@@ -1193,6 +1194,44 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                     color: Colors.blue,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        // Badge de mesa (modo restaurante)
+                        if (order.idMesa != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE65100).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: const Color(0xFFE65100).withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.table_restaurant,
+                                  size: 11,
+                                  color: Color(0xFFE65100),
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  order.mesaNumero != null
+                                      ? 'Mesa ${order.mesaNumero}'
+                                      : 'Mesa',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFFE65100),
                                   ),
                                 ),
                               ],
@@ -4731,9 +4770,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   void _onBottomNavTap(int index) {
     switch (index) {
-      case 0: // Home
-        // Usar pushNamed en lugar de pushNamedAndRemoveUntil para mantener la persistencia
-        Navigator.pushNamed(context, '/categories');
+      case 0: // Home → /mesas si modo restaurante, /categories si no
+        NavigationHelper.goHome(context, removeStack: false);
         break;
       case 1: // Preorden
         Navigator.pushNamed(context, '/preorder');

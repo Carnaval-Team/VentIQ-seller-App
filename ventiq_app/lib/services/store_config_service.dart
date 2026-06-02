@@ -53,6 +53,8 @@ class StoreConfigService {
       print('💾 Guardando configuración de tienda en cache offline...');
 
       await _userPreferencesService.saveStoreConfig(config);
+      // Reflejar el flag de modo restaurante en el cache sincrónico.
+      _modoRestauranteCached = config['modo_restaurante'] == true;
 
       print('✅ Configuración de tienda guardada en cache offline');
       print(
@@ -210,6 +212,75 @@ class StoreConfigService {
     } catch (e) {
       print('❌ Error al obtener no_solicitar_cliente: $e');
       return false; // Valor por defecto en caso de error
+    }
+  }
+
+  // Cache sincrónico del flag modo_restaurante para que la lógica de
+  // navegación (botón Home → /mesas vs /categories) pueda decidirlo sin
+  // esperar un Future. Se siembra desde:
+  //   - getModoRestaurante / saveStoreConfigToCache / setModoRestaurante
+  //   - getStoreConfigFromCache (al leerse en cualquier pantalla)
+  static bool _modoRestauranteCached = false;
+  static bool get modoRestauranteSync => _modoRestauranteCached;
+
+  /// Carga el valor cacheado desde SharedPreferences de forma async. Llamar
+  /// una vez en `main()` antes de runApp para que el primer render del drawer
+  /// y del bottom-nav ya tenga el estado correcto.
+  static Future<void> primeModoRestauranteCache() async {
+    final config = await getStoreConfigFromCache();
+    _modoRestauranteCached = config?['modo_restaurante'] == true;
+    print('🍽️ modo_restaurante (cache sincrónico): $_modoRestauranteCached');
+  }
+
+  /// Obtiene el valor de modo_restaurante para la tienda
+  static Future<bool> getModoRestaurante(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final value = config?['modo_restaurante'] ?? false;
+      _modoRestauranteCached = value == true;
+      print('✅ modo_restaurante: $value para tienda $storeId');
+      return value;
+    } catch (e) {
+      print('❌ Error al obtener modo_restaurante: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza modo_restaurante en Supabase y refresca el cache.
+  /// Devuelve true si la operación terminó correctamente.
+  static Future<bool> setModoRestaurante(int storeId, bool enabled) async {
+    try {
+      print(
+        '🔧 Actualizando modo_restaurante=$enabled para tienda $storeId',
+      );
+
+      // Upsert para crear el registro si no existe
+      await _supabase.from('app_dat_configuracion_tienda').upsert(
+        {
+          'id_tienda': storeId,
+          'modo_restaurante': enabled,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        onConflict: 'id_tienda',
+      );
+
+      // Refrescar cache
+      final config = await getStoreConfigFromSupabase(storeId);
+      if (config != null) {
+        await saveStoreConfigToCache(config);
+      } else {
+        // Si por alguna razón no se pudo leer, actualizar al menos la key
+        final cached = await getStoreConfigFromCache() ?? {};
+        cached['modo_restaurante'] = enabled;
+        await saveStoreConfigToCache(cached);
+      }
+
+      _modoRestauranteCached = enabled;
+      print('✅ modo_restaurante actualizado correctamente');
+      return true;
+    } catch (e) {
+      print('❌ Error al actualizar modo_restaurante: $e');
+      return false;
     }
   }
 

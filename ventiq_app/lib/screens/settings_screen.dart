@@ -11,6 +11,7 @@ import '../services/payment_method_service.dart';
 import '../services/turno_service.dart';
 import '../services/settings_integration_service.dart';
 import '../services/store_config_service.dart';
+import '../utils/navigation_helper.dart';
 import '../services/update_service.dart';
 import '../services/subscription_guard_service.dart';
 import '../models/subscription.dart';
@@ -48,6 +49,8 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isOfflineModeEnabled = false; // Valor por defecto
   bool _hasOfflineTurno = false; // Turno abierto offline
   Map<String, dynamic>? _offlineTurnoInfo; // Información del turno offline
+  bool _isModoRestauranteEnabled = false; // Modo restaurante (mesas y comensales)
+  bool _isLoadingModoRestaurante = false;
 
   // Nuevas variables para servicios inteligentes
   StreamSubscription<SettingsIntegrationEvent>? _integrationSubscription;
@@ -203,6 +206,15 @@ class _SettingsScreenState extends State<SettingsScreen>
     final offlineTurnoInfo =
         await _userPreferencesService.getOfflineTurnoInfo();
 
+    // Modo restaurante - leer del cache (lo más rápido) sin bloquear el resto
+    bool modoRestaurante = false;
+    try {
+      final cfg = await StoreConfigService.getStoreConfigFromCache();
+      modoRestaurante = cfg?['modo_restaurante'] ?? false;
+    } catch (e) {
+      print('⚠️ No se pudo leer modo_restaurante del cache: $e');
+    }
+
     // Verificar si el widget está montado antes de actualizar el estado
     if (mounted) {
       setState(() {
@@ -215,7 +227,60 @@ class _SettingsScreenState extends State<SettingsScreen>
         _isOfflineModeEnabled = offlineModeEnabled;
         _hasOfflineTurno = hasOfflineTurno;
         _offlineTurnoInfo = offlineTurnoInfo;
+        _isModoRestauranteEnabled = modoRestaurante;
       });
+    }
+  }
+
+  Future<void> _onModoRestauranteChanged(bool value) async {
+    // Optimistic UI
+    setState(() {
+      _isModoRestauranteEnabled = value;
+      _isLoadingModoRestaurante = true;
+    });
+
+    final storeId = await _userPreferencesService.getIdTienda();
+    if (storeId == null) {
+      if (mounted) {
+        setState(() {
+          _isModoRestauranteEnabled = !value;
+          _isLoadingModoRestaurante = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ No se pudo identificar la tienda'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    final ok = await StoreConfigService.setModoRestaurante(storeId, value);
+
+    if (!mounted) return;
+    setState(() => _isLoadingModoRestaurante = false);
+
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            value
+                ? '🍽️ Modo Restaurante activado — La opción "Mesas y Comensales" ya está disponible'
+                : '🏪 Modo Restaurante desactivado — Volviendo a venta de mostrador',
+          ),
+          backgroundColor: value ? Colors.green : Colors.blueGrey,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } else {
+      setState(() => _isModoRestauranteEnabled = !value);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ Error guardando la configuración'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -892,6 +957,12 @@ class _SettingsScreenState extends State<SettingsScreen>
 
               const SizedBox(height: 16),
 
+              // Sección Modo de Operación (modo restaurante)
+              _buildSectionHeader('Modo de Operación'),
+              _buildSettingsCard([_buildModoRestauranteTile()]),
+
+              const SizedBox(height: 16),
+
               // Sección de uso de datos
               _buildSectionHeader('Uso de datos'),
               _buildSettingsCard([
@@ -1283,6 +1354,49 @@ class _SettingsScreenState extends State<SettingsScreen>
         onChanged: _onLimitDataUsageChanged,
         activeColor: Colors.orange,
       ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    );
+  }
+
+  Widget _buildModoRestauranteTile() {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE65100).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(
+          Icons.restaurant_menu,
+          color: Color(0xFFE65100),
+          size: 20,
+        ),
+      ),
+      title: const Text(
+        'Modo Restaurante',
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFF1F2937),
+        ),
+      ),
+      subtitle: Text(
+        _isModoRestauranteEnabled
+            ? 'Mesas y comensales activos — el checkout pide mesa en lugar de cliente'
+            : 'Activar para gestionar mesas y cuentas por comensal',
+        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+      ),
+      trailing: _isLoadingModoRestaurante
+          ? const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Switch(
+              value: _isModoRestauranteEnabled,
+              onChanged: _onModoRestauranteChanged,
+              activeColor: const Color(0xFFE65100),
+            ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
   }
@@ -2334,12 +2448,8 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   void _onBottomNavTap(int index) {
     switch (index) {
-      case 0: // Home
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/categories',
-          (route) => false,
-        );
+      case 0: // Home → /mesas si modo restaurante, /categories si no
+        NavigationHelper.goHome(context);
         break;
       case 1: // Preorden
         Navigator.pushNamed(context, '/preorder');

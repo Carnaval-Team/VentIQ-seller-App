@@ -11,6 +11,7 @@ import '../utils/promotion_rules.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/elaborated_product_chip.dart';
 import '../utils/connection_error_handler.dart';
+import '../utils/navigation_helper.dart';
 import '../widgets/notification_widget.dart';
 import 'package_product_screen.dart';
 
@@ -3090,8 +3091,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
   void _onBottomNavTap(int index) {
     switch (index) {
-      case 0: // Home (Categorías)
-        Navigator.popUntil(context, (route) => route.isFirst);
+      case 0: // Home → /mesas si modo restaurante (sin cuenta activa), /categories si no
+        NavigationHelper.goHome(context);
         break;
       case 1: // Preorden
         Navigator.popUntil(context, (route) => route.isFirst);
