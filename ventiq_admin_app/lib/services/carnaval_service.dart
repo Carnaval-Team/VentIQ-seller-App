@@ -1830,7 +1830,7 @@ class CarnavalService {
             .select('municipio')
             .eq('id', municipioId)
             .maybeSingle();
-        result['municipio_nombre'] = mun?['nombre'];
+        result['municipio_nombre'] = mun?['municipio'];
       }
 
       return result;
