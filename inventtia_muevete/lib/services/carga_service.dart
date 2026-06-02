@@ -13,6 +13,7 @@ class CargaService {
     app_nom_tipo_carga(nombre, abreviacion),
     app_nom_tipo_equipo(nombre, abreviacion),
     app_nom_tipo_mercancia(nombre, codigo, nmfc_codigo),
+    app_nom_commodity(nombre, codigo),
     cargas_equipo_manejo(equipo_manejo_id, app_nom_equipo_manejo_carga(nombre, codigo))
   ''';
 
@@ -34,6 +35,11 @@ class CargaService {
       m['tipo_mercancia_nombre'] = tm['nombre'];
       m['tipo_mercancia_codigo'] = tm['codigo'];
       m['tipo_mercancia_nmfc']   = tm['nmfc_codigo'];
+    }
+    final co = m.remove('app_nom_commodity');
+    if (co is Map) {
+      m['commodity_nom_nombre'] = co['nombre'];
+      m['commodity_nom_codigo'] = co['codigo'];
     }
     // M:N opciones de manejo — lista de objetos anidados
     final pivotList = m.remove('cargas_equipo_manejo');

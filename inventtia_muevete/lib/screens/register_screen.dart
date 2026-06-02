@@ -14,6 +14,8 @@ import '../services/document_upload_service.dart';
 import '../services/dispatcher_service.dart';
 import '../services/geonames_service.dart';
 import '../services/vehicle_type_service.dart';
+import '../services/plan_service.dart';
+import '../models/plan_model.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data class for each carrocería (vehicle platform) in the carrier form
@@ -207,6 +209,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return _selectedTransportistaSubtype;
     }
     return _selectedTopType;
+  }
+
+  /// Tipo usado en tabla `planes` (carrier_carga → carrier).
+  String? get _planTipoBd {
+    final tipo = _tipoUsuarioFinal;
+    if (!const ['shipper', 'carrier_carga', 'dispatcher'].contains(tipo)) {
+      return null;
+    }
+    return tipo == 'carrier_carga' ? 'carrier' : tipo;
+  }
+
+  Future<({PlanModel? def, List<PlanModel> pago})> _loadRegistroPlanes(
+      String tipo) async {
+    final svc = PlanService();
+    final def = await svc.getPlanPorDefectoRegistro(tipo);
+    final pago = await svc.getPlanesPago(tipo);
+    return (def: def, pago: pago);
   }
 
   @override
@@ -1236,38 +1255,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   // Plan info section shown during registration
   // ─────────────────────────────────────────────────────────────────────────────
   Widget _buildPlanInfo(bool isDark, Color textPrimary) {
-    final tipo = _tipoUsuarioFinal;
-    final tiposConPlan = ['shipper', 'carrier_carga', 'dispatcher'];
-    if (!tiposConPlan.contains(tipo)) {
+    final planTipo = _planTipoBd;
+    if (planTipo == null) {
       return const SizedBox.shrink(key: ValueKey('no_plan'));
-    }
-
-    final String planNombre;
-    final String precio;
-    final String descripcion;
-    final List<String> planNombresUpgrade;
-
-    switch (tipo) {
-      case 'shipper':
-        planNombre = 'Shipper Gratis';
-        precio = '\$0 / primer mes';
-        descripcion = 'Publica cargas y conecta con transportistas. Después del primer mes, el plan Shipper es de \$50/mes.';
-        planNombresUpgrade = ['Shipper — \$50/mes'];
-        break;
-      case 'carrier_carga':
-        planNombre = 'Carrier Gratis';
-        precio = '\$0 / primer mes';
-        descripcion = 'Recibe cargas y gestiona tus viajes. Después del primer mes puedes continuar con el plan Básico (\$20/mes) o el PRO (\$40/mes).';
-        planNombresUpgrade = ['Básico — \$20/mes', 'PRO — \$40/mes'];
-        break;
-      case 'dispatcher':
-        planNombre = 'Dispatcher Gratis';
-        precio = '\$0 / primer mes';
-        descripcion = 'Gestiona tu flota y asigna cargas. Después del primer mes, el plan Dispatcher es de \$150/mes.';
-        planNombresUpgrade = ['Dispatcher — \$150/mes'];
-        break;
-      default:
-        return const SizedBox.shrink(key: ValueKey('no_plan_default'));
     }
 
     final cardBg = isDark ? AppTheme.darkCard : Colors.white;
@@ -1275,103 +1265,152 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final textSec = isDark ? Colors.white60 : Colors.grey[600]!;
 
     return Padding(
-      key: ValueKey('plan_info_$tipo'),
+      key: ValueKey('plan_info_$planTipo'),
       padding: const EdgeInsets.only(top: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Tu plan al registrarte',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: textPrimary,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppTheme.success.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.success.withValues(alpha: 0.4)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+      child: FutureBuilder<({PlanModel? def, List<PlanModel> pago})>(
+        future: _loadRegistroPlanes(planTipo),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          }
+
+          final def = snapshot.data?.def;
+          final pago = snapshot.data?.pago ?? [];
+          final planNombre = def?.nombre ?? 'Plan estándar';
+          final precioLuego = def != null
+              ? '\$${def.precioMensual.toStringAsFixed(0)} / mes'
+              : null;
+          final descripcion = def != null
+              ? 'Se activará el plan ${def.nombre}. El primer mes no tiene cargo; '
+                  'a partir del segundo mes${precioLuego != null ? ' el precio será $precioLuego' : ''}.'
+              : 'El primer mes no tiene cargo. Los precios se confirman al activar tu cuenta.';
+
+          final otrosPlanes = pago
+              .where((p) => p.codigo != def?.codigo)
+              .map((p) => '${p.nombre} — \$${p.precioMensual.toStringAsFixed(0)}/mes')
+              .toList();
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Tu plan al registrarte',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: textPrimary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppTheme.success.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppTheme.success.withValues(alpha: 0.4)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.card_giftcard_outlined,
-                        color: AppTheme.success, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      planNombre,
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppTheme.success),
+                    Row(
+                      children: [
+                        Icon(Icons.card_giftcard_outlined,
+                            color: AppTheme.success, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            planNombre,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.success,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '\$0 / primer mes',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.success,
+                          ),
+                        ),
+                      ],
                     ),
-                    const Spacer(),
+                    const SizedBox(height: 8),
                     Text(
-                      precio,
+                      descripcion,
                       style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.success),
+                          fontSize: 13, color: textSec, height: 1.4),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(descripcion,
-                    style: TextStyle(fontSize: 13, color: textSec, height: 1.4)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: cardBg,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: borderColor),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Planes disponibles después del primer mes',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: textPrimary),
-                ),
-                const SizedBox(height: 8),
-                ...planNombresUpgrade.map((p) => Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Row(
-                        children: [
-                          Icon(Icons.check_circle_outline,
-                              size: 15,
-                              color: AppTheme.primaryColor),
-                          const SizedBox(width: 6),
-                          Text(p,
-                              style: TextStyle(
-                                  fontSize: 13, color: textSec)),
-                        ],
+              ),
+              if (otrosPlanes.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: cardBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: borderColor),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Otros planes disponibles después del primer mes',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: textPrimary,
+                        ),
                       ),
-                    )),
-                const SizedBox(height: 8),
-                Text(
-                  'Puedes gestionar tu plan en cualquier momento desde tu perfil.',
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: textSec,
-                      fontStyle: FontStyle.italic),
+                      const SizedBox(height: 8),
+                      ...otrosPlanes.map((p) => Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Row(
+                              children: [
+                                Icon(Icons.check_circle_outline,
+                                    size: 15,
+                                    color: AppTheme.primaryColor),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    p,
+                                    style: TextStyle(
+                                        fontSize: 13, color: textSec),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )),
+                    ],
+                  ),
                 ),
               ],
-            ),
-          ),
-        ],
+              const SizedBox(height: 8),
+              Text(
+                'Puedes gestionar tu plan en cualquier momento desde tu perfil.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: textSec,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

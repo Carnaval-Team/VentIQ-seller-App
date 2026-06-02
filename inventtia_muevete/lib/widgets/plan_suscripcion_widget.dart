@@ -142,10 +142,40 @@ class _PlanSuscripcionTileState extends State<PlanSuscripcionTile> {
                           : AppTheme.primaryColor,
                     ),
                   ),
-                  if (plan != null && !plan.esGratis) ...[
+                  if (sus.enPeriodoPrueba) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: AppTheme.success.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: AppTheme.success.withValues(alpha: 0.35)),
+                      ),
+                      child: Text(
+                        'Primer mes sin cargo — promoción de registro',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.green[800],
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (plan != null && !plan.esGratis && !sus.enPeriodoPrueba) ...[
                     const SizedBox(height: 2),
                     Text(
                       '\$${plan.precioMensual.toStringAsFixed(0)} / mes',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13, color: textSecondary),
+                    ),
+                  ] else if (plan != null &&
+                      !plan.esGratis &&
+                      sus.enPeriodoPrueba) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Luego \$${plan.precioMensual.toStringAsFixed(0)} / mes',
                       style: GoogleFonts.plusJakartaSans(
                           fontSize: 13, color: textSecondary),
                     ),
@@ -388,7 +418,7 @@ class _BotonGestionar extends StatelessWidget {
     final evidenciaUrl = await showDialog<String>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _EvidenciaDialog(
+      builder: (_) => PlanEvidenciaDialog(
         plan: planSeleccionado,
         userUuid: uid,
       ),
@@ -419,17 +449,34 @@ class _BotonGestionar extends StatelessWidget {
 // Diálogo de evidencia de pago
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _EvidenciaDialog extends StatefulWidget {
+/// Diálogo reutilizable para subir evidencia al solicitar un plan de pago.
+Future<String?> showPlanEvidenciaDialog(
+  BuildContext context, {
+  required PlanModel plan,
+  required String userUuid,
+}) {
+  return showDialog<String>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => PlanEvidenciaDialog(plan: plan, userUuid: userUuid),
+  );
+}
+
+class PlanEvidenciaDialog extends StatefulWidget {
   final PlanModel plan;
   final String userUuid;
 
-  const _EvidenciaDialog({required this.plan, required this.userUuid});
+  const PlanEvidenciaDialog({
+    super.key,
+    required this.plan,
+    required this.userUuid,
+  });
 
   @override
-  State<_EvidenciaDialog> createState() => _EvidenciaDialogState();
+  State<PlanEvidenciaDialog> createState() => _PlanEvidenciaDialogState();
 }
 
-class _EvidenciaDialogState extends State<_EvidenciaDialog> {
+class _PlanEvidenciaDialogState extends State<PlanEvidenciaDialog> {
   final _docService = DocumentUploadService();
   String? _evidenciaUrl;
   bool _uploading = false;

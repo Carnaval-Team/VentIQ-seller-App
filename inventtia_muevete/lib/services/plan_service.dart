@@ -6,6 +6,12 @@ import '../models/plan_model.dart';
 class PlanService {
   final _supabase = Supabase.instance.client;
 
+  static const Map<String, String> planPorDefectoRegistro = {
+    'shipper': 'shipper_plan',
+    'carrier': 'carrier_basico_v2',
+    'dispatcher': 'dispatcher_plan',
+  };
+
   // ────────────────────────────────────────────────────────────────────────────
   // Obtener planes activos por tipo de usuario
   // ────────────────────────────────────────────────────────────────────────────
@@ -53,6 +59,19 @@ class PlanService {
   // ────────────────────────────────────────────────────────────────────────────
   // Obtener plan por código (ej: 'shipper_basico')
   // ────────────────────────────────────────────────────────────────────────────
+
+  /// Plan estándar asignado al registrarse (con promoción primer mes).
+  Future<PlanModel?> getPlanPorDefectoRegistro(String tipoUsuario) async {
+    final codigo = planPorDefectoRegistro[tipoUsuario];
+    if (codigo == null) return null;
+    return getPlanPorCodigo(codigo);
+  }
+
+  /// Planes de pago activos (excluye variantes *_gratis del catálogo).
+  Future<List<PlanModel>> getPlanesPago(String tipoUsuario) async {
+    final list = await getPlanes(tipoUsuario);
+    return list.where((p) => !p.esGratis).toList();
+  }
 
   Future<PlanModel?> getPlanPorCodigo(String codigo) async {
     try {

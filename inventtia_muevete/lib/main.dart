@@ -44,6 +44,7 @@ import 'screens/shipper/shipper_profile_screen.dart';
 import 'screens/carrier/carrier_home_screen.dart';
 import 'screens/carrier/carrier_carga_profile_screen.dart';
 import 'screens/dispatcher/dispatcher_home_screen.dart';
+import 'screens/dispatcher/dispatcher_profile_screen.dart';
 import 'screens/common/planes_screen.dart';
 import 'widgets/notification_overlay.dart';
 
@@ -157,6 +158,7 @@ class MueveteApp extends StatelessWidget {
               '/carrier/home': (context) => const CarrierHomeScreen(),
               '/carrier/profile': (context) => const CarrierCargaProfileScreen(),
               '/dispatcher/home': (context) => const DispatcherHomeScreen(),
+              '/dispatcher/profile': (context) => const DispatcherProfileScreen(),
               '/planes': (context) {
                 final args = ModalRoute.of(context)!.settings.arguments
                     as Map<String, dynamic>?;

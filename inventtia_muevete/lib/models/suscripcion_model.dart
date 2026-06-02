@@ -28,6 +28,12 @@ class SuscripcionModel {
 
   bool get esGratis => planCodigo.endsWith('_gratis');
 
+  /// Primer mes promocional: plan de pago activo sin cobro inicial.
+  bool get enPeriodoPrueba =>
+      !esGratis &&
+      (notas?.toLowerCase().contains('primer mes') == true ||
+          notas?.toLowerCase().contains('promoción') == true);
+
   int get diasRestantes {
     final hoy = DateTime.now();
     final diff = vencimiento.difference(DateTime(hoy.year, hoy.month, hoy.day));

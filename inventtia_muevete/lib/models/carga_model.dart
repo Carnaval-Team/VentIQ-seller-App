@@ -45,6 +45,11 @@ class CargaModel {
   final String? tipoMercanciaCodigo;      // enriquecido por JOIN (ej: 'DRY_GOODS')
   final String? tipoMercanciaNmfc;        // código NMFC, si aplica
 
+  // Commodity — FK a app_nom_commodity
+  final int? commodityNomId;
+  final String? commodityNomNombre;       // enriquecido por JOIN
+  final String? commodityNomCodigo;       // enriquecido por JOIN
+
   final double? pesoKg;
   final double? volumenM3;
   final double? longitudM;
@@ -156,6 +161,9 @@ class CargaModel {
     this.tipoMercanciaNombre,
     this.tipoMercanciaCodigo,
     this.tipoMercanciaNmfc,
+    this.commodityNomId,
+    this.commodityNomNombre,
+    this.commodityNomCodigo,
     this.pesoKg,
     this.volumenM3,
     this.longitudM,
@@ -245,6 +253,9 @@ class CargaModel {
       tipoMercanciaNombre: json['tipo_mercancia_nombre'] as String?,
       tipoMercanciaCodigo: json['tipo_mercancia_codigo'] as String?,
       tipoMercanciaNmfc: json['tipo_mercancia_nmfc'] as String?,
+      commodityNomId: json['commodity_nom_id'] as int?,
+      commodityNomNombre: json['commodity_nom_nombre'] as String?,
+      commodityNomCodigo: json['commodity_nom_codigo'] as String?,
       pesoKg: (json['peso_kg'] as num?)?.toDouble(),
       volumenM3: (json['volumen_m3'] as num?)?.toDouble(),
       longitudM: (json['longitud_m'] as num?)?.toDouble(),
@@ -343,6 +354,7 @@ class CargaModel {
       if (paisDestino != null) 'pais_destino': paisDestino,
       if (descripcion != null) 'descripcion': descripcion,
       if (tipoMercanciaId != null) 'tipo_mercancia_id': tipoMercanciaId,
+      if (commodityNomId != null) 'commodity_nom_id': commodityNomId,
       if (pesoKg != null) 'peso_kg': pesoKg,
       if (volumenM3 != null) 'volumen_m3': volumenM3,
       if (longitudM != null) 'longitud_m': longitudM,
@@ -420,11 +432,63 @@ class CargaModel {
   /// Compatibilidad retroactiva — devuelve el nombre del tipo de mercancía
   String? get tipoMercancia => tipoMercanciaNombre;
 
-  /// Compatibilidad retroactiva — commodity_id ya no existe; devuelve null
-  int? get commodityId => null;
+  /// Compatibilidad retroactiva — devuelve el nombre del commodity
+  String? get commodityNombre => commodityNomNombre;
 
   /// Compatibilidad retroactiva — devuelve los códigos de opciones de manejo
   List<String> get opcionesEquipo => opcionesEquipoManejoCodigos;
+
+  /// Texto para UI: tipo de mercancía con NMFC si aplica
+  String? get tipoMercanciaDisplay {
+    final nombre = tipoMercanciaNombre;
+    if (nombre == null) return null;
+    final nmfc = tipoMercanciaNmfc;
+    if (nmfc != null && nmfc.isNotEmpty) {
+      return '$nombre (NMFC: $nmfc)';
+    }
+    return nombre;
+  }
+
+  /// Texto para UI: tipo de equipo con abreviación si aplica
+  String? get tipoEquipoDisplay {
+    final nombre = tipoEquipoNombre;
+    final abrev = tipoEquipoAbreviacion;
+    if (nombre != null && abrev != null) {
+      return '$nombre (${abrev.toUpperCase()})';
+    }
+    return nombre ?? abrev?.toUpperCase();
+  }
+
+  /// Texto para UI: opciones de manejo (prefiere nombres del nomenclador)
+  String get opcionesEquipoDisplay => opcionesEquipoManejoNombres.isNotEmpty
+      ? opcionesEquipoManejoNombres.join(', ')
+      : opcionesEquipoManejoCodigos.join(', ');
+
+  /// Medidas L × A × H en metros
+  String? get medidasDisplay {
+    if (longitudM == null && anchoM == null && altoM == null) return null;
+    String part(double? v) =>
+        v != null ? '${v.toStringAsFixed(2)} m' : '—';
+    return '${part(longitudM)} × ${part(anchoM)} × ${part(altoM)}';
+  }
+
+  /// Ventana horaria de recogida (horario de carga)
+  String? get ventanaRecogidaDisplay {
+    final desde = ventanaRecogidaDesde;
+    final hasta = ventanaRecogidaHasta;
+    if (desde == null && hasta == null) return null;
+    if (desde != null && hasta != null) return '$desde – $hasta';
+    return desde ?? hasta;
+  }
+
+  /// Ventana horaria de entrega (horario de descarga)
+  String? get ventanaEntregaDisplay {
+    final desde = ventanaEntregaDesde;
+    final hasta = ventanaEntregaHasta;
+    if (desde == null && hasta == null) return null;
+    if (desde != null && hasta != null) return '$desde – $hasta';
+    return desde ?? hasta;
+  }
 
   String get prioridadLabel {
     const labels = {'normal': 'Normal', 'alta': 'Alta', 'urgente': 'Urgente'};

@@ -8,6 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/plan_provider.dart';
 import '../../providers/suscripcion_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../widgets/plan_suscripcion_widget.dart';
 
 class PlanesScreen extends StatefulWidget {
   // tipoUsuario: 'shipper' | 'carrier' | 'dispatcher'
@@ -54,7 +55,7 @@ class _PlanesScreenState extends State<PlanesScreen> {
       case 'carrier':
         return 'Recibe cargas, aumenta tu visibilidad y accede a herramientas de tracking.';
       case 'dispatcher':
-        return 'Gestiona tu flota, asigna cargas y maximiza la productividad de tus choferes.';
+        return 'Consulta cargas disponibles y gestiona tu flota de transportistas.';
       default:
         return '';
     }
@@ -65,7 +66,10 @@ class _PlanesScreenState extends State<PlanesScreen> {
     final isDark = context.watch<ThemeProvider>().isDark;
     final provider = context.watch<PlanProvider>();
     final susProvider = context.watch<SuscripcionProvider>();
-    final planes = provider.planesParaTipo(widget.tipoUsuario);
+    final planes = provider
+        .planesParaTipo(widget.tipoUsuario)
+        .where((p) => !p.esGratis)
+        .toList();
     final planActualCodigo = susProvider.suscripcion?.planCodigo;
 
     final bg = AppTheme.bg(isDark);
@@ -199,6 +203,7 @@ class _PlanesContent extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 16),
             child: _PlanCard(
               plan: plan,
+              tipoUsuario: tipoUsuario,
               isPopular: index == _popularIndex && planes.length > 1,
               isDark: isDark,
               textPrimary: textPrimary,
@@ -219,6 +224,7 @@ class _PlanesContent extends StatelessWidget {
 
 class _PlanCard extends StatelessWidget {
   final PlanModel plan;
+  final String tipoUsuario;
   final bool isPopular;
   final bool isDark;
   final Color textPrimary;
@@ -227,6 +233,7 @@ class _PlanCard extends StatelessWidget {
 
   const _PlanCard({
     required this.plan,
+    required this.tipoUsuario,
     required this.isPopular,
     required this.isDark,
     required this.textPrimary,
@@ -362,6 +369,7 @@ class _PlanCard extends StatelessWidget {
                         )
                       : _ContratarButton(
                           plan: plan,
+                          tipoUsuario: tipoUsuario,
                           isPopular: isPopular,
                           isDark: isDark,
                           textPrimary: textPrimary,
@@ -483,6 +491,7 @@ class _PlanCard extends StatelessWidget {
 
 class _ContratarButton extends StatelessWidget {
   final PlanModel plan;
+  final String tipoUsuario;
   final bool isPopular;
   final bool isDark;
   final Color textPrimary;
@@ -490,6 +499,7 @@ class _ContratarButton extends StatelessWidget {
 
   const _ContratarButton({
     required this.plan,
+    required this.tipoUsuario,
     required this.isPopular,
     required this.isDark,
     required this.textPrimary,
@@ -508,40 +518,29 @@ class _ContratarButton extends StatelessWidget {
               final uid = auth.user?.id;
               if (uid == null) return;
               // Confirmación antes de contratar
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (_) => AlertDialog(
-                  title: Text('Contratar ${plan.nombre}'),
-                  content: Text(
-                    plan.esGratis
-                        ? 'Activarás el plan gratuito.'
-                        : 'Se activará el plan ${plan.nombre} por \$${plan.precioMensual.toStringAsFixed(0)}/mes.\n\nEl ciclo de facturación cierra el día 2 de cada mes.',
-                  ),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancelar')),
-                    ElevatedButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.primaryColor),
-                        child: const Text('Confirmar',
-                            style: TextStyle(color: Colors.white))),
-                  ],
-                ),
+              final evidenciaUrl = await showPlanEvidenciaDialog(
+                context,
+                plan: plan,
+                userUuid: uid,
               );
-              if (confirm != true) return;
-              if (!context.mounted) return;
+              if (evidenciaUrl == null || !context.mounted) return;
               final ok = await context
                   .read<SuscripcionProvider>()
-                  .cambiarPlan(uid, plan.codigo);
+                  .solicitarCambioPlan(
+                    userUuid: uid,
+                    planCodigo: plan.codigo,
+                    evidenciaUrl: evidenciaUrl,
+                  );
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                   content: Text(ok
-                      ? 'Plan ${plan.nombre} activado'
-                      : 'No se pudo activar el plan'),
+                      ? 'Solicitud enviada. El administrador revisará tu pago.'
+                      : 'No se pudo enviar la solicitud'),
                   backgroundColor: ok ? Colors.green[700] : AppTheme.error,
                 ));
+                if (ok) {
+                  await susProvider.cargarSuscripcion(uid, tipoUsuario);
+                }
               }
             },
       style: ElevatedButton.styleFrom(
