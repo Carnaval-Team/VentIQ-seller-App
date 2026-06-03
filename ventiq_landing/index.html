@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventtia - Sistema de Gestión de Ventas e Inventario | Punto de Venta</title>
+    <title>Inventtia · Punto de venta, inventario y catálogo en línea</title>
     <meta name="description" content="Inventtia es el sistema completo de punto de venta, inventario y gestión de negocios. Controla ventas, inventario, personal y finanzas desde cualquier dispositivo. Incluye Carnaval Tienda para compras y delivery.">
     <meta name="keywords" content="inventtia, punto de venta, inventario, gestión de ventas, sistema de ventas, POS, negocio, tienda, carnaval, delivery, catálogo en línea, administración de negocios, control de inventario, software de ventas">
     <meta name="author" content="Inventtia">
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://inventtia.com/">
 
-    <!-- Open Graph / Facebook -->
+    <!-- Open Graph -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://inventtia.com/">
-    <meta property="og:title" content="Inventtia - Sistema de Gestión de Ventas e Inventario">
+    <meta property="og:title" content="Inventtia · Sistema de gestión de ventas e inventario">
     <meta property="og:description" content="Sistema completo de punto de venta e inventario diseñado para potenciar tu negocio. Controla ventas, inventario, personal y finanzas desde cualquier dispositivo.">
     <meta property="og:image" content="https://inventtia.com/assets/images/ic.png">
     <meta property="og:locale" content="es_ES">
@@ -22,15 +22,14 @@
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:url" content="https://inventtia.com/">
-    <meta name="twitter:title" content="Inventtia - Sistema de Gestión de Ventas e Inventario">
+    <meta name="twitter:title" content="Inventtia · Sistema de gestión de ventas e inventario">
     <meta name="twitter:description" content="Sistema completo de punto de venta e inventario diseñado para potenciar tu negocio.">
     <meta name="twitter:image" content="https://inventtia.com/assets/images/ic.png">
 
-    <!-- Favicon -->
     <link rel="icon" type="image/png" href="assets/images/ic.png">
     <link rel="apple-touch-icon" href="assets/images/ic.png">
 
-    <!-- Structured Data - Organization -->
+    <!-- Structured Data -->
     <script type="application/ld+json">
     {
         "@context": "https://schema.org",
@@ -39,540 +38,439 @@
         "applicationCategory": "BusinessApplication",
         "operatingSystem": "Android, Web",
         "description": "Sistema completo de punto de venta, inventario y gestión de negocios. Tres aplicaciones multiplataforma: vendedor, administración y catálogo en línea.",
-        "offers": {
-            "@type": "Offer",
-            "price": "0",
-            "priceCurrency": "USD",
-            "availability": "https://schema.org/InStock"
-        },
-        "author": {
-            "@type": "Organization",
-            "name": "Inventtia",
-            "url": "https://inventtia.com",
-            "email": "soporteinventtia@gmail.com"
-        },
-        "featureList": [
-            "Punto de venta rápido",
-            "Control de inventario",
-            "Gestión de personal",
-            "Dashboard ejecutivo",
-            "Catálogo en línea",
-            "Delivery y seguimiento",
-            "Múltiples métodos de pago",
-            "Sincronización en tiempo real"
-        ]
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD", "availability": "https://schema.org/InStock" },
+        "author": { "@type": "Organization", "name": "Inventtia", "url": "https://inventtia.com", "email": "soporteinventtia@gmail.com" }
     }
     </script>
 
-    <!-- Structured Data - WebSite for Sitelinks Search -->
-    <script type="application/ld+json">
-    {
-        "@context": "https://schema.org",
-        "@type": "WebSite",
-        "name": "Inventtia",
-        "url": "https://inventtia.com",
-        "description": "Sistema de gestión de ventas e inventario para negocios",
-        "potentialAction": {
-            "@type": "SearchAction",
-            "target": "https://inventtia.com/?q={search_term_string}",
-            "query-input": "required name=search_term_string"
-        }
-    }
-    </script>
-
-    <!-- Structured Data - FAQPage for Carnaval -->
-    <script type="application/ld+json">
-    {
-        "@context": "https://schema.org",
-        "@type": "Product",
-        "name": "Carnaval Tienda",
-        "description": "Plataforma de compras y delivery. Compra productos, comida y envía paquetes desde tu celular.",
-        "brand": {
-            "@type": "Brand",
-            "name": "Inventtia"
-        },
-        "offers": {
-            "@type": "Offer",
-            "price": "0",
-            "priceCurrency": "USD",
-            "availability": "https://schema.org/InStock",
-            "url": "https://play.google.com/store/apps/details?id=com.carnaval24"
-        }
-    }
-    </script>
+    <!-- Fonts: Geist + Geist Mono (self-host via Vercel CDN). Inter fallback in CSS stack. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css">
 
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/css/styles.css">
-    <link rel="stylesheet" href="assets/css/premium.css">
+    <link rel="stylesheet" href="assets/css/premium-v2.css">
 </head>
-<body>
-    <!-- Navigation -->
-    <nav class="navbar">
-        <div class="nav-container">
-            <div class="nav-logo">
-                <img src="assets/images/ic.png" alt="Inventtia Logo" class="logo">
-                <span class="logo-text">Inventtia</span>
+<body class="v2">
+
+    <!-- AURORA BACKGROUND (PS3 XMB style) -->
+    <div class="v2-aurora" data-aurora aria-hidden="true">
+        <div class="v2-aurora-fallback"></div>
+        <canvas class="v2-aurora-canvas"></canvas>
+        <div class="v2-aurora-veil"></div>
+    </div>
+
+    <!-- NAV -->
+    <nav class="v2-nav" aria-label="Principal">
+        <div class="v2-nav-inner">
+            <a href="/" class="v2-brand" aria-label="Inventtia">
+                <span class="v2-brand-mark" aria-hidden="true"></span>
+                <span>Inventtia</span>
+            </a>
+
+            <div class="v2-nav-links">
+                <a href="#producto">Producto</a>
+                <a href="#apps">Aplicaciones</a>
+                <a href="#carnaval">Carnaval</a>
+                <a href="tutorials.html">Tutoriales</a>
+                <a href="contact.html">Contacto</a>
             </div>
-            <div class="nav-menu">
-                <a href="#inicio" class="nav-link">Inicio</a>
-                <a href="#caracteristicas" class="nav-link">Características</a>
-                <a href="#carnaval" class="nav-link">Carnaval</a>
-                <a href="tutorials.html" class="nav-link">Tutoriales</a>
-                <a href="contact.html" class="nav-link">Contacto</a>
-                <div class="download-buttons">
-                    <a href="https://venta.inventtia.com" target="_blank" class="download-btn seller-app" title="Abrir Inventtia Vendedor Web">
-                        <i class="fas fa-mobile-alt"></i>
-                        <span>Vendedor</span>
-                    </a>
-                    <a href="https://admin.inventtia.com" target="_blank" class="download-btn admin-app" title="Abrir Inventtia Admin Web">
-                        <i class="fas fa-desktop"></i>
-                        <span>Admin</span>
-                    </a>
-                    <a href="https://catalogo.inventtia.com" target="_blank" class="download-btn catalog-app" title="Abrir Inventtia Catálogo Web">
-                        <i class="fas fa-store"></i>
-                        <span>Catálogo</span>
-                    </a>
-                </div>
-            </div>
-            <div class="hamburger">
-                <span></span>
-                <span></span>
-                <span></span>
-            </div>
+
+            <a href="https://venta.inventtia.com" target="_blank" rel="noopener" class="v2-nav-cta">
+                Abrir Inventtia
+                <i class="fas fa-arrow-right" aria-hidden="true" style="font-size:11px"></i>
+            </a>
+
+            <button class="v2-burger" aria-label="Abrir menú" aria-expanded="false">
+                <i class="fas fa-bars" aria-hidden="true"></i>
+            </button>
         </div>
     </nav>
 
-    <!-- Hero Section -->
-    <section id="inicio" class="hero">
-        <div class="hero-container">
-            <div class="hero-content">
-                <h1 class="hero-title">
-                    Gestiona tu negocio con <span class="gradient-text">Inventtia</span>
-                </h1>
-                <p class="hero-subtitle">
-                    Sistema completo de punto de venta e inventario diseñado para potenciar tu negocio. 
-                    Controla ventas, inventario, personal y finanzas desde cualquier dispositivo.
-                </p>
-                <div class="hero-buttons">
-                    <a href="https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor.apk" class="btn btn-primary" download="Inventtia.apk">
-                        <i class="fas fa-download"></i>
-                        Descargar Vendedor
-                    </a>
-                    <a href="https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20admin.apk" class="btn btn-secondary" download="Inventtia-Admin.apk">
-                        <i class="fas fa-download"></i>
-                        Descargar Admin
-                    </a>
-                    <a href="https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/inventtia%20catalogo.apk" class="btn btn-secondary" download="Inventtia-Catalogo.apk">
-                        <i class="fas fa-download"></i>
-                        Descargar Catálogo
-                    </a>
-                </div>
-                <div class="hero-stats">
-                    <div class="stat">
-                        <div class="stat-number">-</div>
-                        <div class="stat-label">Negocios activos</div>
-                    </div>
-                    <div class="stat">
-                        <div class="stat-number">-</div>
-                        <div class="stat-label">Ventas procesadas</div>
-                    </div>
-                    <div class="stat">
-                        <div class="stat-number">-</div>
-                        <div class="stat-label">Tiempo activo</div>
-                    </div>
-                </div>
-            </div>
-            <div class="hero-image">
-                <div class="phone-mockup">
-                    <img src="assets/images/screenshoot.jpg" alt="Inventtia Seller App" class="app-screenshot">
-                </div>
-                <div class="floating-cards">
-                    <div class="floating-card card-1">
-                        <i class="fas fa-chart-line"></i>
-                        <span>Ventas en tiempo real</span>
-                    </div>
-                    <div class="floating-card card-2">
-                        <i class="fas fa-boxes"></i>
-                        <span>Control de inventario</span>
-                    </div>
-                    <div class="floating-card card-3">
-                        <i class="fas fa-users"></i>
-                        <span>Gestión de personal</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
+    <!-- HERO -->
+    <header id="inicio" class="v2-hero">
+        <div class="v2-shell">
+            <div class="v2-hero-grid">
+                <div class="v2-hero-copy">
+                    <span class="v2-eyebrow" data-hero-in>
+                        <span class="v2-eyebrow-pulse" aria-hidden="true"></span>
+                        Punto de venta + inventario + catálogo
+                    </span>
 
-    <!-- Features Section -->
-    <section id="caracteristicas" class="features">
-        <div class="container">
-            <div class="section-header">
-                <h2 class="section-title">Tres aplicaciones, una solución completa</h2>
-                <p class="section-subtitle">
-                    Inventtia combina tres aplicaciones multiplataforma: punto de venta, administración y catálogo en línea
-                </p>
-            </div>
-            
-            <div class="apps-showcase">
-                <!-- Seller App -->
-                <div class="app-card seller-card">
-                    <div class="app-header">
-                        <div class="app-icon seller-icon">
-                            <i class="fas fa-mobile-alt"></i>
-                        </div>
-                        <div class="app-info">
-                            <h3>Inventtia</h3>
-                            <p>Aplicación multiplataforma para vendedores</p>
-                        </div>
-                        <a href="#" class="download-app-btn" onclick="showDownloadModal('Inventtia', 'seller'); return false;">
-                            <i class="fas fa-download"></i>
+                    <h1 class="v2-balance" data-hero-in>
+                        Tu negocio,<br>
+                        <em>orquestado</em> en una sola plataforma.
+                    </h1>
+
+                    <p class="v2-hero-sub" data-hero-in>
+                        Tres aplicaciones multiplataforma conectadas en tiempo real. Vende, controla inventario, gestiona equipo y abre tu catálogo en línea con la misma cuenta.
+                    </p>
+
+                    <div class="v2-hero-actions" data-hero-in>
+                        <a href="https://venta.inventtia.com" target="_blank" rel="noopener" class="v2-btn v2-btn-primary" data-magnetic="0.32">
+                            Empezar gratis
+                            <span class="v2-btn-arrow" aria-hidden="true">→</span>
+                        </a>
+                        <a href="#apps" class="v2-btn v2-btn-ghost">
+                            Ver cómo funciona
                         </a>
                     </div>
-                    <div class="app-features">
-                        <div class="feature-item">
-                            <i class="fas fa-shopping-cart"></i>
-                            <span>Punto de venta rápido</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-barcode"></i>
-                            <span>Escaneo de códigos</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-receipt"></i>
-                            <span>Impresión de tickets</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-sync"></i>
-                            <span>Sincronización en tiempo real</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-credit-card"></i>
-                            <span>Múltiples métodos de pago</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-chart-pie"></i>
-                            <span>Reportes de ventas</span>
+                </div>
+
+                <div class="v2-hero-visual" data-hero-in>
+                    <div class="v2-hero-stage" data-hero-stage>
+                        <div class="v2-hero-stage-fallback" data-hero-fallback>
+                            <div class="v2-phone" data-tone="vendedor">
+                                <div class="v2-phone-screen">
+                                    <div class="v2-phone-island" aria-hidden="true"></div>
+                                    <div class="v2-phone-status" aria-hidden="true">
+                                        <span>9:41</span>
+                                        <span class="v2-status-right">
+                                            <i class="fas fa-signal" aria-hidden="true"></i>
+                                            <i class="fas fa-wifi" aria-hidden="true"></i>
+                                            <i class="fas fa-battery-three-quarters" aria-hidden="true"></i>
+                                        </span>
+                                    </div>
+                                    <img src="assets/images/screenshoot.jpg" alt="Inventtia Vendedor">
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <!-- Admin Web -->
-                <div class="app-card admin-card">
-                    <div class="app-header">
-                        <div class="app-icon admin-icon">
-                            <i class="fas fa-desktop"></i>
-                        </div>
-                        <div class="app-info">
-                            <h3>Inventtia Admin</h3>
-                            <p>Aplicación multiplataforma administrativa</p>
-                        </div>
-                        <a href="#" class="download-app-btn" onclick="showDownloadModal('Inventtia Admin', 'admin'); return false;">
-                            <i class="fas fa-external-link-alt"></i>
-                        </a>
-                    </div>
-                    <div class="app-features">
-                        <div class="feature-item">
-                            <i class="fas fa-store"></i>
-                            <span>Gestión de tiendas</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-boxes"></i>
-                            <span>Control de inventario</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-users-cog"></i>
-                            <span>Administración de personal</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-chart-line"></i>
-                            <span>Dashboard ejecutivo</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-tags"></i>
-                            <span>Gestión de productos</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-dollar-sign"></i>
-                            <span>Análisis financiero</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Catalogo App -->
-                <div class="app-card catalog-card">
-                    <div class="app-header">
-                        <div class="app-icon catalog-icon">
-                            <i class="fas fa-store"></i>
-                        </div>
-                        <div class="app-info">
-                            <h3>Inventtia Catálogo</h3>
-                            <p>Marketplace y catálogo en línea para tus clientes</p>
-                        </div>
-                        <a href="#" class="download-app-btn" onclick="showDownloadModal('Inventtia Catálogo', 'catalogo'); return false;">
-                            <i class="fas fa-download"></i>
-                        </a>
-                    </div>
-                    <div class="app-features">
-                        <div class="feature-item">
-                            <i class="fas fa-shopping-bag"></i>
-                            <span>Catálogo de productos en línea</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-search"></i>
-                            <span>Búsqueda y filtrado avanzado</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-shopping-cart"></i>
-                            <span>Carrito y pedidos en línea</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-truck"></i>
-                            <span>Delivery y seguimiento</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-credit-card"></i>
-                            <span>Pagos seguros (transferencia y Tropipay)</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-star"></i>
-                            <span>Reseñas y calificaciones</span>
-                        </div>
-                    </div>
+            <!-- Trust strip: UNDER the hero, not inside -->
+            <div class="v2-hero-trust v2-reveal">
+                <div class="v2-trust-label">Tres apps, una cuenta, sincronización en vivo</div>
+                <div class="v2-trust-row">
+                    <span><i class="fas fa-mobile-alt" aria-hidden="true"></i> &nbsp; Vendedor</span>
+                    <span><i class="fas fa-desktop" aria-hidden="true"></i> &nbsp; Admin</span>
+                    <span><i class="fas fa-store" aria-hidden="true"></i> &nbsp; Catálogo</span>
+                    <span><i class="fas fa-bolt" aria-hidden="true"></i> &nbsp; Tiempo real</span>
+                    <span><i class="fas fa-shield-alt" aria-hidden="true"></i> &nbsp; Datos seguros</span>
                 </div>
             </div>
         </div>
-    </section>
+    </header>
 
-    <!-- Benefits Section -->
-    <section class="benefits">
-        <div class="container">
-            <div class="section-header">
-                <h2 class="section-title">¿Por qué elegir Inventtia?</h2>
-                <p class="section-subtitle">
-                    Optimiza tu negocio con herramientas diseñadas para el éxito
-                </p>
-            </div>
-            
-            <div class="benefits-grid">
-                <div class="benefit-card">
-                    <div class="benefit-icon">
-                        <i class="fas fa-rocket"></i>
-                    </div>
-                    <h3>Fácil de usar</h3>
-                    <p>Interfaz intuitiva que permite a tu equipo empezar a trabajar inmediatamente</p>
-                </div>
-                
-                <div class="benefit-card">
-                    <div class="benefit-icon">
-                        <i class="fas fa-cloud"></i>
-                    </div>
-                    <h3>En la nube</h3>
-                    <p>Accede a tu información desde cualquier lugar, en cualquier momento</p>
-                </div>
-                
-                <div class="benefit-card">
-                    <div class="benefit-icon">
-                        <i class="fas fa-shield-alt"></i>
-                    </div>
-                    <h3>Seguro</h3>
-                    <p>Tus datos están protegidos con los más altos estándares de seguridad</p>
-                </div>
-                
-                <div class="benefit-card">
-                    <div class="benefit-icon">
-                        <i class="fas fa-expand-arrows-alt"></i>
-                    </div>
-                    <h3>Escalable</h3>
-                    <p>Crece con tu negocio, desde una tienda hasta múltiples sucursales</p>
-                </div>
-                
-                <div class="benefit-card">
-                    <div class="benefit-icon">
-                        <i class="fas fa-headset"></i>
-                    </div>
-                    <h3>Soporte 24/7</h3>
-                    <p>Nuestro equipo está disponible para ayudarte cuando lo necesites</p>
-                </div>
-                
-                <div class="benefit-card">
-                    <div class="benefit-icon">
-                        <i class="fas fa-chart-bar"></i>
-                    </div>
-                    <h3>Reportes avanzados</h3>
-                    <p>Toma decisiones informadas con análisis detallados de tu negocio</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Carnaval Section -->
-    <section id="carnaval" class="carnaval-section">
-        <div class="container">
-            <div class="section-header">
-                <h2 class="section-title">Carnaval Tienda</h2>
-                <p class="section-subtitle">
-                    Nuestra plataforma de compras y delivery. Compra productos, comida y envía paquetes desde tu celular.
+    <!-- PRODUCT: sticky-stack -->
+    <!-- Section "apps" -->
+    <section id="apps" class="v2-section v2-stack" aria-labelledby="apps-h">
+        <div class="v2-shell">
+            <div class="v2-stack-intro v2-reveal">
+                <h2 id="apps-h" class="v2-h v2-balance">
+                    Tres aplicaciones que <em>piensan</em> como una sola.
+                </h2>
+                <p class="v2-lede">
+                    Diseñadas para responsabilidades distintas y conectadas por la misma base de datos. Lo que pasa en la caja aparece en el dashboard al instante.
                 </p>
             </div>
 
-            <div class="carnaval-content">
-                <div class="carnaval-features-grid">
-                    <div class="benefit-card">
-                        <div class="benefit-icon">
-                            <i class="fas fa-shopping-bag"></i>
-                        </div>
-                        <h3>Compras en línea</h3>
-                        <p>Busca productos en distintas tiendas, compara precios y haz pedidos desde la comodidad de tu hogar</p>
-                    </div>
-
-                    <div class="benefit-card">
-                        <div class="benefit-icon">
-                            <i class="fas fa-utensils"></i>
-                        </div>
-                        <h3>Carnaval Food</h3>
-                        <p>Pide comida de cafeterías y restaurantes afiliados con delivery directo a tu puerta</p>
-                    </div>
-
-                    <div class="benefit-card">
-                        <div class="benefit-icon">
-                            <i class="fas fa-box"></i>
-                        </div>
-                        <h3>Envío de paquetes</h3>
-                        <p>Envía paquetes a familiares en otras provincias con cálculo automático de precio según peso y distancia</p>
-                    </div>
-
-                    <div class="benefit-card">
-                        <div class="benefit-icon">
-                            <i class="fas fa-credit-card"></i>
-                        </div>
-                        <h3>Pagos seguros</h3>
-                        <p>Paga por transferencia bancaria o Tropipay. Soporte para CUP, USD y EUR con tasas actualizadas</p>
-                    </div>
-
-                    <div class="benefit-card">
-                        <div class="benefit-icon">
-                            <i class="fas fa-map-marker-alt"></i>
-                        </div>
-                        <h3>Seguimiento de pedidos</h3>
-                        <p>Sigue el estado de tu pedido en tiempo real con notificaciones en cada paso: confirmado, en camino, entregado</p>
-                    </div>
-
-                    <div class="benefit-card">
-                        <div class="benefit-icon">
-                            <i class="fas fa-star"></i>
-                        </div>
-                        <h3>Reseñas y calificaciones</h3>
-                        <p>Califica productos y tiendas para ayudar a otros compradores. Lee opiniones antes de comprar</p>
-                    </div>
-                </div>
-
-                <div class="carnaval-cta">
-                    <a href="https://play.google.com/store/apps/details?id=com.carnaval24&pcampaignid=web_share" target="_blank" class="btn btn-primary">
-                        <i class="fab fa-google-play"></i>
-                        Descargar en Google Play
+            <!-- App 1: Vendedor -->
+            <article class="v2-stack-card" data-tone="vendedor">
+                <div class="v2-stack-text">
+                    <span class="v2-stack-tag">Inventtia Vendedor</span>
+                    <h3>El POS más rápido que tu mejor cajero.</h3>
+                    <p>Cobra en segundos, imprime ticket, registra el turno y reconcilia la caja al cerrar. Diseñado para mostradores reales: pantalla táctil, escáner y atajos de teclado.</p>
+                    <ul class="v2-stack-features">
+                        <li><i class="fas fa-check"></i> Cobro en segundos</li>
+                        <li><i class="fas fa-check"></i> Escaneo de código de barras</li>
+                        <li><i class="fas fa-check"></i> Impresión de tickets</li>
+                        <li><i class="fas fa-check"></i> Múltiples métodos de pago</li>
+                        <li><i class="fas fa-check"></i> Apertura y cierre de turno</li>
+                        <li><i class="fas fa-check"></i> Funciona sin conexión</li>
+                    </ul>
+                    <a href="https://venta.inventtia.com" target="_blank" rel="noopener" class="v2-btn v2-btn-primary" data-magnetic="0.28">
+                        Probar Vendedor
+                        <span class="v2-btn-arrow" aria-hidden="true">→</span>
                     </a>
                 </div>
+                <div class="v2-stack-visual v2-stack-visual-phone">
+                    <div class="v2-phone" data-tone="vendedor">
+                        <div class="v2-phone-screen">
+                            <div class="v2-phone-island" aria-hidden="true"></div>
+                            <div class="v2-phone-status" aria-hidden="true">
+                                <span>9:41</span>
+                                <span class="v2-status-right">
+                                    <i class="fas fa-signal" aria-hidden="true"></i>
+                                    <i class="fas fa-wifi" aria-hidden="true"></i>
+                                    <i class="fas fa-battery-three-quarters" aria-hidden="true"></i>
+                                </span>
+                            </div>
+                            <img src="assets/images/images_tutorial_seller/main_categorias_tienda.jpg" alt="Inventtia Vendedor en uso" loading="lazy">
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <!-- App 2: Admin -->
+            <article class="v2-stack-card" data-tone="admin">
+                <div class="v2-stack-text">
+                    <span class="v2-stack-tag">Inventtia Admin</span>
+                    <h3>El dashboard que ve todo el negocio.</h3>
+                    <p>Tiendas, almacenes, equipo, productos y finanzas en una sola consola. Decisiones con datos reales, no con estimaciones del mes pasado.</p>
+                    <ul class="v2-stack-features">
+                        <li><i class="fas fa-check"></i> Múltiples tiendas y almacenes</li>
+                        <li><i class="fas fa-check"></i> Recepciones y transferencias</li>
+                        <li><i class="fas fa-check"></i> Roles y permisos por equipo</li>
+                        <li><i class="fas fa-check"></i> Dashboard ejecutivo</li>
+                        <li><i class="fas fa-check"></i> Análisis financiero</li>
+                        <li><i class="fas fa-check"></i> Reportes exportables</li>
+                    </ul>
+                    <a href="https://admin.inventtia.com" target="_blank" rel="noopener" class="v2-btn v2-btn-primary" data-magnetic="0.28">
+                        Abrir Admin
+                        <span class="v2-btn-arrow" aria-hidden="true">→</span>
+                    </a>
+                </div>
+                <div class="v2-stack-visual v2-stack-visual-phone">
+                    <div class="v2-phone" data-tone="admin">
+                        <div class="v2-phone-screen">
+                            <div class="v2-phone-island" aria-hidden="true"></div>
+                            <div class="v2-phone-status" aria-hidden="true">
+                                <span>9:41</span>
+                                <span class="v2-status-right">
+                                    <i class="fas fa-signal" aria-hidden="true"></i>
+                                    <i class="fas fa-wifi" aria-hidden="true"></i>
+                                    <i class="fas fa-battery-three-quarters" aria-hidden="true"></i>
+                                </span>
+                            </div>
+                            <img src="assets/images/images_tutorial_admin/ejecutive_dash_general.jpg" alt="Dashboard ejecutivo de Inventtia Admin" loading="lazy">
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <!-- App 3: Catálogo -->
+            <article class="v2-stack-card" data-tone="catalogo">
+                <div class="v2-stack-text">
+                    <span class="v2-stack-tag">Inventtia Catálogo</span>
+                    <h3>Tu tienda en línea, lista en una tarde.</h3>
+                    <p>Tus productos aparecen automáticamente en una vitrina pública con buscador, carrito y pagos. Tus clientes piden, tú entregas. Todo conectado al mismo inventario.</p>
+                    <ul class="v2-stack-features">
+                        <li><i class="fas fa-check"></i> Vitrina pública compartible</li>
+                        <li><i class="fas fa-check"></i> Búsqueda y filtros avanzados</li>
+                        <li><i class="fas fa-check"></i> Carrito y pedidos en línea</li>
+                        <li><i class="fas fa-check"></i> Delivery con seguimiento</li>
+                        <li><i class="fas fa-check"></i> Pagos seguros (Tropipay)</li>
+                        <li><i class="fas fa-check"></i> Reseñas de clientes</li>
+                    </ul>
+                    <a href="https://catalogo.inventtia.com" target="_blank" rel="noopener" class="v2-btn v2-btn-primary" data-magnetic="0.28">
+                        Ver Catálogo
+                        <span class="v2-btn-arrow" aria-hidden="true">→</span>
+                    </a>
+                </div>
+                <div class="v2-stack-visual v2-stack-visual-phone">
+                    <div class="v2-phone" data-tone="catalogo">
+                        <div class="v2-phone-screen">
+                            <div class="v2-phone-island" aria-hidden="true"></div>
+                            <div class="v2-phone-status" aria-hidden="true">
+                                <span>9:41</span>
+                                <span class="v2-status-right">
+                                    <i class="fas fa-signal" aria-hidden="true"></i>
+                                    <i class="fas fa-wifi" aria-hidden="true"></i>
+                                    <i class="fas fa-battery-three-quarters" aria-hidden="true"></i>
+                                </span>
+                            </div>
+                            <img src="assets/images/catalogo.jpg" alt="Catálogo Inventtia para clientes" loading="lazy">
+                        </div>
+                    </div>
+                </div>
+            </article>
+        </div>
+    </section>
+
+    <!-- WHY: Bento -->
+    <section id="producto" class="v2-section" aria-labelledby="why-h">
+        <div class="v2-shell">
+            <div class="v2-reveal">
+                <h2 id="why-h" class="v2-h v2-balance">
+                    Construido para negocios que <em>crecen</em>.
+                </h2>
+                <p class="v2-lede">
+                    No es una plantilla con tu logo encima. Cada decisión, desde la base de datos hasta el botón de cobrar, está pensada para resistir el día más ocupado del mes.
+                </p>
+            </div>
+
+            <div class="v2-bento">
+                <!-- Hero tile -->
+                <div class="v2-tile v2-tile-1 v2-reveal">
+                    <div class="v2-tile-grid"></div>
+                    <div>
+                        <div class="v2-tile-icon"><i class="fas fa-bolt" aria-hidden="true"></i></div>
+                        <h4>Sincronización en tiempo real</h4>
+                        <p>Una venta en la caja aparece en el dashboard antes de que el cliente reciba su ticket. Tres dispositivos, una única verdad.</p>
+                    </div>
+                    <div style="margin-top:24px; font-family: var(--v2-font-mono); font-size:12px; opacity:0.6; letter-spacing:0.1em; text-transform:uppercase;">
+                        Cobro &nbsp; → &nbsp; stock &nbsp; → &nbsp; dashboard &nbsp; → &nbsp; finanzas
+                    </div>
+                </div>
+
+                <div class="v2-tile v2-tile-2 v2-tile-stat v2-reveal">
+                    <div class="v2-num">3 apps</div>
+                    <p>Vendedor, Admin y Catálogo conectados por la misma cuenta.</p>
+                </div>
+
+                <div class="v2-tile v2-tile-3 v2-reveal">
+                    <div class="v2-tile-icon"><i class="fas fa-shield-alt" aria-hidden="true"></i></div>
+                    <h4>Datos protegidos</h4>
+                    <p>Infraestructura cifrada, respaldos automáticos y permisos por rol.</p>
+                </div>
+
+                <div class="v2-tile v2-tile-4 v2-reveal">
+                    <div class="v2-tile-icon"><i class="fas fa-wifi" aria-hidden="true"></i></div>
+                    <h4>Funciona offline</h4>
+                    <p>El POS sigue vendiendo cuando se cae internet, y reconcilia al volver.</p>
+                </div>
+
+                <div class="v2-tile v2-tile-5 v2-reveal">
+                    <div class="v2-tile-icon"><i class="fas fa-store-alt" aria-hidden="true"></i></div>
+                    <h4>Multi-tienda</h4>
+                    <p>Crece de una sucursal a varias sin migrar de sistema ni perder histórico.</p>
+                </div>
+
+                <div class="v2-tile v2-tile-6 v2-reveal">
+                    <div class="v2-tile-icon"><i class="fas fa-headset" aria-hidden="true"></i></div>
+                    <h4>Soporte humano</h4>
+                    <p>Equipo real respondiendo, no chatbots. Tu negocio no espera.</p>
+                </div>
             </div>
         </div>
     </section>
 
-    <!-- CTA Section -->
-    <section class="cta">
-        <div class="container">
-            <div class="cta-content">
-                <h2>¿Listo para transformar tu negocio?</h2>
-                <p>Únete a cientos de empresarios que ya confían en Inventtia</p>
-                <div class="cta-buttons">
-                    <a href="tutorials.html" class="btn btn-primary">
-                        <i class="fas fa-play"></i>
+    <!-- CARNAVAL: editorial split, distinct from prior sections -->
+    <section id="carnaval" class="v2-section" aria-labelledby="carnaval-h">
+        <div class="v2-shell">
+            <div class="v2-carnaval v2-reveal">
+                <div class="v2-carnaval-inner">
+                    <div class="v2-carnaval-copy">
+                        <span class="v2-carnaval-tag">Carnaval Tienda</span>
+                        <h2 id="carnaval-h" class="v2-balance">
+                            Compra, come y envía sin salir del celular.
+                        </h2>
+                        <p>
+                            Nuestra plataforma para clientes finales. Productos, comida con delivery y envíos entre provincias, todo con pagos seguros y seguimiento en vivo.
+                        </p>
+                        <ul class="v2-carnaval-list">
+                            <li><i class="fas fa-shopping-bag" aria-hidden="true"></i> Compras en línea</li>
+                            <li><i class="fas fa-utensils" aria-hidden="true"></i> Carnaval Food</li>
+                            <li><i class="fas fa-box" aria-hidden="true"></i> Envío de paquetes</li>
+                            <li><i class="fas fa-credit-card" aria-hidden="true"></i> Pagos con Tropipay</li>
+                            <li><i class="fas fa-map-marker-alt" aria-hidden="true"></i> Seguimiento en vivo</li>
+                            <li><i class="fas fa-star" aria-hidden="true"></i> Reseñas verificadas</li>
+                        </ul>
+                        <a href="https://play.google.com/store/apps/details?id=com.carnaval24&pcampaignid=web_share"
+                           target="_blank" rel="noopener"
+                           class="v2-btn v2-btn-primary" data-magnetic="0.30">
+                            <i class="fab fa-google-play" aria-hidden="true"></i>
+                            Descargar Carnaval
+                            <span class="v2-btn-arrow" aria-hidden="true">→</span>
+                        </a>
+                    </div>
+                    <div class="v2-carnaval-visual v2-carnaval-visual-phone">
+                        <div class="v2-phone" data-tone="carnaval">
+                            <div class="v2-phone-screen v2-phone-screen-red">
+                                <div class="v2-phone-island" aria-hidden="true"></div>
+                                <div class="v2-phone-status" aria-hidden="true">
+                                    <span>9:41</span>
+                                    <span class="v2-status-right">
+                                        <i class="fas fa-signal" aria-hidden="true"></i>
+                                        <i class="fas fa-wifi" aria-hidden="true"></i>
+                                        <i class="fas fa-battery-three-quarters" aria-hidden="true"></i>
+                                    </span>
+                                </div>
+                                <div class="v2-phone-content-center">
+                                    <img src="assets/images/carnaval-logo.png" alt="Carnaval App" class="v2-phone-logo">
+                                    <h3 class="v2-phone-title">Carnaval App</h3>
+                                    <p class="v2-phone-tag">Compras · Comida · Envíos</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FINAL CTA -->
+    <section class="v2-cta" aria-labelledby="cta-h">
+        <div class="v2-shell">
+            <div class="v2-reveal">
+                <h2 id="cta-h" class="v2-balance">
+                    Tu negocio merece <em>herramientas</em> a la altura.
+                </h2>
+                <p>
+                    Abre Inventtia en el navegador y empieza en menos de cinco minutos. Sin tarjeta, sin instalación, sin promesas vacías.
+                </p>
+                <div class="v2-cta-actions">
+                    <a href="https://venta.inventtia.com" target="_blank" rel="noopener" class="v2-btn v2-btn-primary" data-magnetic="0.32">
+                        Empezar gratis
+                        <span class="v2-btn-arrow" aria-hidden="true">→</span>
+                    </a>
+                    <a href="tutorials.html" class="v2-btn v2-btn-ghost">
                         Ver tutoriales
                     </a>
-                    <a href="contact.html" class="btn btn-secondary">
-                        <i class="fas fa-envelope"></i>
-                        Contactar ventas
-                    </a>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="container">
-            <div class="footer-content">
-                <div class="footer-section">
-                    <div class="footer-logo">
-                        <img src="assets/images/ic.png" alt="Inventtia Logo" class="logo">
-                        <span class="logo-text">Inventtia</span>
-                    </div>
-                    <p>Sistema completo de gestión de ventas e inventario para hacer crecer tu negocio.</p>
-                    <div class="social-links">
-                        <a href="#"><i class="fab fa-facebook"></i></a>
-                        <a href="#"><i class="fab fa-twitter"></i></a>
-                        <a href="#"><i class="fab fa-linkedin"></i></a>
-                        <a href="#"><i class="fab fa-instagram"></i></a>
-                    </div>
+    <!-- FOOTER -->
+    <footer class="v2-footer" aria-labelledby="footer-h">
+        <h2 id="footer-h" class="sr-only" style="position:absolute;left:-9999px;">Pie de página</h2>
+        <div class="v2-shell">
+            <div class="v2-footer-grid">
+                <div>
+                    <a href="/" class="v2-brand" style="color:#fff">
+                        <span class="v2-brand-mark" aria-hidden="true"></span>
+                        <span>Inventtia</span>
+                    </a>
+                    <p class="v2-footer-tag">
+                        Sistema completo de gestión de ventas e inventario para hacer crecer tu negocio.
+                    </p>
                 </div>
-                
-                <div class="footer-section">
-                    <h4>Aplicaciones</h4>
+
+                <div>
+                    <h5>Aplicaciones</h5>
                     <ul>
-                        <li><a href="https://venta.inventtia.com" target="_blank">Inventtia Vendedor</a></li>
-                        <li><a href="https://admin.inventtia.com" target="_blank">Inventtia Admin</a></li>
-                        <li><a href="https://catalogo.inventtia.com" target="_blank">Inventtia Catálogo</a></li>
+                        <li><a href="https://venta.inventtia.com" target="_blank" rel="noopener">Inventtia Vendedor</a></li>
+                        <li><a href="https://admin.inventtia.com" target="_blank" rel="noopener">Inventtia Admin</a></li>
+                        <li><a href="https://catalogo.inventtia.com" target="_blank" rel="noopener">Inventtia Catálogo</a></li>
+                        <li><a href="https://play.google.com/store/apps/details?id=com.carnaval24" target="_blank" rel="noopener">Carnaval Tienda</a></li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h5>Recursos</h5>
+                    <ul>
                         <li><a href="tutorials.html">Tutoriales</a></li>
-                    </ul>
-                </div>
-                
-                <div class="footer-section">
-                    <h4>Soporte</h4>
-                    <ul>
                         <li><a href="contact.html">Contacto</a></li>
-                        <li><a href="#">Centro de ayuda</a></li>
-                        <li><a href="#">FAQ</a></li>
-                        <li><a href="#">Estado del servicio</a></li>
+                        <li><a href="privacy.html">Privacidad</a></li>
+                        <li><a href="data-safety.html">Seguridad de datos</a></li>
                     </ul>
                 </div>
-                
-                <div class="footer-section">
-                    <h4>Descargas</h4>
-                    <div class="download-links">
-                        <a href="#" class="download-link" onclick="showDownloadModal('Inventtia Vendedor', 'seller'); return false;">
-                            <i class="fas fa-mobile-alt"></i>
-                            <div>
-                                <span>Inventtia Vendedor</span>
-                                <small>Android/Web</small>
-                            </div>
-                        </a>
-                        <a href="#" class="download-link" onclick="showDownloadModal('Inventtia Admin', 'admin'); return false;">
-                            <i class="fas fa-desktop"></i>
-                            <div>
-                                <span>Inventtia Admin</span>
-                                <small>Android/Web</small>
-                            </div>
-                        </a>
-                        <a href="#" class="download-link" onclick="showDownloadModal('Inventtia Catálogo', 'catalogo'); return false;">
-                            <i class="fas fa-store"></i>
-                            <div>
-                                <span>Inventtia Catálogo</span>
-                                <small>Android/Web</small>
-                            </div>
-                        </a>
-                    </div>
+
+                <div>
+                    <h5>Descargas</h5>
+                    <ul>
+                        <li><a href="https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor.apk" download>Vendedor para Android</a></li>
+                        <li><a href="https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20admin.apk" download>Admin para Android</a></li>
+                        <li><a href="https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/inventtia%20catalogo.apk" download>Catálogo para Android</a></li>
+                    </ul>
                 </div>
             </div>
-            
-            <div class="footer-bottom">
-                <p>&copy; 2026 Inventtia. Todos los derechos reservados.</p>
+
+            <div class="v2-footer-bottom">
+                <span>© 2026 Inventtia. Todos los derechos reservados.</span>
+                <span class="v2-mono">soporteinventtia@gmail.com</span>
             </div>
         </div>
     </footer>
 
-    <!-- Supabase JavaScript Client -->
-    <script src="assets/js/supabase.min.js"></script>
-    <script src="assets/js/main.js"></script>
-    <script src="assets/js/premium.js" defer></script>
+    <!-- Scripts -->
+    <script src="assets/js/aurora-bg.js" defer></script>
+    <script src="assets/js/premium-v2.js" defer></script>
+    <script src="assets/js/hero-3d.js" type="module" defer></script>
 </body>
 </html>
