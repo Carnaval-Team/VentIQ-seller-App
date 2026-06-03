@@ -22,8 +22,40 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
   List<HRAttendance> _workingWorkers = [];
   final Set<int> _selectedIds = {};
   final Map<int, bool> _aplicaPPR = {};
+  // Horas editables por trabajador (key = asistenciaId)
+  final Map<int, TextEditingController> _horasControllers = {};
 
   TimeOfDay _selectedTime = TimeOfDay.now();
+
+  @override
+  void dispose() {
+    for (final c in _horasControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  /// Horas calculadas (raw) entre la hora de entrada del trabajador y la hora
+  /// de salida global del TimePicker. Sirve como valor inicial sugerido.
+  double _calcHorasRaw(HRAttendance w) {
+    if (w.horaEntrada == null) return 0;
+    final now = DateTime.now();
+    final horaSalida = DateTime(
+      now.year, now.month, now.day,
+      _selectedTime.hour, _selectedTime.minute,
+    );
+    final diff = horaSalida.difference(w.horaEntrada!).inMinutes / 60.0;
+    return diff < 0 ? 0 : diff;
+  }
+
+  /// Devuelve las horas que el usuario decidió aplicar para un trabajador.
+  /// Si no ha editado el campo, usa el cálculo automático.
+  double _horasParaTrabajador(HRAttendance w) {
+    final ctrl = _horasControllers[w.asistenciaId];
+    if (ctrl == null || ctrl.text.trim().isEmpty) return _calcHorasRaw(w);
+    final parsed = double.tryParse(ctrl.text.replaceAll(',', '.'));
+    return parsed == null || parsed < 0 ? 0 : parsed;
+  }
 
   @override
   void initState() {
@@ -60,8 +92,17 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
           _workingWorkers = workers;
           _selectedIds.clear();
           _aplicaPPR.clear();
+          // Limpiar controllers viejos
+          for (final c in _horasControllers.values) {
+            c.dispose();
+          }
+          _horasControllers.clear();
           for (final w in workers) {
             _aplicaPPR[w.asistenciaId] = false;
+            // Precargar horas calculadas (sin tope)
+            final horasRaw = _calcHorasRaw(w);
+            _horasControllers[w.asistenciaId] =
+                TextEditingController(text: horasRaw.toStringAsFixed(2));
           }
           _isLoading = false;
         });
@@ -94,23 +135,27 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
       helpText: 'Hora de Salida',
     );
     if (picked != null) {
-      setState(() => _selectedTime = picked);
+      setState(() {
+        _selectedTime = picked;
+        // Recalcular horas sugeridas (sin tope) para todos los trabajadores
+        for (final w in _workingWorkers) {
+          final ctrl = _horasControllers[w.asistenciaId];
+          if (ctrl != null) {
+            ctrl.text = _calcHorasRaw(w).toStringAsFixed(2);
+          }
+        }
+      });
     }
   }
 
   double _estimateTotal() {
     double total = 0;
-    final now = DateTime.now();
-    final horaSalida = DateTime(
-      now.year, now.month, now.day,
-      _selectedTime.hour, _selectedTime.minute,
-    );
 
     for (final w in _workingWorkers) {
       if (!_selectedIds.contains(w.asistenciaId)) continue;
       if (w.horaEntrada == null) continue;
-      final horas = horaSalida.difference(w.horaEntrada!).inMinutes / 60.0;
-      final horasEfectivas = horas.clamp(0, 8).toDouble();
+      // Usa las horas editadas por el usuario (sin tope máximo)
+      final horasEfectivas = _horasParaTrabajador(w);
       total += horasEfectivas * w.salarioHora;
       if (_aplicaPPR[w.asistenciaId] == true) {
         total += w.pagoPorResultado;
@@ -124,41 +169,65 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
 
     setState(() => _isSubmitting = true);
 
-    final now = DateTime.now();
-    final horaSalida = DateTime(
-      now.year, now.month, now.day,
-      _selectedTime.hour, _selectedTime.minute,
-    );
+    // Cierre individual por trabajador: cada uno se cierra con
+    // horaSalida = horaEntrada + horas editadas. Esto permite que distintos
+    // trabajadores tengan distinta cantidad final de horas trabajadas.
+    int okCount = 0;
+    final List<String> errores = [];
 
-    // Ordenar IDs para mantener sincronizacion con array de aplica_pago
-    final orderedIds = _selectedIds.toList()..sort();
-    final aplicaPago = orderedIds.map((id) => _aplicaPPR[id] ?? false).toList();
+    for (final w in _workingWorkers) {
+      if (!_selectedIds.contains(w.asistenciaId)) continue;
+      if (w.horaEntrada == null) {
+        errores.add('${w.nombreCompleto}: sin hora de entrada');
+        continue;
+      }
 
-    try {
-      final count = await HRAttendanceService.batchCheckout(
-        asistenciaIds: orderedIds,
-        horaSalida: horaSalida,
-        aplicaPago: aplicaPago,
-        cerradoPor: _userUuid!,
+      final horas = _horasParaTrabajador(w);
+      if (horas <= 0) {
+        errores.add('${w.nombreCompleto}: horas inválidas');
+        continue;
+      }
+
+      final horaSalida = w.horaEntrada!.add(
+        Duration(milliseconds: (horas * 3600 * 1000).round()),
       );
 
-      if (mounted) {
-        setState(() => _isSubmitting = false);
+      try {
+        final count = await HRAttendanceService.batchCheckout(
+          asistenciaIds: [w.asistenciaId],
+          horaSalida: horaSalida,
+          aplicaPago: [_aplicaPPR[w.asistenciaId] ?? false],
+          cerradoPor: _userUuid!,
+        );
+        okCount += count;
+      } catch (e) {
+        errores.add('${w.nombreCompleto}: $e');
+      }
+    }
+
+    if (mounted) {
+      setState(() => _isSubmitting = false);
+      if (errores.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('$count salida(s) registrada(s) exitosamente'),
+            content: Text('$okCount salida(s) registrada(s) exitosamente'),
             backgroundColor: AppColors.success,
           ),
         );
-        await _loadWorkers();
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.error),
+          SnackBar(
+            content: Text(
+              '$okCount cerradas, ${errores.length} con error:\n${errores.take(3).join("\n")}',
+            ),
+            backgroundColor: errores.length == _selectedIds.length
+                ? AppColors.error
+                : AppColors.warning,
+            duration: const Duration(seconds: 6),
+          ),
         );
       }
+      await _loadWorkers();
     }
   }
 
@@ -342,6 +411,40 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
                                               Text(
                                                 '\$${w.salarioHora.toStringAsFixed(2)}/h',
                                                 style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          // Campo editable de horas finales (sin tope máx)
+                                          Row(
+                                            children: [
+                                              const Icon(Icons.edit_calendar, size: 12, color: AppColors.primary),
+                                              const SizedBox(width: 4),
+                                              const Text(
+                                                'Horas a pagar:',
+                                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              SizedBox(
+                                                width: 70,
+                                                height: 32,
+                                                child: TextField(
+                                                  controller: _horasControllers[w.asistenciaId],
+                                                  enabled: isSelected,
+                                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                  textAlign: TextAlign.center,
+                                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                                  decoration: InputDecoration(
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                                    isDense: true,
+                                                    border: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(6),
+                                                    ),
+                                                    suffixText: 'h',
+                                                    suffixStyle: const TextStyle(fontSize: 10),
+                                                  ),
+                                                  onChanged: (_) => setState(() {}),
+                                                ),
                                               ),
                                             ],
                                           ),
