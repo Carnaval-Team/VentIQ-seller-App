@@ -533,7 +533,6 @@ class CargaProvider extends ChangeNotifier {
         'driver_nombre': o.driverNombre,
         'driver_tipo_usuario': o.driverTipoUsuario,
         'driver_rating': o.driverRating,
-        'driver_mc_dot_verificado': o.driverMcDotVerificado,
         'vehiculo_descripcion': o.vehiculoDescripcion,
       };
 }

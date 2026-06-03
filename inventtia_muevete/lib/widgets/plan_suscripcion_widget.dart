@@ -120,11 +120,36 @@ class _PlanSuscripcionTileState extends State<PlanSuscripcionTile> {
           if (sus == null && !prov.loading)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-              child: Text(
-                'Sin suscripción activa. Elige un plan para comenzar.',
-                style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13, color: textSecondary),
-              ),
+              child: Builder(builder: (ctx) {
+                final planGratis = prov.planesDisponibles
+                    .where((p) => p.esGratis)
+                    .firstOrNull;
+                if (planGratis != null) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        planGratis.nombre,
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.success),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Plan incluido · Sin costo',
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13, color: textSecondary),
+                      ),
+                    ],
+                  );
+                }
+                return Text(
+                  'Sin suscripción activa. Elige un plan para comenzar.',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13, color: textSecondary),
+                );
+              }),
             )
           else if (sus != null) ...[
             Padding(

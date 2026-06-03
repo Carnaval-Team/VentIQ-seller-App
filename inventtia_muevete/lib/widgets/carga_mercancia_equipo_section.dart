@@ -60,11 +60,12 @@ class CargaMercanciaEquipoSection extends StatelessWidget {
       ));
     }
 
-    if (carga.pesoKg != null) {
+    final peso = carga.pesoDisplay;
+    if (peso != null) {
       addRow(_CargaInfoRow(
         icon: Icons.scale_outlined,
         label: 'Peso',
-        value: '${carga.pesoKg!.toStringAsFixed(1)} ${carga.unidadPeso}',
+        value: peso,
         textPrimary: textPrimary,
         textSecondary: textSecondary,
       ));

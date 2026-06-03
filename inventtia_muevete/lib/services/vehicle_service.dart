@@ -22,10 +22,16 @@ class VehicleService {
               if (c['capacidad_ton'] != null) 'capacidad_ton': c['capacidad_ton'],
               if (c['longitud_m'] != null) 'longitud_m': c['longitud_m'],
               'seguro_vigente': c['seguro_vigente'] as bool? ?? false,
-              if ((c['mc_number'] as String?)?.isNotEmpty == true)
-                'mc_number': c['mc_number'],
-              if ((c['dot_number'] as String?)?.isNotEmpty == true)
-                'dot_number': c['dot_number'],
+              if ((c['lic_circulacion_frente_url'] as String?)?.isNotEmpty ==
+                  true)
+                'lic_circulacion_frente_url': c['lic_circulacion_frente_url'],
+              if ((c['lic_circulacion_dorso_url'] as String?)?.isNotEmpty ==
+                  true)
+                'lic_circulacion_dorso_url': c['lic_circulacion_dorso_url'],
+              if ((c['lic_operativa_frente_url'] as String?)?.isNotEmpty == true)
+                'lic_operativa_frente_url': c['lic_operativa_frente_url'],
+              if ((c['lic_operativa_dorso_url'] as String?)?.isNotEmpty == true)
+                'lic_operativa_dorso_url': c['lic_operativa_dorso_url'],
             })
         .toList();
 

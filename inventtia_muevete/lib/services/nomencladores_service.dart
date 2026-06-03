@@ -76,6 +76,30 @@ class NomCommodity {
       );
 }
 
+class NomUnidadPeso {
+  final int id;
+  final String nombre;
+  final String simbolo;
+  final String codigo;
+  final double factorAKg;
+
+  const NomUnidadPeso({
+    required this.id,
+    required this.nombre,
+    required this.simbolo,
+    required this.codigo,
+    required this.factorAKg,
+  });
+
+  factory NomUnidadPeso.fromJson(Map<String, dynamic> j) => NomUnidadPeso(
+        id: j['id'] as int,
+        nombre: j['nombre'] as String,
+        simbolo: j['simbolo'] as String,
+        codigo: j['codigo'] as String,
+        factorAKg: (j['factor_a_kg'] as num).toDouble(),
+      );
+}
+
 class NomencladoresService {
   final _supabase = Supabase.instance.client;
 
@@ -130,6 +154,24 @@ class NomencladoresService {
     }
   }
 
+  Future<List<NomUnidadPeso>> getUnidadesPeso() async {
+    try {
+      final data = await _supabase
+          .schema('muevete')
+          .from('app_nom_unidad_peso')
+          .select('id, nombre, simbolo, codigo, factor_a_kg')
+          .eq('activo', true)
+          .order('orden');
+      return (data as List)
+          .map((e) =>
+              NomUnidadPeso.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (e) {
+      debugPrint('[NomencladoresService] getUnidadesPeso error: $e');
+      rethrow;
+    }
+  }
+
   Future<List<NomCommodity>> getCommodities() async {
     try {
       final data = await _supabase
@@ -152,16 +194,19 @@ class NomencladoresService {
     required void Function(List<NomTipoEquipo>) onEquipo,
     required void Function(List<NomEquipoManejo>) onEquipoManejo,
     required void Function(List<NomCommodity>) onCommodity,
+    required void Function(List<NomUnidadPeso>) onUnidadPeso,
   }) async {
     final results = await Future.wait([
       getTiposMercancia(),
       getTiposEquipo(),
       getOpcionesEquipoManejo(),
       getCommodities(),
+      getUnidadesPeso(),
     ]);
     onMercancia(results[0] as List<NomTipoMercancia>);
     onEquipo(results[1] as List<NomTipoEquipo>);
     onEquipoManejo(results[2] as List<NomEquipoManejo>);
     onCommodity(results[3] as List<NomCommodity>);
+    onUnidadPeso(results[4] as List<NomUnidadPeso>);
   }
 }

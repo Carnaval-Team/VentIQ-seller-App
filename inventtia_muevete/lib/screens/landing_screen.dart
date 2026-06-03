@@ -398,10 +398,7 @@ class _UserAvatarMenu extends StatelessWidget {
         if (value == 'viajes') {
           Navigator.pushNamedAndRemoveUntil(context, auth.homeRoute, (_) => false);
         } else if (value == 'perfil') {
-          final route = auth.profileRoute;
-          if (route != null) {
-            Navigator.pushNamed(context, route);
-          }
+          Navigator.pushNamed(context, auth.profileRoute);
         } else if (value == 'logout') {
           await auth.signOut();
           if (context.mounted) {
@@ -435,8 +432,7 @@ class _UserAvatarMenu extends StatelessWidget {
             ],
           ),
         ),
-        if (auth.profileRoute != null)
-          PopupMenuItem(
+        PopupMenuItem(
             value: 'perfil',
             child: Row(
               children: [

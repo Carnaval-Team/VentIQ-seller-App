@@ -9,6 +9,7 @@ class NomencladoresProvider extends ChangeNotifier {
   List<NomTipoEquipo> _tiposEquipo = [];
   List<NomEquipoManejo> _opcionesEquipoManejo = [];
   List<NomCommodity> _commodities = [];
+  List<NomUnidadPeso> _unidadesPeso = [];
 
   bool _loading = false;
   bool _cargado = false;
@@ -18,6 +19,22 @@ class NomencladoresProvider extends ChangeNotifier {
   List<NomTipoEquipo> get tiposEquipo => _tiposEquipo;
   List<NomEquipoManejo> get opcionesEquipoManejo => _opcionesEquipoManejo;
   List<NomCommodity> get commodities => _commodities;
+  List<NomUnidadPeso> get unidadesPeso => _unidadesPeso;
+
+  NomUnidadPeso? get unidadPesoKg {
+    for (final u in _unidadesPeso) {
+      if (u.codigo == 'KG') return u;
+    }
+    return _unidadesPeso.isNotEmpty ? _unidadesPeso.first : null;
+  }
+
+  NomUnidadPeso? unidadPesoPorId(int? id) {
+    if (id == null) return null;
+    for (final u in _unidadesPeso) {
+      if (u.id == id) return u;
+    }
+    return null;
+  }
 
   bool get loading => _loading;
   bool get cargado => _cargado;
@@ -34,6 +51,7 @@ class NomencladoresProvider extends ChangeNotifier {
         onEquipo: (v) => _tiposEquipo = v,
         onEquipoManejo: (v) => _opcionesEquipoManejo = v,
         onCommodity: (v) => _commodities = v,
+        onUnidadPeso: (v) => _unidadesPeso = v,
       );
       _cargado = true;
     } catch (e) {

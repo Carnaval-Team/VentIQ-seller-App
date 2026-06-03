@@ -2,8 +2,10 @@ import 'package:country_flags/country_flags.dart';
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../config/app_theme.dart';
@@ -28,6 +30,14 @@ class _CarroceriaItem {
   final TextEditingController longitudM = TextEditingController();
   String? tipoCarroceria;
   bool seguroVigente = false;
+  String? licCircFrenteUrl;
+  String? licCircDorsoUrl;
+  String? licOperativaFrenteUrl;
+  String? licOperativaDorsoUrl;
+  bool uploadingCircFrente = false;
+  bool uploadingCircDorso = false;
+  bool uploadingOpFrente = false;
+  bool uploadingOpDorso = false;
 
   void dispose() {
     marca.dispose();
@@ -47,6 +57,12 @@ class _CarroceriaItem {
         if (longitudM.text.trim().isNotEmpty)
           'longitud_m': double.tryParse(longitudM.text.trim()),
         'seguro_vigente': seguroVigente,
+        if (licCircFrenteUrl != null) 'lic_circulacion_frente_url': licCircFrenteUrl,
+        if (licCircDorsoUrl != null) 'lic_circulacion_dorso_url': licCircDorsoUrl,
+        if (licOperativaFrenteUrl != null)
+          'lic_operativa_frente_url': licOperativaFrenteUrl,
+        if (licOperativaDorsoUrl != null)
+          'lic_operativa_dorso_url': licOperativaDorsoUrl,
       };
 }
 
@@ -61,8 +77,6 @@ class _TransportistaItem {
   final TextEditingController modelo = TextEditingController();
   final TextEditingController matricula = TextEditingController();
   final TextEditingController capacidadTon = TextEditingController();
-  final TextEditingController mcNumber = TextEditingController();
-  final TextEditingController dotNumber = TextEditingController();
   String? tipoCarroceria;
 
   void dispose() {
@@ -73,8 +87,6 @@ class _TransportistaItem {
     modelo.dispose();
     matricula.dispose();
     capacidadTon.dispose();
-    mcNumber.dispose();
-    dotNumber.dispose();
   }
 
   Map<String, dynamic> toMap() => {
@@ -87,8 +99,6 @@ class _TransportistaItem {
         if (matricula.text.trim().isNotEmpty) 'matricula': matricula.text.trim(),
         if (capacidadTon.text.trim().isNotEmpty)
           'capacidad_ton': double.tryParse(capacidadTon.text.trim()),
-        if (mcNumber.text.trim().isNotEmpty) 'mc_number': mcNumber.text.trim(),
-        if (dotNumber.text.trim().isNotEmpty) 'dot_number': dotNumber.text.trim(),
       };
 }
 
@@ -136,17 +146,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
   // sub-type only when _selectedTopType == 'transportista'
   String _selectedTransportistaSubtype = 'conductor_pasajeros';
 
+  // ── Common personal address ─────────────────────────────────────────────────
+  final _direccionPersonalController = TextEditingController();
+
   // ── Shipper fields ──────────────────────────────────────────────────────────
   String _shipperTipoCuenta = 'individual';
   final _empresaNombreController = TextEditingController();
   final _empresaRutController = TextEditingController();
   final _empresaDireccionController = TextEditingController();
+  // Shipper empresa: geo location
+  List<Map<String, dynamic>> _empGeoStates = [];
+  List<Map<String, dynamic>> _empGeoCities = [];
+  Map<String, dynamic>? _empSelectedState;
+  Map<String, dynamic>? _empSelectedCity;
+  bool _empLoadingStates = false;
+  bool _empLoadingCities = false;
+  // Shipper empresa: map coordinates
+  double? _empLat;
+  double? _empLng;
+  final _empMapController = MapController();
   final List<String> _mercaderiasSeleccionadas = [];
 
   // ── Carrier fields (multi-vehicle) ─────────────────────────────────────────
   final List<_CarroceriaItem> _carrocerias = [_CarroceriaItem()];
-  final _mcNumberController = TextEditingController();
-  final _dotNumberController = TextEditingController();
 
   // ── Conductor pasajeros — vehicle fields ──────────────────────────────
   final _vMarcaController = TextEditingController();
@@ -158,6 +180,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String _vCondicion = 'bueno';
   bool _vAireAcondicionado = false;
   int? _vIdTipo;  // vehicle_type id selected
+
+  // ── Conductor pasajeros — license photo fields ────────────────────────────
+  String? _licCondFrenteUrl;
+  String? _licCondDorsoUrl;
+  String? _licCircFrenteUrl;
+  String? _licCircDorsoUrl;
+  bool _isUploadingLicCondFrente = false;
+  bool _isUploadingLicCondDorso = false;
+  bool _isUploadingLicCircFrente = false;
+  bool _isUploadingLicCircDorso = false;
+  String? _licOperativaFrenteUrl;
+  String? _licOperativaDorsoUrl;
+  bool _isUploadingLicOpFrente = false;
+  bool _isUploadingLicOpDorso = false;
 
   // ── Dispatcher fields ───────────────────────────────────────────────────────
   final _dispEmpresaNombreController = TextEditingController();
@@ -273,6 +309,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  Future<void> _loadEmpStates(String countryCode) async {
+    setState(() { _empLoadingStates = true; _empGeoStates = []; _empSelectedState = null; _empGeoCities = []; _empSelectedCity = null; });
+    try {
+      final states = await GeonamesService.getStates(countryCode);
+      if (mounted) setState(() { _empGeoStates = states; _empLoadingStates = false; });
+    } catch (e) {
+      if (mounted) setState(() => _empLoadingStates = false);
+    }
+  }
+
+  Future<void> _loadEmpCities(String countryCode, String adminCode) async {
+    setState(() { _empLoadingCities = true; _empGeoCities = []; _empSelectedCity = null; });
+    try {
+      final cities = await GeonamesService.getCities(countryCode, adminCode);
+      if (mounted) setState(() { _empGeoCities = cities; _empLoadingCities = false; });
+    } catch (e) {
+      if (mounted) setState(() => _empLoadingCities = false);
+    }
+  }
+
   Future<void> _loadCities(String countryCode, String adminCode) async {
     setState(() { _loadingCities = true; _geoCities = []; _selectedCity = null; });
     try {
@@ -292,14 +348,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _phoneController.dispose();
+    _direccionPersonalController.dispose();
+    _empMapController.dispose();
     _empresaNombreController.dispose();
     _empresaRutController.dispose();
     _empresaDireccionController.dispose();
     for (final c in _carrocerias) {
       c.dispose();
     }
-    _mcNumberController.dispose();
-    _dotNumberController.dispose();
     _vMarcaController.dispose();
     _vModeloController.dispose();
     _vChapaController.dispose();
@@ -409,6 +465,70 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  // ─── License photo picker ────────────────────────────────────────────────────
+  Future<void> _pickLicensePhoto({
+    required String filename,
+    required void Function(bool) setUploading,
+    required void Function(String) onSuccess,
+  }) async {
+    final isDark = context.read<ThemeProvider>().isDark;
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: isDark ? AppTheme.darkSurface : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Subir foto',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : Colors.black87),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: AppTheme.primaryColor),
+                title: Text('Cámara',
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library, color: AppTheme.primaryColor),
+                title: Text('Galería',
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+    setState(() => setUploading(true));
+    try {
+      final url = await _docService.pickCompressAndUpload(
+        uuid: _tempUuid!,
+        filename: filename,
+        source: source,
+      );
+      if (url != null && mounted) setState(() => onSuccess(url));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Error al subir imagen: $e'),
+            backgroundColor: AppTheme.error));
+      }
+    } finally {
+      if (mounted) setState(() => setUploading(false));
+    }
+  }
+
   // ─── Register handler ────────────────────────────────────────────────────────
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
@@ -420,6 +540,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (_docDorsoUrl == null) {
       _showError('Debes subir la foto del dorso del documento');
       return;
+    }
+
+    // Conductor pasajeros: licencias de conducción y circulación del vehículo
+    if (_tipoUsuarioFinal == 'conductor_pasajeros') {
+      if (_licCondFrenteUrl == null) {
+        _showError('Debes subir la foto del frente de la Licencia de Conducción');
+        return;
+      }
+      if (_licCondDorsoUrl == null) {
+        _showError('Debes subir la foto del dorso de la Licencia de Conducción');
+        return;
+      }
+      if (_licCircFrenteUrl == null) {
+        _showError('Debes subir la foto del frente de la Licencia de Circulación');
+        return;
+      }
+      if (_licCircDorsoUrl == null) {
+        _showError('Debes subir la foto del dorso de la Licencia de Circulación');
+        return;
+      }
+    }
+
+    // Carrier de carga: licencia de conducción del operador + circulación por vehículo
+    if (_tipoUsuarioFinal == 'carrier_carga') {
+      if (_licCondFrenteUrl == null || _licCondDorsoUrl == null) {
+        _showError(
+            'Debes subir el frente y el dorso de tu Licencia de Conducción');
+        return;
+      }
+      final vehiculos = _carrocerias.where((c) => c.tipoCarroceria != null);
+      if (vehiculos.isEmpty) {
+        _showError('Registra al menos un vehículo con tipo de carrocería');
+        return;
+      }
+      for (var i = 0; i < _carrocerias.length; i++) {
+        final c = _carrocerias[i];
+        if (c.tipoCarroceria == null) continue;
+        if (c.licCircFrenteUrl == null || c.licCircDorsoUrl == null) {
+          _showError(
+              'Vehículo ${i + 1}: sube el frente y el dorso de la Licencia de Circulación');
+          return;
+        }
+      }
     }
 
     // Dispatcher: require at least 1 transportista with name+email+phone
@@ -452,6 +615,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       tipoDocumento: _selectedDocType,
       docFrenteUrl: _docFrenteUrl,
       docDorsoUrl: _docDorsoUrl,
+      direccion: _direccionPersonalController.text.trim().isNotEmpty
+          ? _direccionPersonalController.text.trim()
+          : null,
       // Shipper
       tipoCuenta: tipo == 'shipper' ? _shipperTipoCuenta : null,
       empresaNombre: (tipo == 'shipper' || tipo == 'dispatcher') &&
@@ -473,6 +639,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   _dispEmpresaDireccionController.text.trim().isNotEmpty
               ? _dispEmpresaDireccionController.text.trim()
               : null,
+      // Shipper empresa: campos extendidos (nombre_legal, id_fiscal, región, ciudad, coordenadas)
+      nombreLegal: tipo == 'shipper' &&
+              (_shipperTipoCuenta == 'empresa' ||
+                  _shipperTipoCuenta == 'cooperativa') &&
+              _empresaNombreController.text.trim().isNotEmpty
+          ? _empresaNombreController.text.trim()
+          : null,
+      idFiscal: tipo == 'shipper' &&
+              (_shipperTipoCuenta == 'empresa' ||
+                  _shipperTipoCuenta == 'cooperativa') &&
+              _empresaRutController.text.trim().isNotEmpty
+          ? _empresaRutController.text.trim()
+          : null,
+      regionEmpresa: tipo == 'shipper' && _empSelectedState != null
+          ? _empSelectedState!['name'] as String
+          : null,
+      ciudadEmpresa: tipo == 'shipper' && _empSelectedCity != null
+          ? _empSelectedCity!['name'] as String
+          : null,
+      direccionEmpresa: tipo == 'shipper' &&
+              _empresaDireccionController.text.trim().isNotEmpty
+          ? _empresaDireccionController.text.trim()
+          : null,
+      empLat: tipo == 'shipper' ? _empLat : null,
+      empLng: tipo == 'shipper' ? _empLng : null,
       mercaderiasHabituales:
           tipo == 'shipper' && _mercaderiasSeleccionadas.isNotEmpty
               ? List<String>.from(_mercaderiasSeleccionadas)
@@ -483,14 +674,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
               .where((c) => c.tipoCarroceria != null)
               .map((c) => c.toMap())
               .toList()
-          : null,
-      mcNumber: tipo == 'carrier_carga' &&
-              _mcNumberController.text.trim().isNotEmpty
-          ? _mcNumberController.text.trim()
-          : null,
-      dotNumber: tipo == 'carrier_carga' &&
-              _dotNumberController.text.trim().isNotEmpty
-          ? _dotNumberController.text.trim()
           : null,
       // Conductor pasajeros vehicle
       vehiculoMarca: tipo == 'conductor_pasajeros' &&
@@ -522,6 +705,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
           tipo == 'conductor_pasajeros' ? _vAireAcondicionado : null,
       vehiculoIdTipo:
           tipo == 'conductor_pasajeros' ? _vIdTipo : null,
+      // Licencia de conducción (conductor pasajeros y carrier de carga)
+      licCondFrenteUrl: (tipo == 'conductor_pasajeros' || tipo == 'carrier_carga')
+          ? _licCondFrenteUrl
+          : null,
+      licCondDorsoUrl: (tipo == 'conductor_pasajeros' || tipo == 'carrier_carga')
+          ? _licCondDorsoUrl
+          : null,
+      licCircFrenteUrl: tipo == 'conductor_pasajeros' ? _licCircFrenteUrl : null,
+      licCircDorsoUrl: tipo == 'conductor_pasajeros' ? _licCircDorsoUrl : null,
+      licOperativaFrenteUrl:
+          tipo == 'conductor_pasajeros' ? _licOperativaFrenteUrl : null,
+      licOperativaDorsoUrl:
+          tipo == 'conductor_pasajeros' ? _licOperativaDorsoUrl : null,
     );
 
     if (!mounted) return;
@@ -722,6 +918,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 if (v != null) {
                                   setState(() => _selectedCountry = v);
                                   _loadStates(v['countryCode'] as String);
+                                  _loadEmpStates(v['countryCode'] as String);
                                 }
                               },
                               validator: (v) => v == null
@@ -1003,6 +1200,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ),
                           ),
                         ],
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      _FieldLabel(label: 'Dirección personal (opcional)'),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _direccionPersonalController,
+                        style: TextStyle(color: textPrimary),
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          hintText: 'Calle, número, barrio...',
+                          prefixIcon: Icon(Icons.home_outlined, size: 20),
+                        ),
                       ),
 
                       const SizedBox(height: 28),
@@ -1657,7 +1868,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _FieldLabel(label: 'Anio'),
+                  _FieldLabel(label: 'Año'),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _vAnioController,
@@ -1740,8 +1951,115 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             secondary: const Icon(Icons.ac_unit_outlined),
             value: _vAireAcondicionado,
-            activeColor: AppTheme.primaryColor,
+            activeThumbColor: AppTheme.primaryColor,
             onChanged: (v) => setState(() => _vAireAcondicionado = v),
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // ── Licencia de Conducción ─────────────────────────────────────────
+        _SectionHeader(title: 'Licencia de Conducción'),
+        const SizedBox(height: 8),
+        Text(
+          'Sube una foto del frente y el dorso de tu licencia de conducir.',
+          style: GoogleFonts.plusJakartaSans(fontSize: 13, color: textPrimary.withValues(alpha: 0.6)),
+        ),
+        const SizedBox(height: 12),
+        _FieldLabel(label: 'Frente de la licencia *'),
+        const SizedBox(height: 8),
+        _DocUploadTile(
+          label: 'Frente – Licencia de Conducción',
+          imageUrl: _licCondFrenteUrl,
+          isUploading: _isUploadingLicCondFrente,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_conduccion_frente',
+            setUploading: (v) => _isUploadingLicCondFrente = v,
+            onSuccess: (url) => _licCondFrenteUrl = url,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _FieldLabel(label: 'Dorso de la licencia *'),
+        const SizedBox(height: 8),
+        _DocUploadTile(
+          label: 'Dorso – Licencia de Conducción',
+          imageUrl: _licCondDorsoUrl,
+          isUploading: _isUploadingLicCondDorso,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_conduccion_dorso',
+            setUploading: (v) => _isUploadingLicCondDorso = v,
+            onSuccess: (url) => _licCondDorsoUrl = url,
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // ── Licencia de Circulación ────────────────────────────────────────
+        _SectionHeader(title: 'Licencia de Circulación del Vehículo'),
+        const SizedBox(height: 8),
+        Text(
+          'Sube una foto del frente y el dorso de la licencia de circulación.',
+          style: GoogleFonts.plusJakartaSans(fontSize: 13, color: textPrimary.withValues(alpha: 0.6)),
+        ),
+        const SizedBox(height: 12),
+        _FieldLabel(label: 'Frente de la circulación *'),
+        const SizedBox(height: 8),
+        _DocUploadTile(
+          label: 'Frente – Licencia de Circulación',
+          imageUrl: _licCircFrenteUrl,
+          isUploading: _isUploadingLicCircFrente,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_circulacion_frente',
+            setUploading: (v) => _isUploadingLicCircFrente = v,
+            onSuccess: (url) => _licCircFrenteUrl = url,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _FieldLabel(label: 'Dorso de la circulación *'),
+        const SizedBox(height: 8),
+        _DocUploadTile(
+          label: 'Dorso – Licencia de Circulación',
+          imageUrl: _licCircDorsoUrl,
+          isUploading: _isUploadingLicCircDorso,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_circulacion_dorso',
+            setUploading: (v) => _isUploadingLicCircDorso = v,
+            onSuccess: (url) => _licCircDorsoUrl = url,
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        _SectionHeader(title: 'Licencia Operativa (opcional)'),
+        const SizedBox(height: 8),
+        Text(
+          'Si aplica a tu servicio de pasajeros, puedes adjuntar la licencia operativa.',
+          style: GoogleFonts.plusJakartaSans(
+              fontSize: 13, color: textPrimary.withValues(alpha: 0.6)),
+        ),
+        const SizedBox(height: 12),
+        _DocUploadTile(
+          label: 'Frente – Licencia Operativa',
+          imageUrl: _licOperativaFrenteUrl,
+          isUploading: _isUploadingLicOpFrente,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_operativa_frente',
+            setUploading: (v) => _isUploadingLicOpFrente = v,
+            onSuccess: (url) => _licOperativaFrenteUrl = url,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _DocUploadTile(
+          label: 'Dorso – Licencia Operativa',
+          imageUrl: _licOperativaDorsoUrl,
+          isUploading: _isUploadingLicOpDorso,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_operativa_dorso',
+            setUploading: (v) => _isUploadingLicOpDorso = v,
+            onSuccess: (url) => _licOperativaDorsoUrl = url,
           ),
         ),
       ],
@@ -1789,7 +2107,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             style: TextStyle(color: textPrimary),
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(
-              hintText: 'Razón social',
+              hintText: 'Inventtia S.R.L.',
               prefixIcon: Icon(Icons.business, size: 20),
             ),
             validator: (v) {
@@ -1802,7 +2120,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             },
           ),
           const SizedBox(height: 16),
-          _FieldLabel(label: 'RUT / Número fiscal *'),
+          _FieldLabel(label: 'Número fiscal *'),
           const SizedBox(height: 8),
           TextFormField(
             controller: _empresaRutController,
@@ -1821,16 +2139,228 @@ class _RegisterScreenState extends State<RegisterScreen> {
             },
           ),
           const SizedBox(height: 16),
+
+          // Provincia / Estado de la empresa
+          _FieldLabel(label: 'Provincia / Estado de la empresa'),
+          const SizedBox(height: 8),
+          if (_empLoadingStates)
+            const _LoadingDropdown(label: 'Cargando provincias...')
+          else
+            DropdownSearch<Map<String, dynamic>>(
+              enabled: _selectedCountry != null,
+              selectedItem: _empSelectedState,
+              items: _empGeoStates,
+              filterFn: (item, filter) =>
+                  (item['name'] as String)
+                      .toLowerCase()
+                      .contains(filter.toLowerCase()),
+              itemAsString: (s) => s['name'] as String,
+              compareFn: (a, b) => a['geonameId'] == b['geonameId'],
+              onChanged: (v) {
+                if (v != null) {
+                  setState(() => _empSelectedState = v);
+                  _loadEmpCities(
+                    _selectedCountry!['countryCode'] as String,
+                    v['adminCode1'] as String,
+                  );
+                  final lat = double.tryParse(v['lat']?.toString() ?? '');
+                  final lng = double.tryParse(v['lng']?.toString() ?? '');
+                  if (lat != null && lng != null) {
+                    _empMapController.move(LatLng(lat, lng), 7);
+                  }
+                }
+              },
+              dropdownBuilder: (ctx, item) => item == null
+                  ? Text(
+                      _selectedCountry == null
+                          ? 'Selecciona un país personal primero'
+                          : _empGeoStates.isEmpty
+                              ? 'Sin datos — escribe la provincia abajo'
+                              : 'Selecciona una provincia',
+                      style: TextStyle(
+                          color: isDark ? Colors.white38 : Colors.grey[500],
+                          fontSize: 14))
+                  : Text(item['name'] as String,
+                      style: TextStyle(color: textPrimary, fontSize: 14)),
+              dropdownDecoratorProps: DropDownDecoratorProps(
+                dropdownSearchDecoration: InputDecoration(
+                  prefixIcon:
+                      const Icon(Icons.location_city_outlined, size: 20),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: borderColor),
+                  ),
+                  filled: true,
+                  fillColor: cardColor,
+                ),
+              ),
+              popupProps: PopupProps.menu(
+                showSearchBox: true,
+                searchFieldProps: TextFieldProps(
+                  decoration: InputDecoration(
+                    hintText: 'Buscar provincia...',
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                menuProps: MenuProps(
+                  backgroundColor:
+                      isDark ? AppTheme.darkCard : Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          const SizedBox(height: 16),
+
+          // Ciudad / Municipio de la empresa
+          _FieldLabel(label: 'Ciudad / Municipio de la empresa'),
+          const SizedBox(height: 8),
+          if (_empLoadingCities)
+            const _LoadingDropdown(label: 'Cargando ciudades...')
+          else
+            DropdownSearch<Map<String, dynamic>>(
+              enabled: _empSelectedState != null,
+              selectedItem: _empSelectedCity,
+              items: _empGeoCities,
+              filterFn: (item, filter) =>
+                  (item['name'] as String)
+                      .toLowerCase()
+                      .contains(filter.toLowerCase()),
+              itemAsString: (c) => c['name'] as String,
+              compareFn: (a, b) => a['geonameId'] == b['geonameId'],
+              onChanged: (v) {
+                setState(() => _empSelectedCity = v);
+                if (v != null) {
+                  final lat = double.tryParse(v['lat']?.toString() ?? '');
+                  final lng = double.tryParse(v['lng']?.toString() ?? '');
+                  if (lat != null && lng != null) {
+                    _empMapController.move(LatLng(lat, lng), 12);
+                  }
+                }
+              },
+              dropdownBuilder: (ctx, item) => item == null
+                  ? Text(
+                      _empSelectedState == null
+                          ? 'Selecciona una provincia primero'
+                          : 'Selecciona una ciudad',
+                      style: TextStyle(
+                          color: isDark ? Colors.white38 : Colors.grey[500],
+                          fontSize: 14))
+                  : Text(item['name'] as String,
+                      style: TextStyle(color: textPrimary, fontSize: 14)),
+              dropdownDecoratorProps: DropDownDecoratorProps(
+                dropdownSearchDecoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.place_outlined, size: 20),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: borderColor),
+                  ),
+                  filled: true,
+                  fillColor: cardColor,
+                ),
+              ),
+              popupProps: PopupProps.menu(
+                showSearchBox: true,
+                searchFieldProps: TextFieldProps(
+                  decoration: InputDecoration(
+                    hintText: 'Buscar ciudad...',
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                menuProps: MenuProps(
+                  backgroundColor:
+                      isDark ? AppTheme.darkCard : Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          const SizedBox(height: 16),
+
           _FieldLabel(label: 'Dirección de la empresa'),
           const SizedBox(height: 8),
           TextFormField(
             controller: _empresaDireccionController,
             style: TextStyle(color: textPrimary),
             decoration: const InputDecoration(
-              hintText: 'Dirección comercial',
+              hintText: 'Calle, número, reparto...',
               prefixIcon: Icon(Icons.location_on_outlined, size: 20),
             ),
           ),
+          const SizedBox(height: 16),
+
+          // Mapa para seleccionar coordenadas (opcional)
+          _FieldLabel(label: 'Ubicación en mapa (opcional)'),
+          const SizedBox(height: 4),
+          Text(
+            'Toca el mapa para fijar la ubicación exacta de la empresa.',
+            style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                color: isDark ? Colors.white38 : Colors.grey[500]),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              height: 220,
+              child: FlutterMap(
+                mapController: _empMapController,
+                options: MapOptions(
+                  initialCenter: LatLng(
+                    _empLat ??
+                        double.tryParse(_empSelectedCity?['lat']?.toString() ?? '') ??
+                        double.tryParse(_empSelectedState?['lat']?.toString() ?? '') ??
+                        20.0,
+                    _empLng ??
+                        double.tryParse(_empSelectedCity?['lng']?.toString() ?? '') ??
+                        double.tryParse(_empSelectedState?['lng']?.toString() ?? '') ??
+                        0.0,
+                  ),
+                  initialZoom: _empLat != null ? 14 : (_empSelectedCity != null ? 12 : (_empSelectedState != null ? 7 : 2)),
+                  onTap: (_, latlng) => setState(() {
+                    _empLat = latlng.latitude;
+                    _empLng = latlng.longitude;
+                  }),
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  ),
+                  if (_empLat != null)
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: LatLng(_empLat!, _empLng!),
+                          width: 36,
+                          height: 36,
+                          child: const Icon(Icons.location_pin,
+                              color: AppTheme.primaryColor, size: 36),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (_empLat != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Lat: ${_empLat!.toStringAsFixed(5)}, Lng: ${_empLng!.toStringAsFixed(5)}',
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11,
+                  color: AppTheme.primaryColor,
+                  fontWeight: FontWeight.w600),
+            ),
+          ],
         ],
 
         const SizedBox(height: 24),
@@ -1875,6 +2405,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _SectionHeader(title: 'Licencia de Conducción'),
+        const SizedBox(height: 8),
+        Text(
+          'Licencia del conductor que operará la carga (frente y dorso).',
+          style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              color: isDark ? Colors.white54 : Colors.grey[600]),
+        ),
+        const SizedBox(height: 12),
+        _DocUploadTile(
+          label: 'Frente – Licencia de Conducción',
+          imageUrl: _licCondFrenteUrl,
+          isUploading: _isUploadingLicCondFrente,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_conduccion_frente',
+            setUploading: (v) => _isUploadingLicCondFrente = v,
+            onSuccess: (url) => _licCondFrenteUrl = url,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _DocUploadTile(
+          label: 'Dorso – Licencia de Conducción',
+          imageUrl: _licCondDorsoUrl,
+          isUploading: _isUploadingLicCondDorso,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_conduccion_dorso',
+            setUploading: (v) => _isUploadingLicCondDorso = v,
+            onSuccess: (url) => _licCondDorsoUrl = url,
+          ),
+        ),
+        const SizedBox(height: 24),
+
         // ── Header row with "Add vehicle" button ───────────────────────────
         Row(
           children: [
@@ -1916,39 +2480,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           );
         }),
 
-        const SizedBox(height: 24),
-        _SectionHeader(title: 'Verificación Profesional (opcional)'),
-        const SizedBox(height: 8),
-        Text(
-          'Requerida para operar con escrow. Puedes completarla después del registro.',
-          style: GoogleFonts.plusJakartaSans(
-              fontSize: 12,
-              color: isDark ? Colors.white54 : Colors.grey[600]),
-        ),
-        const SizedBox(height: 16),
-
-        _FieldLabel(label: 'MC Number'),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: _mcNumberController,
-          style: TextStyle(color: textPrimary),
-          decoration: const InputDecoration(
-            hintText: 'Motor Carrier Number',
-            prefixIcon: Icon(Icons.numbers_outlined, size: 20),
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        _FieldLabel(label: 'DOT Number'),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: _dotNumberController,
-          style: TextStyle(color: textPrimary),
-          decoration: const InputDecoration(
-            hintText: 'DOT Number',
-            prefixIcon: Icon(Icons.numbers_outlined, size: 20),
-          ),
-        ),
       ],
     );
   }
@@ -2177,6 +2708,74 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         activeColor: AppTheme.primaryColor,
                         onChanged: (v) =>
                             setLocal(() => item.seguroVigente = v),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _FieldLabel(label: 'Licencia de Circulación *'),
+                    const SizedBox(height: 8),
+                    _DocUploadTile(
+                      label: 'Frente – Circulación',
+                      imageUrl: item.licCircFrenteUrl,
+                      isUploading: item.uploadingCircFrente,
+                      isDark: isDark,
+                      onTap: () => _pickLicensePhoto(
+                        filename: 'carroceria_${index}_circ_frente',
+                        setUploading: (v) =>
+                            setLocal(() => item.uploadingCircFrente = v),
+                        onSuccess: (url) {
+                          item.licCircFrenteUrl = url;
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _DocUploadTile(
+                      label: 'Dorso – Circulación',
+                      imageUrl: item.licCircDorsoUrl,
+                      isUploading: item.uploadingCircDorso,
+                      isDark: isDark,
+                      onTap: () => _pickLicensePhoto(
+                        filename: 'carroceria_${index}_circ_dorso',
+                        setUploading: (v) =>
+                            setLocal(() => item.uploadingCircDorso = v),
+                        onSuccess: (url) {
+                          item.licCircDorsoUrl = url;
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _FieldLabel(label: 'Licencia Operativa (opcional)'),
+                    const SizedBox(height: 8),
+                    _DocUploadTile(
+                      label: 'Frente – Lic. Operativa',
+                      imageUrl: item.licOperativaFrenteUrl,
+                      isUploading: item.uploadingOpFrente,
+                      isDark: isDark,
+                      onTap: () => _pickLicensePhoto(
+                        filename: 'carroceria_${index}_op_frente',
+                        setUploading: (v) =>
+                            setLocal(() => item.uploadingOpFrente = v),
+                        onSuccess: (url) {
+                          item.licOperativaFrenteUrl = url;
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _DocUploadTile(
+                      label: 'Dorso – Lic. Operativa',
+                      imageUrl: item.licOperativaDorsoUrl,
+                      isUploading: item.uploadingOpDorso,
+                      isDark: isDark,
+                      onTap: () => _pickLicensePhoto(
+                        filename: 'carroceria_${index}_op_dorso',
+                        setUploading: (v) =>
+                            setLocal(() => item.uploadingOpDorso = v),
+                        onSuccess: (url) {
+                          item.licOperativaDorsoUrl = url;
+                          setState(() {});
+                        },
                       ),
                     ),
                   ],
@@ -2738,30 +3337,6 @@ class _TransportistaFormCard extends StatelessWidget {
                   style: TextStyle(color: textPrimary),
                   decoration:
                       const InputDecoration(labelText: 'Cap. (ton)'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // MC + DOT
-          Row(
-            children: [
-              Expanded(
-                child: TextFormField(
-                  controller: item.mcNumber,
-                  style: TextStyle(color: textPrimary),
-                  decoration:
-                      const InputDecoration(labelText: 'MC Number'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextFormField(
-                  controller: item.dotNumber,
-                  style: TextStyle(color: textPrimary),
-                  decoration:
-                      const InputDecoration(labelText: 'DOT Number'),
                 ),
               ),
             ],

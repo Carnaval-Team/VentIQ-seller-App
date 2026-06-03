@@ -23,8 +23,6 @@ class DriverModel {
   // FK to dispatcher that registered this carrier (null = independent)
   final int? dispatcherId;
   // Carrier / dispatcher professional fields
-  final String? mcNumber;
-  final String? dotNumber;
   final String? tipoCarroceria;
   final double? capacidadTon;
   final double? longitudPlataformaM;
@@ -54,8 +52,6 @@ class DriverModel {
     this.uuid,
     this.tipoUsuario,
     this.dispatcherId,
-    this.mcNumber,
-    this.dotNumber,
     this.tipoCarroceria,
     this.capacidadTon,
     this.longitudPlataformaM,
@@ -93,8 +89,6 @@ class DriverModel {
       uuid: json['uuid'] as String?,
       tipoUsuario: json['tipo_usuario'] as String?,
       dispatcherId: json['dispatcher_id'] as int?,
-      mcNumber: json['mc_number'] as String?,
-      dotNumber: json['dot_number'] as String?,
       tipoCarroceria: json['tipo_carroceria'] as String?,
       capacidadTon: json['capacidad_ton'] != null
           ? (json['capacidad_ton'] as num).toDouble()
@@ -128,8 +122,6 @@ class DriverModel {
       'uuid': uuid,
       if (tipoUsuario != null) 'tipo_usuario': tipoUsuario,
       if (dispatcherId != null) 'dispatcher_id': dispatcherId,
-      if (mcNumber != null) 'mc_number': mcNumber,
-      if (dotNumber != null) 'dot_number': dotNumber,
       if (tipoCarroceria != null) 'tipo_carroceria': tipoCarroceria,
       if (capacidadTon != null) 'capacidad_ton': capacidadTon,
       if (longitudPlataformaM != null)
@@ -161,8 +153,6 @@ class DriverModel {
     String? uuid,
     String? tipoUsuario,
     int? dispatcherId,
-    String? mcNumber,
-    String? dotNumber,
     String? tipoCarroceria,
     double? capacidadTon,
     double? longitudPlataformaM,
@@ -191,8 +181,6 @@ class DriverModel {
       uuid: uuid ?? this.uuid,
       tipoUsuario: tipoUsuario ?? this.tipoUsuario,
       dispatcherId: dispatcherId ?? this.dispatcherId,
-      mcNumber: mcNumber ?? this.mcNumber,
-      dotNumber: dotNumber ?? this.dotNumber,
       tipoCarroceria: tipoCarroceria ?? this.tipoCarroceria,
       capacidadTon: capacidadTon ?? this.capacidadTon,
       longitudPlataformaM: longitudPlataformaM ?? this.longitudPlataformaM,

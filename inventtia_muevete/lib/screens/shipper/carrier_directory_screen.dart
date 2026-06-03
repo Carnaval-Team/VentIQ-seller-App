@@ -63,7 +63,7 @@ class _CarrierDirectoryScreenState extends State<CarrierDirectoryScreen> {
           .from('drivers')
           .select(
             'id, uuid, name, email, telefono, estado, kyc, image, categoria, '
-            'mc_number, dot_number, pais, province, municipality, '
+            'pais, province, municipality, '
             'carrocerias(id, marca, modelo, matricula)',
           )
           .eq('tipo_usuario', 'carrier_carga')
@@ -420,8 +420,6 @@ class _CarrierCardState extends State<_CarrierCard> {
     final province = c['province'] as String?;
     final municipality = c['municipality'] as String?;
     final categoria = c['categoria'] as String?;
-    final mcNumber = c['mc_number'] as String?;
-    final dotNumber = c['dot_number'] as String?;
     final telefono = c['telefono'] as String?;
     final email = c['email'] as String?;
     final imageUrl = c['image'] as String?;
@@ -593,25 +591,6 @@ class _CarrierCardState extends State<_CarrierCard> {
                       textPrimary: widget.textPrimary,
                       textSecondary: widget.textSecondary,
                     ),
-                  if (mcNumber != null && mcNumber.isNotEmpty)
-                    _DetailRow(
-                      icon: Icons.tag_outlined,
-                      label: 'MC #',
-                      value: mcNumber,
-                      isDark: isDark,
-                      textPrimary: widget.textPrimary,
-                      textSecondary: widget.textSecondary,
-                    ),
-                  if (dotNumber != null && dotNumber.isNotEmpty)
-                    _DetailRow(
-                      icon: Icons.numbers_outlined,
-                      label: 'DOT #',
-                      value: dotNumber,
-                      isDark: isDark,
-                      textPrimary: widget.textPrimary,
-                      textSecondary: widget.textSecondary,
-                    ),
-
                   // Vehicles
                   if (carrocerias.isNotEmpty) ...[
                     const SizedBox(height: 10),

@@ -11,7 +11,7 @@ import '../../providers/theme_provider.dart';
 import '../../widgets/carga_fechas_section.dart';
 import '../../widgets/carga_mercancia_equipo_section.dart';
 import '../../widgets/route_map_widget.dart';
-import 'carrier_carga_profile_screen.dart';
+import '../common/unified_profile_screen.dart';
 
 class CarrierHomeScreen extends StatefulWidget {
   const CarrierHomeScreen({super.key});
@@ -66,7 +66,7 @@ class _CarrierHomeScreenState extends State<CarrierHomeScreen> {
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
-                  builder: (_) => const CarrierCargaProfileScreen()),
+                  builder: (_) => const UnifiedProfileScreen()),
             ),
           ),
           IconButton(
@@ -159,7 +159,7 @@ class CargasDisponiblesTabState extends State<CargasDisponiblesTab> {
       return false;
     }
     final pesoMax = double.tryParse(_pesoMaxCtrl.text);
-    if (pesoMax != null && (c.pesoKg ?? double.infinity) > pesoMax) {
+    if (pesoMax != null && (c.pesoEnKg ?? double.infinity) > pesoMax) {
       return false;
     }
     final precioMax = double.tryParse(_precioMaxCtrl.text);
@@ -361,9 +361,7 @@ class CargasDisponiblesTabState extends State<CargasDisponiblesTab> {
                         final vencida = c.fechaRecogida != null &&
                             c.fechaRecogida!.isBefore(DateTime(now.year, now.month, now.day)) &&
                             !['tomada','en_transito','completada_carrier','entregada','completada'].contains(c.estado);
-                        final peso = c.pesoKg != null
-                            ? '${c.pesoKg!.toStringAsFixed(0)} ${c.unidadPeso}'
-                            : '—';
+                        final peso = c.pesoDisplay ?? '—';
                         final precio = c.precioOfertado != null
                             ? '\$${c.precioOfertado!.toStringAsFixed(0)}'
                             : '—';
@@ -1120,16 +1118,16 @@ class _FilterPanel extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            // ── Tipo FTL / LTL ────────────────────────────────────────────
+            // ── Tipo Camión Completo / Parcial ────────────────────────────
             DropdownButtonFormField<String>(
               value: tipoFiltro,
               dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
               style: TextStyle(color: textPrimary, fontSize: 13),
-              decoration: fieldDeco.copyWith(hintText: 'Tipo (FTL/LTL)'),
+              decoration: fieldDeco.copyWith(hintText: 'Tipo de carga'),
               items: const [
                 DropdownMenuItem(value: null, child: Text('Todos')),
-                DropdownMenuItem(value: 'ftl', child: Text('FTL')),
-                DropdownMenuItem(value: 'ltl', child: Text('LTL')),
+                DropdownMenuItem(value: 'ftl', child: Text('Camión Completo')),
+                DropdownMenuItem(value: 'ltl', child: Text('Parcial')),
               ],
               onChanged: onTipoChanged,
             ),

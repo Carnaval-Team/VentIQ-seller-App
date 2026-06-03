@@ -421,15 +421,6 @@ class _PlanCard extends StatelessWidget {
       ));
     }
 
-    // Verificación MC/DOT
-    if (plan.verificacionMc) {
-      features.add(const _Feature(
-        icon: Icons.verified_outlined,
-        label: 'Verificación MC/DOT incluida',
-        highlighted: true,
-      ));
-    }
-
     // GPS avanzado
     if (plan.gpsAvanzado) {
       features.add(const _Feature(
@@ -654,14 +645,14 @@ class _FaqSection extends StatelessWidget {
       case 'carrier':
         return [
           {
-            'q': '¿Cómo funciona la verificación MC/DOT?',
+            'q': '¿Qué documentos necesito como carrier?',
             'a':
-                'Verificamos tu número MC y DOT con la base de datos FMCSA. Una vez verificado, tu perfil muestra el badge de confianza.',
+                'Licencia de conducción vigente y, por cada vehículo, licencia de circulación (frente y dorso). La licencia operativa es opcional.',
           },
           {
             'q': '¿Qué diferencia al plan Básico del Profesional?',
             'a':
-                'El plan Profesional te da acceso a escrow, GPS avanzado, alertas ilimitadas y verificación MC incluida.',
+                'El plan Profesional incluye escrow, GPS avanzado, alertas ilimitadas y matching automático prioritario.',
           },
         ];
       case 'dispatcher':
