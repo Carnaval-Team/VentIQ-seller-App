@@ -1810,7 +1810,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   width: 120,
                   height: 50,
                   child: ElevatedButton(
-                    onPressed: totalPrice > 0 ? _addToCart : null,
+                    onPressed:
+                        _getTotalEquivalentUnits() > 0 ? _addToCart : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: widget.categoryColor,
                       foregroundColor: Colors.white,

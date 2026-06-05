@@ -52,6 +52,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
   bool _isLimitDataUsageEnabled = false; // Para el modo de ahorro de datos
+  bool _isShowSkuEnabled = false;
   bool _isConnectionError = false; // Para detectar errores de conexión
   bool _showRetryWidget = false; // Para mostrar el widget de reconexión
 
@@ -80,6 +81,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
     _loadPromotionData();
     _loadUsdRate();
     _loadDataUsageSettings();
+    _loadShowSkuSetting();
     // Asegurar que se inicialice filteredProductsBySubcategory
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadProducts();
@@ -91,6 +93,15 @@ class _ProductsScreenState extends State<ProductsScreen> {
     if (mounted) {
       setState(() {
         _isLimitDataUsageEnabled = isEnabled;
+      });
+    }
+  }
+
+  Future<void> _loadShowSkuSetting() async {
+    final isEnabled = await _userPreferencesService.isShowSkuEnabled();
+    if (mounted) {
+      setState(() {
+        _isShowSkuEnabled = isEnabled;
       });
     }
   }
@@ -546,6 +557,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                             categoryColor: widget.categoryColor,
                             promotionData: _promotionData,
                             isLimitDataUsageEnabled: _isLimitDataUsageEnabled,
+                            showSku: _isShowSkuEnabled || _userPreferencesService.isShowSkuEnabledSync,
                           );
                         },
                       ),
@@ -719,6 +731,7 @@ class _SubcategorySection extends StatefulWidget {
   final Color categoryColor;
   final Map<String, dynamic>? promotionData;
   final bool isLimitDataUsageEnabled;
+  final bool showSku;
 
   const _SubcategorySection({
     required this.title,
@@ -726,6 +739,7 @@ class _SubcategorySection extends StatefulWidget {
     required this.categoryColor,
     this.promotionData,
     required this.isLimitDataUsageEnabled,
+    this.showSku = false,
   });
 
   @override
@@ -867,6 +881,7 @@ class _SubcategorySectionState extends State<_SubcategorySection> {
                     categoryColor: widget.categoryColor,
                     promotionData: widget.promotionData,
                     isLimitDataUsageEnabled: widget.isLimitDataUsageEnabled,
+                    showSku: widget.showSku,
                   ),
                 );
               }).toList(),
@@ -911,6 +926,7 @@ class _SubcategorySectionState extends State<_SubcategorySection> {
                       categoryColor: widget.categoryColor,
                       promotionData: widget.promotionData,
                       isLimitDataUsageEnabled: widget.isLimitDataUsageEnabled,
+                      showSku: widget.showSku,
                     ),
                   );
                 }).toList(),
@@ -943,17 +959,18 @@ class _SubcategorySectionState extends State<_SubcategorySection> {
       ),
     );
 
+    final double cardHeight = widget.showSku ? 84.0 : 70.0;
+    final double columnHeight = cardHeight * 3 + 6 * 2; // 3 cards + 2 gaps
+
     if (!kIsWeb) {
       return SizedBox(
-        height:
-            228, // Altura optimizada: 3 productos (70px) + espaciado (6px entre cards) = 3*70 + 2*6 = 222px + padding
+        height: columnHeight,
         child: focusableList,
       );
     }
 
     return SizedBox(
-      height:
-          228, // Altura optimizada: 3 productos (70px) + espaciado (6px entre cards) = 3*70 + 2*6 = 222px + padding
+      height: columnHeight,
       child: Stack(
         children: [
           Positioned.fill(child: focusableList),
@@ -991,12 +1008,14 @@ class _PlayStoreProductCard extends StatefulWidget {
   final Color categoryColor;
   final Map<String, dynamic>? promotionData;
   final bool isLimitDataUsageEnabled;
+  final bool showSku;
 
   const _PlayStoreProductCard({
     required this.product,
     required this.categoryColor,
     this.promotionData,
     required this.isLimitDataUsageEnabled,
+    this.showSku = false,
   });
 
   @override
@@ -1126,7 +1145,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
         );
       },
       child: Container(
-        height: 70, // Altura reducida sin la descripción
+        height: (widget.showSku && widget.product.sku != null && widget.product.sku!.isNotEmpty) ? 84 : 70,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -1201,6 +1220,18 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // SKU del producto (si está habilitado)
+                  if (widget.showSku && widget.product.sku != null && widget.product.sku!.isNotEmpty)
+                    Text(
+                      'SKU: ${widget.product.sku}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: widget.categoryColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   // Nombre del producto con efecto marquee
                   Flexible(
                     child: MarqueeText(

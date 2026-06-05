@@ -1904,8 +1904,10 @@ class OrderService {
 
   /// Guardar preorden actual en persistencia
   Future<void> _savePersistentPreorder() async {
-    if (_currentOrder == null || _currentOrder!.items.isEmpty) {
-      // Si no hay orden o está vacía, limpiar la persistencia
+    final hasRealItems = _currentOrder != null &&
+        _currentOrder!.items.any((i) => i.cantidad > 0);
+    if (!hasRealItems) {
+      // Si no hay orden o todos los ítems tienen cantidad 0, limpiar persistencia
       await UserPreferencesService().clearPersistentPreorder();
       return;
     }

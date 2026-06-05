@@ -1542,16 +1542,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    cup > 0
-                        ? '₱${NumberFormat("#,###.00").format(cup)} CUP'
-                        : 'Sin precio CUP',
+                    '₱${NumberFormat("#,###.00").format(cup)} CUP',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: cup > 0 ? AppColors.primary : AppColors.error,
+                      color: cup < 0 ? AppColors.error : AppColors.primary,
                     ),
                   ),
-                  if (usd != null && usd > 0) ...[  
+                  if (usd != null) ...[
                     const SizedBox(height: 2),
                     Text(
                       '\$${NumberFormat("#,###.00").format(usd)} USD',
@@ -1563,7 +1561,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             : const Color(0xFF4A90E2),
                       ),
                     ),
-                  ] else ...[  
+                  ] else ...[
                     const SizedBox(height: 2),
                     Text(
                       'Sin precio USD',
@@ -3960,7 +3958,7 @@ class _BasePriceEditDialogState extends State<_BasePriceEditDialog> {
   void initState() {
     super.initState();
     _usdController = TextEditingController(
-      text: widget.initialUsdPrice != null && widget.initialUsdPrice! > 0
+      text: widget.initialUsdPrice != null
           ? widget.initialUsdPrice!.toStringAsFixed(2)
           : '',
     );
@@ -4013,12 +4011,13 @@ class _BasePriceEditDialogState extends State<_BasePriceEditDialog> {
                 _updatingFromCup = true;
                 if (widget.exchangeRate > 0) {
                   final cup = double.tryParse(value);
-                  if (cup != null && cup > 0) {
-                    final usdText = (cup / widget.exchangeRate).toStringAsFixed(2);
+                  if (cup != null && cup >= 0) {
+                    final usdText =
+                        (cup / widget.exchangeRate).toStringAsFixed(2);
                     if (_usdController.text != usdText) {
                       _usdController.text = usdText;
                     }
-                  } else {
+                  } else if (value.isEmpty) {
                     _usdController.clear();
                   }
                 }
@@ -4042,12 +4041,13 @@ class _BasePriceEditDialogState extends State<_BasePriceEditDialog> {
                 _updatingFromUsd = true;
                 if (widget.exchangeRate > 0) {
                   final usd = double.tryParse(value);
-                  if (usd != null && usd > 0) {
-                    final cupText = (usd * widget.exchangeRate).toStringAsFixed(2);
+                  if (usd != null && usd >= 0) {
+                    final cupText =
+                        (usd * widget.exchangeRate).toStringAsFixed(2);
                     if (widget.priceController.text != cupText) {
                       widget.priceController.text = cupText;
                     }
-                  } else {
+                  } else if (value.isEmpty) {
                     widget.priceController.clear();
                   }
                 }
@@ -4075,17 +4075,32 @@ class _BasePriceEditDialogState extends State<_BasePriceEditDialog> {
                   ? null
                   : () async {
                     final cup = double.tryParse(widget.priceController.text);
-                    if (cup == null || cup <= 0) {
+                    if (cup == null || cup < 0) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Ingresa un precio CUP válido'),
+                          content: Text(
+                            'Ingresa un precio CUP válido (0 o mayor)',
+                          ),
                           backgroundColor: Colors.red,
                         ),
                       );
                       return;
                     }
-                    final usd = double.tryParse(_usdController.text);
-                    final finalUsd = (usd != null && usd > 0) ? usd : null;
+                    final usd = _usdController.text.trim().isEmpty
+                        ? null
+                        : double.tryParse(_usdController.text);
+                    if (usd != null && usd < 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Ingresa un precio USD válido (0 o mayor)',
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+                    final finalUsd = usd;
                     setState(() => _isSaving = true);
                     await widget.onSave(cup, finalUsd);
                     if (mounted) setState(() => _isSaving = false);

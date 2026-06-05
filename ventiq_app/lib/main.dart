@@ -14,6 +14,7 @@ import 'screens/cierre_screen.dart';
 import 'screens/shift_workers_screen.dart';
 import 'screens/subscription_detail_screen.dart';
 import 'screens/wifi_printers_screen.dart';
+import 'screens/default_order_items_screen.dart';
 import 'screens/mesas_screen.dart';
 import 'screens/mesa_detail_screen.dart';
 import 'screens/cuenta_mesa_screen.dart';
@@ -89,6 +90,8 @@ class MyApp extends StatelessWidget {
         '/shift-workers': (context) => const ShiftWorkersScreen(),
         '/subscription-detail': (context) => const SubscriptionDetailScreen(),
         '/wifi-printers': (context) => const WiFiPrintersScreen(),
+        '/default-order-items': (context) =>
+            const DefaultOrderItemsScreen(),
         '/mesas': (context) => const MesasScreen(),
         '/mesa-detail': (context) {
           final args = ModalRoute.of(context)?.settings.arguments;

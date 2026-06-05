@@ -63,6 +63,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool _isLoadingUsdRate = false;
   bool _isOfflineMode = false;
   bool _isShowSkuEnabled = false;
+  List<Map<String, dynamic>> _defaultOrderItems = [];
 
   @override
   void initState() {
@@ -71,16 +72,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
     _searchController.addListener(_onSearchChanged);
     _loadUsdRate();
     _loadShowSkuSetting();
+    _loadDefaultOrderItems();
     // Cargar órdenes desde Supabase y órdenes pendientes offline
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadOrdersFromSupabase().then((_) {
-        if (widget.autoOpenOrderId != null) {
-          _autoOpenOrder(widget.autoOpenOrderId!);
-        }
-      });
-      _loadDiscountPermission();
-      _loadPrintPendingPermission();
-      _loadSellerModificationsPermission();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future.wait([
+        _loadOrdersFromSupabase(),
+        _loadDiscountPermission(),
+        _loadPrintPendingPermission(),
+        _loadSellerModificationsPermission(),
+      ]);
+      if (widget.autoOpenOrderId != null) {
+        _autoOpenOrder(widget.autoOpenOrderId!);
+      }
     });
   }
 
@@ -89,6 +92,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
     if (mounted) {
       setState(() {
         _isShowSkuEnabled = isEnabled;
+      });
+    }
+  }
+
+  Future<void> _loadDefaultOrderItems() async {
+    final items = await _userPreferencesService.getDefaultOrderItems();
+    if (mounted) {
+      setState(() {
+        _defaultOrderItems = items;
       });
     }
   }
@@ -1827,23 +1839,68 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                 CrossAxisAlignment.start,
                                             children: [
                                               Expanded(
-                                                child: Text(
-                                                  item.nombre,
-                                                  style: const TextStyle(
-                                                    fontSize: 15,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Color(0xFF1F2937),
-                                                  ),
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      item.nombre,
+                                                      style: const TextStyle(
+                                                        fontSize: 15,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: Color(0xFF1F2937),
+                                                      ),
+                                                    ),
+                                                    if ((_isShowSkuEnabled || _userPreferencesService.isShowSkuEnabledSync) &&
+                                                        item.producto.sku != null &&
+                                                        item.producto.sku!.isNotEmpty) ...[
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        'SKU: ${item.producto.sku}',
+                                                        style: const TextStyle(
+                                                          fontSize: 11,
+                                                          color: Color(0xFF4A90E2),
+                                                          fontWeight: FontWeight.w500,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                    if ((_isShowSkuEnabled || _userPreferencesService.isShowSkuEnabledSync) &&
+                                                        item.producto.descripcion != null &&
+                                                        item.producto.descripcion!.isNotEmpty) ...[
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        item.producto.descripcion!,
+                                                        maxLines: 2,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: Colors.grey[500],
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
                                                 ),
                                               ),
                                               const SizedBox(width: 8),
-                                              Text(
-                                                '\$${item.subtotal.toStringAsFixed(2)}',
-                                                style: const TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Color(0xFF4A90E2),
-                                                ),
+                                              Column(
+                                                crossAxisAlignment: CrossAxisAlignment.end,
+                                                children: [
+                                                  Text(
+                                                    '\$${item.subtotal.toStringAsFixed(2)}',
+                                                    style: const TextStyle(
+                                                      fontSize: 16,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Color(0xFF4A90E2),
+                                                    ),
+                                                  ),
+                                                  if (_usdRate > 0)
+                                                    Text(
+                                                      'USD ${(item.subtotal / _usdRate).toStringAsFixed(2)}',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors.grey[400],
+                                                      ),
+                                                    ),
+                                                ],
                                               ),
                                             ],
                                           ),
@@ -1858,7 +1915,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                               const SizedBox(width: 4),
                                               Expanded(
                                                 child: Text(
-                                                  '${PriceUtils.formatQuantity(item.cantidad)} unid. · ${item.ubicacionAlmacen}',
+                                                  '${PriceUtils.formatQuantity(item.cantidad)} unid. · \$${item.precioUnitario.toStringAsFixed(2)} c/u${_usdRate > 0 ? ' (USD ${(item.precioUnitario / _usdRate).toStringAsFixed(2)} c/u)' : ''} · ${item.ubicacionAlmacen}',
                                                   style: TextStyle(
                                                     fontSize: 13,
                                                     color: Colors.grey[600],
@@ -1935,6 +1992,125 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   .toList(),
                         ),
                       ),
+
+                      // ── Productos por defecto no incluidos (solo órdenes activas) ─
+                      Builder(builder: (context) {
+                        if (order.status == OrderStatus.completada) {
+                          return const SizedBox.shrink();
+                        }
+                        final ghostItems = _defaultOrderItems.where((entry) {
+                          try {
+                            final p = Product.fromJson(
+                                entry['product'] as Map<String, dynamic>);
+                            final alreadyIn = order.items.any(
+                              (i) =>
+                                  i.producto.id == p.id && i.cantidad > 0,
+                            );
+                            return !alreadyIn;
+                          } catch (_) {
+                            return false;
+                          }
+                        }).toList();
+                        if (ghostItems.isEmpty) return const SizedBox.shrink();
+                        return Column(
+                          children: [
+                            const SizedBox(height: 12),
+                            _buildDetailSection(
+                              title:
+                                  'Por defecto no incluidos (${ghostItems.length})',
+                              icon: Icons.playlist_add_check_outlined,
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                              child: Column(
+                                children: ghostItems.map((entry) {
+                                  final p = Product.fromJson(
+                                      entry['product']
+                                          as Map<String, dynamic>);
+                                  return Opacity(
+                                    opacity: 0.55,
+                                    child: Container(
+                                      margin: const EdgeInsets.only(bottom: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey[50],
+                                        borderRadius:
+                                            BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: Colors.grey[200]!,
+                                          style: BorderStyle.solid,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  p.denominacion,
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight:
+                                                        FontWeight.w600,
+                                                    color: Colors.grey[600],
+                                                  ),
+                                                ),
+                                                if ((_isShowSkuEnabled ||
+                                                        _userPreferencesService
+                                                            .isShowSkuEnabledSync) &&
+                                                    p.sku != null &&
+                                                    p.sku!.isNotEmpty)
+                                                  Text(
+                                                    'SKU: ${p.sku}',
+                                                    style: const TextStyle(
+                                                        fontSize: 11,
+                                                        color: Color(
+                                                            0xFF4A90E2)),
+                                                  ),
+                                                Text(
+                                                  '\$${p.precio.toStringAsFixed(2)} c/u',
+                                                  style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: Colors.grey[500]),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Container(
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey
+                                                  .withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                  color: Colors.grey
+                                                      .withOpacity(0.3)),
+                                            ),
+                                            child: const Text(
+                                              'NO INCLUIDO',
+                                              style: TextStyle(
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ],
+                        );
+                      }),
 
                       // ── Resumen de totales ────────────────────────────────
                       const SizedBox(height: 12),
@@ -5083,6 +5259,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
             onOrderUpdated: _loadOrdersFromSupabase,
             isOfflineMode: _isOfflineMode,
             showSkuEnabled: _isShowSkuEnabled,
+            usdRate: _usdRate,
+            defaultOrderItems: _defaultOrderItems,
             pendingOrders: _orderService.orders
                 .where((o) => o.status == OrderStatus.enviada)
                 .toList(),
@@ -5250,6 +5428,8 @@ class _EditPendingOrderSheet extends StatefulWidget {
   final bool isOfflineMode;
   final List<Order> pendingOrders;
   final bool showSkuEnabled;
+  final double usdRate;
+  final List<Map<String, dynamic>> defaultOrderItems;
 
   const _EditPendingOrderSheet({
     required this.order,
@@ -5259,6 +5439,8 @@ class _EditPendingOrderSheet extends StatefulWidget {
     required this.isOfflineMode,
     required this.pendingOrders,
     this.showSkuEnabled = false,
+    this.usdRate = 0.0,
+    this.defaultOrderItems = const [],
   });
 
   @override
@@ -5327,8 +5509,37 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
     super.initState();
     _activeOrder = widget.order;
     _items = List.from(widget.order.items);
+    _mergeGhostDefaultItems();
     _recalcTotal();
   }
+
+  /// Agrega al listado local los productos por defecto que NO están en la orden
+  /// (o que tienen cantidad 0), como ítems "fantasma" con id ITEM-DEFAULT-*.
+  void _mergeGhostDefaultItems() {
+    for (final entry in widget.defaultOrderItems) {
+      try {
+        final product = Product.fromJson(
+            entry['product'] as Map<String, dynamic>);
+        final defaultCantidad = (entry['cantidad'] as num).toDouble();
+        final alreadyInOrder = _items.any(
+          (i) => i.producto.id == product.id && i.cantidad > 0,
+        );
+        if (!alreadyInOrder) {
+          _items.add(OrderItem(
+            id: 'ITEM-DEFAULT-${product.id}',
+            producto: product,
+            cantidad: defaultCantidad,
+            precioUnitario: product.precio,
+            precioBase: product.precio,
+            ubicacionAlmacen: 'Por defecto',
+          ));
+        }
+      } catch (_) {}
+    }
+  }
+
+  bool _isGhostItem(OrderItem item) =>
+      item.id.startsWith('ITEM-DEFAULT-');
 
   @override
   void dispose() {
@@ -5359,6 +5570,8 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
   }
 
   void _setQtyLocal(OrderItem item, double newQty) {
+    // Ghost items cannot be qty-edited directly — user must go through catalog
+    if (_isGhostItem(item)) return;
     if (newQty <= 0) {
       _removeItemLocal(item);
       return;
@@ -5405,6 +5618,11 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
   }
 
   void _removeItemLocal(OrderItem item) {
+    // Ghost items: just remove from local list, no pending op needed
+    if (_isGhostItem(item)) {
+      setState(() => _items.removeWhere((i) => i.id == item.id));
+      return;
+    }
     setState(() {
       // Quitar cualquier op previa para este item
       final extrId = _extractionId(item);
@@ -5462,6 +5680,11 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
     });
 
     setState(() {
+      // Remove ghost placeholder for this product (if any)
+      _items.removeWhere(
+        (i) => _isGhostItem(i) && i.producto.id == product.id,
+      );
+
       if (existIdx != -1) {
         // Producto ya existe → sumar cantidad localmente
         final existing = _items[existIdx];
@@ -6487,6 +6710,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
 
   Widget _buildItemTile(OrderItem item) {
     final isNew = item.id.startsWith('ITEM-NEW-');
+    final isGhost = _isGhostItem(item);
     // Detectar si la cantidad fue modificada respecto al original
     final origItem = widget.order.items
         .where((i) => i.producto.id == item.producto.id)
@@ -6494,7 +6718,9 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
     final wasModified =
         origItem != null && origItem.cantidad != item.cantidad && !isNew;
 
-    return Padding(
+    return Opacity(
+      opacity: isGhost ? 0.55 : 1.0,
+      child: Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -6509,13 +6735,37 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                     Expanded(
                       child: Text(
                         item.nombre,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
+                          color: isGhost
+                              ? Colors.grey[500]
+                              : const Color(0xFF1F2937),
                         ),
                       ),
                     ),
+                    if (isGhost)
+                      Container(
+                        margin: const EdgeInsets.only(left: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                              color: Colors.grey.withOpacity(0.3)),
+                        ),
+                        child: const Text(
+                          'NO INCLUIDO',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
                     if (isNew)
                       Container(
                         margin: const EdgeInsets.only(left: 6),
@@ -6559,15 +6809,76 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                   ],
                 ),
                 const SizedBox(height: 2),
+                if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+                    item.producto.sku != null &&
+                    item.producto.sku!.isNotEmpty)
+                  Text(
+                    'SKU: ${item.producto.sku}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF0EA5E9),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+                    item.producto.descripcion != null &&
+                    item.producto.descripcion!.isNotEmpty)
+                  Text(
+                    item.producto.descripcion!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                  ),
                 Text(
                   '\$${item.precioUnitario.toStringAsFixed(2)} c/u · Total: \$${item.subtotal.toStringAsFixed(2)}',
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
+                if (widget.usdRate > 0)
+                  Text(
+                    'USD ${(item.subtotal / widget.usdRate).toStringAsFixed(2)} · ${(item.precioUnitario / widget.usdRate).toStringAsFixed(2)} c/u',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                  ),
               ],
             ),
           ),
           const SizedBox(width: 8),
-          // Controles cantidad
+          // Controles cantidad — ghost items get an "Agregar" button instead
+          if (isGhost)
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _isSaving
+                      ? null
+                      : () async {
+                          final product = item.producto;
+                          await _startAddProduct();
+                          await _selectProduct(product);
+                        },
+                  icon: const Icon(Icons.add, size: 14),
+                  label: const Text('Agregar',
+                      style: TextStyle(fontSize: 12)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0EA5E9),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6)),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                GestureDetector(
+                  onTap: () => _removeItemLocal(item),
+                  child: Text('Ocultar',
+                      style: TextStyle(
+                          fontSize: 10, color: Colors.grey[400])),
+                ),
+              ],
+            )
+          else
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -6604,7 +6915,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   // ── flujo añadir producto ─────────────────────────────────────
@@ -6886,12 +7197,29 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    subtitle: Text(
-                      '\$${p.precio.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        color: Color(0xFF0EA5E9),
-                        fontWeight: FontWeight.w600,
-                      ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+                            p.sku != null &&
+                            p.sku!.isNotEmpty)
+                          Text(
+                            'SKU: ${p.sku}',
+                            style: const TextStyle(
+                              color: Color(0xFF0EA5E9),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 11,
+                            ),
+                          ),
+                        Text(
+                          '\$${p.precio.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: Color(0xFF0EA5E9),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => _selectProduct(p),
@@ -6924,14 +7252,41 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
               color: Color(0xFF1F2937),
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            '\$${product.precio.toStringAsFixed(2)}',
-            style: const TextStyle(
-              fontSize: 16,
-              color: Color(0xFF0EA5E9),
-              fontWeight: FontWeight.w600,
+          if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+              product.sku != null &&
+              product.sku!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'SKU: ${product.sku}',
+              style: const TextStyle(
+                fontSize: 13,
+                color: Color(0xFF0EA5E9),
+                fontWeight: FontWeight.w500,
+              ),
             ),
+          ],
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Text(
+                '\$${product.precio.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Color(0xFF0EA5E9),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (widget.usdRate > 0) ...[
+                const SizedBox(width: 8),
+                Text(
+                  '/ USD ${(product.precio / widget.usdRate).toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[400],
+                  ),
+                ),
+              ],
+            ],
           ),
           const SizedBox(height: 20),
 

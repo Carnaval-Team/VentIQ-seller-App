@@ -957,6 +957,21 @@ class _SettingsScreenState extends State<SettingsScreen>
 
               const SizedBox(height: 16),
 
+              // Sección Ventas
+              _buildSectionHeader('Ventas'),
+              _buildSettingsCard([
+                _buildSettingsTile(
+                  icon: Icons.playlist_add_check_outlined,
+                  title: 'Productos por Defecto',
+                  subtitle:
+                      'Configura productos que se agregan automáticamente al crear una orden',
+                  onTap: () => Navigator.pushNamed(
+                      context, '/default-order-items'),
+                ),
+              ]),
+
+              const SizedBox(height: 16),
+
               // Sección Modo de Operación (modo restaurante)
               _buildSectionHeader('Modo de Operación'),
               _buildSettingsCard([_buildModoRestauranteTile()]),

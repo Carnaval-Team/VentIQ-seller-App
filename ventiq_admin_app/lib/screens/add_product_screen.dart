@@ -166,17 +166,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('  • Descripción corta: "${_descripcionCortaController.text}"');
       print('  • Código de barras: "${_codigoBarrasController.text}"');
 
-      // Cargar precio de venta desde el modelo Product
-      if (widget.product!.basePrice > 0) {
-        _precioVentaController.text = widget.product!.basePrice.toString();
-        print('✅ Precio base cargado: ${widget.product!.basePrice}');
-      } else {
-        print('⚠️ Precio base es 0, se cargará desde la base de datos');
-      }
+      // Cargar precio de venta desde el modelo Product (0 es válido)
+      _precioVentaController.text = widget.product!.basePrice.toString();
+      print('✅ Precio base cargado: ${widget.product!.basePrice}');
 
-      // Cargar precio USD si existe
-      if (widget.product!.precioVentaUsd != null &&
-          widget.product!.precioVentaUsd! > 0) {
+      if (widget.product!.precioVentaUsd != null) {
         _precioVentaUsdController.text =
             widget.product!.precioVentaUsd!.toStringAsFixed(2);
       }
@@ -1627,13 +1621,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
           onChanged: (value) {
             if (_usdRate > 0) {
               final cup = double.tryParse(value);
-              if (cup != null && cup > 0) {
-                final usd = cup / _usdRate;
-                final usdText = usd.toStringAsFixed(2);
+              if (cup != null && cup >= 0) {
+                final usdText = (cup / _usdRate).toStringAsFixed(2);
                 if (_precioVentaUsdController.text != usdText) {
                   _precioVentaUsdController.text = usdText;
                 }
-              } else {
+              } else if (value.isEmpty) {
                 _precioVentaUsdController.clear();
               }
               setState(() {});
@@ -1644,8 +1637,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
               return 'El precio de venta CUP es requerido';
             }
             final price = double.tryParse(value);
-            if (price == null || price <= 0) {
-              return 'Ingresa un precio válido';
+            if (price == null || price < 0) {
+              return 'Ingresa un precio válido (0 o mayor)';
             }
             return null;
           },
@@ -1666,13 +1659,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
           onChanged: (value) {
             if (_usdRate > 0) {
               final usd = double.tryParse(value);
-              if (usd != null && usd > 0) {
-                final cup = usd * _usdRate;
-                final cupText = cup.toStringAsFixed(2);
+              if (usd != null && usd >= 0) {
+                final cupText = (usd * _usdRate).toStringAsFixed(2);
                 if (_precioVentaController.text != cupText) {
                   _precioVentaController.text = cupText;
                 }
-              } else {
+              } else if (value.isEmpty) {
                 _precioVentaController.clear();
               }
               setState(() {});
@@ -2424,11 +2416,22 @@ class _AddProductScreenState extends State<AddProductScreen> {
       return;
     }
 
-    if (_precioVentaController.text.isEmpty ||
-        double.tryParse(_precioVentaController.text) == null ||
-        double.parse(_precioVentaController.text) <= 0) {
+    final precioVentaCup = double.tryParse(_precioVentaController.text);
+    if (_precioVentaController.text.isEmpty || precioVentaCup == null) {
       _showErrorSnackBar(
-        'El precio de venta debe ser un número válido mayor a 0',
+        'El precio de venta CUP debe ser un número válido (0 o mayor)',
+      );
+      return;
+    }
+    if (precioVentaCup < 0) {
+      _showErrorSnackBar('El precio de venta CUP no puede ser negativo');
+      return;
+    }
+    final precioVentaUsd = double.tryParse(_precioVentaUsdController.text);
+    if (_precioVentaUsdController.text.isNotEmpty &&
+        (precioVentaUsd == null || precioVentaUsd < 0)) {
+      _showErrorSnackBar(
+        'El precio de venta USD debe ser un número válido (0 o mayor)',
       );
       return;
     }
@@ -2574,7 +2577,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     final preciosData = [
       {
         'precio_venta_cup': double.parse(_precioVentaController.text),
-        if (precioUsd != null && precioUsd > 0) 'precio_venta_usd': precioUsd,
+        if (precioUsd != null && precioUsd >= 0) 'precio_venta_usd': precioUsd,
         'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
         'id_variante': null,
       },
@@ -3346,7 +3349,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
               .maybeSingle();
 
       final precioUsd = double.tryParse(_precioVentaUsdController.text);
-      final usdMap = (precioUsd != null && precioUsd > 0)
+      final usdMap = (precioUsd != null && precioUsd >= 0)
           ? {'precio_venta_usd': precioUsd}
           : {};
 
@@ -4483,9 +4486,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
   void _addPresentacionAdicional() {
     // Validar que existe precio de venta base
     final basePrice = double.tryParse(_precioVentaController.text);
-    if (basePrice == null || basePrice <= 0) {
+    if (basePrice == null || basePrice < 0) {
       _showErrorSnackBar(
-        'Debe ingresar un precio de venta base válido antes de agregar presentaciones adicionales',
+        'Debe ingresar un precio de venta base válido (0 o mayor) antes de agregar presentaciones adicionales',
       );
       return;
     }

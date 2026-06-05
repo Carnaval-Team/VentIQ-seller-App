@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
+import '../models/product.dart';
 import '../models/payment_method.dart' as pm;
 import '../services/order_service.dart';
 import '../services/turno_service.dart';
@@ -68,12 +69,54 @@ class _PreorderScreenState extends State<PreorderScreen> {
       if (isOfflineModeEnabled) {
         await _orderService.refreshPromotionsFromCache();
       }
+
+      // Si la orden está vacía (nueva), aplicar los productos por defecto
+      final currentOrder = _orderService.currentOrder;
+      final hasRealItems = currentOrder != null &&
+          currentOrder.items.any((i) => i.cantidad > 0);
+      if (!hasRealItems) {
+        await _applyDefaultOrderItems();
+      }
+
       if (mounted) {
         setState(() {});
       }
       print('📱 PreorderScreen: Preorden persistente cargada al inicializar');
     } catch (e) {
       print('❌ PreorderScreen: Error cargando preorden persistente: $e');
+    }
+  }
+
+  /// Aplica los productos por defecto configurados por el vendedor a la preorden actual.
+  Future<void> _applyDefaultOrderItems() async {
+    try {
+      final defaultItems =
+          await _userPreferencesService.getDefaultOrderItems();
+      if (defaultItems.isEmpty) return;
+
+      print(
+          '🛒 PreorderScreen: Aplicando ${defaultItems.length} productos por defecto');
+
+      for (final entry in defaultItems) {
+        try {
+          final product =
+              Product.fromJson(entry['product'] as Map<String, dynamic>);
+          final cantidad = (entry['cantidad'] as num).toDouble();
+          if (cantidad <= 0) continue;
+
+          await _orderService.addItemToCurrentOrder(
+            producto: product,
+            cantidad: cantidad,
+            ubicacionAlmacen: 'Por defecto',
+          );
+          print(
+              '✅ Producto por defecto agregado: ${product.denominacion} x$cantidad');
+        } catch (e) {
+          print('⚠️ Error agregando producto por defecto: $e');
+        }
+      }
+    } catch (e) {
+      print('❌ Error aplicando productos por defecto: $e');
     }
   }
 
