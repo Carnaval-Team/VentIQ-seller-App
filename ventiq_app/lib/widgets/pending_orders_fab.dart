@@ -49,7 +49,10 @@ class _PendingOrdersFABState extends State<PendingOrdersFAB>
       if (!mounted) return;
       if (event.type == AutoSyncEventType.syncCompleted ||
           event.type == AutoSyncEventType.syncFailed) {
-        _loadPendingOrders();
+        // Dar un delay para que se limpie el almacenamiento local primero
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) _loadPendingOrders();
+        });
       } else if (event.type == AutoSyncEventType.syncStarted) {
         setState(() => _isSyncing = true);
       }
@@ -100,6 +103,8 @@ class _PendingOrdersFABState extends State<PendingOrdersFAB>
     } catch (e) {
       print('❌ Error en sincronización forzada: $e');
     }
+    // Dar tiempo para que se limpie el almacenamiento
+    await Future.delayed(const Duration(milliseconds: 500));
     await _loadPendingOrders();
     widget.onSyncCompleted?.call();
   }
@@ -109,6 +114,12 @@ class _PendingOrdersFABState extends State<PendingOrdersFAB>
     final success = await _autoSyncService.syncSinglePendingOrder(orderId);
     if (!mounted) return;
     setState(() => _retryingOrderId = null);
+
+    // Dar tiempo para que se limpie el almacenamiento si fue exitoso
+    if (success) {
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
     await _loadPendingOrders();
     widget.onSyncCompleted?.call();
 
@@ -133,23 +144,24 @@ class _PendingOrdersFABState extends State<PendingOrdersFAB>
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Descartar orden pendiente'),
-        content: Text(
-          '¿Deseas descartar esta orden? Esta acción no se puede deshacer y los datos se perderán.\n\nCliente: ${order['buyer_name'] ?? 'Sin nombre'}\nTotal: \$${_formatTotal(order['total'])}',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Descartar orden pendiente'),
+            content: Text(
+              '¿Deseas descartar esta orden? Esta acción no se puede deshacer y los datos se perderán.\n\nCliente: ${order['buyer_name'] ?? 'Sin nombre'}\nTotal: \$${_formatTotal(order['total'])}',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Descartar'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Descartar'),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
@@ -201,9 +213,10 @@ class _PendingOrdersFABState extends State<PendingOrdersFAB>
               alignment: Alignment.bottomRight,
               child: Opacity(
                 opacity: _expandAnimation.value,
-                child: _isExpanded
-                    ? _buildPendingPanel()
-                    : const SizedBox.shrink(),
+                child:
+                    _isExpanded
+                        ? _buildPendingPanel()
+                        : const SizedBox.shrink(),
               ),
             );
           },
@@ -447,23 +460,21 @@ class _PendingOrdersFABState extends State<PendingOrdersFAB>
               ),
               const SizedBox(width: 4),
               ElevatedButton.icon(
-                onPressed:
-                    isRetrying ? null : () => _retryOrder(orderId),
-                icon: isRetrying
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Icon(Icons.refresh, size: 16),
-                label: const Text(
-                  'Reintentar',
-                  style: TextStyle(fontSize: 12),
-                ),
+                onPressed: isRetrying ? null : () => _retryOrder(orderId),
+                icon:
+                    isRetrying
+                        ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                        : const Icon(Icons.refresh, size: 16),
+                label: const Text('Reintentar', style: TextStyle(fontSize: 12)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4A90E2),
                   foregroundColor: Colors.white,
