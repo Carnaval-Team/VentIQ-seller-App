@@ -2415,13 +2415,28 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  void _showLogoutDialog() {
+  void _showLogoutDialog() async {
+    // 🛟 Proteger datos offline sin sincronizar: avisar antes de cerrar sesión
+    // si hay órdenes, operaciones o egresos pendientes que se perderían.
+    final hasUnsynced =
+        await _userPreferencesService.hasUnsyncedOfflineData();
+
+    if (!mounted) return;
+
+    final String contenido =
+        hasUnsynced
+            ? '⚠️ Tienes datos sin sincronizar (órdenes, turno o egresos en modo offline). '
+                'Si cierras sesión ahora podrías perderlos.\n\n'
+                'Te recomendamos conectarte y sincronizar antes de salir.\n\n'
+                '¿Cerrar sesión de todos modos?'
+            : '¿Estás seguro de que quieres cerrar sesión?';
+
     showDialog(
       context: context,
       builder:
           (context) => AlertDialog(
             title: const Text('Cerrar Sesión'),
-            content: const Text('¿Estás seguro de que quieres cerrar sesión?'),
+            content: Text(contenido),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
@@ -2429,7 +2444,6 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
               ElevatedButton(
                 onPressed: () {
-                  // Aquí implementarías la lógica de logout real
                   Navigator.pop(context);
                   _performLogout();
                 },
@@ -2437,7 +2451,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
                 ),
-                child: const Text('Cerrar Sesión'),
+                child: Text(
+                  hasUnsynced ? 'Cerrar de todos modos' : 'Cerrar Sesión',
+                ),
               ),
             ],
           ),

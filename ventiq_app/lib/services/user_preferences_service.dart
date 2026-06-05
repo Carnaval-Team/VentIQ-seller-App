@@ -76,6 +76,8 @@ class UserPreferencesService {
       'egresos_cache'; // Cache de egresos para modo offline
   static const String _storeConfigKey =
       'store_config'; // Configuración de la tienda
+  static const String _offlineDataOwnerKey =
+      'offline_data_owner'; // userId dueño del caché offline (aislamiento por usuario)
 
   // Persistent preorder keys
   static const String _persistentPreorderKey =
@@ -101,12 +103,34 @@ class UserPreferencesService {
     required String accessToken,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+
+    // 🔐 AISLAMIENTO POR USUARIO: si el caché offline pertenece a OTRO usuario,
+    // se descarta para no exponer ni mezclar datos entre cuentas distintas en
+    // el mismo dispositivo. El login offline ('offline_mode') NO descarta nada
+    // porque conserva al mismo usuario.
+    if (accessToken != 'offline_mode') {
+      final previousOwner = prefs.getString(_offlineDataOwnerKey);
+      if (previousOwner != null && previousOwner != userId) {
+        print(
+          '🔐 Cambio de usuario detectado ($previousOwner → $userId): limpiando datos offline del usuario anterior',
+        );
+        await clearAllOfflineDataForced();
+        await clearOfflineData();
+        await clearEgresosOffline();
+        await clearTurnoResumenCache();
+        await clearResumenCierreCache();
+      }
+      await prefs.setString(_offlineDataOwnerKey, userId);
+    }
+
     await prefs.setString(_userIdKey, userId);
     await prefs.setString(_userEmailKey, email);
     await prefs.setString(_accessTokenKey, accessToken);
     await prefs.setBool(_isLoggedInKey, true);
 
-    // Set token expiry (24 hours from now)
+    // Set token expiry (24 hours from now).
+    // Nota: en modo offline la sesión NO depende de esta expiración
+    // (ver hasValidSession()), permite trabajar indefinidamente sin conexión.
     final expiryTime =
         DateTime.now().add(Duration(hours: 24)).millisecondsSinceEpoch;
     await prefs.setInt(_tokenExpiryKey, expiryTime);
@@ -430,13 +454,46 @@ class UserPreferencesService {
 
   Future<bool> hasValidSession() async {
     final isLoggedIn = await this.isLoggedIn();
-    final hasValidToken = await isTokenValid();
     final accessToken = await getAccessToken();
 
-    return isLoggedIn &&
-        hasValidToken &&
-        accessToken != null &&
-        accessToken.isNotEmpty;
+    if (!isLoggedIn || accessToken == null || accessToken.isEmpty) {
+      return false;
+    }
+
+    // 🔌 MODO OFFLINE: la sesión NO expira mientras existan datos offline
+    // válidos y un usuario offline guardado. Permite trabajar días, semanas
+    // o meses sin conexión sin que la app fuerce un nuevo login.
+    final offlineEnabled = await isOfflineModeEnabled();
+    final isOfflineToken = accessToken == 'offline_mode';
+    if (offlineEnabled || isOfflineToken) {
+      final email = await getUserEmail();
+      final hasOfflineUser =
+          email != null && email.isNotEmpty && await this.hasOfflineUser(email);
+      final hasData = await hasOfflineData();
+      if (hasOfflineUser && hasData) {
+        return true;
+      }
+      // Sin datos offline o sin usuario offline: la sesión offline no es
+      // utilizable; se exige reconexión.
+      return false;
+    }
+
+    // 🌐 MODO ONLINE: se respeta la expiración del token.
+    final hasValidToken = await isTokenValid();
+    if (hasValidToken) {
+      return true;
+    }
+
+    // 🛟 FALLBACK OFFLINE: el token expiró pero el dispositivo tiene datos
+    // offline completos y un usuario offline guardado (caso típico: se perdió
+    // la conexión sin activar manualmente el modo offline). En vez de forzar
+    // logout y arriesgar pérdida de datos, se mantiene la sesión para poder
+    // seguir trabajando offline. El token se revalidará al recuperar conexión.
+    final email = await getUserEmail();
+    final hasOfflineUser =
+        email != null && email.isNotEmpty && await this.hasOfflineUser(email);
+    final hasData = await hasOfflineData();
+    return hasOfflineUser && hasData;
   }
 
   // Promotion management methods
@@ -1164,6 +1221,77 @@ class UserPreferencesService {
     print('🗑️ Todas las órdenes pendientes eliminadas');
   }
 
+  /// Marca órdenes como sincronizadas SIN eliminarlas del almacenamiento local.
+  ///
+  /// Esto permite que las órdenes activas (no finalizadas) sigan visibles en la
+  /// pantalla de órdenes tras sincronizar. Opcionalmente asocia el id_operacion
+  /// devuelto por el servidor (mapa orderId -> id_operacion).
+  Future<void> markOrdersSyncedById(
+    List<String> orderIds, {
+    Map<String, int>? operationIds,
+  }) async {
+    if (orderIds.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final json = prefs.getString(_pendingOrdersKey);
+    if (json == null) return;
+
+    final decoded = jsonDecode(json) as List<dynamic>;
+    final idSet = orderIds.toSet();
+    bool changed = false;
+
+    final updated =
+        decoded.map((item) {
+          final order = item as Map<String, dynamic>;
+          final id = order['id']?.toString();
+          if (id != null && idSet.contains(id)) {
+            order['synced'] = true;
+            order['synced_at'] = DateTime.now().toIso8601String();
+            order['is_pending_sync'] = false;
+            final opId = operationIds?[id];
+            if (opId != null) order['id_operacion'] = opId;
+            changed = true;
+          }
+          return order;
+        }).toList();
+
+    if (changed) {
+      await prefs.setString(_pendingOrdersKey, jsonEncode(updated));
+      print('🔖 ${orderIds.length} órdenes marcadas como sincronizadas');
+    }
+  }
+
+  /// Estados que se consideran finales (la orden ya no está activa).
+  static const Set<String> _estadosFinalesOrden = {
+    'completada',
+    'cancelada',
+    'devuelta',
+  };
+
+  /// Purga del almacenamiento local SOLO las órdenes que YA están sincronizadas
+  /// y además en estado final. Las órdenes activas (aunque sincronizadas)
+  /// permanecen para seguir mostrándose hasta que se recarguen del servidor.
+  Future<void> purgeFinalizedSyncedOrders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final json = prefs.getString(_pendingOrdersKey);
+    if (json == null) return;
+
+    final decoded = jsonDecode(json) as List<dynamic>;
+    final remaining =
+        decoded.map((e) => e as Map<String, dynamic>).where((order) {
+          final synced = order['synced'] == true;
+          final estado = (order['estado'] ?? '').toString();
+          final esFinal = _estadosFinalesOrden.contains(estado);
+          // Conservar si NO está sincronizada, o si todavía está activa.
+          return !(synced && esFinal);
+        }).toList();
+
+    final removed = decoded.length - remaining.length;
+    if (removed > 0) {
+      await prefs.setString(_pendingOrdersKey, jsonEncode(remaining));
+      print('🧹 Purgadas $removed órdenes sincronizadas y finalizadas');
+    }
+  }
+
   /// Obtener número de órdenes pendientes
   Future<int> getPendingOrdersCount() async {
     final pendingOrders = await getPendingOrders();
@@ -1532,12 +1660,96 @@ class UserPreferencesService {
     };
   }
 
-  /// Limpiar todos los datos offline después de sincronización exitosa
+  /// Limpieza POST-SINCRONIZACIÓN segura.
+  ///
+  /// ⚠️ IMPORTANTE (regla de negocio):
+  /// - NO cierra/borra el turno offline salvo que exista una operación
+  ///   `cierre_turno` pendiente (es decir, que el usuario haya mandado a
+  ///   cerrar el turno explícitamente). Antes este método borraba el turno
+  ///   en CADA sincronización, lo que provocaba que el turno se "cerrara solo".
+  /// - Solo elimina órdenes que ya fueron sincronizadas Y que están en estado
+  ///   final; las órdenes activas/pendientes permanecen visibles.
+  /// - Conserva operaciones pendientes que no se hayan sincronizado.
   Future<void> clearAllOfflineData() async {
+    // Determinar si hay un cierre de turno explícito pendiente.
+    bool tieneCierreExplicito = false;
+    try {
+      final operations = await getPendingOperations();
+      tieneCierreExplicito = operations.any(
+        (op) => op['type'] == 'cierre_turno',
+      );
+    } catch (_) {
+      tieneCierreExplicito = false;
+    }
+
+    // Limpiar SOLO operaciones ya sincronizadas (marcadas con synced == true).
+    await _removeSyncedPendingOperations();
+
+    if (tieneCierreExplicito) {
+      // El usuario mandó a cerrar el turno → ahora sí se cierra y se limpia.
+      await clearOfflineTurno();
+      print('✅ Turno cerrado y limpiado (cierre explícito sincronizado)');
+    } else {
+      print(
+        'ℹ️ Sincronización completada — turno offline PRESERVADO (no se mandó a cerrar)',
+      );
+    }
+  }
+
+  /// Limpieza TOTAL de datos offline (logout real / cambio de usuario).
+  /// Borra todo, incluido el turno. Usar solo cuando se confirma que no hay
+  /// nada pendiente de sincronizar (ver hasUnsyncedOfflineData()).
+  Future<void> clearAllOfflineDataForced() async {
     await clearPendingOrders();
     await clearPendingOperations();
     await clearOfflineTurno();
-    print('🗑️ Todos los datos offline eliminados después de sincronización');
+    print('🗑️ Todos los datos offline eliminados (forzado)');
+  }
+
+  /// Elimina del array de operaciones pendientes solo las marcadas como
+  /// sincronizadas (synced == true), conservando el resto.
+  Future<void> _removeSyncedPendingOperations() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getString(_pendingOperationsKey);
+      if (json == null) return;
+      final decoded = jsonDecode(json) as List<dynamic>;
+      final remaining =
+          decoded
+              .map((e) => e as Map<String, dynamic>)
+              .where((op) => op['synced'] != true)
+              .toList();
+      if (remaining.isEmpty) {
+        await prefs.remove(_pendingOperationsKey);
+      } else {
+        await prefs.setString(_pendingOperationsKey, jsonEncode(remaining));
+      }
+    } catch (e) {
+      print('⚠️ Error limpiando operaciones sincronizadas: $e');
+    }
+  }
+
+  /// ¿Hay datos offline sin sincronizar que se perderían al hacer logout?
+  /// Considera órdenes pendientes, operaciones pendientes y turno offline.
+  Future<bool> hasUnsyncedOfflineData() async {
+    try {
+      final pendingOrders = await getPendingOrders();
+      final unsyncedOrders = pendingOrders.where((o) => o['synced'] != true);
+      if (unsyncedOrders.isNotEmpty) return true;
+
+      final operations = await getPendingOperations();
+      final unsyncedOps = operations.where((o) => o['synced'] != true);
+      if (unsyncedOps.isNotEmpty) return true;
+
+      final egresos = await getEgresosOffline();
+      if (egresos.isNotEmpty) return true;
+
+      return false;
+    } catch (e) {
+      print('⚠️ Error verificando datos sin sincronizar: $e');
+      // Ante la duda, asumir que SÍ hay datos para no arriesgar pérdida.
+      return true;
+    }
   }
 
   /// Limpiar preferencias offline al abrir una nueva versión

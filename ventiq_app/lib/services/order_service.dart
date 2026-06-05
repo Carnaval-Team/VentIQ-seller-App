@@ -1745,9 +1745,19 @@ class OrderService {
               );
             }).toList();
 
-        // Determinar estado almacenado (si existe) para no sobreescribirlo
-        final storedStatusString =
+        // Determinar estado almacenado (si existe) para no sobreescribirlo.
+        // Si la orden YA fue sincronizada con el servidor pero su estado seguía
+        // siendo 'pendiente_sincronizacion', se considera 'enviada' (activa) en
+        // vez de pendiente, para que se muestre correctamente y no parezca que
+        // sigue sin sincronizar.
+        final bool yaSincronizada = orderData['synced'] == true;
+        var storedStatusString =
             orderData['estado'] ?? orderData['status'] as String?;
+        if (yaSincronizada &&
+            (storedStatusString == null ||
+                storedStatusString == 'pendiente_sincronizacion')) {
+          storedStatusString = 'enviada';
+        }
         final storedStatus =
             storedStatusString != null
                 ? _stringToOrderStatus(storedStatusString) ??

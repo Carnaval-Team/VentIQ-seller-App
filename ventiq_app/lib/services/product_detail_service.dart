@@ -35,6 +35,57 @@ class ProductDetailService {
     }
   }
 
+  /// Obtiene los detalles completos de MÚLTIPLES productos en UNA sola llamada
+  /// (RPC batch get_detalles_productos_batch). Elimina el patrón N+1 al
+  /// sincronizar el catálogo offline.
+  ///
+  /// Devuelve un mapa { id_producto : { 'producto': {...}, 'inventario': [...] } }
+  /// con la MISMA forma que get_detalle_producto por producto.
+  ///
+  /// Si el RPC batch no existe aún en el servidor (no se ha subido el .sql),
+  /// hace fallback automático a llamadas individuales para no romper la app.
+  Future<Map<int, dynamic>> getProductDetailsBatch(List<int> productIds) async {
+    final Map<int, dynamic> result = {};
+    if (productIds.isEmpty) return result;
+
+    try {
+      final response = await _supabase.rpc(
+        'get_detalles_productos_batch',
+        params: {'ids_param': productIds},
+      );
+
+      if (response is Map) {
+        response.forEach((key, value) {
+          final id = int.tryParse(key.toString());
+          if (id != null) result[id] = value;
+        });
+        debugPrint(
+          '✅ Batch detalles: ${result.length}/${productIds.length} productos en 1 RPC',
+        );
+        return result;
+      }
+    } catch (e) {
+      debugPrint(
+        '⚠️ RPC batch get_detalles_productos_batch no disponible ($e). '
+        'Fallback a llamadas individuales.',
+      );
+    }
+
+    // Fallback: una llamada por producto (comportamiento previo).
+    for (final id in productIds) {
+      try {
+        final detail = await _supabase.rpc(
+          'get_detalle_producto',
+          params: {'id_producto_param': id},
+        );
+        if (detail != null) result[id] = detail;
+      } catch (e) {
+        debugPrint('⚠️ Error detalle producto $id (fallback): $e');
+      }
+    }
+    return result;
+  }
+
   /// Transform Supabase response to Product model
   Product _transformToProduct(Map<String, dynamic> response) {
     final productData = response['producto'] as Map<String, dynamic>;

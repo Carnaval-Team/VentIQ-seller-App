@@ -429,40 +429,21 @@
 }
 .v2-btn:hover .v2-btn-arrow { transform: translateX(3px); }
 
-/* Hero 3D canvas wrapper */
-.v2-hero-stage {
-    position: relative;
-    aspect-ratio: 1 / 1;
-    width: 100%;
-    max-width: 620px;
-    margin-inline: auto;
-    border-radius: var(--v2-r-2xl);
-    overflow: hidden;
-    isolation: isolate;
-}
-
-.v2-hero-stage canvas {
-    width: 100% !important;
-    height: 100% !important;
-    display: block;
-}
-
-.v2-hero-stage-fallback {
-    position: absolute;
-    inset: 0;
+/* Hero visual: just centers the phone, no stage wrapper anymore */
+.v2-hero-visual {
     display: grid;
     place-items: center;
-    background:
-        radial-gradient(60% 60% at 50% 40%, rgba(124, 58, 237, 0.35), transparent 70%),
-        linear-gradient(160deg, #1E1B4B, #312E81);
-    color: #fff;
-    border-radius: inherit;
+    width: 100%;
+    padding-block: clamp(20px, 4vw, 48px);
 }
 
-.v2-hero-stage-fallback img {
-    width: 70%;
-    border-radius: var(--v2-r-lg);
-    box-shadow: var(--v2-sh-violet);
+/* Hero phone runs a touch bigger than stack-card phones */
+.v2-phone-hero {
+    max-width: 360px;
+}
+
+@media (max-width: 980px) {
+    .v2-phone-hero { max-width: 300px; }
 }
 
 /* hero meta strip — UNDER hero, not inside (Section 4.7) */
@@ -1342,23 +1323,6 @@
     min-height: 540px;
 }
 .v2-stack-visual.v2-stack-visual-phone::after { display: none; }
-
-/* Hero fallback now hosts a phone mockup directly */
-.v2-hero-stage-fallback {
-    background:
-        radial-gradient(60% 60% at 50% 40%, rgba(124, 58, 237, 0.18), transparent 70%),
-        transparent;
-    display: grid;
-    place-items: center;
-    padding: 20px;
-}
-.v2-hero-stage-fallback img {
-    width: 100%;
-    height: 100%;
-    border-radius: 0;
-    box-shadow: none;
-    object-fit: cover;
-}
 
 @media (max-width: 540px) {
     .v2-phone { max-width: 260px; }

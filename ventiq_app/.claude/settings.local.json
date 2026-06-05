@@ -7,7 +7,8 @@
       "mcp__supabase__list_tables",
       "mcp__ide__getDiagnostics",
       "mcp__supabase__execute_sql",
-      "Bash(flutter *)"
+      "Bash(flutter *)",
+      "Bash(sed \"s/.rpc\\('//\")"
     ]
   },
   "enabledMcpjsonServers": [
