@@ -48,7 +48,7 @@ async function bootScene() {
     renderer.setSize(width, height);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 1.25;
     STAGE.appendChild(renderer.domElement);
 
     // ---------- Scene ----------
@@ -86,39 +86,90 @@ async function bootScene() {
     // ---------- Slabs (3 = one per app: Vendedor / Admin / Catálogo) ----------
     const slabs = [];
     const slabConfigs = [
-        { color: 0x7c3aed, x: -1.45, y:  0.55, z: -0.4, rot: -0.18, scale: 1.0 },
-        { color: 0x4f46e5, x:  0.05, y: -0.25, z:  0.6, rot:  0.05, scale: 1.18 },
-        { color: 0x22d3ee, x:  1.55, y:  0.45, z: -0.6, rot:  0.22, scale: 0.95 },
+        {
+            ringColor: 0x7c3aed,
+            texture: 'assets/images/screenshoot.jpg',
+            x: -1.55, y:  0.55, z: -0.4, rot: -0.18, scale: 1.0,
+        },
+        {
+            ringColor: 0x4f46e5,
+            texture: 'assets/images/images_tutorial_admin/ejecutive_dash_general.jpg',
+            x:  0.05, y: -0.25, z:  0.6, rot:  0.05, scale: 1.18,
+        },
+        {
+            ringColor: 0x22d3ee,
+            texture: 'assets/images/catalogo.jpg',
+            x:  1.65, y:  0.45, z: -0.6, rot:  0.22, scale: 0.95,
+        },
     ];
 
-    const slabGeom = roundedPlane(THREE, 1.7, 2.4, 0.28, 12);
+    // Geometries: one frame (extruded rounded plane) + one flat screen (slightly smaller, sits on top)
+    const W = 1.7, H = 2.4;
+    const frameGeom = roundedPlane(THREE, W, H, 0.24, 12);
+    const screenGeom = roundedPlaneFlat(THREE, W - 0.12, H - 0.12, 0.20, 14);
+
+    const texLoader = new THREE.TextureLoader();
+    texLoader.crossOrigin = 'anonymous';
 
     slabConfigs.forEach((cfg, i) => {
-        const mat = new THREE.MeshPhysicalMaterial({
-            color: new THREE.Color(cfg.color),
-            metalness: 0.1,
-            roughness: 0.12,
-            transmission: 0.92,
-            thickness: 0.6,
-            ior: 1.45,
-            attenuationColor: new THREE.Color(cfg.color),
-            attenuationDistance: 2.4,
-            iridescence: 0.85,
-            iridescenceIOR: 1.35,
-            iridescenceThicknessRange: [180, 720],
+        const ringColor = new THREE.Color(cfg.ringColor);
+
+        // Frame: dark iridescent bezel — looks like the chassis of a device
+        const frameMat = new THREE.MeshPhysicalMaterial({
+            color: new THREE.Color(0x0a0c16),
+            metalness: 0.9,
+            roughness: 0.28,
+            emissive: ringColor.clone().multiplyScalar(0.18),
+            emissiveIntensity: 0.6,
+            iridescence: 1.0,
+            iridescenceIOR: 1.4,
+            iridescenceThicknessRange: [240, 820],
             clearcoat: 1.0,
             clearcoatRoughness: 0.08,
             envMapIntensity: 1.4,
             side: THREE.DoubleSide,
         });
 
-        const mesh = new THREE.Mesh(slabGeom, mat);
-        mesh.position.set(cfg.x, cfg.y, cfg.z);
-        mesh.rotation.z = cfg.rot;
-        mesh.scale.setScalar(cfg.scale);
-        mesh.userData = { baseY: cfg.y, baseRot: cfg.rot, phase: i * 1.7 };
-        group.add(mesh);
-        slabs.push(mesh);
+        const frame = new THREE.Mesh(frameGeom, frameMat);
+
+        // Screen: app screenshot textured plane, sits a hair in front of the frame
+        const tex = texLoader.load(
+            cfg.texture,
+            (t) => {
+                t.colorSpace = THREE.SRGBColorSpace;
+                t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+                t.needsUpdate = true;
+            },
+            undefined,
+            (err) => console.warn('[hero-3d] texture failed', cfg.texture, err)
+        );
+        tex.colorSpace = THREE.SRGBColorSpace;
+
+        const screenMat = new THREE.MeshPhysicalMaterial({
+            map: tex,
+            metalness: 0.0,
+            roughness: 0.42,
+            clearcoat: 0.8,
+            clearcoatRoughness: 0.18,
+            envMapIntensity: 0.55,
+            side: THREE.FrontSide,
+        });
+
+        const screen = new THREE.Mesh(screenGeom, screenMat);
+        // Push the screen forward along the frame's depth so it appears mounted on top
+        screen.position.z = 0.105;
+
+        // Group both as the slab unit
+        const slab = new THREE.Group();
+        slab.add(frame);
+        slab.add(screen);
+        slab.position.set(cfg.x, cfg.y, cfg.z);
+        slab.rotation.z = cfg.rot;
+        slab.scale.setScalar(cfg.scale);
+        slab.userData = { baseY: cfg.y, baseRot: cfg.rot, phase: i * 1.7 };
+
+        group.add(slab);
+        slabs.push(slab);
     });
 
     // ---------- Floating particles (soft accents) ----------
@@ -211,8 +262,16 @@ async function bootScene() {
         ro.disconnect();
         visIO.disconnect();
         renderer.dispose();
-        slabGeom.dispose();
-        slabs.forEach(s => s.material.dispose());
+        frameGeom.dispose();
+        screenGeom.dispose();
+        slabs.forEach((slab) => {
+            slab.traverse((obj) => {
+                if (obj.isMesh) {
+                    obj.material?.map?.dispose?.();
+                    obj.material?.dispose?.();
+                }
+            });
+        });
         env.dispose();
         pmrem.dispose();
     }, { once: true });
@@ -220,8 +279,7 @@ async function bootScene() {
 
 /* ---------- helpers ---------- */
 
-function roundedPlane(THREE, w, h, r, seg) {
-    // Build a rounded rectangle ShapeGeometry then extrude slightly for depth
+function roundedRectShape(THREE, w, h, r) {
     const shape = new THREE.Shape();
     const x = -w / 2;
     const y = -h / 2;
@@ -234,7 +292,12 @@ function roundedPlane(THREE, w, h, r, seg) {
     shape.quadraticCurveTo(x, y + h, x, y + h - r);
     shape.lineTo(x, y + r);
     shape.quadraticCurveTo(x, y, x + r, y);
+    return shape;
+}
 
+function roundedPlane(THREE, w, h, r, seg) {
+    // Build a rounded rectangle ShapeGeometry then extrude slightly for depth (used as device frame)
+    const shape = roundedRectShape(THREE, w, h, r);
     const geom = new THREE.ExtrudeGeometry(shape, {
         depth: 0.18,
         bevelEnabled: true,
@@ -243,6 +306,31 @@ function roundedPlane(THREE, w, h, r, seg) {
         bevelSegments: 6,
         curveSegments: seg,
     });
+    geom.center();
+    return geom;
+}
+
+function roundedPlaneFlat(THREE, w, h, r, seg) {
+    // Flat rounded rect with proper UVs so a screenshot maps cleanly to the surface.
+    const shape = roundedRectShape(THREE, w, h, r);
+    const geom = new THREE.ShapeGeometry(shape, seg);
+
+    // Re-build UVs: ShapeGeometry inherits the shape coordinates as UVs (can go negative).
+    // Remap to [0,1] across the bounding box and flip Y for image textures.
+    geom.computeBoundingBox();
+    const min = geom.boundingBox.min;
+    const max = geom.boundingBox.max;
+    const sx = 1 / (max.x - min.x);
+    const sy = 1 / (max.y - min.y);
+    const pos = geom.attributes.position;
+    const uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+        const u = (pos.getX(i) - min.x) * sx;
+        const v = 1 - (pos.getY(i) - min.y) * sy; // flip Y so top of image = top of plane
+        uv[i * 2] = u;
+        uv[i * 2 + 1] = v;
+    }
+    geom.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     geom.center();
     return geom;
 }
@@ -261,20 +349,32 @@ function makeGradientEnv(THREE, pmrem) {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 512, 256);
 
-    // sparkle highlights
+    // sparkle highlights — brighter + more numerous so iridescence has crisp reflections to bend
     ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 140; i++) {
         const cx = Math.random() * 512;
         const cy = Math.random() * 256;
-        const r = Math.random() * 6 + 2;
+        const r = Math.random() * 8 + 2;
         const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-        g.addColorStop(0, 'rgba(255,255,255,0.6)');
+        g.addColorStop(0, 'rgba(255,255,255,0.95)');
+        g.addColorStop(0.4, 'rgba(255,255,255,0.5)');
         g.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.fillStyle = g;
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
         ctx.fill();
     }
+
+    // a couple of large bright zones — strong light sources for clearcoat highlights
+    [[120, 80, 90], [380, 60, 110], [260, 200, 80]].forEach(([x, y, r]) => {
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, 'rgba(255,255,255,0.45)');
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+    });
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.mapping = THREE.EquirectangularReflectionMapping;
