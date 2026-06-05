@@ -1,9 +1,31 @@
 {
-  "current_version": "2.2.7",
-  "build": 227,
+  "current_version": "2.2.8",
+  "build": 228,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.2.8",
+      "date": "2026-06-05",
+      "title": "🎯 Mejoras en la gestión de productos",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Formulario de productos más claro",
+          "description": "Reorganizamos la pantalla de creación y edición de productos para que sea más intuitiva y fácil de completar."
+        },
+        {
+          "type": "improvement",
+          "title": "Validaciones mejoradas",
+          "description": "Mejoramos las validaciones al crear o editar productos para evitar errores y asegurar que todos los datos necesarios estén completos."
+        },
+        {
+          "type": "improvement",
+          "title": "Detalles de producto más informativos",
+          "description": "La pantalla de detalle de productos ahora muestra la información de forma más organizada y fácil de leer."
+        }
+      ]
+    },
     {
       "version": "2.2.7",
       "date": "2026-06-03",

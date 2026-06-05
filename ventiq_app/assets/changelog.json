@@ -1,9 +1,41 @@
 {
-  "current_version": "2.3.2",
-  "build": 834,
+  "current_version": "2.3.3",
+  "build": 835,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.3.3",
+      "date": "2026-06-05",
+      "title": "🛒 Productos favoritos para ventas más rápidas",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Define tus productos más vendidos",
+          "description": "Ahora puedes crear una lista de productos que vendes con más frecuencia para acceder a ellos al instante desde cualquier parte de la app."
+        },
+        {
+          "type": "feature",
+          "title": "Acceso rápido en el carrito",
+          "description": "Al hacer una venta o preorden, verás un botón para agregar rápidamente tus productos favoritos sin tener que buscarlos en el catálogo."
+        },
+        {
+          "type": "feature",
+          "title": "Gestiona tu lista desde Configuración",
+          "description": "Añade o quita productos de tu lista de favoritos en cualquier momento desde la pantalla de Configuración."
+        },
+        {
+          "type": "improvement",
+          "title": "Sincronización más inteligente de órdenes pendientes",
+          "description": "Mejoramos el proceso de sincronización offline para que las órdenes pendientes se actualicen correctamente cuando recuperas la conexión, sin perder cambios locales."
+        },
+        {
+          "type": "improvement",
+          "title": "Edición de órdenes más fluida",
+          "description": "Al editar una orden pendiente, ahora los cambios se reflejan de forma más clara con etiquetas visuales que distinguen los productos nuevos y editados."
+        }
+      ]
+    },
     {
       "version": "2.3.2",
       "date": "2026-05-27",
