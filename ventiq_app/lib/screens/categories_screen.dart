@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'products_screen.dart';
 import 'barcode_scanner_screen.dart';
-import '../widgets/offline_status_badge.dart';
+// import '../widgets/offline_status_badge.dart';
 import 'fluid_mode_screen.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
@@ -897,7 +897,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                 )
                 : null,
         actions: [
-          const OfflineStatusBadge(showLabel: false),
+          // const OfflineStatusBadge(showLabel: false),
           IconButton(
             icon: Icon(
               _isSearchOpen ? Icons.close : Icons.search,
