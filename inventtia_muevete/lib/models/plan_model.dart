@@ -10,7 +10,6 @@ class PlanModel {
   final int? matchingDiarioMax;
   final double? escrowComision;
   final bool escrowIncluido;
-  final bool verificacionMc;
   final bool alertasPush;
   final int? ventanaExclusivaHoras;
   final bool gpsBasico;
@@ -37,7 +36,6 @@ class PlanModel {
     this.matchingDiarioMax,
     this.escrowComision,
     this.escrowIncluido = false,
-    this.verificacionMc = false,
     this.alertasPush = false,
     this.ventanaExclusivaHoras,
     this.gpsBasico = false,
@@ -71,7 +69,6 @@ class PlanModel {
           ? (json['escrow_comision'] as num).toDouble()
           : null,
       escrowIncluido: json['escrow_incluido'] as bool? ?? false,
-      verificacionMc: json['verificacion_mc'] as bool? ?? false,
       alertasPush: json['alertas_push'] as bool? ?? false,
       ventanaExclusivaHoras: json['ventana_exclusiva_horas'] as int?,
       gpsBasico: json['gps_basico'] as bool? ?? false,
@@ -102,7 +99,6 @@ class PlanModel {
         'matching_diario_max': matchingDiarioMax,
         'escrow_comision': escrowComision,
         'escrow_incluido': escrowIncluido,
-        'verificacion_mc': verificacionMc,
         'alertas_push': alertasPush,
         'ventana_exclusiva_horas': ventanaExclusivaHoras,
         'gps_basico': gpsBasico,

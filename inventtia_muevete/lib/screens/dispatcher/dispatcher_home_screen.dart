@@ -8,7 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/carga_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../carrier/carrier_home_screen.dart';
-import 'dispatcher_profile_screen.dart';
+import '../common/unified_profile_screen.dart';
 
 class DispatcherHomeScreen extends StatefulWidget {
   const DispatcherHomeScreen({super.key});
@@ -95,7 +95,7 @@ class _DispatcherHomeScreenState extends State<DispatcherHomeScreen>
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => const DispatcherProfileScreen(),
+                builder: (_) => const UnifiedProfileScreen(),
               ),
             ),
           ),

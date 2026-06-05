@@ -31,7 +31,6 @@ import 'screens/client/route_preview_screen.dart';
 import 'screens/client/driver_offers_screen.dart';
 import 'screens/client/ride_confirmed_screen.dart';
 import 'screens/client/wallet_screen.dart';
-import 'screens/client/profile_screen.dart';
 import 'screens/client/saved_addresses_screen.dart';
 import 'screens/client/request_history_screen.dart';
 import 'screens/driver/driver_home_screen.dart';
@@ -40,12 +39,10 @@ import 'screens/driver/active_ride_screen.dart';
 import 'screens/driver/driver_wallet_screen.dart';
 import 'screens/shipper/shipper_home_screen.dart';
 import 'screens/shipper/carrier_directory_screen.dart';
-import 'screens/shipper/shipper_profile_screen.dart';
 import 'screens/carrier/carrier_home_screen.dart';
-import 'screens/carrier/carrier_carga_profile_screen.dart';
 import 'screens/dispatcher/dispatcher_home_screen.dart';
-import 'screens/dispatcher/dispatcher_profile_screen.dart';
 import 'screens/common/planes_screen.dart';
+import 'screens/common/unified_profile_screen.dart';
 import 'widgets/notification_overlay.dart';
 
 Future<void> main() async {
@@ -142,7 +139,7 @@ class MueveteApp extends StatelessWidget {
               '/client/ride-confirmed': (context) =>
                   const RideConfirmedScreen(),
               '/client/wallet': (context) => const WalletScreen(),
-              '/client/profile': (context) => const ProfileScreen(),
+              '/client/profile': (context) => const UnifiedProfileScreen(),
               '/client/saved-addresses': (context) =>
                   const SavedAddressesScreen(),
               '/client/request-history': (context) =>
@@ -153,12 +150,13 @@ class MueveteApp extends StatelessWidget {
               '/driver/active-ride': (context) => const ActiveRideScreen(),
               '/driver/wallet': (context) => const DriverWalletScreen(),
               '/shipper/home': (context) => const ShipperHomeScreen(),
-              '/shipper/profile': (context) => const ShipperProfileScreen(),
+              '/profile': (context) => const UnifiedProfileScreen(),
+              '/shipper/profile': (context) => const UnifiedProfileScreen(),
               '/carrier-directory': (context) => const CarrierDirectoryScreen(),
               '/carrier/home': (context) => const CarrierHomeScreen(),
-              '/carrier/profile': (context) => const CarrierCargaProfileScreen(),
+              '/carrier/profile': (context) => const UnifiedProfileScreen(),
               '/dispatcher/home': (context) => const DispatcherHomeScreen(),
-              '/dispatcher/profile': (context) => const DispatcherProfileScreen(),
+              '/dispatcher/profile': (context) => const UnifiedProfileScreen(),
               '/planes': (context) {
                 final args = ModalRoute.of(context)!.settings.arguments
                     as Map<String, dynamic>?;

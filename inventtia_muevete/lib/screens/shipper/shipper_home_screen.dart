@@ -10,13 +10,14 @@ import '../../models/oferta_carga_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/carga_provider.dart';
 import '../../providers/nomencladores_provider.dart';
+import '../../utils/peso_unidad_util.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/carga_fechas_section.dart';
 import '../../widgets/carga_mercancia_equipo_section.dart';
 import '../../widgets/route_map_widget.dart';
 import 'cargo_location_picker_screen.dart';
 import 'carrier_directory_screen.dart';
-import 'shipper_profile_screen.dart';
+import '../common/unified_profile_screen.dart';
 
 class ShipperHomeScreen extends StatefulWidget {
   const ShipperHomeScreen({super.key});
@@ -77,7 +78,7 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen>
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
-                  builder: (_) => const ShipperProfileScreen()),
+                  builder: (_) => const UnifiedProfileScreen()),
             ),
           ),
           IconButton(
@@ -190,9 +191,7 @@ class _MisCargasTab extends StatelessWidget {
                   final vencida = c.fechaRecogida != null &&
                       c.fechaRecogida!.isBefore(DateTime(now.year, now.month, now.day)) &&
                       !['tomada','en_transito','completada_carrier','entregada','completada'].contains(c.estado);
-                  final peso = c.pesoKg != null
-                      ? '${c.pesoKg!.toStringAsFixed(0)} ${c.unidadPeso}'
-                      : '—';
+                  final peso = c.pesoDisplay ?? '—';
                   final dist = c.distanciaKm != null
                       ? '${c.distanciaKm!.toStringAsFixed(0)} km'
                       : '—';
@@ -348,7 +347,7 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
   String? _ventanaEntregaHasta;
 
   String _tipo = 'ftl';
-  String _unidadPeso = 'kg';
+  int? _unidadPesoId;
   double? _distanciaKm;
   int? _tipoMercanciaId;
   int? _tipoEquipoId;
@@ -361,8 +360,12 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<NomencladoresProvider>().cargar();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final noms = context.read<NomencladoresProvider>();
+      await noms.cargar();
+      if (mounted && _unidadPesoId == null) {
+        setState(() => _unidadPesoId = noms.unidadPesoKg?.id);
+      }
     });
   }
 
@@ -485,6 +488,14 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
       return v == null || v <= 0 ? null : v;
     }
 
+    final noms = context.read<NomencladoresProvider>();
+    final unidadPeso = noms.unidadPesoPorId(_unidadPesoId) ?? noms.unidadPesoKg;
+    final pesoIngresado = () {
+      final cleaned = _pesoCtrl.text.replaceAll(',', '.');
+      final v = double.tryParse(cleaned);
+      return v == null || v <= 0 ? null : v;
+    }();
+
     final carga = CargaModel(
       id: 0,
       shipperId: uid,
@@ -503,15 +514,15 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
           : _descripcionCtrl.text.trim(),
       tipoMercanciaId: _tipoMercanciaId,
       commodityNomId: _commodityNomId,
-      pesoKg: () {
-        final cleaned = _pesoCtrl.text.replaceAll(',', '.');
-        final v = double.tryParse(cleaned);
-        return v == null ? null : (_unidadPeso == 'tonelada' ? v * 1000 : v);
-      }(),
+      pesoValor: pesoIngresado,
+      unidadPesoId: unidadPeso?.id,
+      pesoKg: pesoIngresado != null && unidadPeso != null
+          ? PesoUnidadUtil.aKilogramos(pesoIngresado, unidadPeso.factorAKg)
+          : null,
       longitudM: parseNum(_largoCtrl.text),
       anchoM: parseNum(_anchoCtrl.text),
       altoM: parseNum(_altoCtrl.text),
-      unidadPeso: _unidadPeso,
+      unidadPeso: unidadPeso?.simbolo ?? 'kg',
       horasCarga: double.tryParse(_horasCargaCtrl.text.replaceAll(',', '.')),
       horasDescarga:
           double.tryParse(_horasDescargaCtrl.text.replaceAll(',', '.')),
@@ -573,7 +584,7 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
         _ventanaRecogidaHasta = null;
         _ventanaEntregaDesde = null;
         _ventanaEntregaHasta = null;
-        _unidadPeso = 'kg';
+        _unidadPesoId = context.read<NomencladoresProvider>().unidadPesoKg?.id;
         _distanciaKm = null;
         _latOrigen = null; _lonOrigen = null; _dirOrigen = null;
         _ciudadOrigen = null; _provinciaOrigen = null; _paisOrigen = null;
@@ -766,14 +777,36 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
                 const SizedBox(width: 8),
                 Expanded(
                   flex: 2,
-                  child: _Dropdown(
-                    value: _unidadPeso,
-                    hint: 'Unidad',
-                    items: const ['kg', 'tonelada'],
-                    isDark: isDark,
-                    onChanged: (v) =>
-                        setState(() => _unidadPeso = v ?? 'kg'),
-                  ),
+                  child: noms.unidadesPeso.isEmpty
+                      ? const SizedBox(
+                          height: 48,
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        )
+                      : DropdownButtonFormField<int>(
+                          value: _unidadPesoId,
+                          dropdownColor:
+                              isDark ? AppTheme.darkCard : Colors.white,
+                          style: TextStyle(color: textPrimary, fontSize: 14),
+                          decoration:
+                              const InputDecoration(hintText: 'Unidad'),
+                          items: noms.unidadesPeso
+                              .map((u) => DropdownMenuItem(
+                                    value: u.id,
+                                    child: Text(
+                                      '${u.nombre} (${u.simbolo})',
+                                      style: TextStyle(color: textPrimary),
+                                    ),
+                                  ))
+                              .toList(),
+                          onChanged: (v) =>
+                              setState(() => _unidadPesoId = v),
+                        ),
                 ),
               ],
             ),
@@ -953,74 +986,6 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
                 ),
               ],
             ),
-
-            const SizedBox(height: 16),
-            _SectionLabel('Entrega', isDark),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _DateButton(
-                    label: _fechaEntrega == null
-                        ? 'Fecha de entrega'
-                        : _fmt(_fechaEntrega!),
-                    icon: Icons.event_outlined,
-                    isDark: isDark,
-                    onTap: () => _pickFecha(false),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _DateButton(
-                    label: _ventanaEntregaDesde == null
-                        ? 'Desde (hora)'
-                        : _ventanaEntregaDesde!,
-                    icon: Icons.access_time_outlined,
-                    isDark: isDark,
-                    onTap: () => _pickHora(false, true),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _DateButton(
-                    label: _ventanaEntregaHasta == null
-                        ? 'Hasta (hora)'
-                        : _ventanaEntregaHasta!,
-                    icon: Icons.access_time_filled_outlined,
-                    isDark: isDark,
-                    onTap: () => _pickHora(false, false),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 20),
-            _SectionLabel('Precio Ofertado', isDark),
-            const SizedBox(height: 8),
-            _Field(
-              controller: _precioCtrl,
-              hint: 'Ej: 15000.00',
-              icon: Icons.attach_money_outlined,
-              isDark: isDark,
-              keyboardType: TextInputType.number,
-            ),
-
-            const SizedBox(height: 10),
-            _Field(
-              controller: _instruccionesCtrl,
-              hint: 'Instrucciones especiales (opcional)',
-              icon: Icons.note_outlined,
-              isDark: isDark,
-              maxLines: 3,
-            ),
-
-            // ── Ubicación detallada ──────────────────────────────────────
-            const SizedBox(height: 24),
-            _SectionLabel('Detalle de Origen', isDark),
             const SizedBox(height: 8),
             _Field(
               controller: _nombreUbicOrigenCtrl,
@@ -1065,8 +1030,49 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
               ],
             ),
 
-            const SizedBox(height: 20),
-            _SectionLabel('Detalle de Destino', isDark),
+            const SizedBox(height: 16),
+            _SectionLabel('Entrega', isDark),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _DateButton(
+                    label: _fechaEntrega == null
+                        ? 'Fecha de entrega'
+                        : _fmt(_fechaEntrega!),
+                    icon: Icons.event_outlined,
+                    isDark: isDark,
+                    onTap: () => _pickFecha(false),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _DateButton(
+                    label: _ventanaEntregaDesde == null
+                        ? 'Desde (hora)'
+                        : _ventanaEntregaDesde!,
+                    icon: Icons.access_time_outlined,
+                    isDark: isDark,
+                    onTap: () => _pickHora(false, true),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _DateButton(
+                    label: _ventanaEntregaHasta == null
+                        ? 'Hasta (hora)'
+                        : _ventanaEntregaHasta!,
+                    icon: Icons.access_time_filled_outlined,
+                    isDark: isDark,
+                    onTap: () => _pickHora(false, false),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
             _Field(
               controller: _nombreUbicDestinoCtrl,
@@ -1110,6 +1116,31 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
                 ),
               ],
             ),
+
+            const SizedBox(height: 20),
+            _SectionLabel('Precio Ofertado', isDark),
+            const SizedBox(height: 8),
+            _Field(
+              controller: _precioCtrl,
+              hint: 'Ej: 15000.00',
+              icon: Icons.attach_money_outlined,
+              isDark: isDark,
+              keyboardType: TextInputType.number,
+            ),
+
+            const SizedBox(height: 10),
+            _Field(
+              controller: _instruccionesCtrl,
+              hint: 'Instrucciones especiales (opcional)',
+              icon: Icons.note_outlined,
+              isDark: isDark,
+              maxLines: 3,
+            ),
+
+            // ── Ubicación detallada ──────────────────────────────────────
+            
+
+            
 
             // ── Opciones de equipo — desde BD ────────────────────────────
             const SizedBox(height: 24),

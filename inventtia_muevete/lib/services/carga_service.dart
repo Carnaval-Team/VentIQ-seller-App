@@ -14,6 +14,7 @@ class CargaService {
     app_nom_tipo_equipo(nombre, abreviacion),
     app_nom_tipo_mercancia(nombre, codigo, nmfc_codigo),
     app_nom_commodity(nombre, codigo),
+    app_nom_unidad_peso(nombre, simbolo, codigo, factor_a_kg),
     cargas_equipo_manejo(equipo_manejo_id, app_nom_equipo_manejo_carga(nombre, codigo))
   ''';
 
@@ -40,6 +41,13 @@ class CargaService {
     if (co is Map) {
       m['commodity_nom_nombre'] = co['nombre'];
       m['commodity_nom_codigo'] = co['codigo'];
+    }
+    final up = m.remove('app_nom_unidad_peso');
+    if (up is Map) {
+      m['unidad_peso_nombre'] = up['nombre'];
+      m['unidad_peso_simbolo'] = up['simbolo'];
+      m['unidad_peso_codigo'] = up['codigo'];
+      m['unidad_peso_factor_kg'] = up['factor_a_kg'];
     }
     // M:N opciones de manejo — lista de objetos anidados
     final pivotList = m.remove('cargas_equipo_manejo');

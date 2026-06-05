@@ -1,3 +1,5 @@
+import '../utils/peso_unidad_util.dart';
+
 class CargaModel {
   final int id;
   final String shipperId;
@@ -51,6 +53,12 @@ class CargaModel {
   final String? commodityNomCodigo;       // enriquecido por JOIN
 
   final double? pesoKg;
+  /// Valor ingresado en la unidad seleccionada (no convertir al mostrar).
+  final double? pesoValor;
+  final int? unidadPesoId;
+  final String? unidadPesoNombre;
+  final String? unidadPesoSimbolo;
+  final double? unidadPesoFactorKg;
   final double? volumenM3;
   final double? longitudM;
   final double? anchoM;
@@ -127,8 +135,8 @@ class CargaModel {
   final DateTime? updatedAt;
   final DateTime? expiresAt;
 
-  // Peso + horas
-  final String unidadPeso;   // 'kg' | 'tonelada'
+  // Peso + horas (unidadPeso legacy text; preferir nomenclador)
+  final String unidadPeso;
   final double? horasCarga;
   final double? horasDescarga;
 
@@ -165,6 +173,11 @@ class CargaModel {
     this.commodityNomNombre,
     this.commodityNomCodigo,
     this.pesoKg,
+    this.pesoValor,
+    this.unidadPesoId,
+    this.unidadPesoNombre,
+    this.unidadPesoSimbolo,
+    this.unidadPesoFactorKg,
     this.volumenM3,
     this.longitudM,
     this.anchoM,
@@ -257,6 +270,11 @@ class CargaModel {
       commodityNomNombre: json['commodity_nom_nombre'] as String?,
       commodityNomCodigo: json['commodity_nom_codigo'] as String?,
       pesoKg: (json['peso_kg'] as num?)?.toDouble(),
+      pesoValor: (json['peso_valor'] as num?)?.toDouble(),
+      unidadPesoId: json['unidad_peso_id'] as int?,
+      unidadPesoNombre: json['unidad_peso_nombre'] as String?,
+      unidadPesoSimbolo: json['unidad_peso_simbolo'] as String?,
+      unidadPesoFactorKg: (json['unidad_peso_factor_kg'] as num?)?.toDouble(),
       volumenM3: (json['volumen_m3'] as num?)?.toDouble(),
       longitudM: (json['longitud_m'] as num?)?.toDouble(),
       anchoM: (json['ancho_m'] as num?)?.toDouble(),
@@ -355,6 +373,8 @@ class CargaModel {
       if (descripcion != null) 'descripcion': descripcion,
       if (tipoMercanciaId != null) 'tipo_mercancia_id': tipoMercanciaId,
       if (commodityNomId != null) 'commodity_nom_id': commodityNomId,
+      if (pesoValor != null) 'peso_valor': pesoValor,
+      if (unidadPesoId != null) 'unidad_peso_id': unidadPesoId,
       if (pesoKg != null) 'peso_kg': pesoKg,
       if (volumenM3 != null) 'volumen_m3': volumenM3,
       if (longitudM != null) 'longitud_m': longitudM,
@@ -421,10 +441,18 @@ class CargaModel {
     return labels[estado] ?? estado;
   }
 
-  String get tipoLabel => tipoCargaAbreviacion ?? tipoCargaNombre ?? 'FTL';
+  /// Etiqueta legible para el tipo de carga
+  String get tipoLabel {
+    final abr = (tipoCargaAbreviacion ?? '').toUpperCase();
+    if (abr == 'FTL') return 'Camión Completo';
+    if (abr == 'LTL') return 'Parcial';
+    final nom = tipoCargaNombre ?? '';
+    if (nom.isNotEmpty) return nom;
+    return esLtl ? 'Parcial' : 'Camión Completo';
+  }
 
   /// Compatibilidad retroactiva — devuelve la abreviación en minúsculas ('ftl'/'ltl')
-  String get tipo => (tipoCargaAbreviacion ?? 'FTL').toLowerCase();
+  String get tipo => (tipoCargaAbreviacion ?? (esLtl ? 'LTL' : 'FTL')).toLowerCase();
 
   /// Compatibilidad retroactiva — devuelve el nombre del tipo de equipo
   String? get tipoEquipo => tipoEquipoNombre ?? tipoEquipoAbreviacion;
@@ -463,6 +491,37 @@ class CargaModel {
   String get opcionesEquipoDisplay => opcionesEquipoManejoNombres.isNotEmpty
       ? opcionesEquipoManejoNombres.join(', ')
       : opcionesEquipoManejoCodigos.join(', ');
+
+  /// Peso para mostrar: usa [pesoValor] + símbolo del nomenclador (sin doble conversión).
+  String? get pesoDisplay {
+    final simbolo = unidadPesoSimbolo ??
+        (unidadPeso == 'tonelada' ? 't' : unidadPeso);
+    if (pesoValor != null) {
+      return PesoUnidadUtil.formatear(
+        valor: pesoValor!,
+        simbolo: simbolo,
+      );
+    }
+    if (pesoKg != null) {
+      final factor = unidadPesoFactorKg ??
+          (unidadPeso == 'tonelada' ? 1000.0 : 1.0);
+      final valor = PesoUnidadUtil.desdeKilogramos(pesoKg, factor);
+      if (valor != null) {
+        return PesoUnidadUtil.formatear(valor: valor, simbolo: simbolo);
+      }
+      return PesoUnidadUtil.formatear(valor: pesoKg!, simbolo: 'kg');
+    }
+    return null;
+  }
+
+  /// Peso en kg para filtros y comparaciones.
+  double? get pesoEnKg {
+    if (pesoKg != null) return pesoKg;
+    if (pesoValor != null && unidadPesoFactorKg != null) {
+      return PesoUnidadUtil.aKilogramos(pesoValor, unidadPesoFactorKg!);
+    }
+    return null;
+  }
 
   /// Medidas L × A × H en metros
   String? get medidasDisplay {

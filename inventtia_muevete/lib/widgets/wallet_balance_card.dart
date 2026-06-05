@@ -86,7 +86,7 @@ class WalletBalanceCard extends StatelessWidget {
                   onTap: onAddFunds,
                 ),
               ),
-              const SizedBox(width: 12),
+              /* const SizedBox(width: 12),
 
               // Withdraw button
               Expanded(
@@ -95,7 +95,7 @@ class WalletBalanceCard extends StatelessWidget {
                   label: 'Retirar',
                   onTap: onWithdraw,
                 ),
-              ),
+              ), */
             ],
           ),
         ],

@@ -29,11 +29,6 @@ class DispatcherService {
               'tipo_carroceria': t['tipo_carroceria'],
             if (t['marca'] != null) 'categoria': t['marca'],
             if (t['capacidad_ton'] != null) 'capacidad_ton': t['capacidad_ton'],
-            if (t['mc_number'] != null && (t['mc_number'] as String).isNotEmpty)
-              'mc_number': t['mc_number'],
-            if (t['dot_number'] != null &&
-                (t['dot_number'] as String).isNotEmpty)
-              'dot_number': t['dot_number'],
           })
           .select('id')
           .single();
@@ -80,12 +75,6 @@ class DispatcherService {
             'tipo_carroceria': transportista['tipo_carroceria'],
           if (transportista['capacidad_ton'] != null)
             'capacidad_ton': transportista['capacidad_ton'],
-          if (transportista['mc_number'] != null &&
-              (transportista['mc_number'] as String).isNotEmpty)
-            'mc_number': transportista['mc_number'],
-          if (transportista['dot_number'] != null &&
-              (transportista['dot_number'] as String).isNotEmpty)
-            'dot_number': transportista['dot_number'],
         })
         .select('id')
         .single();

@@ -81,6 +81,9 @@ class UserPreferencesService {
   static const String _persistentPreorderKey =
       'persistent_preorder'; // Preorden persistente
 
+  // Default order items key
+  static const String _defaultOrderItemsKey = 'default_order_items';
+
   // Subscription keys
   static const String _subscriptionIdKey = 'subscription_id';
   static const String _subscriptionStateKey = 'subscription_state';
@@ -2466,5 +2469,47 @@ class UserPreferencesService {
   Future<void> setFractionStep(double step) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('fraction_step', step);
+  }
+
+  // ==================== PRODUCTOS POR DEFECTO EN ORDEN ====================
+
+  /// Guardar lista de productos por defecto.
+  /// Cada elemento: { 'product': Map (Product.toJson), 'cantidad': double,
+  ///                  'presentacion': Map? (Presentation.toJson) }
+  Future<void> saveDefaultOrderItems(
+    List<Map<String, dynamic>> items,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_defaultOrderItemsKey, jsonEncode(items));
+      print('💾 Productos por defecto guardados: ${items.length}');
+    } catch (e) {
+      print('❌ Error guardando productos por defecto: $e');
+    }
+  }
+
+  /// Obtener lista de productos por defecto.
+  Future<List<Map<String, dynamic>>> getDefaultOrderItems() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_defaultOrderItemsKey);
+      if (raw == null) return [];
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list.cast<Map<String, dynamic>>();
+    } catch (e) {
+      print('❌ Error obteniendo productos por defecto: $e');
+      return [];
+    }
+  }
+
+  /// Limpiar todos los productos por defecto.
+  Future<void> clearDefaultOrderItems() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_defaultOrderItemsKey);
+      print('🗑️ Productos por defecto eliminados');
+    } catch (e) {
+      print('❌ Error limpiando productos por defecto: $e');
+    }
   }
 }
