@@ -26,6 +26,7 @@ import '../utils/navigation_helper.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/sales_monitor_fab.dart';
+import '../widgets/offline_status_badge.dart';
 import '../widgets/pending_orders_fab.dart';
 import '../widgets/notification_widget.dart';
 import '../widgets/sync_status_chip.dart';
@@ -828,6 +829,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         foregroundColor: Colors.white,
         centerTitle: true,
         actions: [
+          const OfflineStatusBadge(showLabel: false),
           const NotificationWidget(),
           if (_isPrintingAllOrders)
             const Padding(

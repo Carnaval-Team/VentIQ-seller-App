@@ -9,6 +9,7 @@ import '../services/mesa_service.dart';
 import '../services/mesa_cuenta_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/promotion_rules.dart';
+import '../utils/uuid_generator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
@@ -1219,8 +1220,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final idTpv = await _userPreferencesService.getIdTpv();
       final idSeller = await _userPreferencesService.getIdSeller();
 
-      // Generar ID único para la orden offline
+      // Generar ID único para la orden offline (para la UI) y un client_uuid
+      // estable para idempotencia al sincronizar (evita ventas duplicadas).
       final offlineOrderId = '${DateTime.now().millisecondsSinceEpoch}';
+      final clientUuid = UuidGenerator.v4();
 
       // Calcular totales
       double subtotal = 0.0;
@@ -1265,6 +1268,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // Crear estructura de orden virtual con datos del cliente
       final orderData = {
         'id': offlineOrderId,
+        'client_uuid': clientUuid,
         'id_tienda': idTienda,
         'id_tpv': idTpv,
         'id_vendedor': idSeller,

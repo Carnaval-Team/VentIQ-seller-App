@@ -9,6 +9,8 @@ import 'reauthentication_service.dart';
 import 'store_config_service.dart';
 import 'shift_workers_service.dart';
 import 'promotion_service.dart';
+import 'product_detail_service.dart';
+import '../utils/uuid_generator.dart';
 
 /// Servicio para sincronización automática periódica de datos
 /// Se ejecuta cuando el modo offline NO está activado para mantener datos actualizados
@@ -21,10 +23,12 @@ class AutoSyncService {
       UserPreferencesService();
   final ReauthenticationService _reauthService = ReauthenticationService();
   final PromotionService _promotionService = PromotionService();
+  final ProductDetailService _productDetailService = ProductDetailService();
 
   Timer? _syncTimer;
   bool _isRunning = false;
   bool _isSyncing = false;
+  bool _pendingSyncRequested = false;
   DateTime? _lastSyncTime;
   int _syncCount = 0;
 
@@ -137,7 +141,11 @@ class AutoSyncService {
   /// Realizar una sincronización completa
   Future<void> _performSync() async {
     if (_isSyncing) {
-      print('⏳ Sincronización ya en progreso, omitiendo...');
+      // En vez de descartar la sincronización (lo que dejaba categorías/
+      // productos sin actualizar cuando una pasada tardaba >1 min), se marca
+      // que hay una pasada pendiente para ejecutarla al terminar la actual.
+      _pendingSyncRequested = true;
+      print('⏳ Sincronización en progreso; se encola una nueva al terminar');
       return;
     }
 
@@ -444,6 +452,16 @@ class AutoSyncService {
       );
     } finally {
       _isSyncing = false;
+
+      // Si llegaron peticiones de sincronización mientras corría esta, ejecutar
+      // UNA pasada adicional para no perder actualizaciones (sin recursión
+      // ilimitada: se consume el flag antes de relanzar).
+      if (_pendingSyncRequested) {
+        _pendingSyncRequested = false;
+        print('🔁 Ejecutando sincronización encolada...');
+        // Sin await para no encadenar el finally; se ejecuta a continuación.
+        unawaited(_performSync());
+      }
     }
   }
 
@@ -567,78 +585,41 @@ class AutoSyncService {
           '    📦 Subcategoría "$subcategory": ${products.length} productos',
         );
 
-        // 🚀 PROCESAMIENTO CONCURRENTE: Procesar productos en lotes de 5
-        const batchSize = 5;
-        for (var i = 0; i < products.length; i += batchSize) {
-          final endIndex =
-              (i + batchSize < products.length)
-                  ? i + batchSize
-                  : products.length;
-          final batch = products.sublist(i, endIndex);
+        // 🚀 BATCH: obtener los detalles completos de TODOS los productos de
+        // la subcategoría en UNA sola llamada (antes era 1 RPC por producto).
+        if (products.isEmpty) continue;
 
+        final productIds = products.map((p) => p.id).toList();
+        Map<int, dynamic> detallesPorId = {};
+        try {
+          detallesPorId = await _productDetailService.getProductDetailsBatch(
+            productIds,
+          );
           print(
-            '      🔄 Procesando lote ${(i ~/ batchSize) + 1} (${batch.length} productos)...',
+            '      ✅ Detalles batch obtenidos: ${detallesPorId.length}/${productIds.length}',
           );
+        } catch (e) {
+          print('      ⚠️ Error obteniendo detalles batch: $e');
+        }
 
-          // Procesar todos los productos del lote en paralelo
-          final batchResults = await Future.wait(
-            batch.map((prod) async {
-              try {
-                // Obtener detalles completos usando RPC
-                final detailResponse = await Supabase.instance.client.rpc(
-                  'get_detalle_producto',
-                  params: {'id_producto_param': prod.id},
-                );
-
-                print(
-                  '      ✅ ${prod.denominacion} (ID: ${prod.id}) - Detalles obtenidos',
-                );
-
-                return {
-                  'success': true,
-                  'data': {
-                    'id': prod.id,
-                    'denominacion': prod.denominacion,
-                    'precio': prod.precio,
-                    'foto': prod.foto,
-                    'categoria': prod.categoria,
-                    'descripcion': prod.descripcion,
-                    'cantidad': prod.cantidad,
-                    'subcategoria': subcategory,
-                    'detalles_completos': detailResponse,
-                  },
-                };
-              } catch (e) {
-                // En caso de error, retornar solo datos básicos
-                print(
-                  '      ⚠️ ${prod.denominacion} (ID: ${prod.id}) - Solo datos básicos: $e',
-                );
-
-                return {
-                  'success': false,
-                  'data': {
-                    'id': prod.id,
-                    'denominacion': prod.denominacion,
-                    'precio': prod.precio,
-                    'foto': prod.foto,
-                    'categoria': prod.categoria,
-                    'descripcion': prod.descripcion,
-                    'cantidad': prod.cantidad,
-                    'subcategoria': subcategory,
-                  },
-                };
-              }
-            }),
-          );
-
-          // Agregar todos los resultados del lote a la lista
-          for (var result in batchResults) {
-            allProducts.add(result['data'] as Map<String, dynamic>);
+        for (var prod in products) {
+          final detalle = detallesPorId[prod.id];
+          final data = <String, dynamic>{
+            'id': prod.id,
+            'denominacion': prod.denominacion,
+            'precio': prod.precio,
+            'foto': prod.foto,
+            'categoria': prod.categoria,
+            'descripcion': prod.descripcion,
+            'cantidad': prod.cantidad,
+            'subcategoria': subcategory,
+          };
+          // Solo añadir detalles_completos si vinieron del servidor; si no,
+          // el producto queda con datos básicos (igual que el fallback previo).
+          if (detalle != null) {
+            data['detalles_completos'] = detalle;
           }
-
-          print(
-            '      ✅ Lote completado: ${batchResults.length} productos procesados',
-          );
+          allProducts.add(data);
         }
       }
 
@@ -727,37 +708,25 @@ class AutoSyncService {
     );
 
     int productsWithPromotions = 0;
-    const batchSize = 5;
 
-    for (var i = 0; i < productIds.length; i += batchSize) {
-      final endIndex =
-          (i + batchSize < productIds.length)
-              ? i + batchSize
-              : productIds.length;
-      final batch = productIds.sublist(i, endIndex);
+    // 🚀 BATCH: todas las promociones de todos los productos en UNA llamada.
+    final promosPorProducto = await _promotionService.getProductPromotionsBatch(
+      productIds,
+    );
 
-      final batchResults = await Future.wait(
-        batch.map((productId) async {
-          try {
-            final promotions = await _promotionService.getProductPromotions(
-              productId,
-            );
-            await _userPreferencesService.saveProductPromotions(
-              productId,
-              promotions,
-            );
-            return promotions.isNotEmpty;
-          } catch (e) {
-            print(
-              '  ❌ Error sincronizando promociones del producto $productId: $e',
-            );
-            return false;
-          }
-        }),
-      );
-
-      productsWithPromotions +=
-          batchResults.where((result) => result == true).length;
+    // Persistir por producto. Para los que no tienen promos, guardar lista
+    // vacía para limpiar promos viejas que ya no apliquen.
+    for (final productId in productIds) {
+      final promotions = promosPorProducto[productId] ?? const [];
+      try {
+        await _userPreferencesService.saveProductPromotions(
+          productId,
+          List<Map<String, dynamic>>.from(promotions),
+        );
+        if (promotions.isNotEmpty) productsWithPromotions++;
+      } catch (e) {
+        print('  ❌ Error guardando promociones del producto $productId: $e');
+      }
     }
 
     return productsWithPromotions;
@@ -1113,6 +1082,7 @@ class AutoSyncService {
     print('  🔄 Sincronizando ${pendingOrders.length} ventas offline...');
     int syncedCount = 0;
     final syncedOrderIds = <String>[];
+    final syncedOperationIds = <String, int>{};
 
     for (var orderData in pendingOrders) {
       final orderId = orderData['id']?.toString();
@@ -1129,12 +1099,18 @@ class AutoSyncService {
         // 1. Registrar cliente si hay datos
         await _registerClientFromOfflineData(orderData);
 
-        // 2. Registrar la venta
+        // 2. Registrar la venta (idempotente por client_uuid)
         await _registerSaleInSupabase(orderData);
 
         // 3. Completar la orden según su estado
         final estado = (orderData['estado'] ?? 'completada').toString();
         await _completeOrderWithStatus(orderId, estado);
+
+        // Capturar el id_operacion devuelto por el servidor para asociarlo.
+        final opId = orderData['_operation_id'];
+        if (opId is int) {
+          syncedOperationIds[orderId] = opId;
+        }
 
         syncedCount++;
         syncedOrderIds.add(orderId);
@@ -1152,8 +1128,14 @@ class AutoSyncService {
     }
 
     if (syncedOrderIds.isNotEmpty) {
-      // Limpiar las órdenes sincronizadas exitosamente
-      await _cleanupSyncedOrders(syncedOrderIds);
+      // Marcar como sincronizadas (NO eliminar) para que las órdenes activas
+      // sigan visibles en la pantalla de órdenes. Asociar id_operacion.
+      await _userPreferencesService.markOrdersSyncedById(
+        syncedOrderIds,
+        operationIds: syncedOperationIds,
+      );
+      // Purgar solo las que además están en estado final.
+      await _userPreferencesService.purgeFinalizedSyncedOrders();
     }
 
     return syncedCount;
@@ -1297,28 +1279,76 @@ class AutoSyncService {
       });
     }
 
-    // Llamar directamente al RPC fn_registrar_venta
-    final response = await Supabase.instance.client.rpc(
-      'fn_registrar_venta',
-      params: {
-        'p_codigo_promocion': orderData['promo_code'] ?? orderData['promoCode'],
-        'p_denominacion': 'Venta Auto Sync - ${orderData['id']}',
-        'p_estado_inicial': 1, // Estado enviada
-        'p_id_tpv': idTpv,
-        'p_observaciones':
-            orderData['notas'] ?? 'Sincronización automática de venta offline',
-        'p_productos': productos,
-        'p_uuid': userId,
-        'p_id_cliente': orderData['idCliente'],
-      },
-    );
+    // 🔑 IDEMPOTENCIA: usar client_uuid para que reintentos no dupliquen.
+    // Si la orden no tiene client_uuid (creada antes de esta mejora), se genera
+    // uno y se persiste para futuros reintentos.
+    String? clientUuid = orderData['client_uuid']?.toString();
+    if (clientUuid == null || clientUuid.isEmpty) {
+      clientUuid = UuidGenerator.v4();
+      orderData['client_uuid'] = clientUuid;
+    }
+
+    dynamic response;
+    try {
+      // Preferir el wrapper idempotente fn_registrar_venta_offline.
+      response = await Supabase.instance.client.rpc(
+        'fn_registrar_venta_offline',
+        params: {
+          'p_client_uuid': clientUuid,
+          'p_codigo_promocion':
+              orderData['promo_code'] ?? orderData['promoCode'],
+          'p_denominacion': 'Venta Offline - ${orderData['id']}',
+          'p_estado_inicial': 1, // Estado enviada
+          'p_id_tpv': idTpv,
+          'p_observaciones':
+              orderData['notas'] ?? 'Sincronización de venta offline',
+          'p_productos': productos,
+          'p_uuid': userId,
+          'p_id_cliente': orderData['idCliente'],
+        },
+      );
+    } catch (e) {
+      // Fallback: si el RPC idempotente no existe aún (no se subió el .sql),
+      // usar el RPC original. NOTA: sin idempotencia del servidor, el control
+      // de duplicados depende del marcado local de órdenes sincronizadas.
+      print(
+        '⚠️ fn_registrar_venta_offline no disponible ($e). Usando fn_registrar_venta.',
+      );
+      response = await Supabase.instance.client.rpc(
+        'fn_registrar_venta',
+        params: {
+          'p_codigo_promocion':
+              orderData['promo_code'] ?? orderData['promoCode'],
+          'p_denominacion': 'Venta Auto Sync - ${orderData['id']}',
+          'p_estado_inicial': 1,
+          'p_id_tpv': idTpv,
+          'p_observaciones':
+              orderData['notas'] ??
+              'Sincronización automática de venta offline',
+          'p_productos': productos,
+          'p_uuid': userId,
+          'p_id_cliente': orderData['idCliente'],
+        },
+      );
+    }
 
     if (response != null && response['status'] == 'success') {
       // Obtener el ID de operación de la respuesta
       final operationId = response['id_operacion'] as int?;
+      // Si la operación ya existía (idempotente), NO re-registrar pagos ni
+      // re-aplicar cambios de estado: ya se hicieron en la primera vez.
+      final bool yaExistia = response['idempotent'] == true;
+
       if (operationId != null) {
         // Guardar el ID de operación para usarlo en la actualización de estado
         orderData['_operation_id'] = operationId;
+
+        if (yaExistia) {
+          print(
+            '    ♻️ Operación $operationId ya existía (idempotente); se omite re-registro de pagos/estado',
+          );
+          return;
+        }
 
         // Registrar desgloses de pago si existen
         final paymentBreakdown = orderData['desglose_pagos'] as List<dynamic>?;
@@ -1412,36 +1442,26 @@ class AutoSyncService {
     print('    📝 Orden $orderId marcada como $estado');
   }
 
-  /// Limpiar órdenes sincronizadas exitosamente
+  /// Marcar órdenes como sincronizadas SIN eliminarlas.
+  ///
+  /// ⚠️ Antes este método BORRABA las órdenes sincronizadas de pending_orders.
+  /// Como en modo offline la pantalla de órdenes solo lee de pending_orders /
+  /// caché, las órdenes activas (no completadas) DESAPARECÍAN de la vista tras
+  /// sincronizar aunque siguieran activas en el servidor.
+  ///
+  /// Nuevo comportamiento: la orden se MARCA `synced: true` y conserva su
+  /// `id_operacion` del servidor. Sigue visible en orders_screen. La purga real
+  /// del array local ocurre por separado (ver markOrdersSyncedById /
+  /// purgeFinalizedSyncedOrders en UserPreferencesService) solo cuando la orden
+  /// llega a estado final o cuando ya se recargó del servidor.
   Future<void> _cleanupSyncedOrders(List<String> syncedOrderIds) async {
     try {
-      // Obtener órdenes actuales
-      final currentOrders = await _userPreferencesService.getPendingOrders();
-
-      final syncedSet = syncedOrderIds.toSet();
-
-      final remainingOrders =
-          currentOrders.where((order) {
-            final orderId = order['id']?.toString();
-            if (orderId == null) return true;
-            return !syncedSet.contains(orderId);
-          }).toList();
-
-      final removedCount = currentOrders.length - remainingOrders.length;
-
-      if (removedCount > 0) {
-        // Guardar las órdenes restantes
-        await _userPreferencesService.clearPendingOrders();
-        for (final order in remainingOrders) {
-          await _userPreferencesService.savePendingOrder(order);
-        }
-      }
-
+      await _userPreferencesService.markOrdersSyncedById(syncedOrderIds);
       print(
-        '  🧹 Limpiadas $removedCount órdenes sincronizadas, ${remainingOrders.length} pendientes',
+        '  🔖 ${syncedOrderIds.length} órdenes marcadas como sincronizadas (conservadas para la vista)',
       );
     } catch (e) {
-      print('  ⚠️ Error limpiando órdenes sincronizadas: $e');
+      print('  ⚠️ Error marcando órdenes sincronizadas: $e');
     }
   }
 
