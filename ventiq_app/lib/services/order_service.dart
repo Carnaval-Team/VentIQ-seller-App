@@ -1326,7 +1326,7 @@ class OrderService {
 
       // Llamar a listar_ordenes
       final response = await Supabase.instance.client.rpc(
-        'listar_ordenes',
+        'fn_listar_ordenes',
         params: rpcParams,
       );
 
@@ -1506,6 +1506,7 @@ class OrderService {
             final product = Product(
               id: item['id_producto'],
               denominacion: item['producto_nombre'] ?? 'Producto',
+              sku: item['sku_producto'],
               precio: (item['precio_unitario'] ?? 0.0).toDouble(),
               cantidad: (item['cantidad'] ?? 1).toDouble(),
               esRefrigerado: false,
@@ -1520,7 +1521,7 @@ class OrderService {
                   false, // Default value for order items
               esServicio: false, // Default value for order items
               categoria: 'General',
-              descripcion: item['presentacion'] ?? '',
+              descripcion: item['descripcion'] ?? item['presentacion'] ?? '',
               foto: null,
             );
 
@@ -1528,7 +1529,6 @@ class OrderService {
             ProductVariant? variant;
             if (item['variante'] != null) {
               final variantData = item['variante'];
-              print(variantData['opcion']);
               variant = ProductVariant(
                 id: variantData['id'],
                 nombre:
@@ -1547,9 +1547,6 @@ class OrderService {
             List<dynamic>? ingredientes;
             if (item['ingredientes'] != null) {
               ingredientes = item['ingredientes'] as List<dynamic>;
-              print(
-                '🍽️ Ingredientes consolidados para ${product.denominacion}: ${ingredientes.length}',
-              );
             }
 
             // Crear OrderItem
@@ -1560,7 +1557,7 @@ class OrderService {
               variante: variant,
               cantidad: (item['cantidad'] ?? 1).toDouble(),
               precioUnitario: (item['precio_unitario'] ?? 0.0).toDouble(),
-              ubicacionAlmacen: 'Principal', // Valor por defecto
+              ubicacionAlmacen: item['nombre_ubicacion'] as String? ?? 'Principal',
               // Guardar id_extraccion para permitir edición de órdenes pendientes.
               // id_extraccion llega desde listar_ordenes cuando el parche está aplicado.
               inventoryData: {
