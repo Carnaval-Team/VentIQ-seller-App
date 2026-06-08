@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../services/user_preferences_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/turno_service.dart';
+import '../utils/uuid_generator.dart';
 import '../models/inventory_product.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/connection_status_widget.dart';
@@ -2457,9 +2458,13 @@ class _AperturaScreenState extends State<AperturaScreen> {
       // Generar ID único para la apertura offline
       final aperturaId = '${DateTime.now().millisecondsSinceEpoch}';
 
+      // client_uuid estable para idempotencia al sincronizar la apertura.
+      final clientUuid = UuidGenerator.v4();
+
       // Crear estructura de apertura offline
       final aperturaData = {
         'id': aperturaId,
+        'client_uuid': clientUuid,
         'id_tpv': idTpv,
         'id_vendedor': idVendedor,
         'usuario': usuario,

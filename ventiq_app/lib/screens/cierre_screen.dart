@@ -7,6 +7,7 @@ import '../models/expense.dart';
 import '../services/order_service.dart';
 import '../services/notification_service.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/uuid_generator.dart';
 import '../services/turno_service.dart';
 import '../services/shift_workers_service.dart';
 
@@ -2803,12 +2804,14 @@ class _CierreScreenState extends State<CierreScreen> {
         throw Exception('Faltan datos requeridos para el cierre offline');
       }
 
-      // Generar ID único para el cierre offline
+      // Generar ID único para el cierre offline + client_uuid de idempotencia.
       final cierreId = '${DateTime.now().millisecondsSinceEpoch}';
+      final clientUuid = UuidGenerator.v4();
 
       // Crear estructura de cierre offline
       final cierreData = {
         'id': cierreId,
+        'client_uuid': clientUuid,
         'id_tpv': idTpv,
         'usuario': userUuid,
         'tipo_operacion': 'cierre',

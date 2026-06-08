@@ -859,17 +859,61 @@ class AutoSyncService {
     final productos =
         productosRaw.map((item) => item as Map<String, dynamic>).toList();
 
-    final result = await TurnoService.registrarAperturaTurno(
-      efectivoInicial: efectivoInicial,
-      idTpv: idTpv,
-      idVendedor: idVendedor,
-      usuario: usuario,
-      manejaInventario: manejaInventario,
-      productos: productos.isEmpty ? null : productos,
-      observaciones: observaciones,
-    );
+    // client_uuid de idempotencia: estable por apertura. Si la apertura offline
+    // se creó antes de esta mejora y no lo tiene, se genera y se persiste.
+    var clientUuid = aperturaData['client_uuid']?.toString();
+    if (clientUuid == null || clientUuid.isEmpty) {
+      clientUuid = UuidGenerator.v4();
+      aperturaData['client_uuid'] = clientUuid;
+    }
 
-    if (result['success'] == true) {
+    bool aperturaOk = false;
+
+    // 1) Preferir el wrapper idempotente fn_apertura_turno_offline (evita
+    //    crear turnos duplicados si la sincronización se reintenta).
+    try {
+      final resp = await Supabase.instance.client.rpc(
+        'fn_apertura_turno_offline',
+        params: {
+          'p_client_uuid': clientUuid,
+          'p_efectivo_inicial': efectivoInicial,
+          'p_id_tpv': idTpv,
+          'p_id_vendedor': idVendedor,
+          'p_usuario': usuario,
+          'p_maneja_inventario': manejaInventario,
+          'p_productos': productos,
+          'p_observaciones': observaciones,
+        },
+      );
+      if (resp is Map && resp['status'] == 'success') {
+        aperturaOk = true;
+        if (resp['idempotent'] == true) {
+          print('  ♻️ Apertura idempotente (turno ya existía): ${resp['id_turno']}');
+        } else {
+          print('  ✅ Turno abierto vía wrapper idempotente: ${resp['id_turno']}');
+        }
+      }
+    } catch (e) {
+      // 2) Fallback: RPC idempotente no disponible (no se subió el .sql).
+      print(
+        '  ⚠️ fn_apertura_turno_offline no disponible ($e). Usando registrarAperturaTurno.',
+      );
+      final result = await TurnoService.registrarAperturaTurno(
+        efectivoInicial: efectivoInicial,
+        idTpv: idTpv,
+        idVendedor: idVendedor,
+        usuario: usuario,
+        manejaInventario: manejaInventario,
+        productos: productos.isEmpty ? null : productos,
+        observaciones: observaciones,
+      );
+      aperturaOk = result['success'] == true;
+      if (!aperturaOk) {
+        print('  ❌ Error creando turno offline: ${result['message']}');
+      }
+    }
+
+    if (aperturaOk) {
       final turnoOnline = await _getOnlineOpenShift(
         idTpv: idTpv,
         idVendedor: idVendedor,
@@ -884,7 +928,6 @@ class AutoSyncService {
       return true;
     }
 
-    print('  ❌ Error creando turno offline: ${result['message']}');
     return false;
   }
 

@@ -9,6 +9,7 @@ import '../services/category_service.dart';
 import '../services/product_service.dart';
 import '../services/payment_method_service.dart';
 import '../services/turno_service.dart';
+import '../utils/uuid_generator.dart';
 import '../services/settings_integration_service.dart';
 import '../services/store_config_service.dart';
 import '../utils/navigation_helper.dart';
@@ -4583,20 +4584,83 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
     }
   }
 
-  /// Cerrar turno desde datos offline
+  /// Cerrar turno desde datos offline.
+  ///
+  /// Solo cierra si EXISTE una operación 'cierre_turno' pendiente (el usuario
+  /// mandó a cerrar explícitamente). Usa el RPC idempotente
+  /// fn_cerrar_turno_offline (con client_uuid) para no cerrar dos veces; si no
+  /// está disponible, cae a fn_cerrar_turno_tpv.
   Future<void> _closeTurnoFromOffline() async {
     final operations =
         await widget.userPreferencesService.getPendingOperations();
 
     for (var operation in operations) {
-      if (operation['type'] == 'cierre_turno') {
-        print('🔄 Cerrando turno desde datos offline...');
-        // Aquí iría la lógica para cerrar el turno usando TurnoService
-        // Por ahora simulamos el éxito
-        await Future.delayed(const Duration(milliseconds: 500));
-        print('✅ Turno cerrado desde datos offline');
-        break;
+      if (operation['type'] != 'cierre_turno') continue;
+
+      final data = (operation['data'] as Map?)?.cast<String, dynamic>() ?? {};
+      final idTpv = data['id_tpv'];
+      final usuario = data['usuario'];
+      final efectivoFinal = (data['efectivo_final'] ?? 0.0);
+      final observaciones = data['observaciones'] as String?;
+      final productosRaw = data['productos'] as List<dynamic>? ?? [];
+      final productos =
+          productosRaw.map((e) => e as Map<String, dynamic>).toList();
+
+      if (idTpv == null || usuario == null) {
+        print('⚠️ Operación cierre_turno sin datos suficientes; se omite');
+        continue;
       }
+
+      var clientUuid = data['client_uuid']?.toString();
+      if (clientUuid == null || clientUuid.isEmpty) {
+        clientUuid = UuidGenerator.v4();
+      }
+
+      print('🔄 Cerrando turno desde datos offline (TPV $idTpv)...');
+      bool cerrado = false;
+
+      try {
+        final resp = await Supabase.instance.client.rpc(
+          'fn_cerrar_turno_offline',
+          params: {
+            'p_client_uuid': clientUuid,
+            'p_id_tpv': idTpv,
+            'p_efectivo_real': efectivoFinal,
+            'p_usuario': usuario,
+            'p_productos': productos,
+            'p_observaciones': observaciones,
+          },
+        );
+        cerrado = resp is Map && resp['status'] == 'success';
+        if (cerrado) {
+          print('✅ Turno cerrado (idempotente=${resp['idempotent']})');
+        } else {
+          print('⚠️ Cierre offline rechazado: $resp');
+        }
+      } catch (e) {
+        // Fallback: RPC idempotente no disponible.
+        print('⚠️ fn_cerrar_turno_offline no disponible ($e). Fallback.');
+        try {
+          final result = await TurnoService.cerrarTurnoDetailed(
+            efectivoReal: (efectivoFinal as num).toDouble(),
+            productos: productos,
+            observaciones: observaciones,
+          );
+          cerrado = result.success;
+        } catch (e2) {
+          print('❌ Error en fallback de cierre offline: $e2');
+        }
+      }
+
+      if (cerrado) {
+        // Marcar la operación como sincronizada y limpiar el turno offline.
+        await widget.userPreferencesService.removePendingOperationsByType(
+          'cierre_turno',
+        );
+        await widget.userPreferencesService.clearOfflineTurno();
+        print('✅ Turno cerrado desde datos offline y limpiado');
+      }
+      break;
     }
   }
 
