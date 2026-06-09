@@ -2071,6 +2071,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                         color: Color(
                                                             0xFF4A90E2)),
                                                   ),
+                                                if ((_isShowSkuEnabled ||
+                                                        _userPreferencesService
+                                                            .isShowSkuEnabledSync) &&
+                                                    p.descripcion != null &&
+                                                    p.descripcion!.isNotEmpty)
+                                                  Text(
+                                                    p.descripcion!,
+                                                    maxLines: 2,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors.grey[500]),
+                                                  ),
                                                 Text(
                                                   '\$${p.precio.toStringAsFixed(2)} c/u',
                                                   style: TextStyle(
@@ -7070,7 +7083,9 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                     fontSize: 11,
                   ),
                 ),
-              if (p.descripcion != null && p.descripcion!.isNotEmpty)
+              if (showSkuSetting &&
+                  p.descripcion != null &&
+                  p.descripcion!.isNotEmpty)
                 Text(
                   p.descripcion!,
                   maxLines: 1,
@@ -7214,6 +7229,18 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                               fontSize: 11,
                             ),
                           ),
+                        if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+                            p.descripcion != null &&
+                            p.descripcion!.isNotEmpty)
+                          Text(
+                            p.descripcion!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[500],
+                            ),
+                          ),
                         Text(
                           '\$${p.precio.toStringAsFixed(2)}',
                           style: const TextStyle(
@@ -7264,6 +7291,20 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                 fontSize: 13,
                 color: Color(0xFF0EA5E9),
                 fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+          if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+              product.descripcion != null &&
+              product.descripcion!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              product.descripcion!,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[600],
               ),
             ),
           ],
