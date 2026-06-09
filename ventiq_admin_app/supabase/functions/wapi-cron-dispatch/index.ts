@@ -67,24 +67,47 @@ Deno.serve(async (req) => {
     .filter(Boolean)
     .map((d: any) => ({ tipo: d.tipo, chat_id: d.chat_id, etiqueta: d.etiqueta }));
 
-  try {
-    const res = await dispatchProducts({
-      admin,
-      idSesion: prog.id_sesion,
-      idTienda: prog.id_tienda,
-      wapiSessionId: prog.sesion.wapi_session_id,
-      productIds,
-      destinations,
-      delayMin: prog.delay_min_seconds ?? 5,
-      delayMax: prog.delay_max_seconds ?? 10,
-      tipoEnvio: "programado",
-      idProgramacion: idProg,
-    });
+  // SOLUCIÓN: Invocar dispatchProducts sin esperar su finalización.
+  // El job se ejecutará en background y actualizará los logs conforme avance.
+  // Esto evita que el timeout del cron corte el proceso prematuramente.
+  const job = dispatchProducts({
+    admin,
+    idSesion: prog.id_sesion,
+    idTienda: prog.id_tienda,
+    wapiSessionId: prog.sesion.wapi_session_id,
+    productIds,
+    destinations,
+    delayMin: prog.delay_min_seconds ?? 5,
+    delayMax: prog.delay_max_seconds ?? 10,
+    tipoEnvio: "programado",
+    idProgramacion: idProg,
+  }).catch((err) => {
+    console.error(
+      `[wapi-cron-dispatch] background dispatch falló: ${(err as Error).message ?? err}`,
+    );
+  });
 
-    // last_run_at ya se actualizó desde fn_wapi_dispatch_diario; el trigger
-    // recalculará next_run_at +1 día.
-    return okResponse(res);
-  } catch (err) {
-    return errorResponse((err as Error).message ?? String(err), 500);
+  // Intentar mantener el proceso vivo con EdgeRuntime.waitUntil
+  // (esto funciona cuando la función se invoca via HTTP, pero pg_cron
+  // puede tener limitaciones). En el peor caso, el job continuará
+  // hasta donde el timeout del cron permita.
+  // @ts-ignore — EdgeRuntime no está en los typings de Deno
+  if (typeof EdgeRuntime !== "undefined") {
+    // @ts-ignore
+    EdgeRuntime.waitUntil(job);
   }
+
+  const totalMensajes = productIds.length * destinations.length;
+  const estimadoSeg = Math.round(
+    Math.max(0, productIds.length - 1) * ((prog.delay_min_seconds ?? 5 + prog.delay_max_seconds ?? 10) / 2),
+  );
+
+  // last_run_at ya se actualizó desde fn_wapi_dispatch_diario; el trigger
+  // recalculará next_run_at +1 día.
+  return okResponse({
+    queued: true,
+    total_mensajes_estimados: totalMensajes,
+    tiempo_estimado_segundos: estimadoSeg,
+    message: `Envío programado iniciado en segundo plano. ${totalMensajes} mensajes en cola.`,
+  });
 });
