@@ -1,9 +1,46 @@
 {
-  "current_version": "2.3.3",
-  "build": 835,
+  "current_version": "2.3.4",
+  "build": 836,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.3.4",
+      "date": "2026-06-09",
+      "title": "🔍 Información más clara y sincronización más confiable",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Códigos SKU visibles en las órdenes",
+          "description": "Ahora puedes ver el código SKU o descripción adicional de cada producto directamente en los detalles de las órdenes y al editarlas. Ideal para identificar productos con mayor precisión."
+        },
+        {
+          "type": "feature",
+          "title": "Visor de datos offline para soporte técnico",
+          "description": "Nueva herramienta de diagnóstico que permite al equipo de soporte visualizar los datos guardados para trabajar sin conexión y resolver problemas más rápido."
+        },
+        {
+          "type": "improvement",
+          "title": "Sincronización más inteligente de egresos",
+          "description": "Los egresos registrados sin conexión ahora se sincronizan de forma más segura, evitando duplicados y garantizando que cada salida de efectivo se registre correctamente."
+        },
+        {
+          "type": "improvement",
+          "title": "Cambio de modo offline más fluido",
+          "description": "Activar o desactivar el modo offline ahora espera a que termine cualquier sincronización en curso, evitando conflictos y asegurando que tus datos queden consistentes."
+        },
+        {
+          "type": "improvement",
+          "title": "Carga de productos más eficiente",
+          "description": "Optimizado el proceso de sincronización para descargar los detalles de todos los productos de una categoría en una sola operación. Más rápido y menos esperas."
+        },
+        {
+          "type": "improvement",
+          "title": "Mayor estabilidad al cambiar de modo",
+          "description": "Mejorado el manejo interno para prevenir que la sincronización automática interfiera cuando cambias entre modo online y offline."
+        }
+      ]
+    },
     {
       "version": "2.3.3",
       "date": "2026-06-05",
