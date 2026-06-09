@@ -18,6 +18,7 @@ class _AppDrawerState extends State<AppDrawer> {
   bool _isLoading = true;
   String _appVersion = 'Cargando...';
   bool _modoRestaurante = false;
+  bool _isSuperAdmin = false;
 
   @override
   void initState() {
@@ -25,6 +26,20 @@ class _AppDrawerState extends State<AppDrawer> {
     _loadUserData();
     _loadAppVersion();
     _loadModoRestaurante();
+    _loadSuperAdminFlag();
+  }
+
+  /// Carga el flag de superadmin (cacheado en login). Controla la visibilidad
+  /// de la entrada oculta "Datos Offline". Funciona también offline.
+  Future<void> _loadSuperAdminFlag() async {
+    try {
+      final value = await UserPreferencesService().isSuperAdmin();
+      if (mounted && value != _isSuperAdmin) {
+        setState(() => _isSuperAdmin = value);
+      }
+    } catch (e) {
+      print('❌ Error cargando flag superadmin en drawer: $e');
+    }
   }
 
   /// Carga el flag modo_restaurante desde el cache de StoreConfig.
@@ -319,6 +334,22 @@ class _AppDrawerState extends State<AppDrawer> {
                   },
                 ),
                 const Divider(height: 1),
+
+                // Entrada oculta: solo visible para superadmins. Diagnóstico de
+                // los datos guardados para trabajar offline.
+                if (_isSuperAdmin) ...[
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.storage,
+                    title: 'Datos Offline',
+                    subtitle: 'Ver datos guardados sin conexión',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/offline-data-viewer');
+                    },
+                  ),
+                  const Divider(height: 1),
+                ],
 
                 _buildDrawerItem(
                   context,

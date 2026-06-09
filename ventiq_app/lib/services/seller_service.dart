@@ -8,6 +8,24 @@ class SellerService {
 
   SupabaseClient get client => Supabase.instance.client;
 
+  /// Verifica si el usuario (por uuid de auth.users) está en app_dat_superadmin
+  /// y activo. Usado para mostrar herramientas ocultas (p. ej. visor de datos
+  /// offline). Ante error de red, retorna false (no expone la herramienta).
+  Future<bool> isSuperAdmin(String userUuid) async {
+    try {
+      final response = await client
+          .from('app_dat_superadmin')
+          .select('id')
+          .eq('uuid', userUuid)
+          .eq('activo', true)
+          .limit(1);
+      return response.isNotEmpty;
+    } catch (e) {
+      print('⚠️ Error verificando superadmin: $e');
+      return false;
+    }
+  }
+
   // Verificar si el usuario es un vendedor válido
   Future<Map<String, dynamic>?> checkSellerByUuid(String userUuid) async {
     try {

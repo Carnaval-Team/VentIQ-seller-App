@@ -48,6 +48,8 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isFluidModeEnabled =
       false; // Deshabilitado - Disponible en próxima versión
   bool _isOfflineModeEnabled = false; // Valor por defecto
+  bool _isTogglingOfflineMode =
+      false; // Cambio de modo offline en curso (deshabilita el switch)
   bool _hasOfflineTurno = false; // Turno abierto offline
   Map<String, dynamic>? _offlineTurnoInfo; // Información del turno offline
   bool _isModoRestauranteEnabled = false; // Modo restaurante (mesas y comensales)
@@ -689,23 +691,39 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Future<void> _onOfflineModeChanged(bool value) async {
-    final isBusy = await _isAutoSyncBusy(blockWhenRunning: false);
-    if (isBusy) {
-      _showAutoSyncBlockedMessage(
-        '🔄 Sincronización automática en progreso. Espera para cambiar el modo offline.',
-      );
-      if (mounted) {
-        setState(() {
-          _isOfflineModeEnabled = !value;
-        });
-      }
-      return;
+    // Evitar reentradas si ya hay un cambio de modo en curso.
+    if (_isTogglingOfflineMode) return;
+
+    // Deshabilitar el switch mientras se procesa el cambio.
+    if (mounted) {
+      setState(() {
+        _isTogglingOfflineMode = true;
+      });
     }
 
-    if (value) {
-      await _activateOfflineMode();
-    } else {
-      await _deactivateOfflineMode();
+    try {
+      // Si hay un pase de sincronización (automático o forzado) en curso,
+      // ESPERAR a que drene antes de cambiar de modo, en vez de bloquear y
+      // revertir. Así no quedan trabajos a medias que generen inconsistencias.
+      final isBusy = await _isAutoSyncBusy(blockWhenRunning: false);
+      if (isBusy) {
+        _showAutoSyncBlockedMessage(
+          '⏳ Esperando a que termine la sincronización para cambiar el modo...',
+        );
+        await _integrationService.waitForSyncIdle();
+      }
+
+      if (value) {
+        await _activateOfflineMode();
+      } else {
+        await _deactivateOfflineMode();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isTogglingOfflineMode = false;
+        });
+      }
     }
   }
 
@@ -1436,16 +1454,30 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
       ),
       subtitle: Text(
-        _isOfflineModeEnabled
-            ? 'Datos sincronizados - Puede trabajar sin conexión'
-            : 'Sincronizar datos para trabajar offline',
+        _isTogglingOfflineMode
+            ? 'Procesando cambio de modo...'
+            : (_isOfflineModeEnabled
+                ? 'Datos sincronizados - Puede trabajar sin conexión'
+                : 'Sincronizar datos para trabajar offline'),
         style: TextStyle(fontSize: 13, color: Colors.grey[600]),
       ),
-      trailing: Switch(
-        value: _isOfflineModeEnabled,
-        onChanged: _onOfflineModeChanged,
-        activeColor: Colors.blue,
-      ),
+      trailing:
+          _isTogglingOfflineMode
+              ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.blue,
+                ),
+              )
+              : Switch(
+                value: _isOfflineModeEnabled,
+                // Deshabilitar mientras se procesa el cambio para evitar
+                // toggles rápidos que dejen trabajos de sync a medias.
+                onChanged: _isTogglingOfflineMode ? null : _onOfflineModeChanged,
+                activeColor: Colors.blue,
+              ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
   }

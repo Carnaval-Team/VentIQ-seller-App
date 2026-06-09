@@ -360,11 +360,19 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         _usdRate = 420.0;
       }
 
-      final detailed = await _productDetailService.getProductDetail(
-        widget.product.id,
-      );
-      _detailedProduct = detailed;
-      if (detailed.precio > 0) _unitPrice = detailed.precio;
+      // En modo offline puede no haber detalles completos del producto; caer al
+      // producto básico en vez de romper la carga.
+      try {
+        final detailed = await _productDetailService.getProductDetail(
+          widget.product.id,
+        );
+        _detailedProduct = detailed;
+        if (detailed.precio > 0) _unitPrice = detailed.precio;
+      } catch (e) {
+        debugPrint('⚠️ Sin detalles completos, usando producto básico: $e');
+        _detailedProduct = widget.product;
+        if (widget.product.precio > 0) _unitPrice = widget.product.precio;
+      }
 
       await countriesFuture;
 

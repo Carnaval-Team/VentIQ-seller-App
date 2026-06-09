@@ -225,6 +225,17 @@ class SettingsIntegrationService {
     }
   }
 
+  /// Esperar a que NO haya ninguna sincronización en curso.
+  ///
+  /// Drena cualquier pase (automático o forzado) antes de que el usuario cambie
+  /// el modo offline, para evitar inconsistencias de datos. Retorna de inmediato
+  /// si no hay sincronización activa.
+  Future<void> waitForSyncIdle({
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    await AutoSyncService().waitUntilIdle(timeout: timeout);
+  }
+
   /// Verificar conectividad manualmente
   Future<bool> checkConnectivity() async {
     try {

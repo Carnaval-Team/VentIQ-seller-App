@@ -124,6 +124,12 @@ class AutoSyncService {
     print('🛑 Deteniendo sincronización automática...');
     _isRunning = false;
 
+    // ⚠️ Limpiar cualquier pase encolado: si una sincronización está corriendo
+    // y dejó pendiente otra pasada (ver finally de _performSync), NO debe
+    // relanzarse después de detener el servicio (p. ej. al activar modo
+    // offline), porque sobrescribiría el estado offline con datos del servidor.
+    _pendingSyncRequested = false;
+
     _syncTimer?.cancel();
     _syncTimer = null;
 
@@ -140,6 +146,16 @@ class AutoSyncService {
 
   /// Realizar una sincronización completa
   Future<void> _performSync() async {
+    // Guarda defensiva: si el modo offline ya está activado, no sincronizar.
+    // Evita que un pase relanzado (o forzado) pise el estado offline tras
+    // haber cambiado de modo. Existe un chequeo equivalente en el timer
+    // periódico y en performImmediateSync.
+    if (await _userPreferencesService.isOfflineModeEnabled()) {
+      print('🔌 Modo offline activado - Omitiendo _performSync');
+      _pendingSyncRequested = false;
+      return;
+    }
+
     if (_isSyncing) {
       // En vez de descartar la sincronización (lo que dejaba categorías/
       // productos sin actualizar cuando una pasada tardaba >1 min), se marca
@@ -577,6 +593,8 @@ class AutoSyncService {
       );
       final List<Map<String, dynamic>> allProducts = [];
 
+      // 1) Aplanar todas las subcategorías a una sola lista de productos de la
+      //    categoría (sin pedir detalles todavía), conservando 'subcategoria'.
       for (var entry in productsMap.entries) {
         final subcategory = entry.key;
         final products = entry.value;
@@ -585,26 +603,8 @@ class AutoSyncService {
           '    📦 Subcategoría "$subcategory": ${products.length} productos',
         );
 
-        // 🚀 BATCH: obtener los detalles completos de TODOS los productos de
-        // la subcategoría en UNA sola llamada (antes era 1 RPC por producto).
-        if (products.isEmpty) continue;
-
-        final productIds = products.map((p) => p.id).toList();
-        Map<int, dynamic> detallesPorId = {};
-        try {
-          detallesPorId = await _productDetailService.getProductDetailsBatch(
-            productIds,
-          );
-          print(
-            '      ✅ Detalles batch obtenidos: ${detallesPorId.length}/${productIds.length}',
-          );
-        } catch (e) {
-          print('      ⚠️ Error obteniendo detalles batch: $e');
-        }
-
         for (var prod in products) {
-          final detalle = detallesPorId[prod.id];
-          final data = <String, dynamic>{
+          allProducts.add(<String, dynamic>{
             'id': prod.id,
             'denominacion': prod.denominacion,
             'precio': prod.precio,
@@ -613,13 +613,34 @@ class AutoSyncService {
             'descripcion': prod.descripcion,
             'cantidad': prod.cantidad,
             'subcategoria': subcategory,
-          };
-          // Solo añadir detalles_completos si vinieron del servidor; si no,
-          // el producto queda con datos básicos (igual que el fallback previo).
+          });
+        }
+      }
+
+      // 2) 🚀 BATCH POR CATEGORÍA: obtener los detalles completos de TODOS los
+      //    productos de la categoría en UNA sola llamada (antes era 1 RPC por
+      //    subcategoría; igualamos el patrón ya usado para presentaciones).
+      if (allProducts.isNotEmpty) {
+        final productIds = allProducts.map((p) => p['id'] as int).toList();
+        Map<int, dynamic> detallesPorId = {};
+        try {
+          detallesPorId = await _productDetailService.getProductDetailsBatch(
+            productIds,
+          );
+          print(
+            '    ✅ Detalles batch (categoría): ${detallesPorId.length}/${productIds.length}',
+          );
+        } catch (e) {
+          print('    ⚠️ Error obteniendo detalles batch de categoría: $e');
+        }
+
+        // Solo añadir detalles_completos si vinieron del servidor; si no, el
+        // producto queda con datos básicos (igual que el fallback previo).
+        for (var product in allProducts) {
+          final detalle = detallesPorId[product['id'] as int];
           if (detalle != null) {
-            data['detalles_completos'] = detalle;
+            product['detalles_completos'] = detalle;
           }
-          allProducts.add(data);
         }
       }
 
@@ -1032,10 +1053,15 @@ class AutoSyncService {
 
     print('  🔄 Sincronizando ${egresosOffline.length} egresos offline...');
     int syncedCount = 0;
+    // Solo se removerán de pendientes los egresos REALMENTE sincronizados; los
+    // que fallen quedan para el próximo intento (no se pierden).
+    final syncedOfflineIds = <String>[];
+    final userId = await _userPreferencesService.getUserId();
 
     for (var egresoData in egresosOffline) {
+      final offlineId = egresoData['offline_id']?.toString();
       try {
-        print('    - Procesando egreso offline: ${egresoData['offline_id']}');
+        print('    - Procesando egreso offline: $offlineId');
 
         // Extraer datos del egreso offline
         final idTurno = egresoData['id_turno'] as int;
@@ -1045,34 +1071,69 @@ class AutoSyncService {
         final nombreRecibe = egresoData['nombre_recibe'] as String;
         final idMedioPago = egresoData['id_medio_pago'] as int?;
 
-        // Llamar al método real de TurnoService para registrar egreso
-        final result = await TurnoService.registrarEgresoParcial(
-          idTurno: idTurno,
-          montoEntrega: montoEntrega,
-          motivoEntrega: motivoEntrega,
-          nombreAutoriza: nombreAutoriza,
-          nombreRecibe: nombreRecibe,
-          idMedioPago: idMedioPago,
-        );
+        // 🔑 IDEMPOTENCIA: client_uuid estable por egreso. Si la creación
+        // offline se hizo antes de esta mejora y no lo tiene, se genera.
+        var clientUuid = egresoData['client_uuid']?.toString();
+        if (clientUuid == null || clientUuid.isEmpty) {
+          clientUuid = UuidGenerator.v4();
+          egresoData['client_uuid'] = clientUuid;
+        }
 
-        if (result['success'] == true) {
+        Map<String, dynamic>? result;
+        try {
+          // Preferir el wrapper idempotente fn_registrar_egreso_offline.
+          final resp = await Supabase.instance.client.rpc(
+            'fn_registrar_egreso_offline',
+            params: {
+              'p_client_uuid': clientUuid,
+              'p_id_turno': idTurno,
+              'p_monto_entrega': montoEntrega,
+              'p_nombre_recibe': nombreRecibe,
+              'p_nombre_autoriza': nombreAutoriza,
+              'p_motivo_entrega': motivoEntrega,
+              'p_id_medio_pago': idMedioPago,
+              'p_uuid_usuario': userId,
+            },
+          );
+          if (resp is Map) {
+            result = Map<String, dynamic>.from(resp);
+          }
+        } catch (e) {
+          // Fallback: wrapper idempotente no disponible (no se subió el .sql).
+          // NOTA: sin idempotencia del servidor, el control de duplicados
+          // depende del marcado local (removeEgresosOfflineByIds).
+          print(
+            '    ⚠️ fn_registrar_egreso_offline no disponible ($e). Usando registrarEgresoParcial.',
+          );
+          result = await TurnoService.registrarEgresoParcial(
+            idTurno: idTurno,
+            montoEntrega: montoEntrega,
+            motivoEntrega: motivoEntrega,
+            nombreAutoriza: nombreAutoriza,
+            nombreRecibe: nombreRecibe,
+            idMedioPago: idMedioPago,
+          );
+        }
+
+        if (result != null && result['success'] == true) {
           syncedCount++;
-          print('    ✅ Egreso offline sincronizado: ${result['egreso_id']}');
+          if (offlineId != null) syncedOfflineIds.add(offlineId);
+          print(
+            '    ✅ Egreso offline sincronizado: ${result['egreso_id']}'
+            '${result['idempotent'] == true ? " (idempotente)" : ""}',
+          );
         } else {
-          print('    ❌ Error en servicio de egreso: ${result['message']}');
+          print('    ❌ Error en servicio de egreso: ${result?['message']}');
         }
       } catch (e) {
-        print(
-          '    ❌ Error sincronizando egreso offline ${egresoData['offline_id']}: $e',
-        );
+        print('    ❌ Error sincronizando egreso offline $offlineId: $e');
         // Continúa con el siguiente egreso sin interrumpir el proceso
       }
     }
 
-    if (syncedCount > 0) {
-      // Limpiar los egresos sincronizados exitosamente
-      await _userPreferencesService.clearEgresosOffline();
-      print('  🧹 Limpiados $syncedCount egresos offline sincronizados');
+    // Remover SOLO los sincronizados; los fallidos quedan pendientes.
+    if (syncedOfflineIds.isNotEmpty) {
+      await _userPreferencesService.removeEgresosOfflineByIds(syncedOfflineIds);
     }
 
     return syncedCount;
@@ -1378,8 +1439,6 @@ class AutoSyncService {
     if (response != null && response['status'] == 'success') {
       // Obtener el ID de operación de la respuesta
       final operationId = response['id_operacion'] as int?;
-      // Si la operación ya existía (idempotente), NO re-registrar pagos ni
-      // re-aplicar cambios de estado: ya se hicieron en la primera vez.
       final bool yaExistia = response['idempotent'] == true;
 
       if (operationId != null) {
@@ -1388,50 +1447,49 @@ class AutoSyncService {
 
         if (yaExistia) {
           print(
-            '    ♻️ Operación $operationId ya existía (idempotente); se omite re-registro de pagos/estado',
+            '    ♻️ Operación $operationId ya existía (idempotente); se reintentan pagos/estado de forma idempotente',
           );
-          return;
         }
 
-        // Registrar desgloses de pago si existen
+        // ⚠️ Pagos y cambio de estado se ejecutan SIEMPRE (también si la venta
+        // ya existía), porque la conexión pudo cortarse ENTRE la creación de la
+        // operación y estos pasos. Son idempotentes (client_uuid propio por
+        // propósito), así que reintentarlos no duplica.
+
+        // Registrar desgloses de pago si existen (idempotente).
         final paymentBreakdown = orderData['desglose_pagos'] as List<dynamic>?;
         if (paymentBreakdown != null && paymentBreakdown.isNotEmpty) {
           await _registerPaymentBreakdownFromOfflineData(
             operationId,
             paymentBreakdown,
+            orderData,
+            userId,
           );
         }
-        print('order_data $orderData');
-        if (orderData['estado'] == 'completada') {
-          print('order_status 1');
 
-          await Supabase.instance.client.rpc(
-            'fn_registrar_cambio_estado_operacion',
-            params: {
-              'p_id_operacion': operationId,
-              'p_nuevo_estado': 2,
-              'p_uuid_usuario': userId,
-            },
-          );
+        // Cambio de estado final según el estado de NEGOCIO de la orden.
+        // 'estado' puede valer 'pendiente_sincronizacion' (estado de sync, no
+        // de negocio); en ese caso se usa 'estado_final' (default 'completada'
+        // para ventas de checkout). Idempotente.
+        var estado = orderData['estado'];
+        if (estado == null || estado == 'pendiente_sincronizacion') {
+          estado = orderData['estado_final'] ?? 'completada';
         }
-        if (orderData['estado'] == 'cancelada') {
-          await Supabase.instance.client.rpc(
-            'fn_registrar_cambio_estado_operacion',
-            params: {
-              'p_id_operacion': operationId,
-              'p_nuevo_estado': 4,
-              'p_uuid_usuario': userId,
-            },
-          );
+        int? nuevoEstado;
+        if (estado == 'completada') {
+          nuevoEstado = 2;
+        } else if (estado == 'cancelada') {
+          nuevoEstado = 4;
+        } else if (estado == 'devuelta') {
+          nuevoEstado = 3;
         }
-        if (orderData['estado'] == 'devuelta') {
-          await Supabase.instance.client.rpc(
-            'fn_registrar_cambio_estado_operacion',
-            params: {
-              'p_id_operacion': operationId,
-              'p_nuevo_estado': 3,
-              'p_uuid_usuario': userId,
-            },
+
+        if (nuevoEstado != null) {
+          await _registerCambioEstadoIdempotente(
+            operationId: operationId,
+            nuevoEstado: nuevoEstado,
+            userId: userId,
+            orderData: orderData,
           );
         }
       }
@@ -1440,12 +1498,68 @@ class AutoSyncService {
     }
   }
 
-  /// Registrar desgloses de pago desde datos offline
+  /// Aplica un cambio de estado de operación de forma idempotente.
+  /// Usa un client_uuid propio por (orden, estado) persistido en orderData para
+  /// que un reintento no duplique el registro de auditoría. Fallback al RPC
+  /// original si el wrapper offline no está desplegado.
+  Future<void> _registerCambioEstadoIdempotente({
+    required int operationId,
+    required int nuevoEstado,
+    required dynamic userId,
+    required Map<String, dynamic> orderData,
+  }) async {
+    // client_uuid estable por cambio de estado (uno por estado destino).
+    final key = 'client_uuid_estado_$nuevoEstado';
+    var estadoUuid = orderData[key]?.toString();
+    if (estadoUuid == null || estadoUuid.isEmpty) {
+      estadoUuid = UuidGenerator.v4();
+      orderData[key] = estadoUuid;
+    }
+
+    try {
+      await Supabase.instance.client.rpc(
+        'fn_registrar_cambio_estado_offline',
+        params: {
+          'p_client_uuid': estadoUuid,
+          'p_id_operacion': operationId,
+          'p_nuevo_estado': nuevoEstado,
+          'p_uuid_usuario': userId,
+        },
+      );
+      print('    ✅ Estado $nuevoEstado aplicado (idempotente) a op $operationId');
+    } catch (e) {
+      // Fallback: wrapper no disponible. NOTA: sin idempotencia del servidor,
+      // un reintento podría duplicar el registro de auditoría del cambio.
+      print(
+        '    ⚠️ fn_registrar_cambio_estado_offline no disponible ($e). Usando RPC original.',
+      );
+      await Supabase.instance.client.rpc(
+        'fn_registrar_cambio_estado_operacion',
+        params: {
+          'p_id_operacion': operationId,
+          'p_nuevo_estado': nuevoEstado,
+          'p_uuid_usuario': userId,
+        },
+      );
+    }
+  }
+
+  /// Registrar desgloses de pago desde datos offline (idempotente).
+  ///
+  /// Usa fn_registrar_pago_venta_offline con un client_uuid propio por orden
+  /// (persistido en orderData), de modo que un reintento NO duplique los pagos.
+  /// Fallback a fn_registrar_pago_venta si el wrapper no está desplegado.
   Future<void> _registerPaymentBreakdownFromOfflineData(
     int operationId,
     List<dynamic> paymentBreakdown,
+    Map<String, dynamic> orderData,
+    dynamic userId,
   ) async {
     try {
+      // Referencia determinista (basada en la orden) para que el fallback NO
+      // genere referencias distintas en cada reintento.
+      final refBase = orderData['client_uuid'] ?? orderData['id'] ?? operationId;
+
       // Preparar array de pagos para la función RPC
       List<Map<String, dynamic>> pagos = [];
 
@@ -1454,18 +1568,47 @@ class AutoSyncService {
         pagos.add({
           'id_medio_pago': paymentData['id_medio_pago'],
           'monto': paymentData['monto'],
-          'referencia_pago':
-              'Pago Auto Sync - ${DateTime.now().millisecondsSinceEpoch}',
+          'referencia_pago': 'Pago Offline - $refBase',
         });
       }
 
-      // Llamar a fn_registrar_pago_venta
-      final response = await Supabase.instance.client.rpc(
-        'fn_registrar_pago_venta',
-        params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
-      );
+      // client_uuid estable para el registro de pagos de esta operación.
+      var pagoUuid = orderData['client_uuid_pago']?.toString();
+      if (pagoUuid == null || pagoUuid.isEmpty) {
+        pagoUuid = UuidGenerator.v4();
+        orderData['client_uuid_pago'] = pagoUuid;
+      }
 
-      if (response == true) {
+      bool ok = false;
+      try {
+        // Preferir el wrapper idempotente.
+        final resp = await Supabase.instance.client.rpc(
+          'fn_registrar_pago_venta_offline',
+          params: {
+            'p_client_uuid': pagoUuid,
+            'p_id_operacion_venta': operationId,
+            'p_pagos': pagos,
+            'p_uuid_usuario': userId,
+          },
+        );
+        ok = resp is Map && resp['success'] == true;
+        if (ok && resp['idempotent'] == true) {
+          print('    ♻️ Pagos ya registrados (idempotente) para op $operationId');
+        }
+      } catch (e) {
+        // Fallback: wrapper no disponible. NOTA: sin idempotencia del servidor,
+        // un reintento podría duplicar los pagos.
+        print(
+          '    ⚠️ fn_registrar_pago_venta_offline no disponible ($e). Usando RPC original.',
+        );
+        final response = await Supabase.instance.client.rpc(
+          'fn_registrar_pago_venta',
+          params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+        );
+        ok = response == true;
+      }
+
+      if (ok) {
         print(
           '    ✅ Desgloses de pago registrados para operación: $operationId',
         );
@@ -1517,6 +1660,36 @@ class AutoSyncService {
 
     print('🚀 Forzando sincronización inmediata...');
     await _performSync();
+  }
+
+  /// Esperar a que NO haya ningún pase de sincronización en curso.
+  ///
+  /// Si no se está sincronizando, retorna de inmediato. Si hay un pase en
+  /// curso, espera el próximo evento de fin (`syncCompleted` o `syncFailed`)
+  /// del stream existente. El [timeout] es una red de seguridad: si se agota,
+  /// retorna igualmente (no lanza) para no dejar la UI bloqueada.
+  ///
+  /// Se usa al cambiar el modo offline para drenar cualquier sincronización
+  /// (automática o forzada) antes de cambiar de estado y evitar inconsistencias.
+  Future<void> waitUntilIdle({
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    if (!_isSyncing) return;
+
+    print('⏳ Esperando a que termine la sincronización en curso...');
+    try {
+      await _syncEventController.stream
+          .firstWhere(
+            (event) =>
+                event.type == AutoSyncEventType.syncCompleted ||
+                event.type == AutoSyncEventType.syncFailed,
+          )
+          .timeout(timeout);
+    } on TimeoutException {
+      print('⚠️ waitUntilIdle agotó el timeout; continuando de todos modos');
+    } catch (e) {
+      print('⚠️ waitUntilIdle terminó con error ($e); continuando');
+    }
   }
 
   /// Obtener estadísticas de sincronización

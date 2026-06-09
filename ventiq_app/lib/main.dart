@@ -12,6 +12,7 @@ import 'screens/egreso_screen.dart';
 import 'screens/venta_total_screen.dart';
 import 'screens/cierre_screen.dart';
 import 'screens/shift_workers_screen.dart';
+import 'screens/offline_data_viewer_screen.dart';
 import 'screens/subscription_detail_screen.dart';
 import 'screens/wifi_printers_screen.dart';
 import 'screens/default_order_items_screen.dart';
@@ -88,6 +89,7 @@ class MyApp extends StatelessWidget {
         '/venta-total': (context) => const VentaTotalScreen(),
         '/cierre': (context) => const CierreScreen(),
         '/shift-workers': (context) => const ShiftWorkersScreen(),
+        '/offline-data-viewer': (context) => const OfflineDataViewerScreen(),
         '/subscription-detail': (context) => const SubscriptionDetailScreen(),
         '/wifi-printers': (context) => const WiFiPrintersScreen(),
         '/default-order-items': (context) =>

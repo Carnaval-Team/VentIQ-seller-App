@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/product.dart';
+import 'user_preferences_service.dart';
 
 class ProductDetailService {
   static final ProductDetailService _instance =
@@ -9,10 +10,31 @@ class ProductDetailService {
   ProductDetailService._internal();
 
   final SupabaseClient _supabase = Supabase.instance.client;
+  final UserPreferencesService _userPrefs = UserPreferencesService();
 
-  /// Fetch detailed product information from Supabase
+  /// Fetch detailed product information.
+  ///
+  /// Offline-aware: si el modo offline está activado, NO llama a Supabase;
+  /// reconstruye el producto desde `detalles_completos` ya sincronizado en
+  /// `offline_data['products']` (misma forma que get_detalle_producto), usando
+  /// el mismo parser `_transformToProduct`. Así los flujos de venta (Fluido,
+  /// paquetería, órdenes) funcionan sin conexión con variantes/inventario.
   Future<Product> getProductDetail(int productId) async {
     try {
+      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      if (isOffline) {
+        final offlineDetail = await _getProductDetailOffline(productId);
+        if (offlineDetail != null) {
+          debugPrint('🔌 Detalles del producto $productId desde cache offline');
+          return offlineDetail;
+        }
+        // Sin detalles completos en cache: lanzar para que el llamador caiga a
+        // su fallback (producto básico) en vez de intentar la red.
+        throw Exception(
+          'Sin detalles offline para el producto $productId',
+        );
+      }
+
       debugPrint('🔍 Obteniendo detalles del producto ID: $productId');
 
       final response = await _supabase.rpc(
@@ -33,6 +55,28 @@ class ProductDetailService {
       debugPrint('📍 Stack trace completo:\n$stackTrace');
       rethrow;
     }
+  }
+
+  /// Busca `detalles_completos` del producto en el cache offline y lo
+  /// transforma a Product. Devuelve null si no hay datos completos guardados.
+  Future<Product?> _getProductDetailOffline(int productId) async {
+    final offlineData = await _userPrefs.getOfflineData();
+    final products = offlineData?['products'];
+    if (products is! Map) return null;
+
+    for (final categoryProducts in products.values) {
+      if (categoryProducts is! List) continue;
+      for (final prod in categoryProducts) {
+        if (prod is Map && prod['id'] == productId) {
+          final detalle = prod['detalles_completos'];
+          if (detalle is Map<String, dynamic>) {
+            return _transformToProduct(detalle);
+          }
+          return null; // producto encontrado pero sin detalles completos
+        }
+      }
+    }
+    return null;
   }
 
   /// Obtiene los detalles completos de MÚLTIPLES productos en UNA sola llamada

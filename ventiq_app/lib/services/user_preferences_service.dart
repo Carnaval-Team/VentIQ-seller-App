@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/promotion_rules.dart';
+import '../utils/uuid_generator.dart';
 import 'order_service.dart';
 
 class UserPreferencesService {
@@ -53,6 +54,9 @@ class UserPreferencesService {
 
   // Fluid mode keys
   static const String _fluidModeKey = 'fluid_mode_enabled';
+
+  // Superadmin flag (cacheado en login; usado para herramientas ocultas)
+  static const String _isSuperAdminKey = 'is_superadmin';
 
   // Offline mode keys
   static const String _offlineModeKey = 'offline_mode_enabled';
@@ -279,6 +283,18 @@ class UserPreferencesService {
       print('❌ Error cargando maneja_apertura_control: $e');
       return true; // Comportamiento seguro en caso de error
     }
+  }
+
+  /// Guardar flag de superadmin (cacheado en login para uso offline).
+  Future<void> setIsSuperAdmin(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_isSuperAdminKey, value);
+  }
+
+  /// Leer flag de superadmin cacheado. Por defecto false.
+  Future<bool> isSuperAdmin() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_isSuperAdminKey) ?? false;
   }
 
   // Verificar si el usuario está logueado
@@ -1247,6 +1263,14 @@ class UserPreferencesService {
             order['synced'] = true;
             order['synced_at'] = DateTime.now().toIso8601String();
             order['is_pending_sync'] = false;
+            // Promover el estado de SYNC al estado de NEGOCIO real para que la
+            // orden deje de contarse como pendiente y, si es final, se purgue.
+            final estadoActual = order['estado']?.toString();
+            if (estadoActual == null ||
+                estadoActual == 'pendiente_sincronizacion') {
+              order['estado'] =
+                  order['estado_final']?.toString() ?? 'completada';
+            }
             final opId = operationIds?[id];
             if (opId != null) order['id_operacion'] = opId;
             changed = true;
@@ -1494,6 +1518,20 @@ class UserPreferencesService {
 
     await prefs.setString(_pendingOperationsKey, jsonEncode(operations));
     print('💾 Operación pendiente guardada: ${operation['type']}');
+  }
+
+  /// Sobrescribir la lista completa de operaciones pendientes.
+  /// Útil para persistir el resultado tras sincronizar (p. ej. quitar las ya
+  /// sincronizadas conservando las que fallaron).
+  Future<void> savePendingOperations(
+    List<Map<String, dynamic>> operations,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (operations.isEmpty) {
+      await prefs.remove(_pendingOperationsKey);
+    } else {
+      await prefs.setString(_pendingOperationsKey, jsonEncode(operations));
+    }
   }
 
   /// Obtener todas las operaciones pendientes
@@ -1991,6 +2029,13 @@ class UserPreferencesService {
       egresoData['created_offline_at'] = DateTime.now().toIso8601String();
       egresoData['offline_id'] = '${DateTime.now().millisecondsSinceEpoch}';
 
+      // 🔑 IDEMPOTENCIA: client_uuid estable por egreso, para que un reintento
+      // de sincronización NO duplique el egreso en el servidor.
+      if (egresoData['client_uuid'] == null ||
+          (egresoData['client_uuid'] as String).isEmpty) {
+        egresoData['client_uuid'] = UuidGenerator.v4();
+      }
+
       egresosOffline.add(egresoData);
 
       await prefs.setString(_egresosOfflineKey, jsonEncode(egresosOffline));
@@ -2027,6 +2072,41 @@ class UserPreferencesService {
       print('🧹 Egresos offline limpiados');
     } catch (e) {
       print('❌ Error limpiando egresos offline: $e');
+    }
+  }
+
+  /// Sobrescribir la lista completa de egresos offline pendientes.
+  Future<void> saveEgresosOffline(List<Map<String, dynamic>> egresos) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_egresosOfflineKey, jsonEncode(egresos));
+      print('💾 Egresos offline guardados: ${egresos.length} pendientes');
+    } catch (e) {
+      print('❌ Error guardando egresos offline: $e');
+    }
+  }
+
+  /// Eliminar SOLO los egresos offline cuyos offline_id fueron sincronizados
+  /// con éxito, conservando los demás (evita perder egresos no sincronizados
+  /// cuando la subida es parcial por un corte de conexión).
+  Future<void> removeEgresosOfflineByIds(List<String> syncedOfflineIds) async {
+    if (syncedOfflineIds.isEmpty) return;
+    try {
+      final egresos = await getEgresosOffline();
+      final syncedSet = syncedOfflineIds.toSet();
+      final restantes =
+          egresos
+              .where(
+                (e) => !syncedSet.contains(e['offline_id']?.toString()),
+              )
+              .toList();
+      await saveEgresosOffline(restantes);
+      print(
+        '🧹 Egresos offline: ${syncedOfflineIds.length} sincronizados removidos, '
+        '${restantes.length} conservados',
+      );
+    } catch (e) {
+      print('❌ Error removiendo egresos offline sincronizados: $e');
     }
   }
 

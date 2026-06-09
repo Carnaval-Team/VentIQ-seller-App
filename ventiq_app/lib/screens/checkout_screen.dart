@@ -1278,6 +1278,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'total_descuentos': totalDescuentos,
         'total': total,
         'estado': 'pendiente_sincronizacion',
+        // Estado de negocio con el que debe quedar la orden tras sincronizar.
+        // Una venta de checkout es 'completada'. Se usa al subir (para aplicar
+        // el cambio de estado en el servidor) y al marcar la orden sincronizada
+        // (para reescribir el estado local y poder purgarla).
+        'estado_final': 'completada',
         'is_pending_sync': true,
         'created_offline_at': DateTime.now().toIso8601String(),
         // DATOS DEL CLIENTE / MESA CAPTURADOS
