@@ -22,7 +22,8 @@
       "WebFetch(domain:pub.dev)",
       "Bash(git log *)",
       "Bash(findstr /I marketplace)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(deno check *)"
     ]
   },
   "disabledMcpjsonServers": [

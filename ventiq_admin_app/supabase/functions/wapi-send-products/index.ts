@@ -220,13 +220,98 @@ export async function dispatchProducts(args: {
     return { enviados: 0, fallidos: 0, batch_id: null, skipped: true };
   }
 
+  // ───────────────────────────────────────────────────────────────────
+  //  CHUNKING anti-timeout
+  //  Los background tasks de Supabase Edge se matan al llegar al techo de
+  //  ~400s de wall-clock. Con delays anti-ban de 5-10s entre productos, un
+  //  envío largo (p.ej. una programación con muchos productos) se cortaba a
+  //  la mitad y "solo mandaba unos pocos" — el resto quedaba en estado
+  //  `pendiente` sin enviarse nunca. Era invisible en el envío manual porque
+  //  ahí se seleccionan pocos productos y el total cabía bajo los 400s.
+  //
+  //  Solución: procesar SÓLO los productos que caben con holgura en un
+  //  presupuesto de tiempo, y re-invocar wapi-send-products con el resto.
+  //  Cada invocación arranca su propio worker con 400s frescos, así que el
+  //  envío completo se reparte en N chunks encadenados. El chunk se decide
+  //  AQUÍ (arriba), no a mitad del loop, para que los logs `pendiente` se
+  //  inserten sólo para el chunk actual (evita filas duplicadas).
+  // ───────────────────────────────────────────────────────────────────
+  const MAX_PARALLEL_FANOUT = 5;
+  const minMs = Math.max(5_000, delayMin * 1000);
+  const maxMs = Math.max(minMs + 1_000, delayMax * 1000);
+
+  // Presupuesto conservador (250s): deja ~150s de margen bajo el techo de
+  // 400s para el fan-out del último producto del chunk y la re-invocación.
+  const TIME_BUDGET_MS = 250_000;
+  const avgDelayMs = (minMs + maxMs) / 2;
+  const fanoutBatches = Math.ceil(destinations.length / MAX_PARALLEL_FANOUT);
+  // Estimado de wall-time por producto: delay entre productos + fan-out
+  // (cada sub-lote ~4s: envío de imagen + pausa de 1s entre sub-lotes).
+  const perProductMs = avgDelayMs + fanoutBatches * 4_000;
+  const maxProductsThisChunk = Math.max(
+    1,
+    Math.floor(TIME_BUDGET_MS / perProductMs),
+  );
+
+  const chunkIds = productIds.slice(0, maxProductsThisChunk);
+  const remainingIds = productIds.slice(maxProductsThisChunk);
+
+  // Re-invoca wapi-send-products (service_role) con los productos que NO
+  // caben en este chunk. Fire-and-forget: el endpoint responde de inmediato
+  // (queued) y procesa el siguiente chunk en su propio background task.
+  const reinvokeRemaining = async (): Promise<void> => {
+    if (remainingIds.length === 0) return;
+    const baseUrl = Deno.env.get("SUPABASE_URL");
+    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!baseUrl || !key) {
+      console.error(
+        "[wapi-send-products] no puedo continuar el envío: faltan " +
+          "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY. " +
+          `${remainingIds.length} productos quedaron sin enviar.`,
+      );
+      return;
+    }
+    const endpoint =
+      `${baseUrl.replace(/\/$/, "")}/functions/v1/wapi-send-products`;
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${key}`,
+          "apikey": key,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id_sesion: idSesion,
+          product_ids: remainingIds,
+          destinations,
+          ...(template ? { message_template: template } : {}),
+          delay_min_seconds: delayMin,
+          delay_max_seconds: delayMax,
+          tipo_envio: tipoEnvio,
+          ...(idProgramacion ? { id_programacion: idProgramacion } : {}),
+        }),
+      });
+      console.log(
+        `[wapi-send-products] continuación encolada: ${remainingIds.length} ` +
+          `productos restantes → HTTP ${res.status}`,
+      );
+    } catch (e) {
+      console.error(
+        `[wapi-send-products] fallo al encolar continuación (` +
+          `${remainingIds.length} productos restantes): ` +
+          `${(e as Error).message ?? e}`,
+      );
+    }
+  };
+
   // Cargar productos (con SKU + categoría via JOIN para captions marketing)
   const { data: productos, error: prodErr } = await admin
     .from("app_dat_producto")
     .select(
       "id, denominacion, descripcion, imagen, sku, app_dat_categoria(denominacion)",
     )
-    .in("id", productIds);
+    .in("id", chunkIds);
   if (prodErr) throw new Error(`Error cargando productos: ${prodErr.message}`);
 
   // Cargar precio venta (último vigente por producto).
@@ -237,7 +322,7 @@ export async function dispatchProducts(args: {
   const { data: precios } = await admin
     .from("app_dat_precio_venta")
     .select("id, id_producto, precio_venta_cup, precio_venta_usd")
-    .in("id_producto", productIds)
+    .in("id_producto", chunkIds)
     .order("id", { ascending: false });
 
   const precioMap = new Map<number, number>();
@@ -282,7 +367,7 @@ export async function dispatchProducts(args: {
         const { data: invRows } = await admin
           .from("app_dat_inventario_productos")
           .select("id, id_producto, id_ubicacion, cantidad_final, created_at")
-          .in("id_producto", productIds)
+          .in("id_producto", chunkIds)
           .in("id_ubicacion", ubicacionIds)
           .order("id", { ascending: false });
 
@@ -302,7 +387,7 @@ export async function dispatchProducts(args: {
       }
     }
     console.log(
-      `[wapi-send-products] stock calculado para ${stockMap.size}/${productIds.length} productos`,
+      `[wapi-send-products] stock calculado para ${stockMap.size}/${chunkIds.length} productos`,
     );
   } catch (e) {
     // No bloqueamos el envío si falla el cálculo de stock — solo se
@@ -393,6 +478,10 @@ export async function dispatchProducts(args: {
   }
 
   if (messages.length === 0) {
+    // Ningún producto de este chunk produjo mensajes válidos (todos sin
+    // imagen / chat_id inválido). Aún así debemos continuar con los
+    // productos restantes — si no, la cadena de chunks se rompería aquí.
+    await reinvokeRemaining();
     return { enviados: 0, fallidos: 0, batch_id: null, skipped: true };
   }
 
@@ -411,16 +500,8 @@ export async function dispatchProducts(args: {
     .insert(logRows)
     .select("id");
 
-  // Anti-ban: rango de delays aleatorios entre lotes (mínimo 5s).
-  // El delay aplica ENTRE productos, no entre destinatarios del mismo producto
-  // (esos van en paralelo dentro de MAX_PARALLEL_FANOUT).
-  const minMs = Math.max(5_000, delayMin * 1000);
-  const maxMs = Math.max(minMs + 1_000, delayMax * 1000);
-
-  // Cuántos destinos del mismo producto se disparan a la vez. Mantenerlo
-  // bajo evita ráfagas que crucen el techo de 60 req/min de OpenWA y los
-  // 20 msgs/min/sesión recomendados para evitar bans.
-  const MAX_PARALLEL_FANOUT = 5;
+  // minMs / maxMs / MAX_PARALLEL_FANOUT se declararon arriba (necesarios
+  // para estimar el presupuesto de tiempo del chunk). Aquí sólo los usamos.
 
   // Generamos un batchId único para correlación interna (no se envía al WAPI)
   const batchId = `b_${idTienda}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
@@ -515,12 +596,18 @@ export async function dispatchProducts(args: {
     }
   }
 
+  // Encolar el siguiente chunk (si quedaron productos fuera del presupuesto
+  // de tiempo). Cada continuación corre en su propio worker con 400s frescos.
+  await reinvokeRemaining();
+
   return {
     enviados,
     fallidos,
     batch_id: batchId,
     mode: "fanout-per-product",
     fanout: MAX_PARALLEL_FANOUT,
+    chunk_size: chunkIds.length,
+    remaining: remainingIds.length,
   };
 }
 
