@@ -5,28 +5,40 @@ import '../models/inventtia_payment_model.dart';
 class InventtiaPaymentService {
   static final _supabase = Supabase.instance.client;
 
-  /// Obtener tipos de cambio desde configuraciones_admin
+  /// Obtener tipos de cambio desde configuraciones_admin y tasas_conversion
   static Future<ExchangeRates> getExchangeRates() async {
     try {
-      final response =
+      // Obtener EUR desde configuraciones_admin
+      final configResponse =
           await _supabase
               .schema('carnavalapp')
               .from('configuraciones_admin')
-              .select('valor_usd, valor_euro')
+              .select('valor_euro')
               .limit(1)
               .maybeSingle();
 
-      if (response == null) {
-        debugPrint(
-          '⚠️ No se encontraron tipos de cambio, usando valores por defecto',
-        );
-        return ExchangeRates(valorUsd: 1.0, valorEuro: 1.0);
-      }
+      // Obtener USD desde tasas_conversion
+      final usdResponse =
+          await _supabase
+              .from('tasas_conversion')
+              .select('tasa')
+              .eq('moneda_origen', 'USD')
+              .limit(1)
+              .maybeSingle();
 
-      final valorUsd = (response['valor_usd'] as num?)?.toDouble() ?? 1.0;
-      final valorEuro = (response['valor_euro'] as num?)?.toDouble() ?? 1.0;
+      final valorEuro =
+          configResponse != null
+              ? (configResponse['valor_euro'] as num?)?.toDouble() ?? 1.0
+              : 1.0;
 
-      debugPrint('✅ Tipos de cambio: USD=$valorUsd, EUR=$valorEuro');
+      final valorUsd =
+          usdResponse != null
+              ? (usdResponse['tasa'] as num?)?.toDouble() ?? 1.0
+              : 1.0;
+
+      debugPrint(
+        '✅ Tipos de cambio: USD=$valorUsd (tasas_conversion), EUR=$valorEuro (config_admin)',
+      );
       return ExchangeRates(valorUsd: valorUsd, valorEuro: valorEuro);
     } catch (e) {
       debugPrint('❌ Error obteniendo tipos de cambio: $e');
