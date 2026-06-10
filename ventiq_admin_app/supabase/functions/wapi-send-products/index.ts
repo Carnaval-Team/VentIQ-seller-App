@@ -256,18 +256,64 @@ export async function dispatchProducts(args: {
   const chunkIds = productIds.slice(0, maxProductsThisChunk);
   const remainingIds = productIds.slice(maxProductsThisChunk);
 
-  // Re-invoca wapi-send-products (service_role) con los productos que NO
-  // caben en este chunk. Fire-and-forget: el endpoint responde de inmediato
-  // (queued) y procesa el siguiente chunk en su propio background task.
+  // Re-invoca wapi-send-products con los productos que NO caben en este chunk.
+  // Fire-and-forget: el endpoint responde de inmediato (queued) y procesa el
+  // siguiente chunk en su propio background task con 400s frescos.
+  //
+  // IMPORTANTE: idempotencia. `reinvokeRemaining` sólo debe encolar UNA vez por
+  // worker; si se llama dos veces (p.ej. en el early-fire y otra vez al final
+  // por una ruta de error), duplicaría el chunk restante. Un flag lo evita.
+  let reinvoked = false;
   const reinvokeRemaining = async (): Promise<void> => {
-    if (remainingIds.length === 0) return;
+    if (remainingIds.length === 0 || reinvoked) return;
+    reinvoked = true;
+
+    const payload = {
+      id_sesion: idSesion,
+      product_ids: remainingIds,
+      destinations,
+      ...(template ? { message_template: template } : {}),
+      delay_min_seconds: delayMin,
+      delay_max_seconds: delayMax,
+      tipo_envio: tipoEnvio,
+      ...(idProgramacion ? { id_programacion: idProgramacion } : {}),
+    };
+
+    // Ruta primaria: admin.functions.invoke. El cliente `admin` ya fue
+    // construido con SUPABASE_URL + SERVICE_ROLE_KEY válidos (si faltaran, el
+    // serviceClient() habría reventado mucho antes). Esto evita depender de
+    // releer el env var crudo dentro del worker en background — que es lo que
+    // estaba fallando en silencio y cortaba la cadena tras el primer chunk.
+    try {
+      const { error } = await admin.functions.invoke("wapi-send-products", {
+        body: payload,
+      });
+      if (!error) {
+        console.log(
+          `[wapi-send-products] continuación encolada (invoke): ` +
+            `${remainingIds.length} productos restantes`,
+        );
+        return;
+      }
+      console.error(
+        `[wapi-send-products] functions.invoke falló, intento fallback fetch: ` +
+          `${error.message ?? error}`,
+      );
+    } catch (e) {
+      console.error(
+        `[wapi-send-products] functions.invoke lanzó excepción, fallback fetch: ` +
+          `${(e as Error).message ?? e}`,
+      );
+    }
+
+    // Ruta de respaldo: fetch manual al endpoint público.
     const baseUrl = Deno.env.get("SUPABASE_URL");
     const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!baseUrl || !key) {
       console.error(
-        "[wapi-send-products] no puedo continuar el envío: faltan " +
-          "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY. " +
-          `${remainingIds.length} productos quedaron sin enviar.`,
+        "[wapi-send-products] CADENA ROTA: functions.invoke falló y faltan " +
+          "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY para el fallback. " +
+          `${remainingIds.length} productos quedaron SIN enviar.`,
       );
       return;
     }
@@ -281,24 +327,15 @@ export async function dispatchProducts(args: {
           "apikey": key,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          id_sesion: idSesion,
-          product_ids: remainingIds,
-          destinations,
-          ...(template ? { message_template: template } : {}),
-          delay_min_seconds: delayMin,
-          delay_max_seconds: delayMax,
-          tipo_envio: tipoEnvio,
-          ...(idProgramacion ? { id_programacion: idProgramacion } : {}),
-        }),
+        body: JSON.stringify(payload),
       });
       console.log(
-        `[wapi-send-products] continuación encolada: ${remainingIds.length} ` +
+        `[wapi-send-products] continuación encolada (fetch): ${remainingIds.length} ` +
           `productos restantes → HTTP ${res.status}`,
       );
     } catch (e) {
       console.error(
-        `[wapi-send-products] fallo al encolar continuación (` +
+        `[wapi-send-products] CADENA ROTA: fallo al encolar continuación (` +
           `${remainingIds.length} productos restantes): ` +
           `${(e as Error).message ?? e}`,
       );

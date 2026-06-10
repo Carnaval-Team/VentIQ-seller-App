@@ -23,7 +23,8 @@
       "Bash(git log *)",
       "Bash(findstr /I marketplace)",
       "WebSearch",
-      "Bash(deno check *)"
+      "Bash(deno check *)",
+      "Bash(deno --version)"
     ]
   },
   "disabledMcpjsonServers": [
