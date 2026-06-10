@@ -21,6 +21,7 @@ import 'screens/consignacion_screen.dart';
 import 'screens/carnaval_store_mapping_screen.dart';
 import 'screens/carnaval_inventtia_products_screen.dart';
 import 'screens/pago_proveedores_screen.dart';
+import 'screens/pago_inventtia_screen.dart';
 import 'screens/eliminacion_tiendas_screen.dart';
 import 'screens/fleet_control_screen.dart';
 import 'screens/movimientos_screen.dart';
@@ -67,10 +68,7 @@ class VentIQSuperAdminApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('es', 'ES'),
-        Locale('en', 'US'),
-      ],
+      supportedLocales: const [Locale('es', 'ES'), Locale('en', 'US')],
       locale: const Locale('es', 'ES'),
       initialRoute: '/',
       routes: {
@@ -92,6 +90,7 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/productos-carnaval-inventtia':
             (context) => const CarnavalInventtiaProductsScreen(),
         '/pago-proveedores': (context) => const PagoProveedoresScreen(),
+        '/pago-inventtia': (context) => const PagoInventtiaScreen(),
         '/eliminacion-tiendas': (context) => const EliminacionTiendasScreen(),
         '/control-flota': (context) => const FleetControlScreen(),
         '/movimientos': (context) => const MovimientosScreen(),
@@ -107,7 +106,8 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/muevete/kyc': (context) => const MueveteKycScreen(),
         '/muevete/planes': (context) => const MuevetesPlanesScreen(),
         '/agentes': (context) => const AgentesScreen(),
-        '/ingresos-distribucion': (context) => const IngresosDistribucionScreen(),
+        '/ingresos-distribucion':
+            (context) => const IngresosDistribucionScreen(),
         '/carnaval-dashboard': (context) => const CarnavalDashboardScreen(),
       },
     );
