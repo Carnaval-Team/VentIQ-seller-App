@@ -1648,27 +1648,15 @@ class ExportService {
   }
 
   /// Método común para agrupar datos de inventario por almacén y ubicación.
-  /// Deduplica por id_producto dentro de cada ubicación sumando las cantidades
-  /// numéricas (el RPC puede devolver varias filas para el mismo producto cuando
-  /// existen múltiples registros de inventario en la misma ubicación).
+  /// Deduplica por id_producto dentro de cada ubicación conservando la primera
+  /// ocurrencia (el RPC puede devolver varias filas para el mismo producto
+  /// cuando existen múltiples registros de inventario en la misma ubicación).
   Map<String, Map<String, List<Map<String, dynamic>>>> _groupInventoryData(
     List<Map<String, dynamic>> inventoryData,
   ) {
     // almacen -> ubicacion -> id_producto -> item (acumulado)
     final grouped =
         <String, Map<String, Map<String, Map<String, dynamic>>>>{};
-
-    // Campos numéricos que se acumulan por suma
-    const numericFields = [
-      'cantidad_inicial',
-      'cantidad_final',
-      'entradas_periodo',
-      'extracciones_periodo',
-      'ventas_periodo',
-      'stock_disponible',
-      'stock_reservado',
-      'cantidad_reservada',
-    ];
 
     for (final item in inventoryData) {
       final almacen = item['almacen']?.toString() ?? 'Sin almacén';
@@ -1688,16 +1676,9 @@ class ExportService {
       grouped.putIfAbsent(almacen, () => {});
       grouped[almacen]!.putIfAbsent(ubicacion, () => {});
 
+      // Si ya existe, ignorar el duplicado (conservar la primera ocurrencia)
       if (!grouped[almacen]![ubicacion]!.containsKey(dedupKey)) {
         grouped[almacen]![ubicacion]![dedupKey] = Map<String, dynamic>.from(item);
-      } else {
-        // Acumular campos numéricos
-        final existing = grouped[almacen]![ubicacion]![dedupKey]!;
-        for (final field in numericFields) {
-          final a = (existing[field] as num?)?.toDouble() ?? 0.0;
-          final b = (item[field] as num?)?.toDouble() ?? 0.0;
-          existing[field] = a + b;
-        }
       }
     }
 
