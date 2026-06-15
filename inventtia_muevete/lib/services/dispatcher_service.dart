@@ -3,114 +3,160 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class DispatcherService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  /// Registers a list of carriers under a dispatcher.
-  /// Creates a row in muevete.drivers (tipo_usuario='carrier_carga') for each
-  /// carrier and links them in muevete.sub_usuarios with estado='pendiente'.
-  /// Called immediately after the dispatcher's own profile is created.
+  Map<String, dynamic> _carroceriaPayload(Map<String, dynamic> t, int driverId) {
+    final marca = (t['marca'] as String?)?.trim();
+    final modelo = (t['modelo'] as String?)?.trim();
+    final matricula = (t['matricula'] as String?)?.trim();
+    return {
+      'driver_id': driverId,
+      'tipo_carroceria': (t['tipo_carroceria'] as String?)?.trim().isNotEmpty == true
+          ? t['tipo_carroceria']
+          : 'otro',
+      if (marca != null && marca.isNotEmpty) 'marca': marca,
+      if (modelo != null && modelo.isNotEmpty) 'modelo': modelo,
+      if (matricula != null && matricula.isNotEmpty) 'matricula': matricula,
+      if (t['capacidad_ton'] != null) 'capacidad_ton': t['capacidad_ton'],
+      if (t['longitud_m'] != null) 'longitud_m': t['longitud_m'],
+      'seguro_vigente': t['seguro_vigente'] ?? false,
+    };
+  }
+
+  /// Registers a list of drivers under a dispatcher during registration.
+  /// Drivers are stored in muevete.drivers linked via dispatcher_id.
+  /// No auth account is created — they are operational data only.
   Future<void> registrarTransportistas({
     required String dispatcherUuid,
     required int dispatcherDriverId,
     required List<Map<String, dynamic>> transportistas,
   }) async {
     for (final t in transportistas) {
-      // 1. Create a carrier_carga profile in drivers (estado=false = not yet active)
       final driverRow = await _supabase
           .schema('muevete')
           .from('drivers')
           .insert({
             'name': t['name'] as String,
-            'email': t['email'] as String,
+            'email': t['email'] as String?,
             'telefono': t['telefono'] as String?,
-            'estado': false,
+            'estado': true,
             'kyc': false,
             'tipo_usuario': 'carrier_carga',
             'dispatcher_id': dispatcherDriverId,
-            if (t['tipo_carroceria'] != null)
-              'tipo_carroceria': t['tipo_carroceria'],
-            if (t['marca'] != null) 'categoria': t['marca'],
-            if (t['capacidad_ton'] != null) 'capacidad_ton': t['capacidad_ton'],
+            if (t['lic_conduccion_frente_url'] != null)
+              'lic_conduccion_frente_url': t['lic_conduccion_frente_url'],
+            if (t['lic_conduccion_dorso_url'] != null)
+              'lic_conduccion_dorso_url': t['lic_conduccion_dorso_url'],
+            if (t['lic_circulacion_frente_url'] != null)
+              'lic_circulacion_frente_url': t['lic_circulacion_frente_url'],
+            if (t['lic_circulacion_dorso_url'] != null)
+              'lic_circulacion_dorso_url': t['lic_circulacion_dorso_url'],
+            if (t['lic_operativa_frente_url'] != null)
+              'lic_operativa_frente_url': t['lic_operativa_frente_url'],
+            if (t['lic_operativa_dorso_url'] != null)
+              'lic_operativa_dorso_url': t['lic_operativa_dorso_url'],
           })
           .select('id')
           .single();
 
-      final subDriverId = driverRow['id'] as int;
-
-      // 2. Create a placeholder auth.users entry is NOT possible from the client
-      //    (Supabase admin API only). Instead, we store the invitation in
-      //    sub_usuarios with invitacion_estado='pendiente' and a placeholder uuid.
-      //    The carrier will use a magic-link / sign-up flow to activate.
-      //    We use the dispatcher uuid temporarily; it will be replaced when
-      //    the carrier activates their account via the invitation token.
-      await _supabase.schema('muevete').from('sub_usuarios').insert({
-        'propietario_uuid': dispatcherUuid,
-        'tipo_propietario': 'dispatcher',
-        'sub_uuid': dispatcherUuid, // placeholder — updated on activation
-        'sub_driver_id': subDriverId,
-        'rol': 'conductor',
-        'invitacion_estado': 'pendiente',
-        'invitacion_email': t['email'] as String,
-        'activo': false,
-      });
+      final driverId = driverRow['id'] as int;
+      await _supabase
+          .schema('muevete')
+          .from('carrocerias')
+          .insert(_carroceriaPayload(t, driverId));
     }
   }
 
-  /// Invites a single new carrier to join a dispatcher's fleet post-registration.
+  /// Adds a single driver to the dispatcher's fleet.
+  /// No auth account is created — driver is operational data only.
   Future<void> invitarTransportista({
     required String dispatcherUuid,
     required int dispatcherDriverId,
     required Map<String, dynamic> transportista,
   }) async {
+    final t = transportista;
+
     final driverRow = await _supabase
         .schema('muevete')
         .from('drivers')
         .insert({
-          'name': transportista['name'] as String,
-          'email': transportista['email'] as String,
-          'telefono': transportista['telefono'] as String?,
-          'estado': false,
+          'name': t['name'] as String,
+          'email': t['email'] as String?,
+          'telefono': t['telefono'] as String?,
+          'estado': true,
           'kyc': false,
           'tipo_usuario': 'carrier_carga',
           'dispatcher_id': dispatcherDriverId,
-          if (transportista['tipo_carroceria'] != null)
-            'tipo_carroceria': transportista['tipo_carroceria'],
-          if (transportista['capacidad_ton'] != null)
-            'capacidad_ton': transportista['capacidad_ton'],
+          if (t['lic_conduccion_frente_url'] != null)
+            'lic_conduccion_frente_url': t['lic_conduccion_frente_url'],
+          if (t['lic_conduccion_dorso_url'] != null)
+            'lic_conduccion_dorso_url': t['lic_conduccion_dorso_url'],
+          if (t['lic_circulacion_frente_url'] != null)
+            'lic_circulacion_frente_url': t['lic_circulacion_frente_url'],
+          if (t['lic_circulacion_dorso_url'] != null)
+            'lic_circulacion_dorso_url': t['lic_circulacion_dorso_url'],
+          if (t['lic_operativa_frente_url'] != null)
+            'lic_operativa_frente_url': t['lic_operativa_frente_url'],
+          if (t['lic_operativa_dorso_url'] != null)
+            'lic_operativa_dorso_url': t['lic_operativa_dorso_url'],
         })
         .select('id')
         .single();
 
-    final subDriverId = driverRow['id'] as int;
-
-    await _supabase.schema('muevete').from('sub_usuarios').insert({
-      'propietario_uuid': dispatcherUuid,
-      'tipo_propietario': 'dispatcher',
-      'sub_uuid': dispatcherUuid,
-      'sub_driver_id': subDriverId,
-      'rol': 'conductor',
-      'invitacion_estado': 'pendiente',
-      'invitacion_email': transportista['email'] as String,
-      'activo': false,
-    });
-  }
-
-  /// Returns all carriers linked to a dispatcher, with their invitation state.
-  Future<List<Map<String, dynamic>>> getTransportistas(
-      int dispatcherDriverId) async {
-    final rows = await _supabase
+    final driverId = driverRow['id'] as int;
+    await _supabase
         .schema('muevete')
-        .from('sub_usuarios')
-        .select('*, drivers:sub_driver_id(*)')
-        .eq('tipo_propietario', 'dispatcher')
-        .eq('sub_driver_id', dispatcherDriverId);
-    return List<Map<String, dynamic>>.from(rows);
+        .from('carrocerias')
+        .insert(_carroceriaPayload(t, driverId));
   }
 
-  /// Revokes a carrier from the dispatcher's fleet.
-  Future<void> revocarTransportista(int subUsuarioId) async {
+  /// Updates a driver's profile and vehicle (carroceria) data.
+  Future<void> actualizarTransportista({
+    required int driverId,
+    required Map<String, dynamic> driverData,
+    Map<String, dynamic>? carroceriaData,
+    int? carroceriaId,
+    int? dispatcherDriverId,
+  }) async {
+    await _supabase
+        .schema('muevete')
+        .from('drivers')
+        .update(driverData)
+        .eq('id', driverId);
+
+    if (carroceriaData != null && carroceriaData.isNotEmpty) {
+      if (carroceriaId != null) {
+        await _supabase
+            .schema('muevete')
+            .from('carrocerias')
+            .update(carroceriaData)
+            .eq('id', carroceriaId);
+      } else {
+        await _supabase.schema('muevete').from('carrocerias').insert({
+          'driver_id': driverId,
+          ...carroceriaData,
+        });
+      }
+    }
+  }
+
+  /// Deletes a driver and their carroceria from the dispatcher's fleet.
+  Future<void> eliminarTransportista(int driverId) async {
+    // Clean up legacy sub_usuarios rows that may reference this driver
     await _supabase
         .schema('muevete')
         .from('sub_usuarios')
-        .update({'invitacion_estado': 'revocado', 'activo': false})
-        .eq('id', subUsuarioId);
+        .delete()
+        .eq('sub_driver_id', driverId);
+
+    await _supabase
+        .schema('muevete')
+        .from('carrocerias')
+        .delete()
+        .eq('driver_id', driverId);
+
+    await _supabase
+        .schema('muevete')
+        .from('drivers')
+        .delete()
+        .eq('id', driverId);
   }
 }

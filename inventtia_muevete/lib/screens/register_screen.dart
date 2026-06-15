@@ -79,6 +79,22 @@ class _TransportistaItem {
   final TextEditingController capacidadTon = TextEditingController();
   String? tipoCarroceria;
 
+  // License photos
+  String? licConduccionFrenteUrl;
+  String? licConduccionDorsoUrl;
+  String? licCircFrenteUrl;
+  String? licCircDorsoUrl;
+  String? licOperativaFrenteUrl;
+  String? licOperativaDorsoUrl;
+
+  // Upload states
+  bool uploadingLicCondFrente = false;
+  bool uploadingLicCondDorso = false;
+  bool uploadingLicCircFrente = false;
+  bool uploadingLicCircDorso = false;
+  bool uploadingLicOpFrente = false;
+  bool uploadingLicOpDorso = false;
+
   void dispose() {
     nombre.dispose();
     email.dispose();
@@ -99,6 +115,19 @@ class _TransportistaItem {
         if (matricula.text.trim().isNotEmpty) 'matricula': matricula.text.trim(),
         if (capacidadTon.text.trim().isNotEmpty)
           'capacidad_ton': double.tryParse(capacidadTon.text.trim()),
+        // License photos
+        if (licConduccionFrenteUrl != null)
+          'lic_conduccion_frente_url': licConduccionFrenteUrl,
+        if (licConduccionDorsoUrl != null)
+          'lic_conduccion_dorso_url': licConduccionDorsoUrl,
+        if (licCircFrenteUrl != null)
+          'lic_circulacion_frente_url': licCircFrenteUrl,
+        if (licCircDorsoUrl != null)
+          'lic_circulacion_dorso_url': licCircDorsoUrl,
+        if (licOperativaFrenteUrl != null)
+          'lic_operativa_frente_url': licOperativaFrenteUrl,
+        if (licOperativaDorsoUrl != null)
+          'lic_operativa_dorso_url': licOperativaDorsoUrl,
       };
 }
 
@@ -620,18 +649,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
           : null,
       // Shipper
       tipoCuenta: tipo == 'shipper' ? _shipperTipoCuenta : null,
-      empresaNombre: (tipo == 'shipper' || tipo == 'dispatcher') &&
+      empresaNombre: tipo == 'shipper' &&
               _empresaNombreController.text.trim().isNotEmpty
-          ? (tipo == 'shipper'
-              ? _empresaNombreController.text.trim()
-              : _dispEmpresaNombreController.text.trim())
-          : null,
-      empresaRut: (tipo == 'shipper' || tipo == 'dispatcher') &&
+          ? _empresaNombreController.text.trim()
+          : tipo == 'dispatcher' &&
+                  _dispEmpresaNombreController.text.trim().isNotEmpty
+              ? _dispEmpresaNombreController.text.trim()
+              : null,
+      empresaRut: tipo == 'shipper' &&
               _empresaRutController.text.trim().isNotEmpty
-          ? (tipo == 'shipper'
-              ? _empresaRutController.text.trim()
-              : _dispEmpresaRutController.text.trim())
-          : null,
+          ? _empresaRutController.text.trim()
+          : tipo == 'dispatcher' &&
+                  _dispEmpresaRutController.text.trim().isNotEmpty
+              ? _dispEmpresaRutController.text.trim()
+              : null,
       empresaDireccion: tipo == 'shipper' &&
               _empresaDireccionController.text.trim().isNotEmpty
           ? _empresaDireccionController.text.trim()
@@ -2806,7 +2837,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           style: TextStyle(color: textPrimary),
           textCapitalization: TextCapitalization.words,
           decoration: const InputDecoration(
-            hintText: 'Razón social',
+            hintText: 'Rayo Transportes S.R.L.',
             prefixIcon: Icon(Icons.business, size: 20),
           ),
           validator: (v) =>
@@ -3139,7 +3170,7 @@ class _ScrollHintState extends State<_ScrollHint>
 // ─────────────────────────────────────────────────────────────────────────────
 // Transportista form card widget (used inside dispatcher flow)
 // ─────────────────────────────────────────────────────────────────────────────
-class _TransportistaFormCard extends StatelessWidget {
+class _TransportistaFormCard extends StatefulWidget {
   final int index;
   final _TransportistaItem item;
   final bool isDark;
@@ -3161,9 +3192,126 @@ class _TransportistaFormCard extends StatelessWidget {
   });
 
   @override
+  State<_TransportistaFormCard> createState() => _TransportistaFormCardState();
+}
+
+class _TransportistaFormCardState extends State<_TransportistaFormCard> {
+  final _docService = DocumentUploadService();
+
+  Future<void> _pickLicensePhoto(
+    void Function() setUploading,
+    void Function(String?) onUrl,
+  ) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: widget.isDark ? AppTheme.darkSurface : Colors.white,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Cámara'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: const Text('Galería'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+    setUploading();
+    final url = await _docService.pickCompressAndUpload(
+      uuid: 'dispatcher_reg_${widget.index}_${DateTime.now().millisecondsSinceEpoch}',
+      filename: 'lic_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      source: source,
+    );
+    onUrl(url);
+  }
+
+  Widget _licensePhotoRow(
+    String label,
+    String? url,
+    bool uploading,
+    VoidCallback onTap,
+  ) {
+    final hasPhoto = url != null && url.isNotEmpty;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: widget.isDark ? AppTheme.darkSurface : Colors.grey[100],
+          borderRadius: BorderRadius.circular(10),
+          border: hasPhoto
+              ? Border.all(color: AppTheme.success)
+              : Border.all(color: Colors.transparent),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: hasPhoto
+                    ? AppTheme.success.withValues(alpha: 0.15)
+                    : AppTheme.primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                image: hasPhoto
+                    ? DecorationImage(
+                        image: NetworkImage(url),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
+              ),
+              child: !hasPhoto
+                  ? Icon(
+                      uploading ? Icons.hourglass_top : Icons.add_a_photo_outlined,
+                      size: 20,
+                      color: uploading ? Colors.orange : AppTheme.primaryColor,
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: widget.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    hasPhoto ? 'Foto agregada' : 'Toca para subir',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      color: hasPhoto ? AppTheme.success : Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (hasPhoto)
+              const Icon(Icons.check_circle, color: AppTheme.success, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final cardColor = isDark ? AppTheme.darkCard : Colors.grey[50]!;
-    final borderColor = isDark ? AppTheme.darkBorder : Colors.grey[300]!;
+    final cardColor = widget.isDark ? AppTheme.darkCard : Colors.grey[50]!;
+    final borderColor = widget.isDark ? AppTheme.darkBorder : Colors.grey[300]!;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -3178,14 +3326,13 @@ class _TransportistaFormCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppTheme.primaryColor.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  'Transportista ${index + 1}',
+                  'Transportista ${widget.index + 1}',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -3194,11 +3341,10 @@ class _TransportistaFormCard extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              if (canRemove)
+              if (widget.canRemove)
                 IconButton(
-                  onPressed: onRemove,
-                  icon: const Icon(Icons.close,
-                      size: 18, color: Colors.redAccent),
+                  onPressed: widget.onRemove,
+                  icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -3208,86 +3354,84 @@ class _TransportistaFormCard extends StatelessWidget {
 
           // Name
           TextFormField(
-            controller: item.nombre,
-            style: TextStyle(color: textPrimary),
+            controller: widget.item.nombre,
+            style: TextStyle(color: widget.textPrimary),
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(
               labelText: 'Nombre completo *',
               prefixIcon: Icon(Icons.person_outline, size: 18),
             ),
             validator: (v) {
-              if (index == 0 && (v == null || v.trim().isEmpty)) {
+              if (widget.index == 0 && (v == null || v.trim().isEmpty)) {
                 return 'El nombre es requerido';
               }
               return null;
             },
-            onChanged: (_) => onChanged(),
+            onChanged: (_) => widget.onChanged(),
           ),
           const SizedBox(height: 12),
 
           // Email
           TextFormField(
-            controller: item.email,
+            controller: widget.item.email,
             keyboardType: TextInputType.emailAddress,
-            style: TextStyle(color: textPrimary),
+            style: TextStyle(color: widget.textPrimary),
             decoration: const InputDecoration(
               labelText: 'Email *',
               prefixIcon: Icon(Icons.email_outlined, size: 18),
             ),
             validator: (v) {
-              if (index == 0 && (v == null || v.trim().isEmpty)) {
+              if (widget.index == 0 && (v == null || v.trim().isEmpty)) {
                 return 'El email es requerido';
               }
               if (v != null &&
                   v.trim().isNotEmpty &&
-                  !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
-                      .hasMatch(v.trim())) {
+                  !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v.trim())) {
                 return 'Email inválido';
               }
               return null;
             },
-            onChanged: (_) => onChanged(),
+            onChanged: (_) => widget.onChanged(),
           ),
           const SizedBox(height: 12),
 
           // Phone
           TextFormField(
-            controller: item.telefono,
+            controller: widget.item.telefono,
             keyboardType: TextInputType.phone,
-            style: TextStyle(color: textPrimary),
+            style: TextStyle(color: widget.textPrimary),
             decoration: const InputDecoration(
               labelText: 'Teléfono *',
               prefixIcon: Icon(Icons.phone_outlined, size: 18),
             ),
             validator: (v) {
-              if (index == 0 && (v == null || v.trim().isEmpty)) {
+              if (widget.index == 0 && (v == null || v.trim().isEmpty)) {
                 return 'El teléfono es requerido';
               }
               return null;
             },
-            onChanged: (_) => onChanged(),
+            onChanged: (_) => widget.onChanged(),
           ),
           const SizedBox(height: 12),
 
           // Tipo carrocería
           DropdownButtonFormField<String>(
-            value: item.tipoCarroceria,
-            dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
-            style: TextStyle(color: textPrimary),
+            value: widget.item.tipoCarroceria,
+            dropdownColor: widget.isDark ? AppTheme.darkCard : Colors.white,
+            style: TextStyle(color: widget.textPrimary),
             decoration: const InputDecoration(
               labelText: 'Tipo de carrocería',
-              prefixIcon:
-                  Icon(Icons.local_shipping_outlined, size: 18),
+              prefixIcon: Icon(Icons.local_shipping_outlined, size: 18),
             ),
-            items: tiposCarroceria
+            items: widget.tiposCarroceria
                 .map((t) => DropdownMenuItem<String>(
                       value: t,
                       child: Text(t),
                     ))
                 .toList(),
             onChanged: (v) {
-              item.tipoCarroceria = v;
-              onChanged();
+              widget.item.tipoCarroceria = v;
+              widget.onChanged();
             },
           ),
           const SizedBox(height: 12),
@@ -3297,19 +3441,17 @@ class _TransportistaFormCard extends StatelessWidget {
             children: [
               Expanded(
                 child: TextFormField(
-                  controller: item.marca,
-                  style: TextStyle(color: textPrimary),
-                  decoration:
-                      const InputDecoration(labelText: 'Marca'),
+                  controller: widget.item.marca,
+                  style: TextStyle(color: widget.textPrimary),
+                  decoration: const InputDecoration(labelText: 'Marca'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: TextFormField(
-                  controller: item.modelo,
-                  style: TextStyle(color: textPrimary),
-                  decoration:
-                      const InputDecoration(labelText: 'Modelo'),
+                  controller: widget.item.modelo,
+                  style: TextStyle(color: widget.textPrimary),
+                  decoration: const InputDecoration(labelText: 'Modelo'),
                 ),
               ),
             ],
@@ -3321,25 +3463,134 @@ class _TransportistaFormCard extends StatelessWidget {
             children: [
               Expanded(
                 child: TextFormField(
-                  controller: item.matricula,
-                  style: TextStyle(color: textPrimary),
+                  controller: widget.item.matricula,
+                  style: TextStyle(color: widget.textPrimary),
                   textCapitalization: TextCapitalization.characters,
-                  decoration:
-                      const InputDecoration(labelText: 'Matrícula'),
+                  decoration: const InputDecoration(labelText: 'Matrícula'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: TextFormField(
-                  controller: item.capacidadTon,
-                  keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true),
-                  style: TextStyle(color: textPrimary),
-                  decoration:
-                      const InputDecoration(labelText: 'Cap. (ton)'),
+                  controller: widget.item.capacidadTon,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: TextStyle(color: widget.textPrimary),
+                  decoration: const InputDecoration(labelText: 'Cap. (ton)'),
                 ),
               ),
             ],
+          ),
+
+          const SizedBox(height: 20),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // ── License Photos Section ───────────────────────────────────────
+          Text(
+            'Licencias y Documentos',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: widget.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Sube fotos de las licencias de cada chofer',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Licencia de Conducción
+          _licensePhotoRow(
+            'Lic. Conducción - Frente',
+            widget.item.licConduccionFrenteUrl,
+            widget.item.uploadingLicCondFrente,
+            () => _pickLicensePhoto(
+              () => setState(() => widget.item.uploadingLicCondFrente = true),
+              (url) => setState(() {
+                widget.item.licConduccionFrenteUrl = url;
+                widget.item.uploadingLicCondFrente = false;
+                widget.onChanged();
+              }),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _licensePhotoRow(
+            'Lic. Conducción - Dorso',
+            widget.item.licConduccionDorsoUrl,
+            widget.item.uploadingLicCondDorso,
+            () => _pickLicensePhoto(
+              () => setState(() => widget.item.uploadingLicCondDorso = true),
+              (url) => setState(() {
+                widget.item.licConduccionDorsoUrl = url;
+                widget.item.uploadingLicCondDorso = false;
+                widget.onChanged();
+              }),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Licencia de Circulación
+          _licensePhotoRow(
+            'Lic. Circulación - Frente',
+            widget.item.licCircFrenteUrl,
+            widget.item.uploadingLicCircFrente,
+            () => _pickLicensePhoto(
+              () => setState(() => widget.item.uploadingLicCircFrente = true),
+              (url) => setState(() {
+                widget.item.licCircFrenteUrl = url;
+                widget.item.uploadingLicCircFrente = false;
+                widget.onChanged();
+              }),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _licensePhotoRow(
+            'Lic. Circulación - Dorso',
+            widget.item.licCircDorsoUrl,
+            widget.item.uploadingLicCircDorso,
+            () => _pickLicensePhoto(
+              () => setState(() => widget.item.uploadingLicCircDorso = true),
+              (url) => setState(() {
+                widget.item.licCircDorsoUrl = url;
+                widget.item.uploadingLicCircDorso = false;
+                widget.onChanged();
+              }),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Licencia Operativa (opcional)
+          _licensePhotoRow(
+            'Lic. Operativa - Frente (opcional)',
+            widget.item.licOperativaFrenteUrl,
+            widget.item.uploadingLicOpFrente,
+            () => _pickLicensePhoto(
+              () => setState(() => widget.item.uploadingLicOpFrente = true),
+              (url) => setState(() {
+                widget.item.licOperativaFrenteUrl = url;
+                widget.item.uploadingLicOpFrente = false;
+                widget.onChanged();
+              }),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _licensePhotoRow(
+            'Lic. Operativa - Dorso (opcional)',
+            widget.item.licOperativaDorsoUrl,
+            widget.item.uploadingLicOpDorso,
+            () => _pickLicensePhoto(
+              () => setState(() => widget.item.uploadingLicOpDorso = true),
+              (url) => setState(() {
+                widget.item.licOperativaDorsoUrl = url;
+                widget.item.uploadingLicOpDorso = false;
+                widget.onChanged();
+              }),
+            ),
           ),
         ],
       ),

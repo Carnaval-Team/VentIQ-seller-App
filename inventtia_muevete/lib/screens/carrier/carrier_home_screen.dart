@@ -351,7 +351,9 @@ class CargasDisponiblesTabState extends State<CargasDisponiblesTab> {
                         DataColumn(label: _headerCell('Destino', isDark)),
                         DataColumn(label: _headerCell('Tipo', isDark)),
                         DataColumn(label: _headerCell('Equipo', isDark)),
+                        DataColumn(label: _headerCell('Mercancía', isDark)),
                         DataColumn(label: _headerCell('Peso', isDark)),
+                        DataColumn(label: _headerCell('Dist.', isDark)),
                         DataColumn(label: _headerCell('Precio', isDark)),
                         DataColumn(label: _headerCell('Recogida', isDark)),
                         DataColumn(label: _headerCell('Estado', isDark)),
@@ -362,8 +364,11 @@ class CargasDisponiblesTabState extends State<CargasDisponiblesTab> {
                             c.fechaRecogida!.isBefore(DateTime(now.year, now.month, now.day)) &&
                             !['tomada','en_transito','completada_carrier','entregada','completada'].contains(c.estado);
                         final peso = c.pesoDisplay ?? '—';
+                        final dist = c.distanciaKm != null
+                            ? '${c.distanciaKm!.toStringAsFixed(0)} km'
+                            : '—';
                         final precio = c.precioOfertado != null
-                            ? '\$${c.precioOfertado!.toStringAsFixed(0)}'
+                            ? '\$${c.precioOfertado!.toStringAsFixed(0)} ${c.moneda}'
                             : '—';
                         final recogida = c.fechaRecogida != null
                             ? '${c.fechaRecogida!.day.toString().padLeft(2, '0')}/'
@@ -389,7 +394,9 @@ class CargasDisponiblesTabState extends State<CargasDisponiblesTab> {
                                 color: AppTheme.primaryColor)),
                             DataCell(_cell(
                                 c.tipoEquipo?.toUpperCase() ?? '—', isDark)),
+                            DataCell(_cell(c.tipoMercancia ?? '—', isDark)),
                             DataCell(_cell(peso, isDark)),
+                            DataCell(_cell(dist, isDark)),
                             DataCell(Text(
                               precio,
                               style: TextStyle(
@@ -601,14 +608,19 @@ class _DetalleCargaCarrierScreenState
                     if (carga.distanciaKm != null) ...[
                       const SizedBox(width: 8),
                       _Badge(
-                        estado:
-                            '${carga.distanciaKm!.toStringAsFixed(0)} km',
+                        estado: '${carga.distanciaKm!.toStringAsFixed(0)} km',
                         color: Colors.teal,
                       ),
                     ],
+                    if (carga.destacada) ...[  
+                      const SizedBox(width: 8),
+                      _Badge(
+                          estado: 'Destacada',
+                          color: Colors.amber[700]!),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 16),
                 _InfoCard(
                   isDark: isDark,
                   children: [

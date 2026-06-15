@@ -124,9 +124,111 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen>
 // Tab 1 – Mis Cargas
 // ──────────────────────────────────────────────────────────────────────────────
 
-class _MisCargasTab extends StatelessWidget {
+class _MisCargasTab extends StatefulWidget {
   final VoidCallback onTabSwitch;
   const _MisCargasTab({required this.onTabSwitch});
+
+  @override
+  State<_MisCargasTab> createState() => _MisCargasTabState();
+}
+
+class _MisCargasTabState extends State<_MisCargasTab> {
+  // ── Filter state ──────────────────────────────────────────────────────────
+  bool _showFilters = false;
+
+  // Estados excluidos por defecto
+  final Set<String> _estadosExcluidos = {'cancelada', 'entregada', 'completada'};
+
+  // Text filters
+  final _origenCtrl = TextEditingController();
+  final _destinoCtrl = TextEditingController();
+  final _mercanciaCtrl = TextEditingController();
+  String? _tipoSeleccionado;     // FTL / LTL
+  String? _prioridadSeleccionada;
+  String? _estadoSeleccionado;   // null = todos los no-excluidos
+  bool? _requiereRefrigeracion;
+  bool? _requiereSeguro;
+  bool? _destacada;
+
+  @override
+  void dispose() {
+    _origenCtrl.dispose();
+    _destinoCtrl.dispose();
+    _mercanciaCtrl.dispose();
+    super.dispose();
+  }
+
+  List<CargaModel> _applyFilters(List<CargaModel> all) {
+    return all.where((c) {
+      // Estado base: excluir cancelada/entregada/completada salvo filtro explícito
+      if (_estadoSeleccionado == null) {
+        if (_estadosExcluidos.contains(c.estado)) return false;
+      } else {
+        if (c.estado != _estadoSeleccionado) return false;
+      }
+      // Origen
+      final origen = _origenCtrl.text.trim().toLowerCase();
+      if (origen.isNotEmpty) {
+        final val = (c.ciudadOrigen ?? c.dirOrigen).toLowerCase();
+        if (!val.contains(origen)) return false;
+      }
+      // Destino
+      final destino = _destinoCtrl.text.trim().toLowerCase();
+      if (destino.isNotEmpty) {
+        final val = (c.ciudadDestino ?? c.dirDestino).toLowerCase();
+        if (!val.contains(destino)) return false;
+      }
+      // Mercancía
+      final merc = _mercanciaCtrl.text.trim().toLowerCase();
+      if (merc.isNotEmpty) {
+        final val = (c.tipoMercancia ?? '').toLowerCase();
+        if (!val.contains(merc)) return false;
+      }
+      // Tipo FTL/LTL
+      if (_tipoSeleccionado != null) {
+        if (_tipoSeleccionado == 'LTL' && !c.esLtl) return false;
+        if (_tipoSeleccionado == 'FTL' && c.esLtl) return false;
+      }
+      // Prioridad
+      if (_prioridadSeleccionada != null && c.prioridad != _prioridadSeleccionada) {
+        return false;
+      }
+      // Opcionales
+      if (_requiereRefrigeracion != null && c.requiereRefrigeracion != _requiereRefrigeracion) {
+        return false;
+      }
+      if (_requiereSeguro != null && c.requiereSeguro != _requiereSeguro) {
+        return false;
+      }
+      if (_destacada != null && c.destacada != _destacada) return false;
+      return true;
+    }).toList();
+  }
+
+  bool get _hasActiveFilters =>
+      _origenCtrl.text.trim().isNotEmpty ||
+      _destinoCtrl.text.trim().isNotEmpty ||
+      _mercanciaCtrl.text.trim().isNotEmpty ||
+      _tipoSeleccionado != null ||
+      _prioridadSeleccionada != null ||
+      _estadoSeleccionado != null ||
+      _requiereRefrigeracion != null ||
+      _requiereSeguro != null ||
+      _destacada != null;
+
+  void _clearFilters() {
+    setState(() {
+      _origenCtrl.clear();
+      _destinoCtrl.clear();
+      _mercanciaCtrl.clear();
+      _tipoSeleccionado = null;
+      _prioridadSeleccionada = null;
+      _estadoSeleccionado = null;
+      _requiereRefrigeracion = null;
+      _requiereSeguro = null;
+      _destacada = null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -141,137 +243,288 @@ class _MisCargasTab extends StatelessWidget {
       return _EmptyState(
         icon: Icons.inventory_2_outlined,
         title: 'Sin cargas publicadas',
-        subtitle:
-            'Publica tu primera carga para recibir ofertas de transportistas.',
+        subtitle: 'Publica tu primera carga para recibir ofertas de transportistas.',
         actionLabel: 'Publicar Carga',
-        onAction: onTabSwitch,
+        onAction: widget.onTabSwitch,
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: () {
-        final uid = context.read<AuthProvider>().user?.id;
-        if (uid != null) {
-          return context.read<CargaProvider>().loadMisCargas(uid);
-        }
-        return Future.value();
-      },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final tableWidth = constraints.maxWidth;
-          return SingleChildScrollView(
-            child: SizedBox(
-              width: tableWidth,
-              child: DataTable(
-                showCheckboxColumn: false,
-                columnSpacing: 10,
-                horizontalMargin: 12,
-                headingRowHeight: 38,
-                dataRowMinHeight: 44,
-                dataRowMaxHeight: 56,
-                headingRowColor: WidgetStateProperty.all(
-                  isDark ? AppTheme.darkCard : Colors.grey[100],
+    final filtered = _applyFilters(provider.misCargas);
+
+    return Column(
+      children: [
+        // ── Filter toolbar ────────────────────────────────────────────────
+        Container(
+          color: isDark ? AppTheme.darkCard : Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${filtered.length} carga${filtered.length != 1 ? 's' : ''}',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white70 : Colors.grey[700],
+                  ),
                 ),
-                columns: [
-                  DataColumn(label: _hdr('Prioridad', isDark)),
-                  DataColumn(label: _hdr('Origen', isDark)),
-                  DataColumn(label: _hdr('Destino', isDark)),
-                  DataColumn(label: _hdr('Tipo', isDark)),
-                  DataColumn(label: _hdr('Equipo', isDark)),
-                  DataColumn(label: _hdr('Mercancía', isDark)),
-                  DataColumn(label: _hdr('Peso', isDark)),
-                  DataColumn(label: _hdr('Dist.', isDark)),
-                  DataColumn(label: _hdr('Precio', isDark)),
-                  DataColumn(label: _hdr('Recogida', isDark)),
-                  DataColumn(label: _hdr('Ofertas', isDark)),
-                  DataColumn(label: _hdr('Estado', isDark)),
-                ],
-                rows: provider.misCargas.map((c) {
-                  final now = DateTime.now();
-                  final vencida = c.fechaRecogida != null &&
-                      c.fechaRecogida!.isBefore(DateTime(now.year, now.month, now.day)) &&
-                      !['tomada','en_transito','completada_carrier','entregada','completada'].contains(c.estado);
-                  final peso = c.pesoDisplay ?? '—';
-                  final dist = c.distanciaKm != null
-                      ? '${c.distanciaKm!.toStringAsFixed(0)} km'
-                      : '—';
-                  final precio = c.precioOfertado != null
-                      ? '\$${c.precioOfertado!.toStringAsFixed(0)} ${c.moneda}'
-                      : '—';
-                  final recogida = c.fechaRecogida != null
-                      ? '${c.fechaRecogida!.day.toString().padLeft(2, '0')}/'
-                          '${c.fechaRecogida!.month.toString().padLeft(2, '0')}/'
-                          '${c.fechaRecogida!.year}'
-                      : '—';
-                  final ofertas = c.ofertasCount != null && c.ofertasCount! > 0
-                      ? '${c.ofertasCount}'
-                      : '—';
-                  return DataRow(
-                    color: vencida
-                        ? WidgetStateProperty.all(
-                            Colors.red.withValues(alpha: isDark ? 0.18 : 0.07))
-                        : null,
-                    onSelectChanged: (_) => _showDetalle(context, c, isDark),
-                    cells: [
-                      DataCell(_ShipperPrioridadBadge(prioridad: c.prioridad)),
-                      DataCell(_cel(c.ciudadOrigen ?? c.dirOrigen, isDark, bold: true)),
-                      DataCell(_cel(c.ciudadDestino ?? c.dirDestino, isDark, bold: true)),
-                      DataCell(_EstadoBadge(estado: c.tipoLabel, color: AppTheme.primaryColor)),
-                      DataCell(_cel(c.tipoEquipo?.toUpperCase() ?? '—', isDark)),
-                      DataCell(_cel(c.tipoMercancia ?? '—', isDark)),
-                      DataCell(_cel(peso, isDark)),
-                      DataCell(_cel(dist, isDark)),
-                      DataCell(Text(
-                        precio,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.primaryColor,
-                        ),
-                      )),
-                      DataCell(Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (vencida)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 4),
-                              child: Icon(Icons.warning_amber_rounded, size: 14, color: Colors.red[700]),
-                            ),
-                          Text(
-                            recogida,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: vencida ? Colors.red[700] : (isDark ? Colors.white : const Color(0xFF1A1D27)),
-                              fontWeight: vencida ? FontWeight.w700 : FontWeight.normal,
+              ),
+              if (_hasActiveFilters)
+                TextButton.icon(
+                  onPressed: _clearFilters,
+                  icon: const Icon(Icons.clear, size: 14),
+                  label: const Text('Limpiar', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.error,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              IconButton(
+                onPressed: () => setState(() => _showFilters = !_showFilters),
+                icon: Icon(
+                  _showFilters ? Icons.filter_list_off : Icons.filter_list,
+                  color: _hasActiveFilters ? AppTheme.primaryColor : (isDark ? Colors.white54 : Colors.grey[600]),
+                ),
+                tooltip: 'Filtros',
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        ),
+
+        // ── Filter panel ──────────────────────────────────────────────────
+        if (_showFilters)
+          Container(
+            color: isDark ? AppTheme.darkSurface : Colors.grey[50],
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Row 1: Origen / Destino
+                Row(
+                  children: [
+                    Expanded(child: _FilterField(ctrl: _origenCtrl, label: 'Origen', isDark: isDark, onChanged: () => setState(() {}))),
+                    const SizedBox(width: 8),
+                    Expanded(child: _FilterField(ctrl: _destinoCtrl, label: 'Destino', isDark: isDark, onChanged: () => setState(() {}))),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Row 2: Mercancía / Tipo
+                Row(
+                  children: [
+                    Expanded(child: _FilterField(ctrl: _mercanciaCtrl, label: 'Mercancía', isDark: isDark, onChanged: () => setState(() {}))),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _FilterDropdown<String>(
+                        label: 'Tipo',
+                        value: _tipoSeleccionado,
+                        items: const [
+                          DropdownMenuItem(value: 'FTL', child: Text('FTL – Completo')),
+                          DropdownMenuItem(value: 'LTL', child: Text('LTL – Parcial')),
+                        ],
+                        isDark: isDark,
+                        onChanged: (v) => setState(() => _tipoSeleccionado = v),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Row 3: Prioridad / Estado
+                Row(
+                  children: [
+                    Expanded(
+                      child: _FilterDropdown<String>(
+                        label: 'Prioridad',
+                        value: _prioridadSeleccionada,
+                        items: const [
+                          DropdownMenuItem(value: 'normal', child: Text('Normal')),
+                          DropdownMenuItem(value: 'alta', child: Text('Alta')),
+                          DropdownMenuItem(value: 'urgente', child: Text('Urgente')),
+                        ],
+                        isDark: isDark,
+                        onChanged: (v) => setState(() => _prioridadSeleccionada = v),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _FilterDropdown<String>(
+                        label: 'Estado',
+                        value: _estadoSeleccionado,
+                        items: const [
+                          DropdownMenuItem(value: 'publicada', child: Text('Publicada')),
+                          DropdownMenuItem(value: 'en_matching', child: Text('En Matching')),
+                          DropdownMenuItem(value: 'ofertada', child: Text('Con Ofertas')),
+                          DropdownMenuItem(value: 'aceptada', child: Text('Aceptada')),
+                          DropdownMenuItem(value: 'tomada', child: Text('Tomada')),
+                          DropdownMenuItem(value: 'en_transito', child: Text('En Tránsito')),
+                          DropdownMenuItem(value: 'completada_carrier', child: Text('Completada (Carrier)')),
+                          DropdownMenuItem(value: 'entregada', child: Text('Entregada')),
+                          DropdownMenuItem(value: 'completada', child: Text('Completada')),
+                          DropdownMenuItem(value: 'cancelada', child: Text('Cancelada')),
+                        ],
+                        isDark: isDark,
+                        onChanged: (v) => setState(() => _estadoSeleccionado = v),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Row 4: toggles
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    _FilterChip(
+                      label: 'Refrigeración',
+                      value: _requiereRefrigeracion,
+                      onChanged: (v) => setState(() => _requiereRefrigeracion = v),
+                      isDark: isDark,
+                    ),
+                    _FilterChip(
+                      label: 'Seguro',
+                      value: _requiereSeguro,
+                      onChanged: (v) => setState(() => _requiereSeguro = v),
+                      isDark: isDark,
+                    ),
+                    _FilterChip(
+                      label: 'Destacada',
+                      value: _destacada,
+                      onChanged: (v) => setState(() => _destacada = v),
+                      isDark: isDark,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+        // ── Table ─────────────────────────────────────────────────────────
+        Expanded(
+          child: filtered.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.search_off, size: 48, color: isDark ? Colors.white24 : Colors.grey[300]),
+                      const SizedBox(height: 12),
+                      Text('Sin resultados para los filtros aplicados',
+                          style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[500])),
+                    ],
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: () {
+                    final uid = context.read<AuthProvider>().user?.id;
+                    if (uid != null) return context.read<CargaProvider>().loadMisCargas(uid);
+                    return Future.value();
+                  },
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return SingleChildScrollView(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                            child: DataTable(
+                              showCheckboxColumn: false,
+                              columnSpacing: 10,
+                              horizontalMargin: 12,
+                              headingRowHeight: 38,
+                              dataRowMinHeight: 44,
+                              dataRowMaxHeight: 56,
+                              headingRowColor: WidgetStateProperty.all(
+                                isDark ? AppTheme.darkCard : Colors.grey[100],
+                              ),
+                              columns: [
+                                DataColumn(label: _hdr('Prioridad', isDark)),
+                                DataColumn(label: _hdr('Origen', isDark)),
+                                DataColumn(label: _hdr('Destino', isDark)),
+                                DataColumn(label: _hdr('Tipo', isDark)),
+                                DataColumn(label: _hdr('Equipo', isDark)),
+                                DataColumn(label: _hdr('Mercancía', isDark)),
+                                DataColumn(label: _hdr('Peso', isDark)),
+                                DataColumn(label: _hdr('Dist.', isDark)),
+                                DataColumn(label: _hdr('Precio', isDark)),
+                                DataColumn(label: _hdr('Recogida', isDark)),
+                                DataColumn(label: _hdr('Ofertas', isDark)),
+                                DataColumn(label: _hdr('Estado', isDark)),
+                              ],
+                              rows: filtered.map((c) {
+                                final now = DateTime.now();
+                                final vencida = c.fechaRecogida != null &&
+                                    c.fechaRecogida!.isBefore(DateTime(now.year, now.month, now.day)) &&
+                                    !['tomada', 'en_transito', 'completada_carrier', 'entregada', 'completada'].contains(c.estado);
+                                final peso = c.pesoDisplay ?? '—';
+                                final dist = c.distanciaKm != null
+                                    ? '${c.distanciaKm!.toStringAsFixed(0)} km'
+                                    : '—';
+                                final precio = c.precioOfertado != null
+                                    ? '\$${c.precioOfertado!.toStringAsFixed(0)} ${c.moneda}'
+                                    : '—';
+                                final recogida = c.fechaRecogida != null
+                                    ? '${c.fechaRecogida!.day.toString().padLeft(2, '0')}/'
+                                        '${c.fechaRecogida!.month.toString().padLeft(2, '0')}/'
+                                        '${c.fechaRecogida!.year}'
+                                    : '—';
+                                final ofertas = c.ofertasCount != null && c.ofertasCount! > 0
+                                    ? '${c.ofertasCount}'
+                                    : '—';
+                                return DataRow(
+                                  color: vencida
+                                      ? WidgetStateProperty.all(Colors.red.withValues(alpha: isDark ? 0.18 : 0.07))
+                                      : null,
+                                  onSelectChanged: (_) => _showDetalle(context, c, isDark),
+                                  cells: [
+                                    DataCell(_ShipperPrioridadBadge(prioridad: c.prioridad)),
+                                    DataCell(_cel(c.ciudadOrigen ?? c.dirOrigen, isDark, bold: true)),
+                                    DataCell(_cel(c.ciudadDestino ?? c.dirDestino, isDark, bold: true)),
+                                    DataCell(_EstadoBadge(estado: c.tipoLabel, color: AppTheme.primaryColor)),
+                                    DataCell(_cel(c.tipoEquipo?.toUpperCase() ?? '—', isDark)),
+                                    DataCell(_cel(c.tipoMercancia ?? '—', isDark)),
+                                    DataCell(_cel(peso, isDark)),
+                                    DataCell(_cel(dist, isDark)),
+                                    DataCell(Text(precio,
+                                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.primaryColor))),
+                                    DataCell(Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (vencida)
+                                          Padding(
+                                            padding: const EdgeInsets.only(right: 4),
+                                            child: Icon(Icons.warning_amber_rounded, size: 14, color: Colors.red[700]),
+                                          ),
+                                        Text(recogida,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: vencida ? Colors.red[700] : (isDark ? Colors.white : const Color(0xFF1A1D27)),
+                                              fontWeight: vencida ? FontWeight.w700 : FontWeight.normal,
+                                            )),
+                                      ],
+                                    )),
+                                    DataCell(ofertas == '—'
+                                        ? _cel('—', isDark)
+                                        : _EstadoBadge(estado: '$ofertas oferta(s)', color: Colors.amber[800]!)),
+                                    DataCell(_EstadoBadge(estado: c.estadoLabel)),
+                                  ],
+                                );
+                              }).toList(),
                             ),
                           ),
-                        ],
-                      )),
-                      DataCell(ofertas == '—'
-                          ? _cel('—', isDark)
-                          : _EstadoBadge(
-                              estado: '$ofertas oferta(s)',
-                              color: Colors.amber[800]!)),
-                      DataCell(_EstadoBadge(estado: c.estadoLabel)),
-                    ],
-                  );
-                }).toList(),
-              ),
-            ),
-          );
-        },
-      ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+        ),
+      ],
     );
   }
 
   static Widget _hdr(String t, bool isDark) => Text(t,
-      style: TextStyle(
-          fontWeight: FontWeight.w700,
-          fontSize: 11,
-          color: isDark ? Colors.white70 : Colors.grey[700]));
+      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: isDark ? Colors.white70 : Colors.grey[700]));
 
-  static Widget _cel(String t, bool isDark, {bool bold = false}) => Text(
-        t,
+  static Widget _cel(String? t, bool isDark, {bool bold = false}) => Text(
+        t ?? '—',
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
@@ -281,12 +534,139 @@ class _MisCargasTab extends StatelessWidget {
         ),
       );
 
-  void _showDetalle(
-      BuildContext context, CargaModel carga, bool isDark) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => _DetalleCargaScreen(carga: carga),
+  void _showDetalle(BuildContext context, CargaModel carga, bool isDark) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => _DetalleCargaScreen(carga: carga)));
+  }
+}
+
+// ── Filter helpers ─────────────────────────────────────────────────────────────
+
+class _FilterField extends StatelessWidget {
+  final TextEditingController ctrl;
+  final String label;
+  final bool isDark;
+  final VoidCallback onChanged;
+  const _FilterField({required this.ctrl, required this.label, required this.isDark, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: ctrl,
+      onChanged: (_) => onChanged(),
+      style: TextStyle(fontSize: 13, color: isDark ? Colors.white : Colors.black87),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600]),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        suffixIcon: ctrl.text.isNotEmpty
+            ? IconButton(
+                icon: const Icon(Icons.clear, size: 14),
+                onPressed: () { ctrl.clear(); onChanged(); },
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+              )
+            : null,
+        filled: true,
+        fillColor: isDark ? AppTheme.darkCard : Colors.white,
+      ),
+    );
+  }
+}
+
+class _FilterDropdown<T> extends StatelessWidget {
+  final String label;
+  final T? value;
+  final List<DropdownMenuItem<T>> items;
+  final bool isDark;
+  final ValueChanged<T?> onChanged;
+  const _FilterDropdown({required this.label, required this.value, required this.items, required this.isDark, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600]),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        filled: true,
+        fillColor: isDark ? AppTheme.darkCard : Colors.white,
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: value,
+          isDense: true,
+          isExpanded: true,
+          hint: Text('Todos', style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.grey[400])),
+          dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
+          style: TextStyle(fontSize: 12, color: isDark ? Colors.white : Colors.black87),
+          items: [
+            DropdownMenuItem<T>(value: null, child: Text('Todos', style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600]))),
+            ...items,
+          ],
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool? value;
+  final ValueChanged<bool?> onChanged;
+  final bool isDark;
+  const _FilterChip({required this.label, required this.value, required this.onChanged, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final active = value != null;
+    return GestureDetector(
+      onTap: () {
+        if (value == null) onChanged(true);
+        else if (value == true) onChanged(false);
+        else onChanged(null);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: value == true
+              ? AppTheme.primaryColor.withValues(alpha: 0.15)
+              : value == false
+                  ? Colors.red.withValues(alpha: 0.12)
+                  : (isDark ? AppTheme.darkCard : Colors.white),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: value == true
+                ? AppTheme.primaryColor
+                : value == false
+                    ? Colors.red
+                    : (isDark ? AppTheme.darkBorder : Colors.grey[300]!),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (active)
+              Icon(value == true ? Icons.check : Icons.close,
+                  size: 12,
+                  color: value == true ? AppTheme.primaryColor : Colors.red),
+            if (active) const SizedBox(width: 4),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+                    color: value == true
+                        ? AppTheme.primaryColor
+                        : value == false
+                            ? Colors.red
+                            : (isDark ? Colors.white54 : Colors.grey[600]))),
+          ],
+        ),
       ),
     );
   }
@@ -1772,8 +2152,9 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
       'Esta acción no se puede deshacer.',
     );
     if (!confirmed || !mounted) return;
-    final ok =
-        await context.read<CargaProvider>().cancelarCarga(cargaId);
+    final uuid = context.read<AuthProvider>().user?.id;
+    final ok = await context.read<CargaProvider>().cancelarCarga(
+        cargaId, usuarioUuid: uuid);
     if (!mounted) return;
     _snack(
         ok ? 'Carga cancelada' : context.read<CargaProvider>().error,

@@ -412,7 +412,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 24),
 
                 // Divider "Or continue with"
-                Row(
+               /*  Row(
                   children: [
                     Expanded(
                       child: Divider(
@@ -436,12 +436,12 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ],
-                ),
+                ), */
 
                 const SizedBox(height: 24),
 
                 // Social buttons (decorative)
-                Row(
+                /* Row(
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
@@ -487,7 +487,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: 32), */
 
                 // Register link
                 Center(

@@ -14,6 +14,7 @@ class CarroceriaModel {
   final String? licCirculacionDorsoUrl;
   final String? licOperativaFrenteUrl;
   final String? licOperativaDorsoUrl;
+  final String? vehiclePhotoUrl;  // Foto opcional del vehículo
   final bool activo;
   final DateTime? createdAt;
 
@@ -33,6 +34,7 @@ class CarroceriaModel {
     this.licCirculacionDorsoUrl,
     this.licOperativaFrenteUrl,
     this.licOperativaDorsoUrl,
+    this.vehiclePhotoUrl,  // Foto opcional del vehículo
     this.activo = true,
     this.createdAt,
   });
@@ -60,6 +62,7 @@ class CarroceriaModel {
       licCirculacionDorsoUrl: json['lic_circulacion_dorso_url'] as String?,
       licOperativaFrenteUrl: json['lic_operativa_frente_url'] as String?,
       licOperativaDorsoUrl: json['lic_operativa_dorso_url'] as String?,
+      vehiclePhotoUrl: json['vehicle_photo_url'] as String?,  // Foto opcional del vehículo
       activo: json['activo'] as bool? ?? true,
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'] as String)
@@ -87,6 +90,8 @@ class CarroceriaModel {
           'lic_operativa_frente_url': licOperativaFrenteUrl,
         if (licOperativaDorsoUrl != null && licOperativaDorsoUrl!.isNotEmpty)
           'lic_operativa_dorso_url': licOperativaDorsoUrl,
+        if (vehiclePhotoUrl != null && vehiclePhotoUrl!.isNotEmpty)
+          'vehicle_photo_url': vehiclePhotoUrl,
         'activo': activo,
       };
 
@@ -106,6 +111,7 @@ class CarroceriaModel {
     String? licCirculacionDorsoUrl,
     String? licOperativaFrenteUrl,
     String? licOperativaDorsoUrl,
+    String? vehiclePhotoUrl,
     bool? activo,
     DateTime? createdAt,
   }) {
@@ -128,6 +134,7 @@ class CarroceriaModel {
       licOperativaFrenteUrl:
           licOperativaFrenteUrl ?? this.licOperativaFrenteUrl,
       licOperativaDorsoUrl: licOperativaDorsoUrl ?? this.licOperativaDorsoUrl,
+      vehiclePhotoUrl: vehiclePhotoUrl ?? this.vehiclePhotoUrl,
       activo: activo ?? this.activo,
       createdAt: createdAt ?? this.createdAt,
     );

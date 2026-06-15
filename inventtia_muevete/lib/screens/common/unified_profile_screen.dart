@@ -759,6 +759,10 @@ class _DriverProfileState extends State<_DriverProfile> {
   bool _isUploadingLicOpFrente = false;
   bool _isUploadingLicOpDorso = false;
 
+  // Vehicle photo
+  String? _vehiclePhotoUrl;
+  bool _isUploadingVehiclePhoto = false;
+
   bool _isEditing = false;
   bool _isSaving = false;
   bool _isUploadingPhoto = false;
@@ -789,6 +793,7 @@ class _DriverProfileState extends State<_DriverProfile> {
     _colorCtrl = TextEditingController(text: veh?['color'] as String? ?? '');
     _capacidadCtrl =
         TextEditingController(text: veh?['capacidad'] as String? ?? '');
+    _vehiclePhotoUrl = veh?['image'] as String?;
 
     _vehicleTypeService.getActiveTypes().then((list) {
       if (mounted) setState(() => _vehicleTypes = list);
@@ -813,6 +818,7 @@ class _DriverProfileState extends State<_DriverProfile> {
     _chapaCtrl.dispose();
     _colorCtrl.dispose();
     _capacidadCtrl.dispose();
+    _vehiclePhotoUrl = null;
     super.dispose();
   }
 
@@ -839,6 +845,7 @@ class _DriverProfileState extends State<_DriverProfile> {
           if (_capacidadCtrl.text.trim().isNotEmpty)
             'capacidad': _capacidadCtrl.text.trim(),
           if (_vehicleTypeId != null) 'id_tipo_vehiculo': _vehicleTypeId,
+          if (_vehiclePhotoUrl != null) 'image': _vehiclePhotoUrl,
         };
         if (vehData.isNotEmpty) {
           await _driverService.updateVehicle(_vehicleId!, vehData);
@@ -901,6 +908,7 @@ class _DriverProfileState extends State<_DriverProfile> {
     _chapaCtrl.text = veh?['chapa'] as String? ?? '';
     _colorCtrl.text = veh?['color'] as String? ?? '';
     _capacidadCtrl.text = veh?['capacidad'] as String? ?? '';
+    _vehiclePhotoUrl = veh?['image'] as String?;
     _licCondFrenteUrl = p?['lic_conduccion_frente_url'] as String?;
     _licCondDorsoUrl  = p?['lic_conduccion_dorso_url']  as String?;
     _licCircFrenteUrl = p?['lic_circulacion_frente_url'] as String?;
@@ -1078,6 +1086,60 @@ class _DriverProfileState extends State<_DriverProfile> {
                     isDark: isDark,
                     enabled: _isEditing,
                     keyboardType: TextInputType.number),
+                const SizedBox(height: 16),
+                // Vehicle Photo Upload
+                _LicensePhotoRow(
+                  label: 'Foto del Vehículo (opcional)',
+                  url: _vehiclePhotoUrl,
+                  uploading: _isUploadingVehiclePhoto,
+                  isDark: isDark,
+                  onTap: _isEditing
+                      ? () async {
+                          final source = await showModalBottomSheet<ImageSource>(
+                            context: context,
+                            backgroundColor:
+                                isDark ? AppTheme.darkSurface : Colors.white,
+                            builder: (_) => SafeArea(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ListTile(
+                                    leading: const Icon(
+                                        Icons.camera_alt_outlined),
+                                    title: const Text('Cámara'),
+                                    onTap: () => Navigator.pop(
+                                        context, ImageSource.camera),
+                                  ),
+                                  ListTile(
+                                    leading:
+                                        const Icon(Icons.image_outlined),
+                                    title: const Text('Galería'),
+                                    onTap: () => Navigator.pop(
+                                        context, ImageSource.gallery),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                          if (source == null || !mounted) return;
+                          setState(() => _isUploadingVehiclePhoto = true);
+                          final url =
+                              await _docService.pickCompressAndUpload(
+                            uuid: context.read<AuthProvider>().user?.id ??
+                                'driver',
+                            filename:
+                                'vehicle_${DateTime.now().millisecondsSinceEpoch}.jpg',
+                            source: source,
+                          );
+                          if (mounted) {
+                            setState(() {
+                              _vehiclePhotoUrl = url;
+                              _isUploadingVehiclePhoto = false;
+                            });
+                          }
+                        }
+                      : null,
+                ),
                 const SizedBox(height: 20),
               ],
               // Valoraciones
@@ -2265,6 +2327,8 @@ class _CarrierProfileState extends State<_CarrierProfile>
                       itemBuilder: (_, i) => _CarroceriaCard(
                         carroceria: _carrocerias[i],
                         isDark: isDark,
+                        onEdit: () => _showEditVehicleDialog(
+                            context, isDark, _carrocerias[i]),
                         onDelete: () =>
                             _deleteVehicle(_carrocerias[i].id!),
                       ),
@@ -2421,6 +2485,424 @@ class _CarrierProfileState extends State<_CarrierProfile>
     matriculaCtrl.dispose();
     capCtrl.dispose();
   }
+
+  /// Shows a dialog to edit an existing vehicle with all details including
+  /// license photos, insurance, and vehicle photo.
+  Future<void> _showEditVehicleDialog(
+      BuildContext context, bool isDark, CarroceriaModel carroceria) async {
+    final marcaCtrl =
+        TextEditingController(text: carroceria.marca ?? '');
+    final modeloCtrl =
+        TextEditingController(text: carroceria.modelo ?? '');
+    final matriculaCtrl =
+        TextEditingController(text: carroceria.matricula ?? '');
+    final capCtrl = TextEditingController(
+        text: carroceria.capacidadTon?.toString() ?? '');
+    final longitudCtrl = TextEditingController(
+        text: carroceria.longitudM?.toString() ?? '');
+
+    // Photo URLs
+    String? vehiclePhotoUrl = carroceria.vehiclePhotoUrl;
+    String? licCircFrenteUrl = carroceria.licCirculacionFrenteUrl;
+    String? licCircDorsoUrl = carroceria.licCirculacionDorsoUrl;
+    String? licOpFrenteUrl = carroceria.licOperativaFrenteUrl;
+    String? licOpDorsoUrl = carroceria.licOperativaDorsoUrl;
+
+    // Upload states
+    bool uploadingVehiclePhoto = false;
+    bool uploadingLicCircFrente = false;
+    bool uploadingLicCircDorso = false;
+    bool uploadingLicOpFrente = false;
+    bool uploadingLicOpDorso = false;
+
+    // Insurance
+    bool seguroVigente = carroceria.seguroVigente;
+    DateTime? seguroVence = carroceria.seguroVence;
+
+    const tiposCarroceria = [
+      'flatbed',
+      'dry_van',
+      'reefer',
+      'lowboy',
+      'tanker',
+      'step_deck',
+      'hotshot',
+      'curtainsider',
+      'caja',
+    ];
+    String tipoCarro = carroceria.tipoCarroceria;
+
+    final docService = DocumentUploadService();
+    final uuid = context.read<AuthProvider>().user?.id ?? 'carrier';
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) {
+          final textPrimary =
+              isDark ? Colors.white : const Color(0xFF1A1D27);
+          final bg = isDark ? AppTheme.darkCard : Colors.white;
+
+          Future<void> pickPhoto(
+              void Function() setUploading, Function(String?) onUrl) async {
+            final source = await showModalBottomSheet<ImageSource>(
+              context: ctx,
+              backgroundColor: bg,
+              builder: (_) => SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.camera_alt_outlined),
+                      title: const Text('Cámara'),
+                      onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.image_outlined),
+                      title: const Text('Galería'),
+                      onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                    ),
+                  ],
+                ),
+              ),
+            );
+            if (source == null) return;
+            setUploading();
+            final url = await docService.pickCompressAndUpload(
+              uuid: uuid,
+              filename: 'doc_${DateTime.now().millisecondsSinceEpoch}.jpg',
+              source: source,
+            );
+            onUrl(url);
+          }
+
+          Widget photoRow(String label, String? url, bool uploading,
+              VoidCallback onTap) {
+            final hasPhoto = url != null && url.isNotEmpty;
+            return GestureDetector(
+              onTap: onTap,
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: bg,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: SizedBox(
+                        width: 56,
+                        height: 40,
+                        child: uploading
+                            ? const Center(
+                                child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2)))
+                            : hasPhoto
+                                ? Image.network(url!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => _placeholder())
+                                : _placeholder(),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(label,
+                              style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 12, fontWeight: FontWeight.w600)),
+                          Text(
+                            hasPhoto ? 'Cargada' : 'Sin foto',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: hasPhoto
+                                    ? AppTheme.success
+                                    : (isDark
+                                        ? Colors.white38
+                                        : Colors.grey[500])),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      hasPhoto ? Icons.edit_outlined : Icons.upload_outlined,
+                      size: 18,
+                      color: AppTheme.primaryColor,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return AlertDialog(
+            backgroundColor: bg,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            title: Text('Editar Vehículo',
+                style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w700)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Vehicle Photo
+                  Text('Foto del Vehículo (opcional)',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: textPrimary)),
+                  const SizedBox(height: 6),
+                  photoRow(
+                    'Foto del vehículo',
+                    vehiclePhotoUrl,
+                    uploadingVehiclePhoto,
+                    () => pickPhoto(
+                      () => setS(() => uploadingVehiclePhoto = true),
+                      (url) => setS(() {
+                        vehiclePhotoUrl = url;
+                        uploadingVehiclePhoto = false;
+                      }),
+                    ),
+                  ),
+                  const Divider(height: 20),
+
+                  // Basic Info
+                  _DialogField(
+                      ctrl: marcaCtrl, label: 'Marca', isDark: isDark),
+                  const SizedBox(height: 10),
+                  _DialogField(
+                      ctrl: modeloCtrl, label: 'Modelo', isDark: isDark),
+                  const SizedBox(height: 10),
+                  _DialogField(
+                      ctrl: matriculaCtrl,
+                      label: 'Matrícula / Chapa',
+                      isDark: isDark),
+                  const SizedBox(height: 10),
+                  _DialogField(
+                    ctrl: capCtrl,
+                    label: 'Capacidad (ton)',
+                    isDark: isDark,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  const SizedBox(height: 10),
+                  _DialogField(
+                    ctrl: longitudCtrl,
+                    label: 'Longitud plataforma (m)',
+                    isDark: isDark,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: tipoCarro,
+                    dropdownColor: bg,
+                    style: TextStyle(color: textPrimary, fontSize: 14),
+                    decoration: const InputDecoration(
+                        labelText: 'Tipo de carrocería',
+                        prefixIcon: Icon(Icons.local_shipping_outlined)),
+                    items: tiposCarroceria
+                        .map((t) => DropdownMenuItem(
+                            value: t,
+                            child: Text(t.toUpperCase(),
+                                style: TextStyle(color: textPrimary))))
+                        .toList(),
+                    onChanged: (v) => setS(() => tipoCarro = v!),
+                  ),
+
+                  const Divider(height: 24),
+
+                  // License Circulation
+                  Text('Licencia de Circulación',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: textPrimary)),
+                  const SizedBox(height: 6),
+                  photoRow(
+                    'Frente',
+                    licCircFrenteUrl,
+                    uploadingLicCircFrente,
+                    () => pickPhoto(
+                      () => setS(() => uploadingLicCircFrente = true),
+                      (url) => setS(() {
+                        licCircFrenteUrl = url;
+                        uploadingLicCircFrente = false;
+                      }),
+                    ),
+                  ),
+                  photoRow(
+                    'Dorso',
+                    licCircDorsoUrl,
+                    uploadingLicCircDorso,
+                    () => pickPhoto(
+                      () => setS(() => uploadingLicCircDorso = true),
+                      (url) => setS(() {
+                        licCircDorsoUrl = url;
+                        uploadingLicCircDorso = false;
+                      }),
+                    ),
+                  ),
+
+                  const Divider(height: 16),
+
+                  // License Operativa
+                  Text('Licencia Operativa',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: textPrimary)),
+                  const SizedBox(height: 6),
+                  photoRow(
+                    'Frente',
+                    licOpFrenteUrl,
+                    uploadingLicOpFrente,
+                    () => pickPhoto(
+                      () => setS(() => uploadingLicOpFrente = true),
+                      (url) => setS(() {
+                        licOpFrenteUrl = url;
+                        uploadingLicOpFrente = false;
+                      }),
+                    ),
+                  ),
+                  photoRow(
+                    'Dorso',
+                    licOpDorsoUrl,
+                    uploadingLicOpDorso,
+                    () => pickPhoto(
+                      () => setS(() => uploadingLicOpDorso = true),
+                      (url) => setS(() {
+                        licOpDorsoUrl = url;
+                        uploadingLicOpDorso = false;
+                      }),
+                    ),
+                  ),
+
+                  const Divider(height: 16),
+
+                  // Insurance
+                  Text('Seguro del Vehículo',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: textPrimary)),
+                  const SizedBox(height: 6),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('Seguro vigente',
+                        style: TextStyle(fontSize: 13, color: textPrimary)),
+                    value: seguroVigente,
+                    onChanged: (v) => setS(() => seguroVigente = v ?? false),
+                  ),
+                  if (seguroVigente) ...[
+                    const SizedBox(height: 6),
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: ctx,
+                          initialDate: seguroVence ?? DateTime.now(),
+                          firstDate: DateTime.now(),
+                          lastDate:
+                              DateTime.now().add(const Duration(days: 365 * 5)),
+                        );
+                        if (picked != null) {
+                          setS(() => seguroVence = picked);
+                        }
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Vencimiento del seguro',
+                          prefixIcon: Icon(Icons.calendar_today_outlined),
+                        ),
+                        child: Text(
+                          seguroVence != null
+                              ? '${seguroVence!.day.toString().padLeft(2, '0')}/${seguroVence!.month.toString().padLeft(2, '0')}/${seguroVence!.year}'
+                              : 'Seleccionar fecha',
+                          style: TextStyle(color: textPrimary),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancelar')),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  final vehData = <String, dynamic>{
+                    'tipo_carroceria': tipoCarro,
+                    if (marcaCtrl.text.trim().isNotEmpty)
+                      'marca': marcaCtrl.text.trim(),
+                    if (modeloCtrl.text.trim().isNotEmpty)
+                      'modelo': modeloCtrl.text.trim(),
+                    if (matriculaCtrl.text.trim().isNotEmpty)
+                      'matricula': matriculaCtrl.text.trim(),
+                    if (capCtrl.text.trim().isNotEmpty)
+                      'capacidad_ton': double.tryParse(capCtrl.text.trim()),
+                    if (longitudCtrl.text.trim().isNotEmpty)
+                      'longitud_m': double.tryParse(longitudCtrl.text.trim()),
+                    'seguro_vigente': seguroVigente,
+                    if (seguroVence != null)
+                      'seguro_vence':
+                          seguroVence!.toIso8601String().substring(0, 10),
+                    if (vehiclePhotoUrl != null)
+                      'vehicle_photo_url': vehiclePhotoUrl,
+                    if (licCircFrenteUrl != null)
+                      'lic_circulacion_frente_url': licCircFrenteUrl,
+                    if (licCircDorsoUrl != null)
+                      'lic_circulacion_dorso_url': licCircDorsoUrl,
+                    if (licOpFrenteUrl != null)
+                      'lic_operativa_frente_url': licOpFrenteUrl,
+                    if (licOpDorsoUrl != null)
+                      'lic_operativa_dorso_url': licOpDorsoUrl,
+                  };
+                  final messenger = ScaffoldMessenger.of(context);
+                  try {
+                    await _vehicleService.updateCarroceria(carroceria.id!, vehData);
+                    await _loadCarrocerias();
+                  } catch (e) {
+                    messenger.showSnackBar(SnackBar(
+                      content: Text('Error: $e'),
+                      backgroundColor: AppTheme.error,
+                    ));
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                    foregroundColor: Colors.white),
+                child: const Text('Guardar'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    marcaCtrl.dispose();
+    modeloCtrl.dispose();
+    matriculaCtrl.dispose();
+    capCtrl.dispose();
+    longitudCtrl.dispose();
+  }
+
+  Widget _placeholder() => Container(
+        color: AppTheme.primaryColor.withValues(alpha: 0.08),
+        child: Icon(Icons.image_outlined,
+            color: AppTheme.primaryColor.withValues(alpha: 0.5), size: 20),
+      );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2670,11 +3152,13 @@ class _CarroceriaCard extends StatelessWidget {
   final CarroceriaModel carroceria;
   final bool isDark;
   final VoidCallback onDelete;
+  final VoidCallback onEdit;
 
   const _CarroceriaCard({
     required this.carroceria,
     required this.isDark,
     required this.onDelete,
+    required this.onEdit,
   });
 
   @override
@@ -2701,9 +3185,18 @@ class _CarroceriaCard extends StatelessWidget {
           height: 44,
           decoration: BoxDecoration(
               color: AppTheme.primaryColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10)),
-          child: const Icon(Icons.local_shipping_outlined,
-              color: AppTheme.primaryColor),
+              borderRadius: BorderRadius.circular(10),
+              image: carroceria.vehiclePhotoUrl != null
+                  ? DecorationImage(
+                      image: NetworkImage(carroceria.vehiclePhotoUrl!),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
+          ),
+          child: carroceria.vehiclePhotoUrl == null
+              ? const Icon(Icons.local_shipping_outlined,
+                  color: AppTheme.primaryColor)
+              : null,
         ),
         title: Text(
           title.isNotEmpty
@@ -2723,10 +3216,20 @@ class _CarroceriaCard extends StatelessWidget {
           ].join(' · '),
           style: TextStyle(color: textSecondary, fontSize: 12),
         ),
-        trailing: IconButton(
-          icon: Icon(Icons.delete_outline, color: AppTheme.error),
-          onPressed: carroceria.id != null ? onDelete : null,
-          tooltip: 'Eliminar',
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(Icons.edit_outlined, color: AppTheme.primaryColor),
+              onPressed: onEdit,
+              tooltip: 'Editar',
+            ),
+            IconButton(
+              icon: Icon(Icons.delete_outline, color: AppTheme.error),
+              onPressed: carroceria.id != null ? onDelete : null,
+              tooltip: 'Eliminar',
+            ),
+          ],
         ),
       ),
     );
