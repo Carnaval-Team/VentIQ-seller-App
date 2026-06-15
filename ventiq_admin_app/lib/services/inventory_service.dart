@@ -2242,7 +2242,7 @@ class InventoryService {
       print('  - includeZero: $includeZero');
 
       final response = await _supabase.rpc(
-        'obtener_reporte_inventario_completo3',
+        'obtener_reporte_inventario_completo4',
         params: {
           'p_id_tienda': idTienda,
           'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],

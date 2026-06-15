@@ -45,7 +45,7 @@ class ExportDialog extends StatelessWidget {
             
             // Título
             Text(
-              'Exportar Inventario',
+              'Exportar Inventario2',
               style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,

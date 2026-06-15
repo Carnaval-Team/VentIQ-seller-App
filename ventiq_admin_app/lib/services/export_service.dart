@@ -1360,6 +1360,7 @@ class ExportService {
     bool includeDescripcionCorta = false,
     bool includeDescripcion = false,
     bool includePrecios = false,
+    bool includeReservado = false,
   }) async {
     try {
       final now = DateTime.now();
@@ -1381,6 +1382,7 @@ class ExportService {
           includeDescripcionCorta: includeDescripcionCorta,
           includeDescripcion: includeDescripcion,
           includePrecios: includePrecios,
+          includeReservado: includeReservado,
         );
         mimeType =
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -1494,6 +1496,7 @@ class ExportService {
                       includeDescripcionCorta: includeDescripcionCorta,
                       includeDescripcion: includeDescripcion,
                       includePrecios: includePrecios,
+                      includeReservado: includeReservado,
                     ),
                   );
 
@@ -1644,33 +1647,70 @@ class ExportService {
     }
   }
 
-  /// Método común para agrupar datos de inventario por almacén y ubicación
+  /// Método común para agrupar datos de inventario por almacén y ubicación.
+  /// Deduplica por id_producto dentro de cada ubicación sumando las cantidades
+  /// numéricas (el RPC puede devolver varias filas para el mismo producto cuando
+  /// existen múltiples registros de inventario en la misma ubicación).
   Map<String, Map<String, List<Map<String, dynamic>>>> _groupInventoryData(
     List<Map<String, dynamic>> inventoryData,
   ) {
-    final groupedData = <String, Map<String, List<Map<String, dynamic>>>>{};
+    // almacen -> ubicacion -> id_producto -> item (acumulado)
+    final grouped =
+        <String, Map<String, Map<String, Map<String, dynamic>>>>{};
+
+    // Campos numéricos que se acumulan por suma
+    const numericFields = [
+      'cantidad_inicial',
+      'cantidad_final',
+      'entradas_periodo',
+      'extracciones_periodo',
+      'ventas_periodo',
+      'stock_disponible',
+      'stock_reservado',
+      'cantidad_reservada',
+    ];
 
     for (final item in inventoryData) {
       final almacen = item['almacen']?.toString() ?? 'Sin almacén';
       final ubicacion = item['ubicacion']?.toString() ?? 'Sin ubicación';
       final idUbicacion = item['id_ubicacion'];
 
-      // Skip items without location or with null id_ubicacion
       if (ubicacion == 'Sin ubicación' ||
           ubicacion == 'SIN UBICACIÓN' ||
-          idUbicacion == null)
-        continue;
+          idUbicacion == null) continue;
 
-      if (!groupedData.containsKey(almacen)) {
-        groupedData[almacen] = {};
+      // Clave de deduplicación: producto + presentación + variante
+      final idProducto = item['id_producto']?.toString() ?? '';
+      final idPres = item['inv_id_presentacion']?.toString() ?? '0';
+      final idVar = item['inv_id_variante']?.toString() ?? '0';
+      final dedupKey = '${idProducto}_${idPres}_$idVar';
+
+      grouped.putIfAbsent(almacen, () => {});
+      grouped[almacen]!.putIfAbsent(ubicacion, () => {});
+
+      if (!grouped[almacen]![ubicacion]!.containsKey(dedupKey)) {
+        grouped[almacen]![ubicacion]![dedupKey] = Map<String, dynamic>.from(item);
+      } else {
+        // Acumular campos numéricos
+        final existing = grouped[almacen]![ubicacion]![dedupKey]!;
+        for (final field in numericFields) {
+          final a = (existing[field] as num?)?.toDouble() ?? 0.0;
+          final b = (item[field] as num?)?.toDouble() ?? 0.0;
+          existing[field] = a + b;
+        }
       }
-      if (!groupedData[almacen]!.containsKey(ubicacion)) {
-        groupedData[almacen]![ubicacion] = [];
-      }
-      groupedData[almacen]![ubicacion]!.add(item);
     }
 
-    return groupedData;
+    // Convertir estructura interna a la forma de salida esperada
+    final result = <String, Map<String, List<Map<String, dynamic>>>>{};
+    for (final almacenEntry in grouped.entries) {
+      result[almacenEntry.key] = {};
+      for (final ubicacionEntry in almacenEntry.value.entries) {
+        result[almacenEntry.key]![ubicacionEntry.key] =
+            ubicacionEntry.value.values.toList();
+      }
+    }
+    return result;
   }
 
   /// Convierte datos Map a InventoryProduct para usar la misma estructura que PDF
@@ -1763,6 +1803,7 @@ class ExportService {
     bool includeDescripcionCorta = false,
     bool includeDescripcion = false,
     bool includePrecios = false,
+    bool includeReservado = false,
   }) async {
     final excel = Excel.createExcel();
 
@@ -1804,6 +1845,7 @@ class ExportService {
           includeDescripcionCorta: includeDescripcionCorta,
           includeDescripcion: includeDescripcion,
           includePrecios: includePrecios,
+          includeReservado: includeReservado,
         );
       }
     }
@@ -1970,37 +2012,23 @@ class ExportService {
     bool includeDescripcionCorta = false,
     bool includeDescripcion = false,
     bool includePrecios = false,
+    bool includeReservado = false,
   }) {
     // Crear lista de encabezados dinámicamente
     final headers = <String>['Nombre'];
-    int columnIndex = 1;
 
-    if (includeSku) {
-      headers.add('SKU');
-      columnIndex++;
-    }
-    if (includeNombreCorto) {
-      headers.add('Nombre Corto');
-      columnIndex++;
-    }
-    if (includeMarca) {
-      headers.add('Marca');
-      columnIndex++;
-    }
-    if (includeDescripcionCorta) {
-      headers.add('Descripción Corta');
-      columnIndex++;
-    }
-    if (includeDescripcion) {
-      headers.add('Descripción');
-      columnIndex++;
-    }
+    if (includeSku) headers.add('SKU');
+    if (includeNombreCorto) headers.add('Nombre Corto');
+    if (includeMarca) headers.add('Marca');
+    if (includeDescripcionCorta) headers.add('Descripción Corta');
+    if (includeDescripcion) headers.add('Descripción');
 
     headers.addAll([
       'Cant. Inicial',
       'Entradas',
       'Extracciones',
       'Ventas',
+      'Reservados Pend.',
       'Cant. Final',
     ]);
     if (includePrecios) {
@@ -2041,12 +2069,12 @@ class ExportService {
     }
 
     // Columnas numéricas de cantidades
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 6; i++) {
       sheet.setColumnWidth(currentCol + i, 12);
     }
     if (includePrecios) {
       for (int i = 0; i < 7; i++) {
-        sheet.setColumnWidth(currentCol + 5 + i, 13);
+        sheet.setColumnWidth(currentCol + 6 + i, 13);
       }
     }
 
@@ -2119,11 +2147,24 @@ class ExportService {
       }
 
       // Agregar columnas numéricas
+      // Reservados siempre desde rawData
+      String reservadoStr = '0.0';
+      if (rawData != null) {
+        final raw = rawData.firstWhere(
+          (r) => r['id_producto'] == product.idProducto,
+          orElse: () => {},
+        );
+        reservadoStr =
+            (double.tryParse(raw['cantidad_reservada']?.toString() ?? '0') ?? 0)
+                .toStringAsFixed(1);
+      }
+
       rowData.addAll([
         product.cantidadInicial.toStringAsFixed(1),
         (product.entradasPeriodo ?? 0).toStringAsFixed(1),
         (product.extraccionesPeriodo ?? 0).toStringAsFixed(1),
         (product.ventasPeriodo ?? 0).toStringAsFixed(1),
+        reservadoStr,
         product.cantidadFinal.toStringAsFixed(1),
       ]);
 
@@ -2147,26 +2188,11 @@ class ExportService {
         ]);
       }
 
-      // Índice de Cant. Final: siempre la 5ª columna numérica (offset fijo)
-      final cantFinalIndex = rowData.length - 1 - (includePrecios ? 7 : 0);
-
       for (int i = 0; i < rowData.length; i++) {
         final cell = sheet.cell(
           CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow),
         );
         cell.value = TextCellValue(rowData[i]);
-
-        // Aplicar color basado en el stock en la columna Cant. Final
-        if (i == cantFinalIndex) {
-          final cantidad = product.cantidadFinal;
-          if (cantidad <= 0) {
-            cell.cellStyle = CellStyle(backgroundColorHex: ExcelColor.red);
-          } else if (cantidad <= 10) {
-            cell.cellStyle = CellStyle(backgroundColorHex: ExcelColor.orange);
-          } else {
-            cell.cellStyle = CellStyle(backgroundColorHex: ExcelColor.green);
-          }
-        }
       }
       currentRow++;
     }
@@ -2221,6 +2247,7 @@ class ExportService {
     bool includeDescripcionCorta = false,
     bool includeDescripcion = false,
     bool includePrecios = false,
+    bool includeReservado = false,
   }) {
     // Crear lista de encabezados dinámicamente
     final headers = <String>['Nombre'];
@@ -2262,9 +2289,10 @@ class ExportService {
       'Entradas',
       'Extracc.',
       'Ventas',
+      'Reservado',
       'Cant. Fin',
     ]);
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 6; i++) {
       columnWidths[columnIndex + i] = const pw.FlexColumnWidth(1);
     }
     if (includePrecios) {
@@ -2331,6 +2359,11 @@ class ExportService {
                     0)
                 .toStringAsFixed(1),
             (double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ??
+                    0)
+                .toStringAsFixed(1),
+            (double.tryParse(
+                      producto['cantidad_reservada']?.toString() ?? '0',
+                    ) ??
                     0)
                 .toStringAsFixed(1),
             (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ??
