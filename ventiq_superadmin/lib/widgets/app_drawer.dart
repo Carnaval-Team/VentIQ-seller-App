@@ -191,6 +191,11 @@ class AppDrawer extends StatelessWidget {
                       title: 'Solicitudes de Plan',
                       route: '/muevete/planes',
                     ),
+                    _DrawerItem(
+                      icon: Icons.local_shipping_outlined,
+                      title: 'Gestión de Cargas',
+                      route: '/muevete/cargas',
+                    ),
                   ],
                 ),
                 _buildMenuSection(

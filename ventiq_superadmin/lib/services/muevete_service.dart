@@ -555,4 +555,94 @@ class MueveteService {
       'p_observaciones': observaciones,
     });
   }
+
+  // ─── CARGAS (FREIGHT) ─────────────────────────────────────────────────────
+
+  /// Fetches all cargas with shipper and carrier info.
+  static Future<List<Map<String, dynamic>>> getCargas({String? estado}) async {
+    final List rows;
+    const select = '''
+      *, 
+      app_nom_tipo_carga!cargas_tipo_carga_id_fkey(nombre, abreviacion),
+      app_nom_tipo_equipo!cargas_tipo_equipo_id_fkey(nombre, abreviacion),
+      app_nom_tipo_mercancia!cargas_tipo_mercancia_id_fkey(nombre, codigo)
+    ''';
+
+    if (estado != null) {
+      rows = await _supabase
+          .schema('muevete')
+          .from('cargas')
+          .select(select)
+          .eq('estado', estado)
+          .order('created_at', ascending: false);
+    } else {
+      rows = await _supabase
+          .schema('muevete')
+          .from('cargas')
+          .select(select)
+          .order('created_at', ascending: false);
+    }
+
+    final result = List<Map<String, dynamic>>.from(rows);
+
+    // Enrich with shipper name (from drivers table via uuid)
+    for (final row in result) {
+      try {
+        final shipperUuid = row['shipper_id'] as String?;
+        if (shipperUuid != null) {
+          final drv = await _supabase
+              .schema('muevete')
+              .from('drivers')
+              .select('name, email')
+              .eq('uuid', shipperUuid)
+              .maybeSingle();
+          row['shipper_name'] = drv?['name'];
+          row['shipper_email'] = drv?['email'];
+        }
+      } catch (_) {}
+
+      // Carrier name
+      try {
+        final carrierId = row['carrier_driver_id'] as int?;
+        if (carrierId != null) {
+          final drv = await _supabase
+              .schema('muevete')
+              .from('drivers')
+              .select('name, email')
+              .eq('id', carrierId)
+              .maybeSingle();
+          row['carrier_name'] = drv?['name'];
+          row['carrier_email'] = drv?['email'];
+        }
+      } catch (_) {}
+    }
+
+    return result;
+  }
+
+  /// Fetches the estado nomenclator (app_nom_estado).
+  static Future<List<Map<String, dynamic>>> getEstadosNomenclador() async {
+    final rows = await _supabase
+        .schema('muevete')
+        .from('app_nom_estado')
+        .select('*')
+        .eq('activo', true)
+        .order('orden', ascending: true);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  /// Changes the state of a carga via RPC fn_cambiar_estado_carga.
+  static Future<void> cambiarEstadoCarga({
+    required int cargaId,
+    required String estadoCodigo,
+    String? usuarioUuid,
+    String? motivo,
+  }) async {
+    await _supabase.schema('muevete').rpc('fn_cambiar_estado_carga', params: {
+      'p_carga_id': cargaId,
+      'p_estado_codigo': estadoCodigo,
+      if (usuarioUuid != null) 'p_usuario_uuid': usuarioUuid,
+      if (motivo != null) 'p_motivo': motivo,
+    });
+  }
 }
