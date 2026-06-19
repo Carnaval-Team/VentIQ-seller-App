@@ -344,7 +344,34 @@ DECLARE
     SET importe_total = v_total_venta
     WHERE id_operacion = v_id_operacion;
 
-    -- 5. Registrar estado inicial
+    -- 5. Registrar pago de venta con monto 0 cuando el total sea 0
+    -- Esto garantiza que las ventas gratuitas/promocionales tengan su registro
+    -- de pago sin duplicar pagos en ventas normales (que las registra la app).
+    IF COALESCE(v_total_venta, 0) = 0 THEN
+      INSERT INTO app_dat_pago_venta (
+        id_operacion_venta,
+        id_medio_pago,
+        monto,
+        creado_por,
+        tipo_pago,
+        importe_sin_descuento,
+        referencia_pago,
+        fecha_pago,
+        created_at
+      ) VALUES (
+        v_id_operacion,
+        1,                 -- Efectivo por defecto
+        0,
+        p_uuid,
+        1,                 -- Tipo efectivo
+        0,
+        'Venta mostrador - monto 0',
+        NOW(),
+        NOW()
+      );
+    END IF;
+
+    -- 6. Registrar estado inicial
     INSERT INTO app_dat_estado_operacion (
       id_operacion,
       estado,

@@ -1169,6 +1169,68 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     return Colors.blueGrey[600] ?? Colors.blueGrey;
   }
 
+  /// Detecta si la operación es una venta
+  bool _isVentaOperation(Map<String, dynamic> operation) {
+    final tipo = (operation['tipo_operacion_nombre'] ?? '').toString().toLowerCase();
+    final accion = (operation['tipo_operacion_accion'] ?? '').toString().toLowerCase();
+    return tipo.contains('venta') || accion.contains('venta');
+  }
+
+  /// Obtiene el detalle completo de los pagos de una operación de venta
+  Future<List<Map<String, dynamic>>> _getPaymentDetails(int operationId) async {
+    try {
+      final response = await Supabase.instance.client
+          .from('app_dat_pago_venta')
+          .select('''
+            id,
+            monto,
+            referencia_pago,
+            fecha_pago,
+            created_at,
+            tipo_pago,
+            importe_sin_descuento,
+            app_nom_medio_pago:app_nom_medio_pago(id, denominacion, es_digital, es_efectivo)
+          ''')
+          .eq('id_operacion_venta', operationId)
+          .order('created_at', ascending: true);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error obteniendo detalles de pagos: $e');
+      return [];
+    }
+  }
+
+  /// Verifica si una operación de venta ya tiene pagos registrados
+  Future<bool> _checkHasPayment(int operationId) async {
+    final payments = await _getPaymentDetails(operationId);
+    return payments.isNotEmpty;
+  }
+
+  /// Registra un pago con monto 0 para una operación de venta.
+  /// Se inserta directamente en app_dat_pago_venta porque fn_registrar_pago_venta
+  /// valida que el monto sea mayor que cero.
+  Future<bool> _registerZeroPayment(int operationId) async {
+    try {
+      print('💳 Registrando pago con monto 0 para operación $operationId');
+
+      await Supabase.instance.client.from('app_dat_pago_venta').insert({
+        'id_operacion_venta': operationId,
+        'id_medio_pago': 1,
+        'monto': 0,
+        'tipo_pago': 1,
+        'referencia_pago': 'Registro manual monto 0 - Admin',
+        'creado_por': Supabase.instance.client.auth.currentUser?.id,
+      });
+
+      print('✅ Pago con monto 0 registrado directamente');
+      return true;
+    } catch (e) {
+      print('❌ Error registrando pago con monto 0: $e');
+      return false;
+    }
+  }
+
   void _showOperationDetails(Map<String, dynamic> operation) {
     // Debug: Print all operation data
     print('🔍 Operation details:');
@@ -1400,6 +1462,18 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                             if (_shouldShowCancelButton(operation)) ...[
                               const SizedBox(height: 12),
                               _buildCancelButton(operation),
+                            ],
+
+                            // Show payment details section for sales
+                            if (_isVentaOperation(operation) &&
+                                operation['id'] != null) ...[
+                              const SizedBox(height: 24),
+                              _PaymentDetailsSection(
+                                operationId: (operation['id'] as num).toInt(),
+                                totalIsZero: _calculateTotalPrice(operation) == 0,
+                                getPaymentDetails: _getPaymentDetails,
+                                registerZeroPayment: _registerZeroPayment,
+                              ),
                             ],
 
                             // Show print button for all operations
@@ -4105,6 +4179,226 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
             child: Text(
               text,
               style: const TextStyle(fontSize: 12, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Sección que muestra el detalle del pago de una operación de venta.
+/// Si no hay pagos y el total es 0, permite registrar uno manualmente.
+class _PaymentDetailsSection extends StatefulWidget {
+  final int operationId;
+  final bool totalIsZero;
+  final Future<List<Map<String, dynamic>>> Function(int) getPaymentDetails;
+  final Future<bool> Function(int) registerZeroPayment;
+
+  const _PaymentDetailsSection({
+    required this.operationId,
+    required this.totalIsZero,
+    required this.getPaymentDetails,
+    required this.registerZeroPayment,
+  });
+
+  @override
+  State<_PaymentDetailsSection> createState() =>
+      _PaymentDetailsSectionState();
+}
+
+class _PaymentDetailsSectionState extends State<_PaymentDetailsSection> {
+  bool _isRegistering = false;
+  Key _futureKey = UniqueKey();
+
+  String _formatDate(dynamic value) {
+    if (value == null) return '-';
+    final dt = value is DateTime ? value : DateTime.tryParse(value.toString());
+    if (dt == null) return '-';
+    return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      key: _futureKey,
+      future: widget.getPaymentDetails(widget.operationId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(
+            height: 80,
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+
+        final payments = snapshot.data ?? [];
+
+        if (payments.isNotEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.payments, color: Colors.blue.shade700, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Detalle del pago',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 24),
+                ...payments.map((payment) {
+                  final medio = payment['app_nom_medio_pago']
+                      as Map<String, dynamic>?;
+                  final medioNombre = medio?['denominacion'] ?? 'Desconocido';
+                  final monto = (payment['monto'] as num?) ?? 0;
+                  final referencia =
+                      payment['referencia_pago']?.toString() ?? '-';
+                  final fecha = payment['fecha_pago'] ?? payment['created_at'];
+                  final tipoPago =
+                      payment['tipo_pago'] == 1 ? 'Efectivo' : 'Digital';
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildDetailRow('Medio de pago', medioNombre),
+                        _buildDetailRow(
+                          'Monto',
+                          'CUP ${monto.toStringAsFixed(2)}',
+                        ),
+                        _buildDetailRow('Tipo', tipoPago),
+                        _buildDetailRow('Referencia', referencia),
+                        _buildDetailRow('Fecha', _formatDate(fecha)),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          );
+        }
+
+        if (widget.totalIsZero) {
+          return ElevatedButton.icon(
+            onPressed: _isRegistering
+                ? null
+                : () async {
+                    setState(() => _isRegistering = true);
+                    final success = await widget.registerZeroPayment(
+                      widget.operationId,
+                    );
+                    if (!mounted) return;
+                    setState(() {
+                      _isRegistering = false;
+                      _futureKey = UniqueKey();
+                    });
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          success
+                              ? 'Pago registrado correctamente'
+                              : 'Error al registrar el pago',
+                        ),
+                        backgroundColor: success ? Colors.green : Colors.red,
+                      ),
+                    );
+                  },
+            icon: _isRegistering
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.payment, color: Colors.white),
+            label: Text(
+              _isRegistering ? 'Registrando...' : 'Registrar pago (monto 0)',
+              style: const TextStyle(color: Colors.white),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4A90E2),
+              minimumSize: const Size(double.infinity, 48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          );
+        }
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.orange.shade200),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.warning_amber, color: Colors.orange.shade700, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Esta venta no tiene pagos registrados.',
+                  style: TextStyle(color: Colors.orange.shade900),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
