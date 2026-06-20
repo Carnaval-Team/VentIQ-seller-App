@@ -42,6 +42,8 @@ class ProductService {
 
     bool soloDisponibles = false,
 
+    bool mostrarVendible = false,
+
   }) async {
 
     try {
@@ -64,21 +66,21 @@ class ProductService {
 
 
 
-      print('🔍 Llamando RPC get_productos_completos_by_tienda_optimized');
+      print('🔍 Llamando RPC get_productos_completos_by_tienda_optimized_v2');
 
       print(
 
-        '📍 Parámetros: idTienda=$idTienda, categoryId=$categoryId, soloDisponibles=$soloDisponibles',
+        '📍 Parámetros: idTienda=$idTienda, categoryId=$categoryId, soloDisponibles=$soloDisponibles, mostrarVendible=$mostrarVendible',
 
       );
 
 
 
-      // Llamar a la función RPC optimizada con variantes_disponibles
+      // Llamar a la función RPC optimizada v2 con filtro de vendibles
 
       final response = await _supabase.rpc(
 
-        'get_productos_completos_by_tienda_optimized',
+        'get_productos_completos_by_tienda_optimized_v2',
 
         params: {
 
@@ -87,6 +89,8 @@ class ProductService {
           'id_categoria_param': categoryId,
 
           'solo_disponibles_param': soloDisponibles,
+
+          'p_mostrar_vendible': mostrarVendible,
 
         },
 
@@ -3207,8 +3211,6 @@ class ProductService {
           .select('id, denominacion, sku, imagen, es_elaborado')
 
           .eq('id_tienda', idTienda)
-
-          .eq('es_vendible', true)
 
           .eq('es_inventariable', true)
 

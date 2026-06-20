@@ -1017,18 +1017,18 @@ class RestaurantService {
   static Future<double> _getCostoUnitarioPromedio(int idProducto) async {
     try {
       final precioResponse = await _supabase
-          .from('app_dat_recepcion_productos')
-          .select('precio_unitario, costo_real')
+          .from('app_dat_producto_presentacion')
+          .select('precio_promedio, es_base')
           .eq('id_producto', idProducto)
-          .order('created_at', ascending: false)
+          .gt('precio_promedio', 0)
+          .order('es_base', ascending: false)
           .limit(1);
 
-      final precioUnitario = precioResponse.isNotEmpty 
-          ? (precioResponse.first['costo_real'] ?? 
-             precioResponse.first['precio_unitario'] ?? 0) as num
+      final precioPromedio = precioResponse.isNotEmpty
+          ? (precioResponse.first['precio_promedio'] ?? 0) as num
           : 0;
 
-      return precioUnitario.toDouble();
+      return precioPromedio.toDouble();
     } catch (e) {
       print('❌ Error obteniendo costo unitario promedio: $e');
       return 0.0;

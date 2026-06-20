@@ -9418,13 +9418,23 @@ class _IngredientDialogState extends State<_IngredientDialog> {
 
 
 
-  // Variables para unidades de medida
+  // Variables para unidades de medida (fallback si el producto no tiene presentaciones)
 
   List<Map<String, dynamic>> _unidadesMedida = [];
 
   Map<String, dynamic>? _unidadSeleccionada;
 
   bool _isLoadingUnidades = true;
+
+
+
+  // Variables para presentaciones del producto seleccionado
+
+  List<Map<String, dynamic>> _presentacionesProducto = [];
+
+  Map<String, dynamic>? _presentacionSeleccionada;
+
+  bool _isLoadingPresentaciones = false;
 
 
 
@@ -9448,41 +9458,15 @@ class _IngredientDialogState extends State<_IngredientDialog> {
 
 
 
-      // ✅ NO inicializar _productoSeleccionado aquí
+      // ✅ NO inicializar _productoSeleccionado ni _unidadSeleccionada aquí
 
-      // Se inicializará después de cargar la lista real
+      // Se inicializarán después de cargar la lista real de productos y presentaciones
 
       print(
 
         '🔄 Modo edición - ID producto: ${widget.ingrediente!['id_producto']}',
 
       );
-
-
-
-      // Buscar la unidad seleccionada por abreviatura
-
-      // CAMBIAR:
-
-      // Buscar la unidad seleccionada por abreviatura
-
-      final unidadAbrev = widget.ingrediente!['unidad_medida'] ?? 'und';
-
-      _unidadSeleccionada = {
-
-        'abreviatura': unidadAbrev,
-
-        'denominacion': unidadAbrev,
-
-      };
-
-
-
-      // POR:
-
-      // ✅ NO inicializar _unidadSeleccionada aquí
-
-      // Se inicializará después de cargar la lista real de unidades
 
       print(
 
@@ -9595,6 +9579,20 @@ class _IngredientDialogState extends State<_IngredientDialog> {
             _productoSeleccionado = productoReal;
 
             print('✅ Producto sincronizado: ${productoReal['denominacion']}');
+
+
+
+            // Cargar presentaciones del producto seleccionado
+
+            _loadPresentacionesProducto(
+
+              (productoReal['id'] as num).toInt(),
+
+              unidadMedidaInicial:
+
+                  widget.ingrediente?['unidad_medida']?.toString(),
+
+            );
 
           } else {
 
@@ -9755,6 +9753,54 @@ class _IngredientDialogState extends State<_IngredientDialog> {
   }
 
 
+
+  /// Carga las presentaciones del producto seleccionado para usarlas como unidades de medida.
+  /// Si se proporciona [unidadMedidaInicial], selecciona la presentación cuya denominación coincida.
+  Future<void> _loadPresentacionesProducto(
+    int productId, {
+    String? unidadMedidaInicial,
+  }) async {
+    try {
+      print('🔍 Cargando presentaciones para producto ingrediente: $productId');
+      setState(() => _isLoadingPresentaciones = true);
+
+      final presentaciones = await ProductService.getPresentacionesCompletas(productId);
+
+      setState(() {
+        _presentacionesProducto = presentaciones;
+        _isLoadingPresentaciones = false;
+
+        if (presentaciones.isNotEmpty) {
+          // Seleccionar por unidad inicial en modo edición
+          if (unidadMedidaInicial != null && unidadMedidaInicial.isNotEmpty) {
+            _presentacionSeleccionada = presentaciones.firstWhere(
+              (p) => p['denominacion']?.toString() == unidadMedidaInicial,
+              orElse: () => presentaciones.firstWhere(
+                (p) => p['es_base'] == true,
+                orElse: () => presentaciones.first,
+              ),
+            );
+          } else {
+            _presentacionSeleccionada = presentaciones.firstWhere(
+              (p) => p['es_base'] == true,
+              orElse: () => presentaciones.first,
+            );
+          }
+        } else {
+          _presentacionSeleccionada = null;
+        }
+      });
+
+      print('✅ Presentaciones cargadas: ${presentaciones.length}');
+    } catch (e) {
+      print('❌ Error cargando presentaciones del producto: $e');
+      setState(() {
+        _presentacionesProducto = [];
+        _presentacionSeleccionada = null;
+        _isLoadingPresentaciones = false;
+      });
+    }
+  }
 
   List<Map<String, dynamic>> get _productosFiltrados {
 
@@ -10088,6 +10134,18 @@ class _IngredientDialogState extends State<_IngredientDialog> {
 
                               setState(() => _productoSeleccionado = producto);
 
+                              // Cargar presentaciones del producto seleccionado
+
+                              if (producto['id'] != null) {
+
+                                _loadPresentacionesProducto(
+
+                                  (producto['id'] as num).toInt(),
+
+                                );
+
+                              }
+
                             },
 
                           );
@@ -10230,63 +10288,132 @@ class _IngredientDialogState extends State<_IngredientDialog> {
 
 
 
-                  // Campo de unidad de medida (fila separada)
+                  // Campo de unidad de medida / presentación del producto seleccionado
 
-                  _isLoadingUnidades
+                  if (_productoSeleccionado == null)
 
-                      ? const Center(child: CircularProgressIndicator())
+                    const Center(
 
-                      : DropdownButtonFormField<Map<String, dynamic>>(
+                      child: Text(
 
-                        value: _unidadSeleccionada,
+                        'Seleccione un producto para ver sus presentaciones',
 
-                        decoration: const InputDecoration(
-
-                          labelText: 'Unidad de Medida *',
-
-                          border: OutlineInputBorder(),
-
-                          isDense: true,
-
-                        ),
-
-                        items:
-
-                            _unidadesMedida.map((unidad) {
-
-                              return DropdownMenuItem<Map<String, dynamic>>(
-
-                                value: unidad,
-
-                                child: Text(
-
-                                  '${unidad['abreviatura']} - ${unidad['denominacion']}',
-
-                                  style: const TextStyle(fontSize: 12),
-
-                                ),
-
-                              );
-
-                            }).toList(),
-
-                        onChanged: (value) {
-
-                          setState(() {
-
-                            _unidadSeleccionada = value;
-
-                          });
-
-                        },
-
-                        validator:
-
-                            (value) =>
-
-                                value == null ? 'Seleccione una unidad' : null,
+                        style: TextStyle(color: Colors.grey),
 
                       ),
+
+                    )
+
+                  else if (_isLoadingPresentaciones)
+
+                    const Center(child: CircularProgressIndicator())
+
+                  else if (_presentacionesProducto.isNotEmpty)
+
+                    DropdownButtonFormField<Map<String, dynamic>>(
+
+                      value: _presentacionSeleccionada,
+
+                      decoration: const InputDecoration(
+
+                        labelText: 'Presentación *',
+
+                        border: OutlineInputBorder(),
+
+                        isDense: true,
+
+                      ),
+
+                      items:
+
+                          _presentacionesProducto.map((presentacion) {
+
+                            return DropdownMenuItem<Map<String, dynamic>>(
+
+                              value: presentacion,
+
+                              child: Text(
+
+                                '${presentacion['denominacion']} (${presentacion['cantidad']} base)',
+
+                                style: const TextStyle(fontSize: 12),
+
+                              ),
+
+                            );
+
+                          }).toList(),
+
+                      onChanged: (value) {
+
+                        setState(() => _presentacionSeleccionada = value);
+
+                      },
+
+                      validator:
+
+                          (value) =>
+
+                              value == null
+
+                                  ? 'Seleccione una presentación'
+
+                                  : null,
+
+                    )
+
+                  else if (_isLoadingUnidades)
+
+                    const Center(child: CircularProgressIndicator())
+
+                  else
+
+                    DropdownButtonFormField<Map<String, dynamic>>(
+
+                      value: _unidadSeleccionada,
+
+                      decoration: const InputDecoration(
+
+                        labelText: 'Unidad de Medida *',
+
+                        border: OutlineInputBorder(),
+
+                        isDense: true,
+
+                      ),
+
+                      items:
+                          _unidadesMedida.map((unidad) {
+
+                            return DropdownMenuItem<Map<String, dynamic>>(
+
+                              value: unidad,
+
+                              child: Text(
+
+                                '${unidad['abreviatura']} - ${unidad['denominacion']}',
+
+                                style: const TextStyle(fontSize: 12),
+
+                              ),
+
+                            );
+
+                          }).toList(),
+
+                      onChanged: (value) {
+
+                        setState(() => _unidadSeleccionada = value);
+
+                      },
+
+                      validator:
+
+                          (value) =>
+
+                              value == null ? 'Seleccione una unidad' : null,
+
+                    ),
 
                 ],
 
@@ -10314,7 +10441,11 @@ class _IngredientDialogState extends State<_IngredientDialog> {
 
           onPressed:
 
-              (_productoSeleccionado == null || _unidadSeleccionada == null)
+              (_productoSeleccionado == null ||
+
+                      (_presentacionSeleccionada == null &&
+
+                          _unidadSeleccionada == null))
 
                   ? null
 
@@ -10368,7 +10499,19 @@ class _IngredientDialogState extends State<_IngredientDialog> {
 
 
 
-                      // En el botón de guardar del diálogo, agrega logs antes de llamar widget.onSave:
+                      // Usar presentación seleccionada como unidad, o unidad de medida como fallback
+
+                      final unidadMedida =
+
+                          _presentacionSeleccionada != null
+
+                              ? _presentacionSeleccionada!['denominacion']
+
+                                  ?.toString()
+
+                              : _unidadSeleccionada?['abreviatura']?.toString();
+
+
 
                       final ingrediente = {
 
@@ -10378,7 +10521,7 @@ class _IngredientDialogState extends State<_IngredientDialog> {
 
                         'cantidad': double.parse(_cantidadController.text),
 
-                        'unidad_medida': _unidadSeleccionada!['abreviatura'],
+                        'unidad_medida': unidadMedida,
 
                       };
 

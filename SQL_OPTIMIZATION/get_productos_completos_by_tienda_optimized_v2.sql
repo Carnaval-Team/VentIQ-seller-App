@@ -1,13 +1,14 @@
-CREATE OR REPLACE FUNCTION get_productos_completos_by_tienda_optimized_provider(
+-- ============================================================
+-- Versión 2 de get_productos_completos_by_tienda_optimized
+-- Incluye parámetro p_mostrar_vendible para controlar el filtro
+-- de productos vendibles en la administración.
+-- ============================================================
 
+CREATE OR REPLACE FUNCTION get_productos_completos_by_tienda_optimized_v2(
     id_tienda_param BIGINT,
-
     id_categoria_param BIGINT DEFAULT NULL,
-
     solo_disponibles_param BOOLEAN DEFAULT FALSE,
-
-    id_proveedor_param INTEGER DEFAULT NULL
-
+    p_mostrar_vendible BOOLEAN DEFAULT TRUE
 ) RETURNS jsonb AS $$
 
 DECLARE
@@ -52,8 +53,6 @@ BEGIN
 
     IF NOT tiene_suscripcion_activa THEN
 
-        -- Obtener el primer producto de la tienda para usar sus atributos
-
         SELECT id, sku, id_categoria, um, es_refrigerado, es_fragil, es_peligroso, 
 
                es_vendible, es_servicio, codigo_barras, imagen
@@ -67,8 +66,6 @@ BEGIN
         LIMIT 1;
 
         
-
-        -- Si no hay productos, usar valores por defecto
 
         IF primer_producto IS NULL THEN
 
@@ -97,8 +94,6 @@ BEGIN
         END IF;
 
         
-
-        -- Retornar producto de contacto con estructura completa
 
         RETURN jsonb_build_object(
 
@@ -154,6 +149,8 @@ BEGIN
 
                     'precio_venta', 0,
 
+                    'precio_venta_usd', NULL,
+
                     'stock_disponible', 0,
 
                     'tiene_stock', FALSE,
@@ -179,8 +176,6 @@ BEGIN
     END IF;
 
     
-
-    -- CTE para obtener el último inventario por producto/variante/presentación/ubicación
 
     WITH ultimo_inventario AS (
 
@@ -214,8 +209,6 @@ BEGIN
 
     ),
 
-    -- CTE para stock total por producto
-
     stock_productos AS (
 
         SELECT 
@@ -232,15 +225,15 @@ BEGIN
 
     ),
 
-    -- CTE para precios actuales
-
     precios_actuales AS (
 
         SELECT DISTINCT ON (id_producto)
 
             id_producto,
 
-            precio_venta_cup
+            precio_venta_cup,
+
+            precio_venta_usd
 
         FROM app_dat_precio_venta
 
@@ -251,8 +244,6 @@ BEGIN
         ORDER BY id_producto, fecha_desde DESC
 
     ),
-
-    -- CTE para variantes configuradas en precios (solo las que tienen precio configurado)
 
     variantes_producto AS (
 
@@ -354,8 +345,6 @@ BEGIN
 
     ),
 
-    -- CTE principal con todos los datos
-
     productos_completos AS (
 
         SELECT 
@@ -388,9 +377,9 @@ BEGIN
 
             p.es_servicio,
 
-            
+            p.id_proveedor,
 
-            -- Categoría
+            
 
             jsonb_build_object(
 
@@ -404,21 +393,17 @@ BEGIN
 
             
 
-            -- Precio
-
             COALESCE(pa.precio_venta_cup, 0) as precio_venta,
 
-            
+            pa.precio_venta_usd as precio_venta_usd,
 
-            -- Stock
+            
 
             COALESCE(sp.stock_total, 0) as stock_disponible,
 
             COALESCE(sp.tiene_stock, false) as tiene_stock,
 
             
-
-            -- Subcategorías (agregadas con LEFT JOIN)
 
             COALESCE(
 
@@ -445,8 +430,6 @@ BEGIN
             ) as subcategorias,
 
             
-
-            -- Presentaciones (agregadas con LEFT JOIN)
 
             COALESCE(
 
@@ -478,8 +461,6 @@ BEGIN
 
             
 
-            -- Multimedia (subconsulta optimizada)
-
             (SELECT COALESCE(jsonb_agg(media), '[]'::jsonb) 
 
              FROM app_dat_producto_multimedias 
@@ -488,8 +469,6 @@ BEGIN
 
             
 
-            -- Etiquetas (subconsulta optimizada)
-
             (SELECT COALESCE(jsonb_agg(etiqueta), '[]'::jsonb) 
 
              FROM app_dat_producto_etiquetas 
@@ -497,8 +476,6 @@ BEGIN
              WHERE id_producto = p.id) as etiquetas,
 
              
-
-            -- Variantes disponibles (nuevo objeto)
 
             COALESCE(vp.variantes_disponibles, '[]'::jsonb) as variantes_disponibles
 
@@ -528,11 +505,11 @@ BEGIN
 
             p.id_tienda = id_tienda_param 
 
+            AND (p_mostrar_vendible = false OR p.es_vendible = true)
+
             AND (id_categoria_param IS NULL OR c.id = id_categoria_param)
 
             AND (NOT solo_disponibles_param OR sp.tiene_stock = true)
-
-            AND (id_proveedor_param IS NULL OR p.id_proveedor = id_proveedor_param)
 
             
 
@@ -542,13 +519,13 @@ BEGIN
 
                  p.codigo_barras, p.imagen, c.id, c.denominacion, c.sku_codigo,
 
-                 pa.precio_venta_cup, sp.stock_total, sp.tiene_stock, vp.variantes_disponibles, p.es_elaborado
+                 pa.precio_venta_cup, pa.precio_venta_usd, sp.stock_total, sp.tiene_stock,
+
+                 vp.variantes_disponibles, p.es_elaborado, p.id_proveedor
 
         ORDER BY p.denominacion
 
     )
-
-    -- Construir el resultado final
 
     SELECT jsonb_build_object(
 
@@ -596,6 +573,8 @@ BEGIN
 
                 'precio_venta', pc.precio_venta,
 
+                'precio_venta_usd', pc.precio_venta_usd,
+
                 'stock_disponible', pc.stock_disponible,
 
                 'tiene_stock', pc.tiene_stock,
@@ -609,6 +588,8 @@ BEGIN
                 'etiquetas', pc.etiquetas,
 
                 'variantes_disponibles', pc.variantes_disponibles,
+
+                'id_proveedor', pc.id_proveedor,
 
                 'inventario', COALESCE((
 

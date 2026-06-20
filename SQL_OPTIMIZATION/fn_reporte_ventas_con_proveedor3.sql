@@ -1,5 +1,5 @@
 -- =============================================================================
--- fn_reporte_ventas_con_proveedor3
+-- fn_reporte_ventas_con_proveedor4
 -- Versión 3: usa historial de precios de venta (app_dat_precio_venta) y
 -- historial de tasas de cambio (tasa_cambio_extraoficial) vigentes en la
 -- fecha exacta de cada operación para calcular ingresos y costos correctamente.
@@ -17,9 +17,9 @@
 --     Cada fila representa ventas con el mismo (precio_venta_cup, precio_costo_cup).
 -- =============================================================================
 
-DROP FUNCTION IF EXISTS public.fn_reporte_ventas_con_proveedor3(BIGINT, DATE, DATE, BIGINT);
+DROP FUNCTION IF EXISTS public.fn_reporte_ventas_con_proveedor4(BIGINT, DATE, DATE, BIGINT);
 
-CREATE OR REPLACE FUNCTION public.fn_reporte_ventas_con_proveedor3(
+CREATE OR REPLACE FUNCTION public.fn_reporte_ventas_con_proveedor4(
     p_id_tienda  BIGINT,
     p_fecha_desde DATE DEFAULT NULL,
     p_fecha_hasta DATE DEFAULT NULL,
@@ -39,7 +39,9 @@ RETURNS TABLE (
     ingresos_totales    NUMERIC,   -- SUM(precio_venta_vigente × cantidad)
     costo_total_vendido NUMERIC,   -- SUM(costo_usd_vigente × tasa_vigente × cantidad)
     ganancia_unitaria   NUMERIC,   -- precio_venta_cup - precio_costo_cup (promedios)
-    ganancia_total      NUMERIC    -- ingresos_totales - costo_total_vendido
+    ganancia_total      NUMERIC,   -- ingresos_totales - costo_total_vendido
+    es_elaborado        BOOLEAN,
+    es_servicio         BOOLEAN
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -199,6 +201,38 @@ BEGIN
     ),
 
     -- -------------------------------------------------------------------------
+    -- 5b. Costo por receta para productos elaborados/servicios.
+    --     Costo unitario del ingrediente = precio_promedio de
+    --     app_dat_producto_presentacion (precio promedio ponderado acumulado, USD),
+    --     dividido por cantidad_um de app_dat_presentacion_unidad_medida para
+    --     obtener el costo por unidad base, multiplicado por cantidad_necesaria.
+    -- -------------------------------------------------------------------------
+    costo_receta_usd AS (
+        SELECT
+            pi.id_producto_elaborado AS id_producto,
+            SUM(
+                COALESCE(pi.cantidad_necesaria, 0) *
+                -- costo por unidad base = precio_promedio / cantidad_por_presentacion
+                COALESCE((
+                    SELECT pp2.precio_promedio /
+                           NULLIF(COALESCE((
+                               SELECT pum.cantidad_um
+                               FROM app_dat_presentacion_unidad_medida pum
+                               WHERE pum.id_producto = pi.id_ingrediente
+                               LIMIT 1
+                           ), 1), 0)
+                    FROM app_dat_producto_presentacion pp2
+                    WHERE pp2.id_producto = pi.id_ingrediente
+                      AND pp2.precio_promedio > 0
+                    ORDER BY pp2.es_base DESC NULLS LAST, pp2.id ASC
+                    LIMIT 1
+                ), 0)
+            ) AS costo_receta_usd
+        FROM app_dat_producto_ingredientes pi
+        GROUP BY pi.id_producto_elaborado
+    ),
+
+    -- -------------------------------------------------------------------------
     -- 6. Agregar por producto/presentación/precio_venta/costo_cup
     --    Cada combinación distinta de (precio_venta, costo_cup) genera una fila
     --    separada, capturando tanto cambios de precio de venta como cambios de
@@ -219,7 +253,9 @@ BEGIN
             SUM(ve.precio_venta_cup_op * ve.cantidad)                AS ingresos_totales,
 
             -- Costo total: costo_cup_op × cantidad (mismo costo CUP en todo el grupo)
-            SUM(ve.costo_usd_op * ve.tasa_op * ve.cantidad)          AS costo_total_vendido
+            SUM(ve.costo_usd_op * ve.tasa_op * ve.cantidad)          AS costo_total_vendido,
+
+            AVG(ve.tasa_op)                                           AS tasa_promedio
 
         FROM ventas_enriquecidas ve
         GROUP BY
@@ -246,28 +282,61 @@ BEGIN
         -- Precio de venta CUP exacto de este grupo
         ROUND(ag.precio_venta_cup_op::NUMERIC, 2)                  AS precio_venta_cup,
 
-        -- Costo unitario en USD exacto del grupo
-        ROUND(ag.costo_usd_op::NUMERIC, 4)                         AS precio_costo,
+        -- Costo unitario en USD: para elaborados/servicios usar receta; si no, precio_promedio
+        ROUND(COALESCE(
+            CASE WHEN (p.es_elaborado OR p.es_servicio) THEN cr.costo_receta_usd END,
+            ag.costo_usd_op
+        )::NUMERIC, 4)                                             AS precio_costo,
 
         -- Tasa exacta del grupo
         ROUND(ag.tasa_op::NUMERIC, 2)                              AS valor_usd,
 
-        -- Costo unitario en CUP exacto del grupo = costo_usd × tasa
-        ag.costo_cup_op                                            AS precio_costo_cup,
+        -- Costo unitario en CUP: para elaborados/servicios usar receta × tasa; si no, costo_cup_op
+        ROUND(COALESCE(
+            CASE WHEN (p.es_elaborado OR p.es_servicio)
+                THEN cr.costo_receta_usd * ag.tasa_promedio
+            END,
+            ag.costo_cup_op
+        )::NUMERIC, 2)                                             AS precio_costo_cup,
 
         ag.total_vendido,
         ROUND(ag.ingresos_totales::NUMERIC, 2)                     AS ingresos_totales,
-        ROUND(ag.costo_total_vendido::NUMERIC, 2)                  AS costo_total_vendido,
 
-        -- Ganancia unitaria = precio_venta - costo_cup
-        ROUND((ag.precio_venta_cup_op - ag.costo_cup_op)::NUMERIC, 2) AS ganancia_unitaria,
+        -- Costo total vendido: para elaborados/servicios recalcular con receta
+        ROUND(COALESCE(
+            CASE WHEN (p.es_elaborado OR p.es_servicio)
+                THEN cr.costo_receta_usd * ag.tasa_promedio * ag.total_vendido
+            END,
+            ag.costo_total_vendido
+        )::NUMERIC, 2)                                             AS costo_total_vendido,
+
+        -- Ganancia unitaria
+        ROUND((
+            ag.precio_venta_cup_op - COALESCE(
+                CASE WHEN (p.es_elaborado OR p.es_servicio)
+                    THEN cr.costo_receta_usd * ag.tasa_promedio
+                END,
+                ag.costo_cup_op
+            )
+        )::NUMERIC, 2)                                             AS ganancia_unitaria,
 
         -- Ganancia total
-        ROUND((ag.ingresos_totales - ag.costo_total_vendido)::NUMERIC, 2) AS ganancia_total
+        ROUND((
+            ag.ingresos_totales - COALESCE(
+                CASE WHEN (p.es_elaborado OR p.es_servicio)
+                    THEN cr.costo_receta_usd * ag.tasa_promedio * ag.total_vendido
+                END,
+                ag.costo_total_vendido
+            )
+        )::NUMERIC, 2)                                             AS ganancia_total,
+
+        COALESCE(p.es_elaborado, FALSE)                            AS es_elaborado,
+        COALESCE(p.es_servicio, FALSE)                             AS es_servicio
 
     FROM agregado ag
     JOIN app_dat_producto p ON ag.id_producto = p.id
     LEFT JOIN app_dat_proveedor prov ON p.id_proveedor = prov.id
+    LEFT JOIN costo_receta_usd cr ON cr.id_producto = p.id
     WHERE p.id_tienda = p_id_tienda
     ORDER BY p.denominacion, ag.precio_venta_cup_op DESC, ag.costo_cup_op DESC;
 
@@ -275,7 +344,7 @@ END;
 $$;
 
 -- Permisos
-GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_con_proveedor3(BIGINT, DATE, DATE, BIGINT)
+GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_con_proveedor4(BIGINT, DATE, DATE, BIGINT)
     TO authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_con_proveedor3(BIGINT, DATE, DATE, BIGINT)
+GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_con_proveedor4(BIGINT, DATE, DATE, BIGINT)
     TO service_role;

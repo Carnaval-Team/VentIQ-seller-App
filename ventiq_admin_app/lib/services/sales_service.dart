@@ -70,6 +70,8 @@ class ProductSalesReport {
   final double costoTotalVendido;
   final double gananciaUnitaria;
   final double gananciaTotal;
+  final bool esElaborado;
+  final bool esServicio;
 
   ProductSalesReport({
     required this.idTienda,
@@ -86,6 +88,8 @@ class ProductSalesReport {
     required this.costoTotalVendido,
     required this.gananciaUnitaria,
     required this.gananciaTotal,
+    this.esElaborado = false,
+    this.esServicio = false,
   });
 
   factory ProductSalesReport.fromJson(Map<String, dynamic> json) {
@@ -104,6 +108,8 @@ class ProductSalesReport {
       costoTotalVendido: (json['costo_total_vendido'] ?? 0).toDouble(),
       gananciaUnitaria: (json['ganancia_unitaria'] ?? 0).toDouble(),
       gananciaTotal: (json['ganancia_total'] ?? 0).toDouble(),
+      esElaborado: (json['es_elaborado'] ?? false) as bool,
+      esServicio: (json['es_servicio'] ?? false) as bool,
     );
   }
 }
@@ -275,7 +281,7 @@ class SalesService {
 
       final String? desde = fechaDesde?.toIso8601String().split('T')[0];
       final String? hasta = fechaHasta?.toIso8601String().split('T')[0];
-      print('   RPC : fn_reporte_ventas_con_proveedor3');
+      print('   RPC : fn_reporte_ventas_con_proveedor4');
       print('   Tienda : $idTienda');
       print('   Desde  : ${desde ?? "(sin filtro)"}');
       print('   Hasta  : ${hasta ?? "(sin filtro)"}');
@@ -285,7 +291,7 @@ class SalesService {
       if (hasta != null) params['p_fecha_hasta'] = hasta;
 
       final response = await _supabase.rpc(
-        'fn_reporte_ventas_con_proveedor3',
+        'fn_reporte_ventas_con_proveedor4',
         params: params,
       );
 

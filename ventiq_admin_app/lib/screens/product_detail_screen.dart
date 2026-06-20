@@ -36,6 +36,8 @@ import '../screens/suppliers/add_edit_supplier_screen.dart';
 
 import '../services/currency_service.dart';
 
+import '../services/restaurant_service.dart';
+
 
 
 class ProductDetailScreen extends StatefulWidget {
@@ -83,6 +85,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   List<Map<String, dynamic>> _ingredientes = [];
 
   bool _isLoadingIngredients = false;
+
+  List<Map<String, dynamic>> _ingredientesConCosto = [];
+
+  bool _isLoadingIngredientCosts = false;
 
   bool _isLoadingPromotions = false; // ✅ AGREGAR ESTA LÍNEA
 
@@ -276,7 +282,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
       _loadStockHistory(),
 
-      if (_product.esElaborado) _loadIngredients(),
+      if (_product.esElaborado || _product.esServicio) _loadIngredients(),
 
       _loadProductsUsingThisIngredient(),
 
@@ -284,15 +290,19 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
     ]);
 
+    if (_product.esElaborado || _product.esServicio) {
 
+      await _loadIngredientCosts();
+
+    }
 
     print('✅ Carga de datos adicionales completada');
 
-    if (_product.esElaborado) {
+    if (_product.esElaborado || _product.esServicio) {
 
       print(
 
-        '📊 Producto elaborado - Ingredientes cargados: ${_ingredientes.length}',
+        '📊 Producto elaborado/servicio - Ingredientes cargados: ${_ingredientes.length}',
 
       );
 
@@ -323,6 +333,38 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     } finally {
 
       if (mounted) setState(() => _isLoadingIngredients = false);
+
+    }
+
+  }
+
+
+
+  Future<void> _loadIngredientCosts() async {
+
+    if (mounted) setState(() => _isLoadingIngredientCosts = true);
+
+    try {
+
+      final id = int.tryParse(_product.id);
+
+      if (id != null) {
+
+        _ingredientesConCosto =
+
+            await RestaurantService.getIngredientesProductoElaborado(id);
+
+      }
+
+    } catch (e) {
+
+      print('Error loading ingredient costs: $e');
+
+      _ingredientesConCosto = [];
+
+    } finally {
+
+      if (mounted) setState(() => _isLoadingIngredientCosts = false);
 
     }
 
@@ -3212,7 +3254,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
         ],
 
-        if (_product.presentaciones.isNotEmpty) ...[
+        if (!_product.esElaborado && !_product.esServicio && _product.presentaciones.isNotEmpty) ...[
 
           const SizedBox(height: 16),
 
@@ -3605,6 +3647,444 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             ),
 
           ),
+
+        ],
+
+        // ── Sección de costo por ingredientes (elaborados/servicios) ────────────
+
+        if (_product.esElaborado || _product.esServicio) ...[
+
+          const SizedBox(height: 24),
+
+        const Divider(),
+
+        const SizedBox(height: 8),
+
+        Row(
+
+          children: [
+
+            Icon(Icons.restaurant_menu, size: 18, color: Colors.deepOrange[600]),
+
+            const SizedBox(width: 8),
+
+            Text(
+
+              'Costo de Producción por Ingredientes',
+
+              style: TextStyle(
+
+                fontSize: 15,
+
+                fontWeight: FontWeight.w700,
+
+                color: Colors.deepOrange[700],
+
+              ),
+
+            ),
+
+          ],
+
+        ),
+
+        const SizedBox(height: 12),
+
+        if (_isLoadingIngredientCosts)
+
+          const Center(
+
+            child: Padding(
+
+              padding: EdgeInsets.symmetric(vertical: 16),
+
+              child: CircularProgressIndicator(),
+
+            ),
+
+          )
+
+        else if (_ingredientesConCosto.isEmpty)
+
+          Container(
+
+            padding: const EdgeInsets.all(16),
+
+            decoration: BoxDecoration(
+
+              color: Colors.grey[100],
+
+              borderRadius: BorderRadius.circular(8),
+
+              border: Border.all(color: Colors.grey[300]!),
+
+            ),
+
+            child: Row(
+
+              children: [
+
+                Icon(Icons.info_outline, color: Colors.grey[500], size: 20),
+
+                const SizedBox(width: 12),
+
+                Expanded(
+
+                  child: Text(
+
+                    'No se encontraron ingredientes con información de costo.',
+
+                    style: TextStyle(color: Colors.grey[600], fontSize: 13),
+
+                  ),
+
+                ),
+
+              ],
+
+            ),
+
+          )
+
+        else ...[
+
+          ..._ingredientesConCosto.map((ing) {
+
+            final denominacion = ing['denominacion'] ?? 'Sin nombre';
+
+            final cantidadRequerida =
+
+                (ing['cantidad_requerida'] as num?)?.toDouble() ?? 0.0;
+
+            final unidadReceta = ing['unidad_receta'] ?? 'und';
+
+            final costoUnitario =
+
+                (ing['costo_unitario_promedio'] as num?)?.toDouble() ?? 0.0;
+
+            final costoTotal =
+
+                (ing['costo_total'] as num?)?.toDouble() ?? 0.0;
+
+            final sinCosto = costoUnitario == 0.0;
+
+            return Container(
+
+              margin: const EdgeInsets.only(bottom: 8),
+
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+
+              decoration: BoxDecoration(
+
+                color: sinCosto ? Colors.orange[50] : Colors.grey[50],
+
+                borderRadius: BorderRadius.circular(8),
+
+                border: Border.all(
+
+                  color: sinCosto ? Colors.orange[200]! : Colors.grey[300]!,
+
+                ),
+
+              ),
+
+              child: Row(
+
+                crossAxisAlignment: CrossAxisAlignment.start,
+
+                children: [
+
+                  Expanded(
+
+                    child: Column(
+
+                      crossAxisAlignment: CrossAxisAlignment.start,
+
+                      children: [
+
+                        Text(
+
+                          denominacion,
+
+                          style: const TextStyle(
+
+                            fontWeight: FontWeight.w600,
+
+                            fontSize: 13,
+
+                          ),
+
+                        ),
+
+                        const SizedBox(height: 2),
+
+                        Text(
+
+                          'Cantidad: $cantidadRequerida $unidadReceta',
+
+                          style: TextStyle(
+
+                            fontSize: 12,
+
+                            color: Colors.grey[600],
+
+                          ),
+
+                        ),
+
+                        if (sinCosto)
+
+                          Text(
+
+                            '⚠ Sin precio de costo registrado',
+
+                            style: TextStyle(
+
+                              fontSize: 11,
+
+                              color: Colors.orange[700],
+
+                              fontStyle: FontStyle.italic,
+
+                            ),
+
+                          ),
+
+                      ],
+
+                    ),
+
+                  ),
+
+                  Column(
+
+                    crossAxisAlignment: CrossAxisAlignment.end,
+
+                    children: [
+
+                      Text(
+
+                        '\$${NumberFormat('#,###.00').format(costoTotal)} USD',
+
+                        style: TextStyle(
+
+                          fontWeight: FontWeight.bold,
+
+                          fontSize: 13,
+
+                          color: sinCosto ? Colors.orange[700] : Colors.grey[800],
+
+                        ),
+
+                      ),
+
+                      Text(
+
+                        '(\$${NumberFormat('#,###.000').format(costoUnitario)} c/u)',
+
+                        style: TextStyle(
+
+                          fontSize: 11,
+
+                          color: Colors.grey[500],
+
+                        ),
+
+                      ),
+
+                    ],
+
+                  ),
+
+                ],
+
+              ),
+
+            );
+
+          }),
+
+          // Total de costo de producción
+
+          const SizedBox(height: 8),
+
+          FutureBuilder<double>(
+
+            future: CurrencyService.getEffectiveUsdToCupRate(),
+
+            builder: (context, rateSnap) {
+
+              final rate = rateSnap.data ?? 0.0;
+
+              final totalUsd = _ingredientesConCosto.fold<double>(
+
+                0.0,
+
+                (sum, ing) =>
+
+                    sum + ((ing['costo_total'] as num?)?.toDouble() ?? 0.0),
+
+              );
+
+              final totalCup = totalUsd * rate;
+
+              final precioVentaUsd = _product.precioVentaUsd ?? 0.0;
+
+              final costoSuperaVenta = precioVentaUsd > 0 && totalUsd > precioVentaUsd;
+
+              final cardColor = costoSuperaVenta ? Colors.red[50]! : Colors.grey[100]!;
+
+              final borderColor = costoSuperaVenta ? Colors.red[300]! : Colors.grey[300]!;
+
+              final iconColor = costoSuperaVenta ? Colors.red[700]! : Colors.grey[700]!;
+
+              final labelColor = costoSuperaVenta ? Colors.red[800]! : Colors.grey[800]!;
+
+              final valueColor = costoSuperaVenta ? Colors.red[700]! : Colors.grey[900]!;
+
+              final subColor = costoSuperaVenta ? Colors.red[400]! : Colors.grey[600]!;
+
+              return Container(
+
+                padding: const EdgeInsets.all(12),
+
+                decoration: BoxDecoration(
+
+                  color: cardColor,
+
+                  borderRadius: BorderRadius.circular(10),
+
+                  border: Border.all(color: borderColor),
+
+                ),
+
+                child: Column(
+
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+
+                  children: [
+
+                    Row(
+
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
+                      children: [
+
+                        Row(
+
+                          children: [
+
+                            Icon(
+
+                              costoSuperaVenta ? Icons.warning_amber_rounded : Icons.calculate,
+
+                              color: iconColor,
+
+                              size: 20,
+
+                            ),
+
+                            const SizedBox(width: 8),
+
+                            Text(
+
+                              'Costo Total de Producción',
+
+                              style: TextStyle(
+
+                                fontWeight: FontWeight.w700,
+
+                                fontSize: 14,
+
+                                color: labelColor,
+
+                              ),
+
+                            ),
+
+                          ],
+
+                        ),
+
+                        Column(
+
+                          crossAxisAlignment: CrossAxisAlignment.end,
+
+                          children: [
+
+                            Text(
+
+                              '\$${NumberFormat('#,###.00').format(totalUsd)} USD',
+
+                              style: TextStyle(
+
+                                fontWeight: FontWeight.bold,
+
+                                fontSize: 15,
+
+                                color: valueColor,
+
+                              ),
+
+                            ),
+
+                            if (rate > 0)
+
+                              Text(
+
+                                '₱${NumberFormat('#,###.00').format(totalCup)} CUP',
+
+                                style: TextStyle(
+
+                                  fontSize: 13,
+
+                                  color: subColor,
+
+                                ),
+
+                              ),
+
+                          ],
+
+                        ),
+
+                      ],
+
+                    ),
+
+                    if (costoSuperaVenta) ...[
+
+                      const SizedBox(height: 8),
+
+                      Text(
+
+                        'El costo de producción supera el precio de venta (\$${NumberFormat('#,###.00').format(precioVentaUsd)} USD)',
+
+                        style: TextStyle(
+
+                          fontSize: 11,
+
+                          color: Colors.red[600],
+
+                          fontStyle: FontStyle.italic,
+
+                        ),
+
+                      ),
+
+                    ],
+
+                  ],
+
+                ),
+
+              );
+
+            },
+
+          ),
+
+        ],
 
         ],
 
