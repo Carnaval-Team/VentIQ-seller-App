@@ -85,6 +85,7 @@ CREATE TABLE flow.ultimo_numero (
   id integer NOT NULL DEFAULT nextval('flow.ultimo_numero_id_seq'::regclass),
   id_local_servicio integer NOT NULL UNIQUE,
   ultimo_otorgado integer NOT NULL DEFAULT 0,
+  ultimo_en_anotarse integer NOT NULL DEFAULT 0,
   updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT ultimo_numero_pkey PRIMARY KEY (id),
   CONSTRAINT ultimo_numero_id_local_servicio_fkey FOREIGN KEY (id_local_servicio) REFERENCES flow.local_servicio(id)

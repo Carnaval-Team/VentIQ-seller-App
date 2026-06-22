@@ -20,9 +20,9 @@ class EstadoAgenda {
 
 class Agenda {
   final int id;
-  final String uuidUsuario;
+  final String? uuidUsuario;
   final int idLocalServicio;
-  final int idEstado;
+  final int? idEstado;
   final DateTime fechaHoraReserva;
   final DateTime? fechaHoraAtencion;
   final DateTime createdAt;
@@ -32,9 +32,9 @@ class Agenda {
 
   Agenda({
     required this.id,
-    required this.uuidUsuario,
+    this.uuidUsuario,
     required this.idLocalServicio,
-    required this.idEstado,
+    this.idEstado,
     required this.fechaHoraReserva,
     this.fechaHoraAtencion,
     required this.createdAt,
@@ -44,21 +44,23 @@ class Agenda {
   });
 
   factory Agenda.fromJson(Map<String, dynamic> json) => Agenda(
-        id: json['id'] as int,
-        uuidUsuario: json['uuid_usuario'] as String,
-        idLocalServicio: json['id_local_servicio'] as int,
-        idEstado: json['id_estado'] as int,
+        id: (json['id'] as num).toInt(),
+        uuidUsuario: json['uuid_usuario'] as String?,
+        idLocalServicio: (json['id_local_servicio'] as num).toInt(),
+        idEstado: (json['id_estado'] as num?)?.toInt(),
         fechaHoraReserva: DateTime.parse(json['fecha_hora_reserva'] as String),
         fechaHoraAtencion: json['fecha_hora_atencion'] != null
             ? DateTime.parse(json['fecha_hora_atencion'] as String)
             : null,
         createdAt: DateTime.parse(json['created_at'] as String),
         updatedAt: DateTime.parse(json['updated_at'] as String),
-        estado: json['nom_estado_agenda'] != null
-            ? EstadoAgenda.fromJson(json['nom_estado_agenda'] as Map<String, dynamic>)
+        estado: (json['estado'] ?? json['nom_estado_agenda']) != null
+            ? EstadoAgenda.fromJson((json['estado'] ?? json['nom_estado_agenda']) as Map<String, dynamic>)
             : null,
         localServicio: json['local_servicio'] != null
             ? LocalServicio.fromJson(json['local_servicio'] as Map<String, dynamic>)
-            : null,
+            : (json['local'] != null || json['servicio'] != null)
+                ? LocalServicio.fromJson(json)
+                : null,
       );
 }

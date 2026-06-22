@@ -55,7 +55,7 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
                 ),
                 const Divider(height: 1, indent: 72),
                 SwitchListTile(
-                  title: const Text('Actualizaciones de tickets'),
+                  title: const Text('Actualizaciones de reservas'),
                   subtitle: const Text(
                       'Cuando el estado de tu ticket cambie'),
                   value: _notifTickets,

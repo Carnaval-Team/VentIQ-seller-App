@@ -23,6 +23,10 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
   // Datos derivados para los chips de provincia
   List<String> _provincias = [];
 
+  // Rate limiting: máx 5 refrescos por minuto
+  static const int _maxRefrescosPorMinuto = 5;
+  final List<DateTime> _historialRefrescos = [];
+
   @override
   void initState() {
     super.initState();
@@ -33,6 +37,29 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    final ahora = DateTime.now();
+    final hace1Min = ahora.subtract(const Duration(minutes: 1));
+    _historialRefrescos.removeWhere((t) => t.isBefore(hace1Min));
+
+    if (_historialRefrescos.length >= _maxRefrescosPorMinuto) {
+      final proxDisponible = _historialRefrescos.first.add(const Duration(minutes: 1));
+      final espera = proxDisponible.difference(ahora).inSeconds + 1;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Límite alcanzado. Intenta en $espera s.'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    _historialRefrescos.add(ahora);
+    await _load();
   }
 
   Future<void> _load() async {

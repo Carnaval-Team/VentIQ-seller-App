@@ -135,21 +135,23 @@ class CatalogoService {
   static Future<List<LocalServicio>> getLocalServicios({
     int? idServicio,
     int? idLocal,
+    int? idEntidad,
+    String? nombreServicio,
+    String? nombreLocal,
+    String? pais,
+    String? provincia,
   }) async {
-    var query = _supabase
-        .schema(_schema)
-        .from('local_servicio')
-        .select('*, app_dat_locales(*), app_dat_servicios(*)');
-
-    if (idServicio != null) {
-      query = query.eq('id_servicio', idServicio) as dynamic;
-    }
-    if (idLocal != null) {
-      query = query.eq('id_local', idLocal) as dynamic;
-    }
-
-    final res = await query;
-    return (res as List).map((e) => LocalServicio.fromJson(e)).toList();
+    final res = await _supabase.schema(_schema).rpc('cliente_obtener_servicios', params: {
+      if (idLocal != null) 'p_id_local': idLocal,
+      if (idServicio != null) 'p_id_servicio': idServicio,
+      if (idEntidad != null) 'p_id_entidad': idEntidad,
+      if (nombreLocal != null) 'p_nombre_local': nombreLocal,
+      if (nombreServicio != null) 'p_nombre_servicio': nombreServicio,
+      if (pais != null) 'p_pais': pais,
+      if (provincia != null) 'p_provincia': provincia,
+    });
+    final list = res as List;
+    return list.map((e) => LocalServicio.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   static Future<LocalServicio> getLocalServicio(int id) async {
@@ -160,5 +162,52 @@ class CatalogoService {
         .eq('id', id)
         .single();
     return LocalServicio.fromJson(res);
+  }
+
+  static Future<List<LocalServicio>> getLocalServiciosByEntidad(
+      int idEntidad) async {
+    final res = await _supabase
+        .schema(_schema)
+        .from('local_servicio')
+        .select('*, app_dat_locales(*), app_dat_servicios(*)')
+        .eq('app_dat_locales.id_entidad', idEntidad);
+    return (res as List)
+        .where((e) => e['app_dat_locales'] != null)
+        .map((e) => LocalServicio.fromJson(e))
+        .toList();
+  }
+
+  static Future<LocalServicio> createLocalServicio({
+    required int idLocal,
+    required int idServicio,
+  }) async {
+    final res = await _supabase
+        .schema(_schema)
+        .from('local_servicio')
+        .insert({'id_local': idLocal, 'id_servicio': idServicio})
+        .select('*, app_dat_locales(*), app_dat_servicios(*)')
+        .single();
+    return LocalServicio.fromJson(res);
+  }
+
+  static Future<void> deleteLocalServicio(int id) async {
+    await _supabase
+        .schema(_schema)
+        .from('local_servicio')
+        .delete()
+        .eq('id', id);
+  }
+
+  static Future<bool> existeLocalServicio({
+    required int idLocal,
+    required int idServicio,
+  }) async {
+    final res = await _supabase
+        .schema(_schema)
+        .from('local_servicio')
+        .select('id')
+        .eq('id_local', idLocal)
+        .eq('id_servicio', idServicio);
+    return (res as List).isNotEmpty;
   }
 }

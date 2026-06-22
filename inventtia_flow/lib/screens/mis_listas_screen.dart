@@ -60,8 +60,16 @@ class _MisListasScreenState extends State<MisListasScreen> {
       ),
     );
     if (confirm != true) return;
-    await ListaService.salirDeLista(
-        uuidUsuario: uuid, idLocalServicio: s.idLocalServicio);
+    try {
+      await ListaService.salirSalaEspera(
+          uuidUsuario: uuid, idLocalServicio: s.idLocalServicio);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: AppTheme.error),
+        );
+      }
+    }
     _load();
   }
 
