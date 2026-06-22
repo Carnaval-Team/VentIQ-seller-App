@@ -33,6 +33,8 @@ declare
   v_fecha   timestamp without time zone;
   v_created timestamp without time zone;
   v_recientes integer;
+  v_nombre_servicio text;
+  v_nombre_local    text;
   -- Antifraude: no mas de N entradas (a cualquier cola) por ventana de tiempo
   c_flood_ventana constant interval := interval '1 minute';
   c_flood_max     constant integer  := 5;
@@ -99,6 +101,36 @@ begin
   on conflict (id_local_servicio) do update
     set ultimo_en_anotarse = v_numero,
         updated_at         = current_timestamp;
+
+  -- Notificacion al usuario: "entro satisfactoriamente en la cola".
+  -- Nombres del servicio y del local para un mensaje legible.
+  select s.nombre, l.nombre
+    into v_nombre_servicio, v_nombre_local
+  from flow.local_servicio ls
+  join flow.app_dat_servicios s on s.id = ls.id_servicio
+  join flow.app_dat_locales   l on l.id = ls.id_local
+  where ls.id = p_id_local_servicio;
+
+  insert into flow.notificaciones
+    (uuid_usuario, tipo, titulo, mensaje, id_local_servicio, id_referencia, data)
+  values (
+    p_uuid_usuario,
+    'sala_espera',
+    'Entraste en la cola',
+    'Has entrado satisfactoriamente en la cola para el servicio "'
+      || coalesce(v_nombre_servicio, 'servicio')
+      || '" en el local "' || coalesce(v_nombre_local, 'local')
+      || '" para reserva a partir del '
+      || to_char(v_fecha, 'DD/MM/YYYY') || '.',
+    p_id_local_servicio,
+    v_id,
+    jsonb_build_object(
+      'numero_cola', v_numero,
+      'fecha_regla', v_fecha,
+      'servicio',    v_nombre_servicio,
+      'local',       v_nombre_local
+    )
+  );
 
   return jsonb_build_object(
     'ok', true,
