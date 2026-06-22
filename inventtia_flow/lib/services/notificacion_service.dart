@@ -15,7 +15,7 @@ class NotificacionService {
         .from('notificaciones')
         .select()
         .eq('uuid_usuario', uuidUsuario)
-        .order('created_at', ascending: false)
+        .order('id', ascending: false)
         .limit(limit);
     return (res as List)
         .map((e) => Notificacion.fromJson(e as Map<String, dynamic>))
@@ -63,7 +63,7 @@ class NotificacionService {
         .from('notificaciones')
         .stream(primaryKey: ['id'])
         .eq('uuid_usuario', uuidUsuario)
-        .order('created_at')
+        .order('id',ascending:false)
         .map((rows) =>
             rows.map((e) => Notificacion.fromJson(e)).toList());
   }
