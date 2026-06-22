@@ -76,7 +76,7 @@ class _HomeShellState extends State<HomeShell> {
             icon: Icon(Icons.confirmation_number_outlined),
             selectedIcon:
                 Icon(Icons.confirmation_number, color: AppTheme.primary),
-            label: 'Tickets',
+            label: 'Reservas',
           ),
           if (isAdmin)
             const NavigationDestination(

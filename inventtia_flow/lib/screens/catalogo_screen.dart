@@ -23,6 +23,10 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
   // Datos derivados para los chips de provincia
   List<String> _provincias = [];
 
+  // Rate limiting: máx 5 refrescos por minuto
+  static const int _maxRefrescosPorMinuto = 5;
+  final List<DateTime> _historialRefrescos = [];
+
   @override
   void initState() {
     super.initState();
@@ -33,6 +37,29 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    final ahora = DateTime.now();
+    final hace1Min = ahora.subtract(const Duration(minutes: 1));
+    _historialRefrescos.removeWhere((t) => t.isBefore(hace1Min));
+
+    if (_historialRefrescos.length >= _maxRefrescosPorMinuto) {
+      final proxDisponible = _historialRefrescos.first.add(const Duration(minutes: 1));
+      final espera = proxDisponible.difference(ahora).inSeconds + 1;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Límite alcanzado. Intenta en $espera s.'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    _historialRefrescos.add(ahora);
+    await _load();
   }
 
   Future<void> _load() async {
@@ -222,7 +249,7 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
                           ),
                         )
                       : RefreshIndicator(
-                          onRefresh: _load,
+                          onRefresh: _refresh,
                           child: ListView.builder(
                             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                             itemCount: _filtered.length,
@@ -323,69 +350,53 @@ class _LocalServicioCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // 1° Servicio — título principal
                     Text(
-                      local?.nombre ?? 'Local',
+                      servicio?.nombre ?? 'Servicio',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 15,
                         color: AppTheme.textPrimary,
                       ),
                     ),
-                    if (servicio != null) ...[
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppTheme.accent.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          servicio.nombre,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.accent,
-                            fontWeight: FontWeight.w500,
+                    const SizedBox(height: 3),
+                    // 2° Local — secundario
+                    Row(
+                      children: [
+                        const Icon(Icons.store_outlined,
+                            size: 13, color: AppTheme.textSecondary),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            local?.nombre ?? '',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppTheme.textSecondary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                      ],
+                    ),
+                    // 3° Ubicación — terciario
+                    if (local != null && local.ubicacion.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          const Icon(Icons.map_outlined,
+                              size: 12, color: AppTheme.textSecondary),
+                          const SizedBox(width: 4),
+                          Text(
+                            local.ubicacion,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textSecondary.withOpacity(0.75),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                    const SizedBox(height: 4),
-                    // Ubicación: provincia/país + dirección
-                    if (local != null) ...[
-                      if (local.ubicacion.isNotEmpty)
-                        Row(
-                          children: [
-                            const Icon(Icons.map_outlined,
-                                size: 13, color: AppTheme.textSecondary),
-                            const SizedBox(width: 4),
-                            Text(
-                              local.ubicacion,
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppTheme.textSecondary,
-                                  fontWeight: FontWeight.w500),
-                            ),
-                          ],
-                        ),
-                      if (local.direccion != null)
-                        Row(
-                          children: [
-                            const Icon(Icons.location_on_outlined,
-                                size: 13, color: AppTheme.textSecondary),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                local.direccion!,
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppTheme.textSecondary),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
                     ],
                   ],
                 ),

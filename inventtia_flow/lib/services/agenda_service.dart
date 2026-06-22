@@ -5,16 +5,14 @@ class AgendaService {
   static final SupabaseClient _supabase = Supabase.instance.client;
   static const String _schema = 'flow';
 
-  static Future<List<Agenda>> getMisTickets(String uuidUsuario) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('agenda')
-        .select(
-          '*, nom_estado_agenda(*), local_servicio(*, app_dat_locales(*), app_dat_servicios(*))',
-        )
-        .eq('uuid_usuario', uuidUsuario)
-        .order('fecha_hora_reserva', ascending: false);
-    return (res as List).map((e) => Agenda.fromJson(e)).toList();
+  static Future<List<Agenda>> getMisTickets(String uuidUsuario,
+      {int? idEstado}) async {
+    final res = await _supabase.schema(_schema).rpc('cliente_obtener_agendas', params: {
+      'p_uuid_usuario': uuidUsuario,
+      if (idEstado != null) 'p_id_estado': idEstado,
+    });
+    final list = res as List;
+    return list.map((e) => Agenda.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   static Future<Agenda> crearTicket({

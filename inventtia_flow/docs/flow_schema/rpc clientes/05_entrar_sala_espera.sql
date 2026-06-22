@@ -6,11 +6,15 @@
 --      advisory lock transaccional (no bloquea la tabla, RAM despreciable).
 --   2. Se busca el ultimo numero_cola dado en ese servicio.
 --   3. Se inserta con numero_cola = ultimo + 1.
+--   4. Se hace upsert en ultimo_numero actualizando ultimo_en_anotarse.
 --
 -- Parametros obligatorios: p_uuid_usuario, p_id_local_servicio
 -- p_fecha_regla es opcional (default = ahora).
 -- Devuelve: jsonb con el registro creado o un error controlado.
 -- ============================================================================
+
+-- Añadir columna si no existe (ejecutar una sola vez en migracion):
+-- ALTER TABLE flow.ultimo_numero ADD COLUMN IF NOT EXISTS ultimo_en_anotarse integer NOT NULL DEFAULT 0;
 
 create or replace function flow.cliente_entrar_sala_espera(
   p_uuid_usuario      uuid,
@@ -89,15 +93,23 @@ begin
   values (p_uuid_usuario, p_id_local_servicio, v_fecha, v_numero)
   returning id, created_at into v_id, v_created;
 
+  -- Actualizar ultimo_en_anotarse en ultimo_numero (upsert atomico bajo el mismo advisory lock)
+  insert into flow.ultimo_numero (id_local_servicio, ultimo_otorgado, ultimo_en_anotarse, updated_at)
+  values (p_id_local_servicio, 0, v_numero, current_timestamp)
+  on conflict (id_local_servicio) do update
+    set ultimo_en_anotarse = v_numero,
+        updated_at         = current_timestamp;
+
   return jsonb_build_object(
     'ok', true,
     'data', jsonb_build_object(
-      'id',                v_id,
-      'uuid_usuario',      p_uuid_usuario,
-      'id_local_servicio', p_id_local_servicio,
-      'fecha_regla',       v_fecha,
-      'numero_cola',       v_numero,
-      'created_at',        v_created
+      'id',                  v_id,
+      'uuid_usuario',        p_uuid_usuario,
+      'id_local_servicio',   p_id_local_servicio,
+      'fecha_regla',         v_fecha,
+      'numero_cola',         v_numero,
+      'ultimo_en_anotarse',  v_numero,
+      'created_at',          v_created
     )
   );
 end;
@@ -105,6 +117,9 @@ $$;
 
 grant execute on function flow.cliente_entrar_sala_espera(uuid, integer, timestamp without time zone) to authenticated;
 
+-- Migracion requerida (ejecutar una sola vez en Supabase):
+--   ALTER TABLE flow.ultimo_numero ADD COLUMN IF NOT EXISTS ultimo_en_anotarse integer NOT NULL DEFAULT 0;
+--
 -- Uso:
 --   select flow.cliente_entrar_sala_espera('00000000-0000-0000-0000-000000000000', 5);
 --   select flow.cliente_entrar_sala_espera('00000000-...', 5, '2026-06-22 10:00:00');

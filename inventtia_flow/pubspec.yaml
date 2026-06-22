@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   cupertino_icons: ^1.0.8
 
@@ -20,7 +22,7 @@ dependencies:
 
   # UI
   google_fonts: ^6.2.1
-  intl: ^0.19.0
+  intl: ^0.20.2
   cached_network_image: ^3.4.1
   shimmer: ^3.0.0
 
@@ -40,6 +42,16 @@ dependencies:
   url_launcher: ^6.3.1
   image_picker: ^1.1.2
   flutter_image_compress: ^2.3.0
+
+  # Calendario
+  table_calendar: ^3.1.2
+
+  # Export PDF / Excel
+  pdf: ^3.11.1
+  printing: ^5.13.2
+  excel: ^4.0.6
+  path_provider: ^2.1.5
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:

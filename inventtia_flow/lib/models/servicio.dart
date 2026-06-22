@@ -14,11 +14,13 @@ class Servicio {
   });
 
   factory Servicio.fromJson(Map<String, dynamic> json) => Servicio(
-        id: json['id'] as int,
+        id: (json['id'] as num).toInt(),
         nombre: json['nombre'] as String,
         descripcion: json['descripcion'] as String?,
         foto: json['foto'] as String?,
-        createdAt: DateTime.parse(json['created_at'] as String),
+        createdAt: json['created_at'] != null
+            ? DateTime.parse(json['created_at'] as String)
+            : DateTime.now(),
       );
 }
 
@@ -55,7 +57,7 @@ class Local {
   }
 
   factory Local.fromJson(Map<String, dynamic> json) => Local(
-        id: json['id'] as int,
+        id: (json['id'] as num).toInt(),
         nombre: json['nombre'] as String,
         descripcion: json['descripcion'] as String?,
         horarioAtencion: json['horario_atencion'] as String?,
@@ -65,7 +67,9 @@ class Local {
         pais: json['pais'] as String?,
         provincia: json['provincia'] as String?,
         foto: json['foto'] as String?,
-        createdAt: DateTime.parse(json['created_at'] as String),
+        createdAt: json['created_at'] != null
+            ? DateTime.parse(json['created_at'] as String)
+            : DateTime.now(),
       );
 }
 
@@ -86,16 +90,25 @@ class LocalServicio {
     required this.createdAt,
   });
 
-  factory LocalServicio.fromJson(Map<String, dynamic> json) => LocalServicio(
-        id: json['id'] as int,
-        idLocal: json['id_local'] as int,
-        idServicio: json['id_servicio'] as int,
-        local: json['app_dat_locales'] != null
-            ? Local.fromJson(json['app_dat_locales'] as Map<String, dynamic>)
-            : null,
-        servicio: json['app_dat_servicios'] != null
-            ? Servicio.fromJson(json['app_dat_servicios'] as Map<String, dynamic>)
-            : null,
-        createdAt: DateTime.parse(json['created_at'] as String),
-      );
+  factory LocalServicio.fromJson(Map<String, dynamic> json) {
+    // Soporta formato RPC (id_local_servicio, local, servicio)
+    // y formato PostgREST (id, app_dat_locales, app_dat_servicios)
+    final id = (json['id_local_servicio'] ?? json['id']) as int;
+    final localRaw = json['local'] ?? json['app_dat_locales'];
+    final servicioRaw = json['servicio'] ?? json['app_dat_servicios'];
+    return LocalServicio(
+      id: id,
+      idLocal: (json['id_local'] as int?) ?? (localRaw != null ? (localRaw as Map<String,dynamic>)['id'] as int : 0),
+      idServicio: (json['id_servicio'] as int?) ?? (servicioRaw != null ? (servicioRaw as Map<String,dynamic>)['id'] as int : 0),
+      local: localRaw != null
+          ? Local.fromJson(localRaw as Map<String, dynamic>)
+          : null,
+      servicio: servicioRaw != null
+          ? Servicio.fromJson(servicioRaw as Map<String, dynamic>)
+          : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+    );
+  }
 }

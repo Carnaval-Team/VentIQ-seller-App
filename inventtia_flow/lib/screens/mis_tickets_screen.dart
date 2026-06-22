@@ -80,7 +80,7 @@ class _MisTicketsScreenState extends State<MisTicketsScreen>
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        title: const Text('Mis Tickets'),
+        title: const Text('Mis Reservas'),
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
         ],
@@ -119,7 +119,7 @@ class _MisTicketsScreenState extends State<MisTicketsScreen>
                 size: 64,
                 color: AppTheme.textSecondary.withOpacity(0.4)),
             const SizedBox(height: 16),
-            const Text('No hay tickets',
+            const Text('No hay reservas',
                 style:
                     TextStyle(fontSize: 16, color: AppTheme.textSecondary)),
           ],

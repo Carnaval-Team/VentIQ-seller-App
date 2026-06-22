@@ -8,6 +8,7 @@ import 'entidad_detail_screen.dart';
 import 'gestion_locales_screen.dart';
 import 'gestion_servicios_screen.dart';
 import 'mis_entidades_screen.dart';
+import 'planificacion_screen.dart';
 
 class GestionScreen extends StatelessWidget {
   const GestionScreen({super.key});
@@ -181,16 +182,16 @@ class _GestionBody extends StatelessWidget {
                 ),
               ),
               _ModuloCard(
-                icon: Icons.calendar_month_outlined,
+                icon: Icons.account_tree_outlined,
                 title: 'Planificación',
-                subtitle: 'Turnos y agenda',
+                subtitle: 'Servicios por local',
                 color: const Color(0xFF34C759),
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Próximamente: Planificación')),
-                  );
-                },
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          PlanificacionScreen(entidad: entidad)),
+                ),
               ),
               _ModuloCard(
                 icon: Icons.people_alt_outlined,
