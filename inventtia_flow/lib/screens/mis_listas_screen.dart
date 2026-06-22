@@ -12,10 +12,10 @@ class MisListasScreen extends StatefulWidget {
   const MisListasScreen({super.key});
 
   @override
-  State<MisListasScreen> createState() => _MisListasScreenState();
+  State<MisListasScreen> createState() => MisListasScreenState();
 }
 
-class _MisListasScreenState extends State<MisListasScreen> {
+class MisListasScreenState extends State<MisListasScreen> {
   List<SalaEspera> _listas = [];
   bool _isLoading = true;
 
@@ -25,17 +25,22 @@ class _MisListasScreenState extends State<MisListasScreen> {
     _load();
   }
 
+  void reload() => _load();
+
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final uuid = context.read<AuthProvider>().user?.id ?? '';
       final listas = await ListaService.getMisListas(uuid);
+      if (!mounted) return;
       setState(() {
         _listas = listas;
         _isLoading = false;
       });
-    } catch (_) {
-      setState(() => _isLoading = false);
+    } catch (e) {
+      print('[flow] MisListasScreen _load ERROR: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

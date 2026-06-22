@@ -27,12 +27,18 @@ class CatalogoService {
   static Future<Servicio> createServicio({
     required String nombre,
     String? descripcion,
+    String? foto,
     required int idEntidad,
   }) async {
     final res = await _supabase
         .schema(_schema)
         .from('app_dat_servicios')
-        .insert({'nombre': nombre, 'descripcion': descripcion, 'id_entidad': idEntidad})
+        .insert({
+          'nombre': nombre,
+          'descripcion': descripcion,
+          'foto': foto,
+          'id_entidad': idEntidad,
+        })
         .select()
         .single();
     return Servicio.fromJson(res);
@@ -42,11 +48,12 @@ class CatalogoService {
     required int id,
     required String nombre,
     String? descripcion,
+    String? foto,
   }) async {
     final res = await _supabase
         .schema(_schema)
         .from('app_dat_servicios')
-        .update({'nombre': nombre, 'descripcion': descripcion})
+        .update({'nombre': nombre, 'descripcion': descripcion, if (foto != null) 'foto': foto})
         .eq('id', id)
         .select()
         .single();
@@ -83,6 +90,7 @@ class CatalogoService {
     String? horarioAtencion,
     String? pais,
     String? provincia,
+    String? foto,
     required int idEntidad,
   }) async {
     final res = await _supabase
@@ -95,6 +103,7 @@ class CatalogoService {
           'horario_atencion': horarioAtencion,
           'pais': pais,
           'provincia': provincia,
+          'foto': foto,
           'id_entidad': idEntidad,
         })
         .select()
@@ -110,6 +119,7 @@ class CatalogoService {
     String? horarioAtencion,
     String? pais,
     String? provincia,
+    String? foto,
   }) async {
     final res = await _supabase
         .schema(_schema)
@@ -121,6 +131,7 @@ class CatalogoService {
           'horario_atencion': horarioAtencion,
           'pais': pais,
           'provincia': provincia,
+          if (foto != null) 'foto': foto,
         })
         .eq('id', id)
         .select()

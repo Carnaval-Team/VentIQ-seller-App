@@ -3,7 +3,7 @@ import '../../config/app_theme.dart';
 import '../../models/entidad.dart';
 import '../../models/servicio.dart';
 import '../../services/catalogo_service.dart';
-import 'crear_planificacion_screen.dart';
+import 'crear_planificacion_screen.dart' show CrearPlanificacionScreen;
 import 'revisar_planificacion_screen.dart';
 
 class PlanificacionScreen extends StatefulWidget {

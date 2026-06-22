@@ -143,66 +143,100 @@ class _ReservasScreenState extends State<ReservasScreen> {
   // ──────────────────────────────────────────────────────────────────
   // EXPORT PDF
   // ──────────────────────────────────────────────────────────────────
+  // Agrupa las reservas por nombre de local
+  Map<String, List<Agenda>> _agruparPorLocal() {
+    final map = <String, List<Agenda>>{};
+    for (final r in _reservas) {
+      final key = r.localServicio?.local?.nombre ?? 'Sin local';
+      map.putIfAbsent(key, () => []).add(r);
+    }
+    return map;
+  }
+
   Future<void> _exportPdf() async {
-    final doc = pw.Document();
+    final fontRegular = await PdfGoogleFonts.robotoRegular();
+    final fontBold = await PdfGoogleFonts.robotoBold();
+
+    final doc = pw.Document(
+      theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
+    );
     final filtroDesc = _buildFiltroDesc();
+    final grupos = _agruparPorLocal();
 
     doc.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
+        pageFormat: PdfPageFormat.a4.landscape,
         header: (_) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.Text('Reservas · ${widget.entidad.denominacion}',
+            pw.Text('Reservas - ${widget.entidad.denominacion}',
                 style: pw.TextStyle(
-                    fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                    font: fontBold,
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold)),
             if (filtroDesc.isNotEmpty)
               pw.Text(filtroDesc,
-                  style: const pw.TextStyle(fontSize: 9)),
-            pw.SizedBox(height: 8),
+                  style: pw.TextStyle(font: fontRegular, fontSize: 8)),
+            pw.SizedBox(height: 6),
             pw.Divider(),
           ],
         ),
-        build: (_) => [
-          pw.TableHelper.fromTextArray(
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-            headerDecoration:
-                const pw.BoxDecoration(color: PdfColors.grey300),
-            cellHeight: 28,
-            cellAlignments: {
-              0: pw.Alignment.centerLeft,
-              1: pw.Alignment.centerLeft,
-              2: pw.Alignment.centerLeft,
-              3: pw.Alignment.center,
-              4: pw.Alignment.centerLeft,
-              5: pw.Alignment.centerLeft,
-              6: pw.Alignment.centerLeft,
-            },
-            headers: [
-              'ID', 'Fecha reserva', 'Servicio', 'Estado',
-              'Nombre', 'CI', 'Teléfono',
-            ],
-            data: _reservas.map((r) {
-              final c = r.localServicio;
-              return [
-                '${r.id}',
-                _fmtHora.format(r.fechaHoraReserva),
-                c?.servicio?.nombre ?? '—',
-                r.estado?.nombre ?? '—',
-                '${r.uuidUsuario ?? '—'}',
-                '—',
-                '—',
-              ];
-            }).toList(),
-          ),
-        ],
+        build: (_) {
+          final widgets = <pw.Widget>[];
+          grupos.forEach((localNombre, lista) {
+            widgets.add(
+              pw.Text(localNombre,
+                  style: pw.TextStyle(
+                      font: fontBold,
+                      fontSize: 11,
+                      fontWeight: pw.FontWeight.bold)),
+            );
+            widgets.add(pw.SizedBox(height: 4));
+            widgets.add(
+              pw.TableHelper.fromTextArray(
+                headerStyle: pw.TextStyle(
+                    font: fontBold, fontWeight: pw.FontWeight.bold),
+                headerDecoration:
+                    const pw.BoxDecoration(color: PdfColors.grey300),
+                cellStyle: pw.TextStyle(font: fontRegular, fontSize: 9),
+                cellHeight: 22,
+                cellAlignments: {
+                  0: pw.Alignment.centerLeft,
+                  1: pw.Alignment.centerLeft,
+                  2: pw.Alignment.centerLeft,
+                  3: pw.Alignment.centerLeft,
+                  4: pw.Alignment.centerLeft,
+                  5: pw.Alignment.centerLeft,
+                },
+                headers: [
+                  'Servicio', 'Fecha reserva',
+                  'Nombre', 'Apellidos', 'CI', 'Telefono',
+                ],
+                data: lista.map((r) {
+                  final cli = r.cliente;
+                  return [
+                    r.localServicio?.servicio?.nombre ?? '-',
+                    _fmtHora.format(r.fechaHoraReserva),
+                    cli?.nombre ?? '-',
+                    cli?.apellidos ?? '-',
+                    cli?.ci ?? '-',
+                    cli?.telefono ?? '-',
+                  ];
+                }).toList(),
+              ),
+            );
+            widgets.add(pw.SizedBox(height: 14));
+          });
+          return widgets;
+        },
       ),
     );
 
     final bytes = await doc.save();
     await Printing.sharePdf(
         bytes: Uint8List.fromList(bytes),
-        filename: 'reservas_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf');
+        filename:
+            'reservas_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf');
   }
 
   // ──────────────────────────────────────────────────────────────────
@@ -213,8 +247,8 @@ class _ReservasScreenState extends State<ReservasScreen> {
     final sheet = excel['Reservas'];
 
     final headers = [
-      'ID', 'Fecha reserva', 'Fecha atención', 'Local', 'Servicio',
-      'Estado', 'Nombre', 'Apellidos', 'CI', 'Teléfono',
+      'Local', 'Servicio', 'Fecha reserva',
+      'Nombre', 'Apellidos', 'CI', 'Telefono',
     ];
     for (var i = 0; i < headers.length; i++) {
       final cell = sheet
@@ -223,29 +257,30 @@ class _ReservasScreenState extends State<ReservasScreen> {
       cell.cellStyle = xl.CellStyle(bold: true);
     }
 
-    for (var r = 0; r < _reservas.length; r++) {
-      final ag = _reservas[r];
-      final row = [
-        ag.id.toString(),
-        _fmtHora.format(ag.fechaHoraReserva),
-        ag.fechaHoraAtencion != null
-            ? _fmtHora.format(ag.fechaHoraAtencion!)
-            : '',
-        ag.localServicio?.local?.nombre ?? '',
-        ag.localServicio?.servicio?.nombre ?? '',
-        ag.estado?.nombre ?? '',
-        '',
-        '',
-        '',
-        '',
-      ];
-      for (var c = 0; c < row.length; c++) {
-        sheet
-            .cell(xl.CellIndex.indexByColumnRow(
-                columnIndex: c, rowIndex: r + 1))
-            .value = xl.TextCellValue(row[c]);
+    // Agrupar por local para el Excel
+    final grupos = _agruparPorLocal();
+    int rowIdx = 1;
+    grupos.forEach((localNombre, lista) {
+      for (final ag in lista) {
+        final cli = ag.cliente;
+        final row = [
+          localNombre,
+          ag.localServicio?.servicio?.nombre ?? '',
+          _fmtHora.format(ag.fechaHoraReserva),
+          cli?.nombre ?? '',
+          cli?.apellidos ?? '',
+          cli?.ci ?? '',
+          cli?.telefono ?? '',
+        ];
+        for (var c = 0; c < row.length; c++) {
+          sheet
+              .cell(xl.CellIndex.indexByColumnRow(
+                  columnIndex: c, rowIndex: rowIdx))
+              .value = xl.TextCellValue(row[c]);
+        }
+        rowIdx++;
       }
-    }
+    });
 
     final bytes = excel.encode();
     if (bytes == null) return;
@@ -300,28 +335,26 @@ class _ReservasScreenState extends State<ReservasScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          _buildFiltros(),
-          const Divider(height: 1),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _reservas.isEmpty
-                    ? _buildEmpty()
-                    : RefreshIndicator(
-                        onRefresh: _load,
-                        child: ListView.separated(
-                          padding: const EdgeInsets.all(12),
-                          itemCount: _reservas.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 6),
-                          itemBuilder: (_, i) =>
-                              _ReservaCard(agenda: _reservas[i]),
-                        ),
-                      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: Column(
+            children: [
+              _buildFiltros(),
+              const Divider(height: 1),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _reservas.isEmpty
+                        ? _buildEmpty()
+                        : RefreshIndicator(
+                            onRefresh: _load,
+                            child: _buildTabla(),
+                          ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -401,7 +434,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
                       suffixIcon: Icon(Icons.calendar_today, size: 16),
                     ),
                     child: Text(
-                      _desde != null ? _fmt.format(_desde!) : '—',
+                      _desde != null ? _fmt.format(_desde!) : '-',
                       style: const TextStyle(fontSize: 13),
                     ),
                   ),
@@ -422,7 +455,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
                       suffixIcon: Icon(Icons.calendar_today, size: 16),
                     ),
                     child: Text(
-                      _hasta != null ? _fmt.format(_hasta!) : '—',
+                      _hasta != null ? _fmt.format(_hasta!) : '-',
                       style: const TextStyle(fontSize: 13),
                     ),
                   ),
@@ -453,6 +486,85 @@ class _ReservasScreenState extends State<ReservasScreen> {
     );
   }
 
+  Widget _buildTabla() {
+    final grupos = _agruparPorLocal();
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: grupos.length,
+      itemBuilder: (_, gi) {
+        final localNombre = grupos.keys.elementAt(gi);
+        final lista = grupos[localNombre]!;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (grupos.length > 1) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 8, 0, 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.store_outlined,
+                        size: 14, color: AppTheme.primary),
+                    const SizedBox(width: 6),
+                    Text(localNombre,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: AppTheme.primary)),
+                  ],
+                ),
+              ),
+            ],
+            Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: BorderSide(color: Colors.grey.shade200),
+              ),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  headingRowHeight: 36,
+                  dataRowMinHeight: 32,
+                  dataRowMaxHeight: 44,
+                  columnSpacing: 16,
+                  headingTextStyle: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: AppTheme.textPrimary),
+                  dataTextStyle: const TextStyle(
+                      fontSize: 12, color: AppTheme.textSecondary),
+                  columns: const [
+                    DataColumn(label: Text('Servicio')),
+                    DataColumn(label: Text('Fecha')),
+                    DataColumn(label: Text('Nombre')),
+                    DataColumn(label: Text('Apellidos')),
+                    DataColumn(label: Text('CI')),
+                  ],
+                  rows: lista.map((r) {
+                    final cli = r.cliente;
+                    return DataRow(cells: [
+                      DataCell(Text(
+                          r.localServicio?.servicio?.nombre ?? '-',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.textPrimary))),
+                      DataCell(Text(
+                          _fmt.format(r.fechaHoraReserva))),
+                      DataCell(Text(cli?.nombre ?? '-')),
+                      DataCell(Text(cli?.apellidos ?? '-')),
+                      DataCell(Text(cli?.ci ?? '-')),
+                    ]);
+                  }).toList(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildEmpty() {
     return Center(
       child: Column(
@@ -471,8 +583,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Card de reserva
+// Unused – kept as reference, not called
 // ─────────────────────────────────────────────────────────────────────────────
+// ignore: unused_element
 class _ReservaCard extends StatelessWidget {
   final Agenda agenda;
   const _ReservaCard({required this.agenda});
@@ -481,11 +594,13 @@ class _ReservaCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final estado = agenda.estado;
     final ls = agenda.localServicio;
+    final cliente = agenda.cliente;
     final fmtHora = DateFormat('dd/MM/yyyy HH:mm');
+    final nombreEstado = estado?.nombre.toLowerCase() ?? '';
 
     Color estadoColor = AppTheme.primary;
-    if (estado?.nombre == 'cancelado') estadoColor = AppTheme.error;
-    if (estado?.nombre == 'completado') estadoColor = AppTheme.success;
+    if (nombreEstado == 'cancelado') estadoColor = AppTheme.error;
+    if (nombreEstado == 'completado') estadoColor = AppTheme.success;
 
     return Card(
       elevation: 0,
@@ -498,11 +613,12 @@ class _ReservaCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Fila superior: servicio + estado
             Row(
               children: [
                 Expanded(
                   child: Text(
-                    ls?.servicio?.nombre ?? '—',
+                    ls?.servicio?.nombre ?? '-',
                     style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
@@ -517,7 +633,7 @@ class _ReservaCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    estado?.nombre ?? '—',
+                    estado?.nombre ?? '-',
                     style: TextStyle(
                         color: estadoColor,
                         fontSize: 11,
@@ -528,53 +644,62 @@ class _ReservaCard extends StatelessWidget {
             ),
             if (ls?.local != null) ...[
               const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(Icons.store_outlined,
-                      size: 13, color: AppTheme.textSecondary),
-                  const SizedBox(width: 4),
-                  Text(ls!.local!.nombre,
-                      style: const TextStyle(
-                          fontSize: 12, color: AppTheme.textSecondary)),
-                ],
-              ),
+              _InfoRow(Icons.store_outlined, ls!.local!.nombre),
             ],
             const SizedBox(height: 6),
-            Row(
-              children: [
-                const Icon(Icons.access_time,
-                    size: 13, color: AppTheme.textSecondary),
-                const SizedBox(width: 4),
-                Text(
-                  fmtHora.format(agenda.fechaHoraReserva),
-                  style: const TextStyle(
-                      fontSize: 12, color: AppTheme.textSecondary),
-                ),
-                if (agenda.fechaHoraAtencion != null) ...[
-                  const SizedBox(width: 10),
-                  const Icon(Icons.check_circle_outline,
-                      size: 13, color: AppTheme.success),
-                  const SizedBox(width: 4),
-                  Text(
-                    fmtHora.format(agenda.fechaHoraAtencion!),
-                    style: const TextStyle(
-                        fontSize: 12, color: AppTheme.success),
-                  ),
-                ],
-              ],
+            _InfoRow(
+              Icons.access_time,
+              fmtHora.format(agenda.fechaHoraReserva),
             ),
+            if (agenda.fechaHoraAtencion != null)
+              _InfoRow(
+                Icons.check_circle_outline,
+                fmtHora.format(agenda.fechaHoraAtencion!),
+                color: AppTheme.success,
+              ),
+            // Datos del cliente
+            if (cliente != null) ...[
+              const SizedBox(height: 6),
+              const Divider(height: 1),
+              const SizedBox(height: 6),
+              _InfoRow(Icons.person_outlined,
+                  cliente.nombreCompleto.isNotEmpty
+                      ? cliente.nombreCompleto
+                      : '-'),
+              if (cliente.ci != null && cliente.ci!.isNotEmpty)
+                _InfoRow(Icons.badge_outlined, 'CI: ${cliente.ci}'),
+              if (cliente.telefono != null && cliente.telefono!.isNotEmpty)
+                _InfoRow(Icons.phone_outlined, cliente.telefono!),
+            ],
             const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.tag, size: 13, color: AppTheme.textSecondary),
-                const SizedBox(width: 4),
-                Text('ID: ${agenda.id}',
-                    style: const TextStyle(
-                        fontSize: 11, color: AppTheme.textSecondary)),
-              ],
-            ),
+            _InfoRow(Icons.tag, 'ID: ${agenda.id}'),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color color;
+  const _InfoRow(this.icon, this.text,
+      {this.color = AppTheme.textSecondary});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(text,
+                style: TextStyle(fontSize: 12, color: color)),
+          ),
+        ],
       ),
     );
   }

@@ -1,9 +1,13 @@
+import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../config/app_theme.dart';
 import '../../models/entidad.dart';
 import '../../models/servicio.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/geonames_service.dart';
+import '../../services/imagen_service.dart';
 
 class GestionLocalesScreen extends StatefulWidget {
   final Entidad entidad;
@@ -122,10 +126,15 @@ class _GestionLocalesScreenState extends State<GestionLocalesScreen> {
                           side: BorderSide(color: Colors.grey.shade200),
                         ),
                         child: ListTile(
-                          leading: const CircleAvatar(
+                          leading: CircleAvatar(
                             backgroundColor: AppTheme.surface,
-                            child: Icon(Icons.store_outlined,
-                                color: AppTheme.primary),
+                            backgroundImage: l.foto != null
+                                ? CachedNetworkImageProvider(l.foto!)
+                                : null,
+                            child: l.foto == null
+                                ? const Icon(Icons.store_outlined,
+                                    color: AppTheme.primary)
+                                : null,
                           ),
                           title: Text(l.nombre,
                               style: const TextStyle(
@@ -176,6 +185,10 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
   late final TextEditingController _dirCtrl;
   late final TextEditingController _horarioCtrl;
 
+  // Imagen
+  XFile? _imagenFile;
+  String? _fotoUrl;
+
   // GeoNames
   List<Map<String, dynamic>> _countries = [];
   List<Map<String, dynamic>> _states = [];
@@ -194,6 +207,7 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
     _dirCtrl = TextEditingController(text: widget.local?.direccion ?? '');
     _horarioCtrl =
         TextEditingController(text: widget.local?.horarioAtencion ?? '');
+    _fotoUrl = widget.local?.foto;
     _loadCountries();
   }
 
@@ -261,6 +275,40 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
     }
   }
 
+  Future<void> _pickImagen(ImageSource source) async {
+    final file = await ImagenService.seleccionarImagen(source: source);
+    if (file != null) setState(() => _imagenFile = file);
+  }
+
+  void _showImagenPicker() {
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Galería'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImagen(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Cámara'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImagen(ImageSource.camera);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
@@ -272,8 +320,11 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
     final provinciaNombre =
         _selectedState != null ? _selectedState!['name'] as String : null;
     try {
+      String? fotoFinal = _fotoUrl;
+
       if (widget.local == null) {
-        await CatalogoService.createLocal(
+        // Crear primero, luego subir imagen con el ID generado
+        final nuevo = await CatalogoService.createLocal(
           nombre: _nombreCtrl.text.trim(),
           descripcion: _v(_descCtrl),
           direccion: _v(_dirCtrl),
@@ -282,7 +333,29 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
           provincia: provinciaNombre,
           idEntidad: widget.idEntidad,
         );
+        if (_imagenFile != null) {
+          fotoFinal = await ImagenService.subirImagen(
+            imagen: _imagenFile!,
+            path: ImagenService.pathLocal(nuevo.id),
+          );
+          await CatalogoService.updateLocal(
+            id: nuevo.id,
+            nombre: nuevo.nombre,
+            descripcion: nuevo.descripcion,
+            direccion: nuevo.direccion,
+            horarioAtencion: nuevo.horarioAtencion,
+            pais: nuevo.pais,
+            provincia: nuevo.provincia,
+            foto: fotoFinal,
+          );
+        }
       } else {
+        if (_imagenFile != null) {
+          fotoFinal = await ImagenService.subirImagen(
+            imagen: _imagenFile!,
+            path: ImagenService.pathLocal(widget.local!.id),
+          );
+        }
         await CatalogoService.updateLocal(
           id: widget.local!.id,
           nombre: _nombreCtrl.text.trim(),
@@ -291,6 +364,7 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
           horarioAtencion: _v(_horarioCtrl),
           pais: paisNombre,
           provincia: provinciaNombre,
+          foto: fotoFinal,
         );
       }
       if (!mounted) return;
@@ -327,6 +401,52 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
                     fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
+
+              // ── Selector de imagen ────────────────────────
+              GestureDetector(
+                onTap: _showImagenPicker,
+                child: Container(
+                  height: 140,
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(11),
+                    child: _imagenFile != null
+                        ? Image.file(
+                            File(_imagenFile!.path),
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                          )
+                        : _fotoUrl != null
+                            ? CachedNetworkImage(
+                                imageUrl: _fotoUrl!,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                placeholder: (_, __) => const Center(
+                                    child: CircularProgressIndicator()),
+                                errorWidget: (_, __, ___) =>
+                                    _ImagePlaceholder(
+                                        icon: Icons.store_outlined),
+                              )
+                            : _ImagePlaceholder(icon: Icons.store_outlined),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Center(
+                child: TextButton.icon(
+                  onPressed: _showImagenPicker,
+                  icon: const Icon(Icons.add_photo_alternate_outlined,
+                      size: 16),
+                  label: Text(_imagenFile != null || _fotoUrl != null
+                      ? 'Cambiar imagen'
+                      : 'Agregar imagen'),
+                ),
+              ),
+              const SizedBox(height: 8),
 
               // Nombre
               TextFormField(
@@ -499,6 +619,29 @@ class _GeoDropdown extends StatelessWidget {
                   ))
               .toList(),
         ),
+      ),
+    );
+  }
+}
+
+class _ImagePlaceholder extends StatelessWidget {
+  final IconData icon;
+  const _ImagePlaceholder({required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppTheme.surface,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 36, color: AppTheme.textSecondary.withOpacity(0.4)),
+          const SizedBox(height: 6),
+          Text('Toca para agregar imagen',
+              style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textSecondary.withOpacity(0.6))),
+        ],
       ),
     );
   }

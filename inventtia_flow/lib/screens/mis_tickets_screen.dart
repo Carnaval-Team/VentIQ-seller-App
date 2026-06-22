@@ -10,69 +10,37 @@ class MisTicketsScreen extends StatefulWidget {
   const MisTicketsScreen({super.key});
 
   @override
-  State<MisTicketsScreen> createState() => _MisTicketsScreenState();
+  State<MisTicketsScreen> createState() => MisTicketsScreenState();
 }
 
-class _MisTicketsScreenState extends State<MisTicketsScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class MisTicketsScreenState extends State<MisTicketsScreen> {
   List<Agenda> _tickets = [];
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
     _load();
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
+  void reload() => _load();
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final uuid = context.read<AuthProvider>().user?.id ?? '';
-      final tickets = await AgendaService.getMisTickets(uuid);
+      // Solo reservas en estado 'reservado' (id = 1)
+      final tickets = await AgendaService.getMisTickets(uuid, idEstado: 1);
+      if (!mounted) return;
       setState(() {
         _tickets = tickets;
         _isLoading = false;
       });
-    } catch (_) {
-      setState(() => _isLoading = false);
+    } catch (e) {
+      print('[flow] MisTicketsScreen _load ERROR: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  List<Agenda> _filtrados(String estado) {
-    return _tickets
-        .where((t) => t.estado?.nombre == estado)
-        .toList();
-  }
-
-  Future<void> _cancelar(Agenda ticket) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Cancelar Ticket'),
-        content: const Text('¿Deseas cancelar este ticket?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('No')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
-            child: const Text('Cancelar Ticket'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-    await AgendaService.cancelarTicket(ticket.id);
-    _load();
   }
 
   @override
@@ -84,32 +52,14 @@ class _MisTicketsScreenState extends State<MisTicketsScreen>
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          indicatorColor: Colors.white,
-          tabs: const [
-            Tab(text: 'Reservados'),
-            Tab(text: 'Completados'),
-            Tab(text: 'Cancelados'),
-          ],
-        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildLista(_filtrados('reservado'), canCancel: true),
-                _buildLista(_filtrados('completado')),
-                _buildLista(_filtrados('cancelado')),
-              ],
-            ),
+          : _buildLista(_tickets),
     );
   }
 
-  Widget _buildLista(List<Agenda> lista, {bool canCancel = false}) {
+  Widget _buildLista(List<Agenda> lista) {
     if (lista.isEmpty) {
       return Center(
         child: Column(
@@ -131,10 +81,7 @@ class _MisTicketsScreenState extends State<MisTicketsScreen>
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: lista.length,
-        itemBuilder: (_, i) => _TicketCard(
-          ticket: lista[i],
-          onCancelar: canCancel ? () => _cancelar(lista[i]) : null,
-        ),
+        itemBuilder: (_, i) => _TicketCard(ticket: lista[i]),
       ),
     );
   }
@@ -142,9 +89,8 @@ class _MisTicketsScreenState extends State<MisTicketsScreen>
 
 class _TicketCard extends StatelessWidget {
   final Agenda ticket;
-  final VoidCallback? onCancelar;
 
-  const _TicketCard({required this.ticket, this.onCancelar});
+  const _TicketCard({required this.ticket});
 
   Color get _estadoColor {
     switch (ticket.estado?.nombre) {
@@ -176,6 +122,7 @@ class _TicketCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final local = ticket.localServicio?.local;
     final servicio = ticket.localServicio?.servicio;
+    final cliente = ticket.cliente;
     final fmt = DateFormat('dd/MM/yyyy HH:mm');
 
     return Card(
@@ -265,25 +212,44 @@ class _TicketCard extends StatelessWidget {
                 ],
               ),
             ],
-            if (onCancelar != null) ...[
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: OutlinedButton.icon(
-                  onPressed: onCancelar,
-                  icon: const Icon(Icons.cancel_outlined, size: 16),
-                  label: const Text('Cancelar', style: TextStyle(fontSize: 13)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.error,
-                    side: const BorderSide(color: AppTheme.error),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                ),
-              ),
+            if (cliente != null) ...[
+              const SizedBox(height: 10),
+              const Divider(height: 1),
+              const SizedBox(height: 10),
+              if (cliente.nombreCompleto.isNotEmpty)
+                _ClienteRow(
+                    Icons.person_outlined, cliente.nombreCompleto),
+              if (cliente.ci != null && cliente.ci!.isNotEmpty)
+                _ClienteRow(Icons.badge_outlined, 'CI: ${cliente.ci}'),
+              if (cliente.telefono != null && cliente.telefono!.isNotEmpty)
+                _ClienteRow(Icons.phone_outlined, cliente.telefono!),
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ClienteRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _ClienteRow(this.icon, this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        children: [
+          Icon(icon, size: 13, color: AppTheme.textSecondary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(text,
+                style: const TextStyle(
+                    fontSize: 12, color: AppTheme.textSecondary)),
+          ),
+        ],
       ),
     );
   }
