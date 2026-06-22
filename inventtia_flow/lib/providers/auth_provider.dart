@@ -40,6 +40,7 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e, st) {
       print('[flow] _loadPerfil ERROR: $e\n$st');
+      rethrow;
     }
   }
 
@@ -49,7 +50,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     print('[flow] signIn → $email');
     try {
-      await AuthService.signIn(email: email, password: password);
+      final res = await AuthService.signIn(email: email, password: password);
       print('[flow] signIn → OK');
       // Esperar a que _loadPerfil complete (disparado por authStateChanges)
       // para que hasPerfil sea correcto al navegar
