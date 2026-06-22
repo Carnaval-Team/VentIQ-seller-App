@@ -10,8 +10,10 @@
 -- Todo en UNA operacion set-based (CTE): delete + insert + recount.
 -- Tras repartir, hace UPSERT en flow.ultimo_numero (acumula ultimo_otorgado)
 -- para guardar "por donde se quedo repartiendo" en este id_local_servicio.
+-- Registra CADA corrida en flow.bot_log (ok / sin_movimiento / sin_cupo / error)
+-- incluyendo fallos inesperados via bloque EXCEPTION.
 -- Devuelve: jsonb con cuantos se agendaron.
--- security definer: el bot necesita escribir en agenda/sala_espera/plan/ultimo_numero.
+-- security definer: escribe en agenda/sala_espera/plan/ultimo_numero/bot_log.
 -- ============================================================================
 
 create or replace function flow.bot_procesar_plan(
@@ -38,11 +40,16 @@ begin
   for update;
 
   if not found then
+    insert into flow.bot_log (id_plan, resultado, movidos, mensaje)
+    values (p_id_plan, 'error', 0, 'plan no encontrado');
     return jsonb_build_object('ok', false, 'error', 'plan no encontrado');
   end if;
 
   -- Sin cupo o sin servicio asignado -> nada que hacer
   if v_ls is null or v_cupo is null or v_cupo <= 0 then
+    insert into flow.bot_log (id_plan, id_local_servicio, resultado, movidos, mensaje, detalle)
+    values (p_id_plan, v_ls, 'sin_cupo', 0, 'sin cupo',
+            jsonb_build_object('cupo', v_cupo));
     return jsonb_build_object('ok', true, 'movidos', 0, 'motivo', 'sin cupo');
   end if;
 
@@ -52,6 +59,8 @@ begin
   -- Estado destino para las agendas creadas
   select id into v_estado from flow.nom_estado_agenda where nombre = 'Reservado' limit 1;
   if v_estado is null then
+    insert into flow.bot_log (id_plan, id_local_servicio, resultado, movidos, mensaje)
+    values (p_id_plan, v_ls, 'error', 0, 'falta el estado Reservado (correr migracion 03)');
     return jsonb_build_object('ok', false, 'error', 'falta el estado Reservado (correr migracion 03)');
   end if;
 
@@ -111,12 +120,38 @@ begin
        and se.numero_cola <> r.rn;   -- solo toca filas que realmente cambian
   end if;
 
+  -- Log de la corrida: 'ok' si repartio, 'sin_movimiento' si no habia candidatos.
+  insert into flow.bot_log (id_plan, id_local_servicio, resultado, movidos, mensaje, detalle)
+  values (
+    p_id_plan, v_ls,
+    case when v_movidos > 0 then 'ok' else 'sin_movimiento' end,
+    v_movidos,
+    case when v_movidos > 0
+         then 'repartio ' || v_movidos || ' agenda(s)'
+         else 'sin candidatos en cola' end,
+    jsonb_build_object('cupo', v_cupo, 'fecha_plan', v_fecha)
+  );
+
   return jsonb_build_object(
     'ok', true,
     'id_plan', p_id_plan,
     'id_local_servicio', v_ls,
     'movidos', v_movidos
   );
+
+exception
+  when others then
+    -- Cualquier fallo inesperado: el rollback al savepoint implicito de este
+    -- bloque revierte el reparto, pero este INSERT (posterior) si persiste.
+    insert into flow.bot_log (id_plan, id_local_servicio, resultado, movidos, mensaje, detalle)
+    values (p_id_plan, v_ls, 'error', 0, sqlerrm,
+            jsonb_build_object('sqlstate', sqlstate));
+    return jsonb_build_object(
+      'ok', false,
+      'id_plan', p_id_plan,
+      'error', sqlerrm,
+      'sqlstate', sqlstate
+    );
 end;
 $$;
 

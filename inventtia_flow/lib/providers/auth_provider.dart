@@ -40,6 +40,7 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e, st) {
       print('[flow] _loadPerfil ERROR: $e\n$st');
+      rethrow;
     }
   }
 
@@ -49,8 +50,19 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     print('[flow] signIn → $email');
     try {
-      await AuthService.signIn(email: email, password: password);
+      final res = await AuthService.signIn(email: email, password: password);
       print('[flow] signIn → OK');
+      // Espera la carga del perfil ANTES de retornar, para que hasPerfil esté
+      // actualizado cuando la pantalla decida a dónde navegar. El listener de
+      // authStateChanges también lo dispara, pero de forma async: si no
+      // esperamos aquí, hasPerfil puede seguir en null y mandar a perfil-setup.
+      _user = res.user ?? _user;
+      try {
+        await _loadPerfil();
+      } catch (_) {
+        // Si la carga del perfil falla, no bloqueamos el login: el listener
+        // reintentará y la UI puede manejar perfil null.
+      }
       _isLoading = false;
       notifyListeners();
       return true;
