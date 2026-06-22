@@ -8,8 +8,10 @@
 --   - se detiene cuando agendados == cantidad o no quedan candidatos
 --
 -- Todo en UNA operacion set-based (CTE): delete + insert + recount.
+-- Tras repartir, hace UPSERT en flow.ultimo_numero (acumula ultimo_otorgado)
+-- para guardar "por donde se quedo repartiendo" en este id_local_servicio.
 -- Devuelve: jsonb con cuantos se agendaron.
--- security definer: el bot necesita escribir en agenda/sala_espera/plan.
+-- security definer: el bot necesita escribir en agenda/sala_espera/plan/ultimo_numero.
 -- ============================================================================
 
 create or replace function flow.bot_procesar_plan(
@@ -48,9 +50,9 @@ begin
   perform pg_advisory_xact_lock(hashtext('flow.sala_espera'), v_ls);
 
   -- Estado destino para las agendas creadas
-  select id into v_estado from flow.nom_estado_agenda where nombre = 'Agendado' limit 1;
+  select id into v_estado from flow.nom_estado_agenda where nombre = 'Reservado' limit 1;
   if v_estado is null then
-    return jsonb_build_object('ok', false, 'error', 'falta el estado Agendado (correr migracion 03)');
+    return jsonb_build_object('ok', false, 'error', 'falta el estado Reservado (correr migracion 03)');
   end if;
 
   -- Mover en un solo paso: toma hasta v_cupo candidatos FIFO, los borra de
@@ -83,6 +85,17 @@ begin
     update flow.plan_servicios
        set agendados = agendados + v_movidos
      where id = p_id_plan;
+
+    -- Registra "por donde se quedo repartiendo" en flow.ultimo_numero.
+    -- Como la cola es compacta (se renumera 1..N tras agendar), ultimo_otorgado
+    -- se lleva como contador ACUMULADO del total repartido en este servicio:
+    -- crece de forma monotonica corrida tras corrida.
+    -- UPSERT por id_local_servicio (columna UNIQUE): suma si ya existe, inserta si no.
+    insert into flow.ultimo_numero (id_local_servicio, ultimo_otorgado, updated_at)
+    values (v_ls, v_movidos, current_timestamp)
+    on conflict (id_local_servicio) do update
+      set ultimo_otorgado = flow.ultimo_numero.ultimo_otorgado + excluded.ultimo_otorgado,
+          updated_at      = current_timestamp;
 
     -- Recompacta la cola del servicio: renumera 1..N por orden de llegada,
     -- asi no quedan huecos tras sacar a los del frente.
