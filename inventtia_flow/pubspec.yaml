@@ -91,3 +91,4 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/changelog.json

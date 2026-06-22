@@ -9,6 +9,7 @@ class AuthProvider extends ChangeNotifier {
   Perfil? _perfil;
   bool _isLoading = false;
   String? _error;
+  bool _perfilLoaded = false;
 
   User? get user => _user;
   Perfil? get perfil => _perfil;
@@ -16,15 +17,18 @@ class AuthProvider extends ChangeNotifier {
   String? get error => _error;
   bool get isLoggedIn => _user != null;
   bool get hasPerfil => _perfil != null;
+  bool get perfilLoaded => _perfilLoaded;
 
   AuthProvider() {
     _user = AuthService.currentUser;
     AuthService.authStateChanges.listen((state) {
       _user = state.session?.user;
       if (_user != null) {
+        _perfilLoaded = false;
         _loadPerfil();
       } else {
         _perfil = null;
+        _perfilLoaded = false;
       }
       notifyListeners();
     });
@@ -37,10 +41,11 @@ class AuthProvider extends ChangeNotifier {
     try {
       _perfil = await PerfilService.getPerfil(_user!.id);
       print('[flow] _loadPerfil → perfil cargado: ${_perfil?.nombreCompleto}');
-      notifyListeners();
     } catch (e, st) {
       print('[flow] _loadPerfil ERROR: $e\n$st');
-      rethrow;
+    } finally {
+      _perfilLoaded = true;
+      notifyListeners();
     }
   }
 
@@ -50,11 +55,14 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     print('[flow] signIn → $email');
     try {
-      final res = await AuthService.signIn(email: email, password: password);
+      await AuthService.signIn(email: email, password: password);
       print('[flow] signIn → OK');
-      // Esperar a que _loadPerfil complete (disparado por authStateChanges)
-      // para que hasPerfil sea correcto al navegar
-      await _loadPerfil();
+      // _loadPerfil es disparado por authStateChanges; esperar a que termine
+      int wait = 0;
+      while (!_perfilLoaded && wait < 30) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        wait++;
+      }
       _isLoading = false;
       notifyListeners();
       return true;

@@ -53,9 +53,9 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (auth.isLoggedIn) {
       _setStatus('Cargando perfil...');
-      // Dar tiempo a que el perfil se cargue si ya está en proceso
+      // Esperar a que _loadPerfil termine (con o sin perfil)
       int profileAttempts = 0;
-      while (!auth.hasPerfil && profileAttempts < 15) {
+      while (!auth.perfilLoaded && profileAttempts < 25) {
         await Future.delayed(const Duration(milliseconds: 200));
         profileAttempts++;
         if (!mounted) return;

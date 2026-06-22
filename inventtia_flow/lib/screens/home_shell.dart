@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/entidad_provider.dart';
+import '../services/update_service.dart';
 import 'catalogo_screen.dart';
 import 'mis_listas_screen.dart';
 import 'mis_tickets_screen.dart';
@@ -57,7 +60,208 @@ class _HomeShellState extends State<HomeShell> {
       if (uuid != null) {
         context.read<EntidadProvider>().cargarMisEntidades(uuid);
       }
+      _checkForUpdatesAfterNavigation();
     });
+  }
+
+  static const String _lastUpdateDialogKey = 'flow_last_update_dialog';
+  static const int _updateDialogIntervalHours = 3;
+
+  Future<bool> _shouldShowUpdateDialog() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastTs = prefs.getInt(_lastUpdateDialogKey);
+      if (lastTs == null) return true;
+      final diff = DateTime.now()
+          .difference(DateTime.fromMillisecondsSinceEpoch(lastTs));
+      return diff.inHours >= _updateDialogIntervalHours;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<void> _markUpdateDialogShown() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(
+          _lastUpdateDialogKey, DateTime.now().millisecondsSinceEpoch);
+    } catch (_) {}
+  }
+
+  Future<void> _checkForUpdatesAfterNavigation() async {
+    await Future.delayed(const Duration(seconds: 3));
+    if (!mounted) return;
+    try {
+      final shouldShow = await _shouldShowUpdateDialog();
+      if (!shouldShow) {
+        print('[flow] HomeShell → diálogo de actualización omitido (throttle)');
+        return;
+      }
+      final updateInfo = await UpdateService.checkForUpdates();
+      if (updateInfo['hay_actualizacion'] == true && mounted) {
+        _showUpdateAvailableDialog(updateInfo);
+      }
+    } catch (e) {
+      print('[flow] HomeShell._checkForUpdatesAfterNavigation ERROR: $e');
+    }
+  }
+
+  void _showUpdateAvailableDialog(Map<String, dynamic> updateInfo) {
+    if (!mounted) return;
+    final bool isObligatory = updateInfo['obligatoria'] ?? false;
+    final String newVersion =
+        updateInfo['version_disponible'] ?? 'Desconocida';
+    final String currentVersion =
+        updateInfo['current_version'] ?? 'Desconocida';
+
+    _markUpdateDialogShown();
+
+    showDialog(
+      context: context,
+      barrierDismissible: !isObligatory,
+      builder: (ctx) => WillPopScope(
+        onWillPop: () async => !isObligatory,
+        child: AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Icon(
+                isObligatory ? Icons.warning_amber_rounded : Icons.system_update,
+                color: isObligatory ? Colors.orange : AppTheme.primary,
+                size: 26,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  isObligatory
+                      ? 'Actualización obligatoria'
+                      : 'Nueva versión disponible',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _UpdateInfoRow(
+                  label: 'Versión disponible', value: newVersion, highlight: true),
+              const SizedBox(height: 6),
+              _UpdateInfoRow(
+                  label: 'Versión actual', value: currentVersion),
+              const SizedBox(height: 16),
+              Text(
+                isObligatory
+                    ? 'Esta actualización es obligatoria y debe instalarse para continuar usando la aplicación.'
+                    : 'Se recomienda actualizar para obtener las últimas mejoras y correcciones.',
+                style: TextStyle(
+                  color: isObligatory ? Colors.orange.shade800 : AppTheme.textSecondary,
+                  fontSize: 13,
+                  fontWeight: isObligatory ? FontWeight.w500 : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            if (!isObligatory)
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Más tarde'),
+              ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.download_rounded, size: 18),
+              label: const Text('Descargar'),
+              onPressed: () => _downloadUpdate(ctx),
+              style: ElevatedButton.styleFrom(
+                backgroundColor:
+                    isObligatory ? Colors.orange : AppTheme.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _downloadUpdate(BuildContext dialogCtx) async {
+    final Uri url = Uri.parse(UpdateService.downloadUrl);
+    bool launched = false;
+    try {
+      launched =
+          await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+    if (!launched) {
+      try {
+        launched = await launchUrl(url);
+      } catch (_) {}
+    }
+    if (launched) {
+      if (mounted) Navigator.of(dialogCtx).pop();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Descarga iniciada — instala la nueva versión'),
+            backgroundColor: AppTheme.primary,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    } else {
+      _showManualDownloadDialog(dialogCtx);
+    }
+  }
+
+  void _showManualDownloadDialog(BuildContext parentCtx) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.link, color: AppTheme.primary),
+            SizedBox(width: 8),
+            Text('Descarga manual', style: TextStyle(fontSize: 16)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('No se pudo abrir el enlace automáticamente.\nCópialo y ábrelo en tu navegador:'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: SelectableText(
+                UpdateService.downloadUrl,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              Navigator.of(parentCtx).pop();
+            },
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _onTabSelected(int i, bool isAdmin) {
@@ -114,6 +318,43 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _UpdateInfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool highlight;
+
+  const _UpdateInfoRow({
+    required this.label,
+    required this.value,
+    this.highlight = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          '$label: ',
+          style: const TextStyle(
+              fontSize: 13, color: AppTheme.textSecondary),
+        ),
+        Flexible(
+          child: Text(
+            value,
+            style: TextStyle(
+              fontSize: highlight ? 15 : 13,
+              fontWeight:
+                  highlight ? FontWeight.bold : FontWeight.w500,
+              color: highlight ? AppTheme.primary : AppTheme.textPrimary,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
