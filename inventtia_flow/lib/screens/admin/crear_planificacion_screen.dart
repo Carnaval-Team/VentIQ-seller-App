@@ -40,6 +40,54 @@ class _CrearPlanificacionScreenState extends State<CrearPlanificacionScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     try {
+      // Verificar duplicado antes de mostrar confirmación
+      if (_fecha != null) {
+        final existe = await PlanServicioService.existePlanParaFecha(
+          idLocalServicio: widget.localServicio.id,
+          fecha: _fecha!,
+        );
+        if (existe) {
+          if (!mounted) return;
+          setState(() => _saving = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Ya existe un plan para este servicio en esa fecha'),
+              backgroundColor: AppTheme.error,
+            ),
+          );
+          return;
+        }
+      }
+      if (!mounted) return;
+      setState(() => _saving = false);
+
+      // Mostrar diálogo de confirmación
+      final confirmado = await showDialog<bool>(
+        context: context,
+        builder: (_) => _ConfirmacionDialog(
+          local: widget.localServicio.local,
+          servicio: widget.localServicio.servicio,
+          fecha: _fecha,
+          cantidad: int.parse(_cantidadCtrl.text.trim()),
+        ),
+      );
+      if (confirmado != true) return;
+
+      await _confirmarYCrear();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Error: $e'), backgroundColor: AppTheme.error),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmarYCrear() async {
+    setState(() => _saving = true);
+    try {
       await PlanServicioService.create(
         idLocalServicio: widget.localServicio.id,
         fecha: _fecha,
@@ -350,6 +398,225 @@ class _EmptyPlanes extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Diálogo de confirmación ───────────────────────────────────
+class _ConfirmacionDialog extends StatelessWidget {
+  final dynamic local;
+  final dynamic servicio;
+  final DateTime? fecha;
+  final int cantidad;
+
+  const _ConfirmacionDialog({
+    required this.local,
+    required this.servicio,
+    required this.fecha,
+    required this.cantidad,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fechaStr = fecha != null
+        ? DateFormat('EEEE dd \'de\' MMMM yyyy', 'es').format(fecha!)
+        : 'Sin fecha definida';
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Encabezado
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.fact_check_outlined,
+                      color: AppTheme.primary, size: 22),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Confirmar plan',
+                          style: TextStyle(
+                              fontSize: 17, fontWeight: FontWeight.bold)),
+                      Text('Revisa los detalles antes de crear',
+                          style: TextStyle(
+                              fontSize: 12, color: AppTheme.textSecondary)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            const Divider(height: 1),
+            const SizedBox(height: 20),
+
+            // Fila: Local
+            _DetailRow(
+              icon: Icons.store_outlined,
+              label: 'Local',
+              value: local?.nombre ?? '-',
+              iconColor: const Color(0xFF4F7FFA),
+            ),
+            const SizedBox(height: 14),
+
+            // Fila: Servicio
+            _DetailRow(
+              icon: Icons.miscellaneous_services_outlined,
+              label: 'Servicio',
+              value: servicio?.nombre ?? '-',
+              iconColor: const Color(0xFF7C5CFC),
+            ),
+            const SizedBox(height: 14),
+
+            // Fila: Fecha
+            _DetailRow(
+              icon: Icons.calendar_month_outlined,
+              label: 'Fecha',
+              value: fechaStr,
+              iconColor: const Color(0xFF34C759),
+            ),
+            const SizedBox(height: 20),
+            const Divider(height: 1),
+            const SizedBox(height: 20),
+
+            // Cantidad destacada
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                    color: AppTheme.primary.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withOpacity(0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.group_outlined,
+                        color: AppTheme.primary, size: 22),
+                  ),
+                  const SizedBox(width: 16),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Cantidad de turnos',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary)),
+                    ],
+                  ),
+                  const Spacer(),
+                  Text(
+                    '$cantidad',
+                    style: const TextStyle(
+                      fontSize: 36,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Botones
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Cancelar'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton.icon(
+                    onPressed: () => Navigator.pop(context, true),
+                    icon: const Icon(Icons.check_circle_outline, size: 18),
+                    label: const Text('Confirmar y crear',
+                        style: TextStyle(fontSize: 15)),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color iconColor;
+
+  const _DetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.iconColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(7),
+          decoration: BoxDecoration(
+            color: iconColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: iconColor, size: 16),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  style: const TextStyle(
+                      fontSize: 11, color: AppTheme.textSecondary)),
+              const SizedBox(height: 2),
+              Text(value,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600,
+                      color: AppTheme.textPrimary)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

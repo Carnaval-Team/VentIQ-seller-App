@@ -19,30 +19,53 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _currentIndex = 0;
 
-  static const List<Widget> _screens = [
-    CatalogoScreen(),
-    MisListasScreen(),
-    MisTicketsScreen(),
-    GestionScreen(),
-    PerfilScreen(),
-  ];
+  // GlobalKeys para poder llamar reload() en las pantallas con IndexedStack
+  final GlobalKey<MisListasScreenState> _misListasKey =
+      GlobalKey<MisListasScreenState>();
+  final GlobalKey<MisTicketsScreenState> _misTicketsKey =
+      GlobalKey<MisTicketsScreenState>();
 
-  static const List<Widget> _screensNoAdmin = [
-    CatalogoScreen(),
-    MisListasScreen(),
-    MisTicketsScreen(),
-    PerfilScreen(),
-  ];
+  late final List<Widget> _screens;
+  late final List<Widget> _screensNoAdmin;
+
+  // Índice de tab → tipo de pantalla a refrescar
+  // Admin:    0=Catalogo 1=MisListas 2=MisTickets 3=Gestion 4=Perfil
+  // No admin: 0=Catalogo 1=MisListas 2=MisTickets 3=Perfil
+  static const int _idxListasAdmin = 1;
+  static const int _idxTicketsAdmin = 2;
+  static const int _idxListasNoAdmin = 1;
+  static const int _idxTicketsNoAdmin = 2;
 
   @override
   void initState() {
     super.initState();
+    _screens = [
+      const CatalogoScreen(),
+      MisListasScreen(key: _misListasKey),
+      MisTicketsScreen(key: _misTicketsKey),
+      const GestionScreen(),
+      const PerfilScreen(),
+    ];
+    _screensNoAdmin = [
+      const CatalogoScreen(),
+      MisListasScreen(key: _misListasKey),
+      MisTicketsScreen(key: _misTicketsKey),
+      const PerfilScreen(),
+    ];
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final uuid = context.read<AuthProvider>().user?.id;
       if (uuid != null) {
         context.read<EntidadProvider>().cargarMisEntidades(uuid);
       }
     });
+  }
+
+  void _onTabSelected(int i, bool isAdmin) {
+    final idxListas = isAdmin ? _idxListasAdmin : _idxListasNoAdmin;
+    final idxTickets = isAdmin ? _idxTicketsAdmin : _idxTicketsNoAdmin;
+    if (i == idxListas) _misListasKey.currentState?.reload();
+    if (i == idxTickets) _misTicketsKey.currentState?.reload();
+    setState(() => _currentIndex = i);
   }
 
   @override
@@ -58,7 +81,7 @@ class _HomeShellState extends State<HomeShell> {
       body: IndexedStack(index: safeIndex, children: screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: safeIndex,
-        onDestinationSelected: (i) => setState(() => _currentIndex = i),
+        onDestinationSelected: (i) => _onTabSelected(i, isAdmin),
         backgroundColor: Colors.white,
         indicatorColor: AppTheme.primary.withOpacity(0.12),
         destinations: [

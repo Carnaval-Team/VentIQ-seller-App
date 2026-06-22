@@ -52,17 +52,9 @@ class AuthProvider extends ChangeNotifier {
     try {
       final res = await AuthService.signIn(email: email, password: password);
       print('[flow] signIn → OK');
-      // Espera la carga del perfil ANTES de retornar, para que hasPerfil esté
-      // actualizado cuando la pantalla decida a dónde navegar. El listener de
-      // authStateChanges también lo dispara, pero de forma async: si no
-      // esperamos aquí, hasPerfil puede seguir en null y mandar a perfil-setup.
-      _user = res.user ?? _user;
-      try {
-        await _loadPerfil();
-      } catch (_) {
-        // Si la carga del perfil falla, no bloqueamos el login: el listener
-        // reintentará y la UI puede manejar perfil null.
-      }
+      // Esperar a que _loadPerfil complete (disparado por authStateChanges)
+      // para que hasPerfil sea correcto al navegar
+      await _loadPerfil();
       _isLoading = false;
       notifyListeners();
       return true;
@@ -144,14 +136,16 @@ class AuthProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
     final action = _perfil == null ? 'create' : 'update';
-    print('[flow] savePerfil → $action | ci: $ci | uuid: ${_user!.id}');
+    // En actualización, el CI no cambia: se conserva el del perfil existente
+    final ciFinal = _perfil?.ci ?? ci;
+    print('[flow] savePerfil → $action | ci: $ciFinal | uuid: ${_user!.id}');
     try {
       if (_perfil == null) {
         _perfil = await PerfilService.createPerfil(
           uuidUsuario: _user!.id,
           nombre: nombre,
           apellidos: apellidos,
-          ci: ci,
+          ci: ciFinal,
           telefono: telefono,
         );
       } else {
@@ -159,7 +153,7 @@ class AuthProvider extends ChangeNotifier {
           uuidUsuario: _user!.id,
           nombre: nombre,
           apellidos: apellidos,
-          ci: ci,
+          ci: ciFinal,
           telefono: telefono,
         );
       }

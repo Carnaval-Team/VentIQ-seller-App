@@ -1,8 +1,12 @@
+import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../config/app_theme.dart';
 import '../../models/entidad.dart';
 import '../../models/servicio.dart';
 import '../../services/catalogo_service.dart';
+import '../../services/imagen_service.dart';
 
 class GestionServiciosScreen extends StatefulWidget {
   final Entidad entidad;
@@ -122,11 +126,16 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
                           side: BorderSide(color: Colors.grey.shade200),
                         ),
                         child: ListTile(
-                          leading: const CircleAvatar(
+                          leading: CircleAvatar(
                             backgroundColor: AppTheme.surface,
-                            child: Icon(
-                                Icons.miscellaneous_services_outlined,
-                                color: AppTheme.primary),
+                            backgroundImage: s.foto != null
+                                ? CachedNetworkImageProvider(s.foto!)
+                                : null,
+                            child: s.foto == null
+                                ? const Icon(
+                                    Icons.miscellaneous_services_outlined,
+                                    color: AppTheme.primary)
+                                : null,
                           ),
                           title: Text(s.nombre,
                               style: const TextStyle(
@@ -174,6 +183,8 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nombreCtrl;
   late final TextEditingController _descCtrl;
+  XFile? _imagenFile;
+  String? _fotoUrl;
   bool _saving = false;
 
   @override
@@ -183,6 +194,7 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
         TextEditingController(text: widget.servicio?.nombre ?? '');
     _descCtrl =
         TextEditingController(text: widget.servicio?.descripcion ?? '');
+    _fotoUrl = widget.servicio?.foto;
   }
 
   @override
@@ -192,25 +204,79 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
     super.dispose();
   }
 
+  Future<void> _pickImagen(ImageSource source) async {
+    final file = await ImagenService.seleccionarImagen(source: source);
+    if (file != null) setState(() => _imagenFile = file);
+  }
+
+  void _showImagenPicker() {
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Galería'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImagen(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Cámara'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImagen(ImageSource.camera);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     try {
+      String? fotoFinal = _fotoUrl;
       if (widget.servicio == null) {
-        await CatalogoService.createServicio(
+        final nuevo = await CatalogoService.createServicio(
           nombre: _nombreCtrl.text.trim(),
           descripcion: _descCtrl.text.trim().isEmpty
               ? null
               : _descCtrl.text.trim(),
           idEntidad: widget.idEntidad,
         );
+        if (_imagenFile != null) {
+          fotoFinal = await ImagenService.subirImagen(
+            imagen: _imagenFile!,
+            path: ImagenService.pathServicio(nuevo.id),
+          );
+          await CatalogoService.updateServicio(
+            id: nuevo.id,
+            nombre: nuevo.nombre,
+            descripcion: nuevo.descripcion,
+            foto: fotoFinal,
+          );
+        }
       } else {
+        if (_imagenFile != null) {
+          fotoFinal = await ImagenService.subirImagen(
+            imagen: _imagenFile!,
+            path: ImagenService.pathServicio(widget.servicio!.id),
+          );
+        }
         await CatalogoService.updateServicio(
           id: widget.servicio!.id,
           nombre: _nombreCtrl.text.trim(),
           descripcion: _descCtrl.text.trim().isEmpty
               ? null
               : _descCtrl.text.trim(),
+          foto: fotoFinal,
         );
       }
       if (!mounted) return;
@@ -246,6 +312,46 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
                   fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
+
+            // ── Selector de imagen ────────────────────────
+            GestureDetector(
+              onTap: _showImagenPicker,
+              child: Container(
+                height: 130,
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(11),
+                  child: _imagenFile != null
+                      ? Image.file(File(_imagenFile!.path),
+                          fit: BoxFit.cover, width: double.infinity)
+                      : _fotoUrl != null
+                          ? CachedNetworkImage(
+                              imageUrl: _fotoUrl!,
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              placeholder: (_, __) => const Center(
+                                  child: CircularProgressIndicator()),
+                              errorWidget: (_, __, ___) => _SrvImagePlaceholder(),
+                            )
+                          : _SrvImagePlaceholder(),
+                ),
+              ),
+            ),
+            Center(
+              child: TextButton.icon(
+                onPressed: _showImagenPicker,
+                icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
+                label: Text(_imagenFile != null || _fotoUrl != null
+                    ? 'Cambiar imagen'
+                    : 'Agregar imagen'),
+              ),
+            ),
+            const SizedBox(height: 4),
+
             TextFormField(
               controller: _nombreCtrl,
               textCapitalization: TextCapitalization.words,
@@ -284,6 +390,27 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SrvImagePlaceholder extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppTheme.surface,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.miscellaneous_services_outlined,
+              size: 36, color: AppTheme.textSecondary.withOpacity(0.4)),
+          const SizedBox(height: 6),
+          Text('Toca para agregar imagen',
+              style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textSecondary.withOpacity(0.6))),
+        ],
       ),
     );
   }

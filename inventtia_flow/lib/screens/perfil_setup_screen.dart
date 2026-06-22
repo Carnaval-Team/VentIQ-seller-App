@@ -62,44 +62,47 @@ class _PerfilSetupScreenState extends State<PerfilSetupScreen> {
   }
 
   Future<void> _submit() async {
-    // Validar CI duplicado antes de intentar guardar
-    if (_ciDuplicado) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Este carnet de identidad ya está registrado por otro usuario.'),
-          backgroundColor: AppTheme.error,
-        ),
-      );
-      return;
-    }
-    if (!_formKey.currentState!.validate()) return;
-
-    // Doble verificación server-side antes de guardar
-    final ci = _ciCtrl.text.trim();
-    final uuid = context.read<AuthProvider>().user?.id ?? '';
-    setState(() => _checkingCi = true);
-    bool existe = false;
-    try {
-      existe = await PerfilService.existeCi(ci, excludeUuid: uuid);
-    } catch (_) {
-      // Si falla la verificación, continuamos — el insert fallará
-      // con mensaje amigable si hay duplicado en base de datos
-    }
-    setState(() => _checkingCi = false);
-    if (!mounted) return;
-    if (existe) {
-      setState(() => _ciDuplicado = true);
-      _formKey.currentState?.validate();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Este carnet de identidad ya está registrado por otro usuario.'),
-          backgroundColor: AppTheme.error,
-        ),
-      );
-      return;
-    }
-
     final auth = context.read<AuthProvider>();
+    final isEdit = auth.hasPerfil;
+
+    final ci = _ciCtrl.text.trim();
+
+    if (!isEdit) {
+      // Solo validar CI duplicado en modo creación
+      if (_ciDuplicado) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Este carnet de identidad ya está registrado por otro usuario.'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+        return;
+      }
+      if (!_formKey.currentState!.validate()) return;
+
+      // Doble verificación server-side antes de guardar
+      final uuid = auth.user?.id ?? '';
+      setState(() => _checkingCi = true);
+      bool existe = false;
+      try {
+        existe = await PerfilService.existeCi(ci, excludeUuid: uuid);
+      } catch (_) {}
+      setState(() => _checkingCi = false);
+      if (!mounted) return;
+      if (existe) {
+        setState(() => _ciDuplicado = true);
+        _formKey.currentState?.validate();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Este carnet de identidad ya está registrado por otro usuario.'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+        return;
+      }
+    } else {
+      if (!_formKey.currentState!.validate()) return;
+    }
     final ok = await auth.savePerfil(
       nombre: _nombreCtrl.text.trim(),
       apellidos: _apellidosCtrl.text.trim(),
@@ -195,41 +198,67 @@ class _PerfilSetupScreenState extends State<PerfilSetupScreen> {
                           (v == null || v.trim().isEmpty) ? 'Requerido' : null,
                     ),
                     const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _ciCtrl,
-                      keyboardType: TextInputType.number,
-                      maxLength: 11,
-                      onChanged: (v) {
-                        if (_ciDuplicado) setState(() => _ciDuplicado = false);
-                        if (v.trim().length == 11) _checkCiDuplicado(v.trim());
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'Carnet de Identidad (11 dígitos)',
-                        prefixIcon: const Icon(Icons.badge_outlined),
-                        counterText: '',
-                        suffixIcon: _checkingCi
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                ),
-                              )
-                            : _ciDuplicado
-                                ? const Icon(Icons.error, color: AppTheme.error)
-                                : _ciCtrl.text.length == 11
-                                    ? const Icon(Icons.check_circle, color: AppTheme.success)
-                                    : null,
+                    if (isEdit)
+                      // En edición: CI de solo lectura
+                      InputDecorator(
+                        decoration: InputDecoration(
+                          labelText: 'Carnet de Identidad',
+                          prefixIcon: const Icon(Icons.badge_outlined),
+                          filled: true,
+                          fillColor: Colors.grey.shade100,
+                          border: const OutlineInputBorder(),
+                          suffixIcon: Tooltip(
+                            message: 'El CI no puede modificarse',
+                            child: Icon(Icons.lock_outline,
+                                size: 18,
+                                color: AppTheme.textSecondary.withOpacity(0.5)),
+                          ),
+                        ),
+                        child: Text(
+                          _ciCtrl.text,
+                          style: const TextStyle(
+                              color: AppTheme.textSecondary, fontSize: 15),
+                        ),
+                      )
+                    else
+                      TextFormField(
+                        controller: _ciCtrl,
+                        keyboardType: TextInputType.number,
+                        maxLength: 11,
+                        onChanged: (v) {
+                          if (_ciDuplicado) setState(() => _ciDuplicado = false);
+                          if (v.trim().length == 11) _checkCiDuplicado(v.trim());
+                        },
+                        decoration: InputDecoration(
+                          labelText: 'Carnet de Identidad (11 dígitos)',
+                          prefixIcon: const Icon(Icons.badge_outlined),
+                          counterText: '',
+                          suffixIcon: _checkingCi
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                )
+                              : _ciDuplicado
+                                  ? const Icon(Icons.error, color: AppTheme.error)
+                                  : _ciCtrl.text.length == 11
+                                      ? const Icon(Icons.check_circle,
+                                          color: AppTheme.success)
+                                      : null,
+                        ),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) return 'Requerido';
+                          if (v.trim().length != 11) return 'Debe tener 11 dígitos';
+                          if (!RegExp(r'^\d+$').hasMatch(v.trim()))
+                            return 'Solo números';
+                          if (_ciDuplicado)
+                            return 'Este CI ya está registrado por otro usuario';
+                          return null;
+                        },
                       ),
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) return 'Requerido';
-                        if (v.trim().length != 11) return 'Debe tener 11 dígitos';
-                        if (!RegExp(r'^\d+$').hasMatch(v.trim())) return 'Solo números';
-                        if (_ciDuplicado) return 'Este CI ya está registrado por otro usuario';
-                        return null;
-                      },
-                    ),
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _telefonoCtrl,

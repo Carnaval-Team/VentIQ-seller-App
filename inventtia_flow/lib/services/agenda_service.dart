@@ -11,6 +11,7 @@ class AgendaService {
       'p_uuid_usuario': uuidUsuario,
       if (idEstado != null) 'p_id_estado': idEstado,
     });
+    if (res == null) return [];
     final list = res as List;
     return list.map((e) => Agenda.fromJson(e as Map<String, dynamic>)).toList();
   }
