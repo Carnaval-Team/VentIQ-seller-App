@@ -118,6 +118,20 @@ begin
       from reord r
      where se.id = r.id
        and se.numero_cola <> r.rn;   -- solo toca filas que realmente cambian
+
+    -- Si la cola quedo VACIA tras despachar a todos, reinicia los contadores
+    -- de flow.ultimo_numero: es una cola "nueva" porque ya no queda nadie
+    -- esperando. ultimo_otorgado y ultimo_en_anotarse vuelven a 0 para que
+    -- la proxima persona que se anote empiece a numerar desde cero otra vez.
+    if not exists (
+      select 1 from flow.sala_espera se where se.id_local_servicio = v_ls
+    ) then
+      update flow.ultimo_numero
+         set ultimo_otorgado    = 0,
+             ultimo_en_anotarse = 0,
+             updated_at         = current_timestamp
+       where id_local_servicio = v_ls;
+    end if;
   end if;
 
   -- Log de la corrida: 'ok' si repartio, 'sin_movimiento' si no habia candidatos.

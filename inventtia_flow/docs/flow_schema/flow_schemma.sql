@@ -86,6 +86,7 @@ CREATE TABLE flow.ultimo_numero (
   id_local_servicio integer NOT NULL UNIQUE,
   ultimo_otorgado integer NOT NULL DEFAULT 0,
   updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  ultimo_en_anotarse integer,
   CONSTRAINT ultimo_numero_pkey PRIMARY KEY (id),
   CONSTRAINT ultimo_numero_id_local_servicio_fkey FOREIGN KEY (id_local_servicio) REFERENCES flow.local_servicio(id)
 );
@@ -130,4 +131,15 @@ CREATE TABLE flow.entidad_admin (
   CONSTRAINT entidad_admin_id_entidad_fkey FOREIGN KEY (id_entidad) REFERENCES flow.entidad(id),
   CONSTRAINT entidad_admin_uuid_usuario_fkey FOREIGN KEY (uuid_usuario) REFERENCES auth.users(id),
   CONSTRAINT entidad_admin_asignado_por_fkey FOREIGN KEY (asignado_por) REFERENCES auth.users(id)
+);
+CREATE TABLE flow.bot_log (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_plan bigint,
+  id_local_servicio integer,
+  resultado text NOT NULL,
+  movidos integer NOT NULL DEFAULT 0,
+  mensaje text,
+  detalle jsonb,
+  created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT bot_log_pkey PRIMARY KEY (id)
 );
