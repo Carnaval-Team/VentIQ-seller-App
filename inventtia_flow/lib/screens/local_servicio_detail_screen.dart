@@ -6,6 +6,7 @@ import '../models/servicio.dart';
 import '../models/sala_espera.dart';
 import '../providers/auth_provider.dart';
 import '../services/lista_service.dart';
+import '../widgets/net_image.dart';
 
 class LocalServicioDetailScreen extends StatefulWidget {
   final LocalServicio localServicio;
@@ -234,10 +235,11 @@ class _LocalServicioDetailScreenState
           fit: StackFit.expand,
           children: [
             if (local?.foto != null && local!.foto!.isNotEmpty)
-              Image.network(
-                local.foto!,
+              NetImage(
+                url: local!.foto!,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _headerFallback(),
+                placeholder: () => _headerFallback(),
+                errorWidget: () => _headerFallback(),
               )
             else
               _headerFallback(),
