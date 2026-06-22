@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../config/app_theme.dart';
@@ -8,6 +9,7 @@ import '../../models/servicio.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/geonames_service.dart';
 import '../../services/imagen_service.dart';
+import '../../widgets/net_image.dart';
 
 class GestionLocalesScreen extends StatefulWidget {
   final Entidad entidad;
@@ -129,7 +131,9 @@ class _GestionLocalesScreenState extends State<GestionLocalesScreen> {
                           leading: CircleAvatar(
                             backgroundColor: AppTheme.surface,
                             backgroundImage: l.foto != null
-                                ? CachedNetworkImageProvider(l.foto!)
+                                ? (kIsWeb
+                                    ? NetworkImage(l.foto!) as ImageProvider
+                                    : CachedNetworkImageProvider(l.foto!))
                                 : null,
                             child: l.foto == null
                                 ? const Icon(Icons.store_outlined,
@@ -421,13 +425,13 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
                             width: double.infinity,
                           )
                         : _fotoUrl != null
-                            ? CachedNetworkImage(
-                                imageUrl: _fotoUrl!,
+                            ? NetImage(
+                                url: _fotoUrl!,
                                 fit: BoxFit.cover,
                                 width: double.infinity,
-                                placeholder: (_, __) => const Center(
+                                placeholder: () => const Center(
                                     child: CircularProgressIndicator()),
-                                errorWidget: (_, __, ___) =>
+                                errorWidget: () =>
                                     _ImagePlaceholder(
                                         icon: Icons.store_outlined),
                               )

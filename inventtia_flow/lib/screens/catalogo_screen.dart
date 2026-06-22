@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../models/servicio.dart';
 import '../services/catalogo_service.dart';
+import '../widgets/net_image.dart';
 import '../widgets/notificaciones_bell.dart';
 import 'local_servicio_detail_screen.dart';
 
@@ -554,10 +555,10 @@ class _LocalServicioCard extends StatelessWidget {
                           ),
                           clipBehavior: Clip.antiAlias,
                           child: local?.foto != null
-                              ? Image.network(
-                                  local!.foto!,
+                              ? NetImage(
+                                  url: local!.foto!,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const Icon(
+                                  errorWidget: () => const Icon(
                                       Icons.storefront,
                                       color: AppTheme.primary,
                                       size: 30),

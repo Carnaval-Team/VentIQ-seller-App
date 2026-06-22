@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../config/app_theme.dart';
@@ -7,6 +8,7 @@ import '../../models/entidad.dart';
 import '../../models/servicio.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/imagen_service.dart';
+import '../../widgets/net_image.dart';
 
 class GestionServiciosScreen extends StatefulWidget {
   final Entidad entidad;
@@ -129,7 +131,9 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
                           leading: CircleAvatar(
                             backgroundColor: AppTheme.surface,
                             backgroundImage: s.foto != null
-                                ? CachedNetworkImageProvider(s.foto!)
+                                ? (kIsWeb
+                                    ? NetworkImage(s.foto!) as ImageProvider
+                                    : CachedNetworkImageProvider(s.foto!))
                                 : null,
                             child: s.foto == null
                                 ? const Icon(
@@ -329,13 +333,13 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
                       ? Image.file(File(_imagenFile!.path),
                           fit: BoxFit.cover, width: double.infinity)
                       : _fotoUrl != null
-                          ? CachedNetworkImage(
-                              imageUrl: _fotoUrl!,
+                          ? NetImage(
+                              url: _fotoUrl!,
                               fit: BoxFit.cover,
                               width: double.infinity,
-                              placeholder: (_, __) => const Center(
+                              placeholder: () => const Center(
                                   child: CircularProgressIndicator()),
-                              errorWidget: (_, __, ___) => _SrvImagePlaceholder(),
+                              errorWidget: () => _SrvImagePlaceholder(),
                             )
                           : _SrvImagePlaceholder(),
                 ),
