@@ -82,30 +82,45 @@ begin
     else 'Buenas noches'
   end;
 
-  -- Mover en un solo paso: toma hasta v_cupo candidatos FIFO, los borra de
-  -- sala_espera e inserta sus agendas. skip locked por robustez ante concurrencia.
+  -- Reparto en un solo paso (set-based). ORDEN IMPORTANTE para no sacar a nadie
+  -- de la cola sin darle reserva:
+  --   1) candidatos: hasta v_cupo elegibles, FIFO, bloqueados (skip locked).
+  --   2) insertados: se CREA la agenda primero (una por candidato).
+  --   3) borrados:   se elimina de sala_espera SOLO a quienes quedaron en
+  --                  'insertados' (los que de verdad recibieron agenda).
+  -- Como 'borrados' depende del RETURNING de 'insertados', Postgres garantiza
+  -- que nunca se borra a un candidato que no haya sido reservado. Si en el
+  -- futuro la insercion se vuelve condicional, los no reservados permanecen en
+  -- la cola y podran recibir reserva en una corrida posterior.
   -- El CTE 'notificados' crea una notificacion por cada reserva confirmada;
   -- como es data-modifying, Postgres lo ejecuta siempre aunque no se lea.
   with candidatos as (
-    select se.id
+    select se.id, se.uuid_usuario
     from flow.sala_espera se
     where se.id_local_servicio = v_ls
-      and se.fecha_regla <= v_fecha          -- plan.fecha >= fecha_regla
+      -- Compara por DIA en hora local (America/Havana). Antes era
+      -- 'se.fecha_regla <= v_fecha', que casteaba el timestamp naive de
+      -- fecha_regla usando la tz de la conexion (cron/service_role suele ser
+      -- UTC, sesion interactiva America/Havana): el limite de dia se desplazaba
+      -- y se barrian candidatos del dia equivocado, borrandolos de la cola.
+      -- Solo califican los cuya fecha pedida (dia) sea <= al dia del plan.
+      and se.fecha_regla::date <= (v_fecha at time zone 'America/Havana')::date
     order by se.numero_cola
     limit v_cupo
     for update skip locked
+  ),
+  insertados as (
+    insert into flow.agenda (uuid_usuario, id_local_servicio, id_estado, fecha_hora_reserva)
+    select c.uuid_usuario, v_ls, v_estado, v_fecha
+    from candidatos c
+    returning uuid_usuario, id, fecha_hora_reserva
   ),
   borrados as (
     delete from flow.sala_espera se
     using candidatos c
     where se.id = c.id
-    returning se.uuid_usuario
-  ),
-  insertados as (
-    insert into flow.agenda (uuid_usuario, id_local_servicio, id_estado, fecha_hora_reserva)
-    select b.uuid_usuario, v_ls, v_estado, v_fecha
-    from borrados b
-    returning uuid_usuario, id, fecha_hora_reserva
+      and se.uuid_usuario in (select uuid_usuario from insertados)
+    returning se.id
   ),
   notificados as (
     insert into flow.notificaciones

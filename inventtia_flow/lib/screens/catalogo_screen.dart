@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../models/servicio.dart';
 import '../services/catalogo_service.dart';
+import '../widgets/notificaciones_bell.dart';
 import 'local_servicio_detail_screen.dart';
 
 class CatalogoScreen extends StatefulWidget {
@@ -213,16 +214,8 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
                       ],
                     ),
                   ),
-                  // Logo en pastilla translúcida
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(Icons.bolt_rounded,
-                        color: Colors.white, size: 26),
-                  ),
+                  // Campana de notificaciones con badge de no leídas.
+                  const NotificacionesBell(color: Colors.white),
                 ],
               ),
               const SizedBox(height: 20),

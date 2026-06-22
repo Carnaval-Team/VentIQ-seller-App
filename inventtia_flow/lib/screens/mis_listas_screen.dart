@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../services/lista_service.dart';
 import 'local_servicio_detail_screen.dart';
 import '../services/catalogo_service.dart';
+import '../widgets/notificaciones_bell.dart';
 
 class MisListasScreen extends StatefulWidget {
   const MisListasScreen({super.key});
@@ -86,6 +87,10 @@ class MisListasScreenState extends State<MisListasScreen> {
         title: const Text('Mis Listas'),
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
+          const Padding(
+            padding: EdgeInsets.only(right: 12, left: 4),
+            child: NotificacionesBell(color: Colors.white),
+          ),
         ],
       ),
       body: _isLoading

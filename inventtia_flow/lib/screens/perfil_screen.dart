@@ -4,6 +4,7 @@ import '../config/app_theme.dart';
 import '../models/entidad.dart';
 import '../providers/auth_provider.dart';
 import '../providers/entidad_provider.dart';
+import '../widgets/notificaciones_bell.dart';
 import 'perfil_setup_screen.dart';
 import 'admin/entidad_detail_screen.dart';
 import 'admin/gestion_locales_screen.dart';
@@ -46,7 +47,15 @@ class PerfilScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppTheme.surface,
-      appBar: AppBar(title: const Text('Mi Perfil')),
+      appBar: AppBar(
+        title: const Text('Mi Perfil'),
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 12, left: 4),
+            child: NotificacionesBell(color: Colors.white),
+          ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(

@@ -5,6 +5,7 @@ import '../config/app_theme.dart';
 import '../models/agenda.dart';
 import '../providers/auth_provider.dart';
 import '../services/agenda_service.dart';
+import '../widgets/notificaciones_bell.dart';
 
 class MisTicketsScreen extends StatefulWidget {
   const MisTicketsScreen({super.key});
@@ -51,6 +52,10 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
         title: const Text('Mis Reservas'),
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
+          const Padding(
+            padding: EdgeInsets.only(right: 12, left: 4),
+            child: NotificacionesBell(color: Colors.white),
+          ),
         ],
       ),
       body: _isLoading

@@ -8,6 +8,8 @@ import 'config/supabase_config.dart';
 import 'config/app_theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/entidad_provider.dart';
+import 'providers/notificacion_provider.dart';
+import 'services/local_notifications.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
@@ -24,6 +26,9 @@ Future<void> main() async {
     anonKey: SupabaseConfig.supabaseAnonKey,
   );
 
+  // Notificaciones locales del sistema (no-op en Web).
+  await LocalNotifications.init();
+
   runApp(const FlowApp());
 }
 
@@ -36,6 +41,7 @@ class FlowApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => EntidadProvider()),
+        ChangeNotifierProvider(create: (_) => NotificacionProvider()),
       ],
       child: MaterialApp(
         title: 'Flow',
