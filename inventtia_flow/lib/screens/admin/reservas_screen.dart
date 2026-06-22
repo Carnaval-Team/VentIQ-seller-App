@@ -7,7 +7,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:share_plus/share_plus.dart' show Share, XFile;
 import 'dart:io';
 
 import '../../config/app_theme.dart';
@@ -253,8 +253,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
     final file = File(
         '${dir.path}/reservas_${DateFormat('yyyyMMdd').format(DateTime.now())}.xlsx');
     await file.writeAsBytes(bytes);
-    await SharePlus.instance.share(
-      ShareParams(files: [XFile(file.path)], text: 'Reservas exportadas'),
+    await Share.shareXFiles(
+      [XFile(file.path)],
+      text: 'Reservas exportadas',
     );
   }
 
