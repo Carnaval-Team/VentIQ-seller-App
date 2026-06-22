@@ -33,7 +33,7 @@ dependencies:
   flutter_local_notifications: ^18.0.1
 
   # Splash nativo
-  flutter_native_splash: ^2.4.3
+  flutter_native_splash: ^2.4.4
 
   # HTTP
   http: ^1.2.2
@@ -50,6 +50,7 @@ dependencies:
   pdf: ^3.11.1
   printing: ^5.13.2
   excel: ^4.0.6
+  # excel: ^5.0.0  # Actualizar cuando excel 5.x sea estable
   path_provider: ^2.1.5
   share_plus: ^10.1.4
 

@@ -19,6 +19,13 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// Fuerza compileSdk >= 36 en todos los plugins para evitar conflictos de AAR metadata
+subprojects {
+    plugins.withId("com.android.library") {
+        extensions.findByType(com.android.build.gradle.LibraryExtension::class)?.compileSdk = 36
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
