@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../models/entidad.dart';
 import '../providers/auth_provider.dart';
 import '../providers/entidad_provider.dart';
+import '../services/update_service.dart';
 import 'perfil_setup_screen.dart';
 import 'admin/entidad_detail_screen.dart';
 import 'admin/gestion_locales_screen.dart';
@@ -31,9 +33,13 @@ class PerfilScreen extends StatelessWidget {
       ),
     );
     if (confirm == true && context.mounted) {
-      context.read<EntidadProvider>().limpiar();
-      await context.read<AuthProvider>().signOut();
+      final auth = context.read<AuthProvider>();
+      final entidad = context.read<EntidadProvider>();
+      // Navegar primero antes de que signOut dispare notifyListeners
+      // y potencialmente invalide el contexto
       Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
+      entidad.limpiar();
+      await auth.signOut();
     }
   }
 
@@ -146,6 +152,10 @@ class PerfilScreen extends StatelessWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 16),
+
+            // ── Versión de la app ─────────────────────────────
+            const _AppVersionSection(),
             const SizedBox(height: 16),
 
             // ── Cerrar sesión ────────────────────────────────
@@ -511,6 +521,223 @@ class _NuevaEntidadSheetState extends State<_NuevaEntidadSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Sección versión de la app ──────────────────────────────────
+class _AppVersionSection extends StatefulWidget {
+  const _AppVersionSection();
+
+  @override
+  State<_AppVersionSection> createState() => _AppVersionSectionState();
+}
+
+class _AppVersionSectionState extends State<_AppVersionSection> {
+  String _version = '...';
+  int _build = 0;
+  bool _checking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await UpdateService.getCurrentVersionInfo();
+      if (mounted) {
+        setState(() {
+          _version = info['current_version'] ?? '1.0.0';
+          _build = info['build'] ?? 1;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _checkUpdates() async {
+    setState(() => _checking = true);
+    try {
+      final updateInfo = await UpdateService.checkForUpdates();
+      if (!mounted) return;
+      setState(() => _checking = false);
+      if (updateInfo['hay_actualizacion'] == true) {
+        _showUpdateDialog(updateInfo);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('La aplicación está actualizada'),
+            backgroundColor: AppTheme.primary,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _checking = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al verificar: $e'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showUpdateDialog(Map<String, dynamic> updateInfo) {
+    final bool isObligatory = updateInfo['obligatoria'] ?? false;
+    final String newVersion = updateInfo['version_disponible'] ?? '';
+    showDialog(
+      context: context,
+      barrierDismissible: !isObligatory,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(
+              isObligatory ? Icons.warning_amber_rounded : Icons.system_update,
+              color: isObligatory ? Colors.orange : AppTheme.primary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                isObligatory ? 'Actualización obligatoria' : 'Nueva versión disponible',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                maxLines: 2,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _VersionRow(label: 'Versión disponible', value: newVersion, highlight: true),
+            const SizedBox(height: 6),
+            _VersionRow(label: 'Versión actual', value: _version),
+            const SizedBox(height: 16),
+            Text(
+              isObligatory
+                  ? 'Esta actualización es obligatoria para continuar usando la aplicación.'
+                  : 'Se recomienda actualizar para obtener las últimas mejoras.',
+              style: TextStyle(
+                color: isObligatory ? Colors.orange.shade800 : AppTheme.textSecondary,
+                fontSize: 13,
+                fontWeight: isObligatory ? FontWeight.w500 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          if (!isObligatory)
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Más tarde'),
+            ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.download_rounded, size: 18),
+            label: const Text('Descargar'),
+            onPressed: () async {
+              final url = Uri.parse(UpdateService.downloadUrl);
+              bool ok = false;
+              try {
+                ok = await launchUrl(url, mode: LaunchMode.externalApplication);
+              } catch (_) {}
+              if (!ok) {
+                try { ok = await launchUrl(url); } catch (_) {}
+              }
+              if (ok && mounted) Navigator.of(ctx).pop();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isObligatory ? Colors.orange : AppTheme.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.info_outline, color: AppTheme.primary, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Versión de la app',
+                      style: TextStyle(
+                          fontSize: 12, color: AppTheme.textSecondary)),
+                  const SizedBox(height: 2),
+                  Text(
+                    'v$_version (build $_build)',
+                    style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary),
+                  ),
+                ],
+              ),
+            ),
+            _checking
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: AppTheme.primary),
+                  )
+                : TextButton(
+                    onPressed: _checkUpdates,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      foregroundColor: AppTheme.primary,
+                    ),
+                    child: const Text('Verificar', style: TextStyle(fontSize: 13)),
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VersionRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool highlight;
+  const _VersionRow({required this.label, required this.value, this.highlight = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text('$label: ',
+            style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+        Flexible(
+          child: Text(value,
+              style: TextStyle(
+                fontSize: highlight ? 15 : 13,
+                fontWeight: highlight ? FontWeight.bold : FontWeight.w500,
+                color: highlight ? AppTheme.primary : AppTheme.textPrimary,
+              )),
+        ),
+      ],
     );
   }
 }

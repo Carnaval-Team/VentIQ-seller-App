@@ -1,0 +1,29 @@
+{
+  "app_name": "inventtia_flow",
+  "current_version": "1.0.0",
+  "build": 1,
+  "changelogs": [
+    {
+      "version": "1.0.0",
+      "date": "2026-06-22",
+      "title": "🚀 Lanzamiento inicial de Flow",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Catálogo de servicios",
+          "description": "Explora y reserva turnos en servicios cercanos."
+        },
+        {
+          "type": "feature",
+          "title": "Gestión de planificaciones",
+          "description": "Los administradores pueden crear y gestionar planes de turnos por fecha y cantidad."
+        },
+        {
+          "type": "feature",
+          "title": "Reservas y tickets",
+          "description": "Los usuarios pueden reservar turnos y consultar sus tickets desde la app."
+        }
+      ]
+    }
+  ]
+}
