@@ -325,7 +325,7 @@ class _LocalServicioDetailScreenState
   Widget _buildMiTurnoCard() {
     final mi = _miLugar!;
     final esTurno = mi.esSuTurno;
-    final delante = mi.personasDelante;
+    final delante = mi.personasDelante - 1;
     final accent = esTurno ? AppTheme.success : AppTheme.primary;
 
     return Container(
