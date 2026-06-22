@@ -538,7 +538,7 @@ class _LocalServicioCard extends StatelessWidget {
                     padding: const EdgeInsets.all(14),
                     child: Row(
                       children: [
-                        // ── Avatar / foto del local ──
+                        // ── Avatar / foto del servicio ──
                         Container(
                           width: 66,
                           height: 66,
@@ -554,16 +554,16 @@ class _LocalServicioCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(16),
                           ),
                           clipBehavior: Clip.antiAlias,
-                          child: local?.foto != null
+                          child: servicio?.foto != null
                               ? NetImage(
-                                  url: local!.foto!,
+                                  url: servicio!.foto!,
                                   fit: BoxFit.cover,
                                   errorWidget: () => const Icon(
-                                      Icons.storefront,
+                                      Icons.design_services_outlined,
                                       color: AppTheme.primary,
                                       size: 30),
                                 )
-                              : const Icon(Icons.storefront,
+                              : const Icon(Icons.design_services_outlined,
                                   color: AppTheme.primary, size: 30),
                         ),
                         const SizedBox(width: 14),
@@ -574,8 +574,9 @@ class _LocalServicioCard extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              // Principal: nombre del servicio
                               Text(
-                                local?.nombre ?? 'Local',
+                                servicio?.nombre ?? 'Servicio',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w800,
                                   fontSize: 16,
@@ -585,55 +586,34 @@ class _LocalServicioCard extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              if (servicio != null) ...[
-                                const SizedBox(height: 7),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 9, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.accent
-                                        .withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                          Icons.design_services_outlined,
-                                          size: 12,
-                                          color: AppTheme.accent),
-                                      const SizedBox(width: 4),
-                                      Flexible(
-                                        child: Text(
-                                          servicio.nombre,
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: AppTheme.accent,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                              // Secundario: nombre del local
                               if (local != null) ...[
+                                const SizedBox(height: 5),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.storefront_outlined,
+                                        size: 12, color: AppTheme.accent),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        local.nombre,
+                                        style: const TextStyle(
+                                          fontSize: 12.5,
+                                          color: AppTheme.accent,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                // Terciario: ubicación
                                 if (local.ubicacion.isNotEmpty) ...[
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 5),
                                   _InfoLinea(
                                     icon: Icons.location_city_outlined,
                                     texto: local.ubicacion,
-                                    bold: true,
-                                  ),
-                                ],
-                                if (local.direccion != null &&
-                                    local.direccion!.isNotEmpty) ...[
-                                  const SizedBox(height: 4),
-                                  _InfoLinea(
-                                    icon: Icons.location_on_outlined,
-                                    texto: local.direccion!,
                                   ),
                                 ],
                               ],
