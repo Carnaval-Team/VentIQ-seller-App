@@ -9,6 +9,7 @@ import 'gestion_locales_screen.dart';
 import 'gestion_servicios_screen.dart';
 import 'mis_entidades_screen.dart';
 import 'planificacion_screen.dart';
+import 'reservas_screen.dart';
 
 class GestionScreen extends StatelessWidget {
   const GestionScreen({super.key});
@@ -191,6 +192,17 @@ class _GestionBody extends StatelessWidget {
                   MaterialPageRoute(
                       builder: (_) =>
                           PlanificacionScreen(entidad: entidad)),
+                ),
+              ),
+              _ModuloCard(
+                icon: Icons.confirmation_number_outlined,
+                title: 'Reservas',
+                subtitle: 'Consultar y exportar',
+                color: const Color(0xFF5856D6),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => ReservasScreen(entidad: entidad)),
                 ),
               ),
               _ModuloCard(
