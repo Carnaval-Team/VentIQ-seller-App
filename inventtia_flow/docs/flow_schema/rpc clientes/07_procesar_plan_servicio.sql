@@ -31,6 +31,9 @@ declare
   v_cupo     integer;
   v_estado   integer;
   v_movidos  integer := 0;
+  v_nombre_servicio text;
+  v_nombre_local    text;
+  v_saludo          text;
 begin
   -- Lee el plan y BLOQUEA esa fila (evita doble procesamiento del mismo plan)
   select ps.id_local_servicio, ps.fecha, (ps.cantidad - ps.agendados)
@@ -64,8 +67,25 @@ begin
     return jsonb_build_object('ok', false, 'error', 'falta el estado Reservado (correr migracion 03)');
   end if;
 
+  -- Datos para las notificaciones de "reservacion confirmada":
+  -- nombres legibles del servicio/local y saludo segun la hora del servidor.
+  select s.nombre, l.nombre
+    into v_nombre_servicio, v_nombre_local
+  from flow.local_servicio ls
+  join flow.app_dat_servicios s on s.id = ls.id_servicio
+  join flow.app_dat_locales   l on l.id = ls.id_local
+  where ls.id = v_ls;
+
+  v_saludo := case
+    when extract(hour from current_timestamp) between 5 and 11 then 'Buenos días'
+    when extract(hour from current_timestamp) between 12 and 18 then 'Buenas tardes'
+    else 'Buenas noches'
+  end;
+
   -- Mover en un solo paso: toma hasta v_cupo candidatos FIFO, los borra de
   -- sala_espera e inserta sus agendas. skip locked por robustez ante concurrencia.
+  -- El CTE 'notificados' crea una notificacion por cada reserva confirmada;
+  -- como es data-modifying, Postgres lo ejecuta siempre aunque no se lea.
   with candidatos as (
     select se.id
     from flow.sala_espera se
@@ -85,6 +105,30 @@ begin
     insert into flow.agenda (uuid_usuario, id_local_servicio, id_estado, fecha_hora_reserva)
     select b.uuid_usuario, v_ls, v_estado, v_fecha
     from borrados b
+    returning uuid_usuario, id, fecha_hora_reserva
+  ),
+  notificados as (
+    insert into flow.notificaciones
+      (uuid_usuario, tipo, titulo, mensaje, id_local_servicio, id_referencia, data)
+    select
+      i.uuid_usuario,
+      'reserva',
+      'Reservación confirmada',
+      v_saludo || ', '
+        || coalesce(nullif(trim(p.nombre || ' ' || p.apellidos), ''), 'estimado cliente')
+        || ', se ha realizado satisfactoriamente su reservación para el local "'
+        || coalesce(v_nombre_local, 'local') || '" el servicio "'
+        || coalesce(v_nombre_servicio, 'servicio') || '" para la fecha '
+        || to_char(i.fecha_hora_reserva, 'DD/MM/YYYY') || '.',
+      v_ls,
+      i.id,
+      jsonb_build_object(
+        'fecha',    i.fecha_hora_reserva,
+        'servicio', v_nombre_servicio,
+        'local',    v_nombre_local
+      )
+    from insertados i
+    left join flow.perfil p on p.uuid_usuario = i.uuid_usuario
     returning 1
   )
   select count(*) into v_movidos from insertados;
@@ -118,6 +162,20 @@ begin
       from reord r
      where se.id = r.id
        and se.numero_cola <> r.rn;   -- solo toca filas que realmente cambian
+
+    -- Si la cola quedo VACIA tras despachar a todos, reinicia los contadores
+    -- de flow.ultimo_numero: es una cola "nueva" porque ya no queda nadie
+    -- esperando. ultimo_otorgado y ultimo_en_anotarse vuelven a 0 para que
+    -- la proxima persona que se anote empiece a numerar desde cero otra vez.
+    if not exists (
+      select 1 from flow.sala_espera se where se.id_local_servicio = v_ls
+    ) then
+      update flow.ultimo_numero
+         set ultimo_otorgado    = 0,
+             ultimo_en_anotarse = 0,
+             updated_at         = current_timestamp
+       where id_local_servicio = v_ls;
+    end if;
   end if;
 
   -- Log de la corrida: 'ok' si repartio, 'sin_movimiento' si no habia candidatos.
