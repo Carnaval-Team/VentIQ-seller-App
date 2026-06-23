@@ -63,26 +63,26 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/logo.png"
+  image_path: "assets/images/logonew_nobg.png"
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/images/logo.png"
+  adaptive_icon_foreground: "assets/images/logonew_nobg.png"
   remove_alpha_ios: true
   web:
     generate: true
-    image_path: "assets/images/logo.png"
+    image_path: "assets/images/logonew_nobg.png"
     background_color: "#FFFFFF"
     theme_color: "#1565C0"
   windows:
     generate: true
-    image_path: "assets/images/logo.png"
+    image_path: "assets/images/logonew_nobg.png"
 
 flutter_native_splash:
   color: "#FFFFFF"
-  image: assets/images/logo.png
+  image: assets/images/logonew_nobg.png
   color_dark: "#FFFFFF"
-  image_dark: assets/images/logo.png
+  image_dark: assets/images/logonew_nobg.png
   android_12:
-    image: assets/images/logo.png
+    image: assets/images/logonew_nobg.png
     icon_background_color: "#FFFFFF"
   web: false
 
