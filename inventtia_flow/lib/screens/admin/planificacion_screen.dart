@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:table_calendar/table_calendar.dart';
 import '../../config/app_theme.dart';
 import '../../models/entidad.dart';
+import '../../models/plan_servicio.dart';
 import '../../models/servicio.dart';
 import '../../services/catalogo_service.dart';
-import 'crear_planificacion_screen.dart' show CrearPlanificacionScreen;
-import 'revisar_planificacion_screen.dart';
+import '../../services/plan_servicio_service.dart';
 
 class PlanificacionScreen extends StatefulWidget {
   final Entidad entidad;
@@ -15,7 +17,7 @@ class PlanificacionScreen extends StatefulWidget {
 }
 
 class _PlanificacionScreenState extends State<PlanificacionScreen> {
-  List<LocalServicio> _planes = [];
+  List<LocalServicio> _localServicios = [];
   bool _loading = true;
 
   @override
@@ -27,7 +29,6 @@ class _PlanificacionScreenState extends State<PlanificacionScreen> {
   Future<void> _cargar() async {
     setState(() => _loading = true);
     try {
-      // Cargamos vía join por locales de la entidad
       final locales =
           await CatalogoService.getLocalesByEntidad(widget.entidad.id);
       final List<LocalServicio> todos = [];
@@ -35,7 +36,6 @@ class _PlanificacionScreenState extends State<PlanificacionScreen> {
         final ls = await CatalogoService.getLocalServicios(idLocal: local.id);
         todos.addAll(ls);
       }
-      // Ordenar: por nombre de local, luego por nombre de servicio
       todos.sort((a, b) {
         final cmp =
             (a.local?.nombre ?? '').compareTo(b.local?.nombre ?? '');
@@ -43,9 +43,8 @@ class _PlanificacionScreenState extends State<PlanificacionScreen> {
         return (a.servicio?.nombre ?? '')
             .compareTo(b.servicio?.nombre ?? '');
       });
-      if (mounted) setState(() => _planes = todos);
+      if (mounted) setState(() => _localServicios = todos);
     } catch (e) {
-      print('[flow] PlanificacionScreen _cargar ERROR: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -58,7 +57,7 @@ class _PlanificacionScreenState extends State<PlanificacionScreen> {
     }
   }
 
-  void _nuevo() {
+  void _vincular() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -69,11 +68,11 @@ class _PlanificacionScreenState extends State<PlanificacionScreen> {
     );
   }
 
-  Future<void> _eliminar(LocalServicio ls) async {
+  Future<void> _desvincular(LocalServicio ls) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Eliminar plan'),
+        title: const Text('Desvincular'),
         content: Text(
             '¿Desvincular "${ls.servicio?.nombre ?? ''}" de "${ls.local?.nombre ?? ''}"?'),
         actions: [
@@ -83,7 +82,7 @@ class _PlanificacionScreenState extends State<PlanificacionScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Eliminar'),
+            child: const Text('Desvincular'),
           ),
         ],
       ),
@@ -102,10 +101,10 @@ class _PlanificacionScreenState extends State<PlanificacionScreen> {
     }
   }
 
-  // Agrupar planes por local
+  // Agrupa por local
   Map<String, List<LocalServicio>> get _porLocal {
     final map = <String, List<LocalServicio>>{};
-    for (final ls in _planes) {
+    for (final ls in _localServicios) {
       final key = ls.local?.nombre ?? 'Sin local';
       map.putIfAbsent(key, () => []).add(ls);
     }
@@ -130,21 +129,21 @@ class _PlanificacionScreenState extends State<PlanificacionScreen> {
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'Vincular servicio a local',
-            onPressed: _nuevo,
+            onPressed: _vincular,
           ),
         ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _planes.isEmpty
-              ? _EmptyState(onAdd: _nuevo)
+          : _localServicios.isEmpty
+              ? _EmptyState(onAdd: _vincular)
               : RefreshIndicator(
                   onRefresh: _cargar,
                   child: _buildLista(),
                 ),
-      floatingActionButton: _planes.isNotEmpty
+      floatingActionButton: _localServicios.isNotEmpty
           ? FloatingActionButton.extended(
-              onPressed: _nuevo,
+              onPressed: _vincular,
               icon: const Icon(Icons.add_link),
               label: const Text('Vincular'),
             )
@@ -157,7 +156,7 @@ class _PlanificacionScreenState extends State<PlanificacionScreen> {
     final localNames = grupos.keys.toList()..sort();
 
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
       itemCount: localNames.length,
       itemBuilder: (_, i) {
         final localNombre = localNames[i];
@@ -166,7 +165,7 @@ class _PlanificacionScreenState extends State<PlanificacionScreen> {
           localNombre: localNombre,
           local: items.first.local,
           items: items,
-          onDelete: _eliminar,
+          onDesvincular: _desvincular,
         );
       },
     );
@@ -178,13 +177,13 @@ class _LocalGroup extends StatelessWidget {
   final String localNombre;
   final Local? local;
   final List<LocalServicio> items;
-  final Future<void> Function(LocalServicio) onDelete;
+  final Future<void> Function(LocalServicio) onDesvincular;
 
   const _LocalGroup({
     required this.localNombre,
     required this.local,
     required this.items,
-    required this.onDelete,
+    required this.onDesvincular,
   });
 
   @override
@@ -194,7 +193,7 @@ class _LocalGroup extends StatelessWidget {
       children: [
         // Cabecera de local
         Padding(
-          padding: const EdgeInsets.only(bottom: 8, top: 4),
+          padding: const EdgeInsets.only(bottom: 8, top: 8),
           child: Row(
             children: [
               Container(
@@ -217,7 +216,8 @@ class _LocalGroup extends StatelessWidget {
                     if (local?.ubicacion.isNotEmpty == true)
                       Text(local!.ubicacion,
                           style: const TextStyle(
-                              fontSize: 11, color: AppTheme.textSecondary)),
+                              fontSize: 11,
+                              color: AppTheme.textSecondary)),
                   ],
                 ),
               ),
@@ -228,7 +228,8 @@ class _LocalGroup extends StatelessWidget {
                   color: AppTheme.primary.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text('${items.length} servicio${items.length == 1 ? '' : 's'}',
+                child: Text(
+                    '${items.length} servicio${items.length == 1 ? '' : 's'}',
                     style: const TextStyle(
                         fontSize: 11,
                         color: AppTheme.primary,
@@ -237,137 +238,952 @@ class _LocalGroup extends StatelessWidget {
             ],
           ),
         ),
+        // Un _ServicioCalendarTile por cada local-servicio
+        ...items.map((ls) => _ServicioCalendarTile(
+              ls: ls,
+              onDesvincular: () => onDesvincular(ls),
+            )),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+}
 
-        // Servicios asignados con acciones de planificación
-        Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: Colors.grey.shade200),
+// ── Tile con ExpansionTile + calendario ───────────────────────
+class _ServicioCalendarTile extends StatefulWidget {
+  final LocalServicio ls;
+  final VoidCallback onDesvincular;
+
+  const _ServicioCalendarTile(
+      {required this.ls, required this.onDesvincular});
+
+  @override
+  State<_ServicioCalendarTile> createState() => _ServicioCalendarTileState();
+}
+
+class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
+  List<PlanServicio> _planes = [];
+  bool _loadingPlanes = false;
+  bool _expanded = false;
+  DateTime _focusedDay = DateTime.now();
+
+  String _dayKey(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
+  Map<String, List<PlanServicio>> get _porDia {
+    final map = <String, List<PlanServicio>>{};
+    for (final p in _planes) {
+      if (p.fecha == null) continue;
+      map.putIfAbsent(_dayKey(p.fecha!), () => []).add(p);
+    }
+    return map;
+  }
+
+  List<PlanServicio> _planesDelDia(DateTime day) =>
+      _porDia[_dayKey(day)] ?? [];
+
+  Future<void> _cargarPlanes() async {
+    setState(() => _loadingPlanes = true);
+    try {
+      final planes =
+          await PlanServicioService.getByLocalServicio(widget.ls.id);
+      if (mounted) setState(() => _planes = planes);
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _loadingPlanes = false);
+    }
+  }
+
+  void _onDayTapped(DateTime day) {
+    final planes = _planesDelDia(day);
+    if (planes.isNotEmpty) {
+      _mostrarInfoDia(day, planes);
+    } else {
+      _mostrarCrearPlan(day);
+    }
+  }
+
+  void _mostrarInfoDia(DateTime dia, List<PlanServicio> planes) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _DayInfoSheet(
+        dia: dia,
+        planes: planes,
+        onUpdated: _cargarPlanes,
+      ),
+    );
+  }
+
+  void _mostrarCrearPlan(DateTime fecha) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _CrearPlanSheet(
+        ls: widget.ls,
+        fechaInicial: fecha,
+        onCreated: _cargarPlanes,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+          childrenPadding: EdgeInsets.zero,
+          leading: Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: AppTheme.accent.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: const Icon(Icons.miscellaneous_services_outlined,
+                size: 18, color: AppTheme.accent),
           ),
-          child: Column(
-            children: items.asMap().entries.map((entry) {
-              final idx = entry.key;
-              final ls = entry.value;
-              return Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+          title: Text(
+            widget.ls.servicio?.nombre ?? '—',
+            style: const TextStyle(
+                fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          subtitle: widget.ls.servicio?.descripcion != null
+              ? Text(
+                  widget.ls.servicio!.descripcion!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 11, color: AppTheme.textSecondary),
+                )
+              : null,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.link_off,
+                    size: 17, color: AppTheme.error),
+                tooltip: 'Desvincular',
+                onPressed: widget.onDesvincular,
+                padding: EdgeInsets.zero,
+                constraints:
+                    const BoxConstraints(minWidth: 30, minHeight: 30),
+              ),
+              Icon(
+                _expanded
+                    ? Icons.expand_less
+                    : Icons.expand_more,
+                color: AppTheme.textSecondary,
+              ),
+            ],
+          ),
+          onExpansionChanged: (v) {
+            setState(() => _expanded = v);
+            if (v && _planes.isEmpty) _cargarPlanes();
+          },
+          children: [
+            const Divider(height: 1),
+            if (_loadingPlanes)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else
+              _CalendarioConPlanes(
+                planes: _planes,
+                focusedDay: _focusedDay,
+                planesDelDia: _planesDelDia,
+                onDayTapped: _onDayTapped,
+                onPageChanged: (f) => setState(() => _focusedDay = f),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Calendario con marcadores ─────────────────────────────────
+class _CalendarioConPlanes extends StatelessWidget {
+  final List<PlanServicio> planes;
+  final DateTime focusedDay;
+  final List<PlanServicio> Function(DateTime) planesDelDia;
+  final void Function(DateTime) onDayTapped;
+  final void Function(DateTime) onPageChanged;
+
+  const _CalendarioConPlanes({
+    required this.planes,
+    required this.focusedDay,
+    required this.planesDelDia,
+    required this.onDayTapped,
+    required this.onPageChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        TableCalendar<PlanServicio>(
+          locale: 'es_ES',
+          firstDay: DateTime.utc(2024, 1, 1),
+          lastDay: DateTime.utc(2027, 12, 31),
+          focusedDay: focusedDay,
+          eventLoader: planesDelDia,
+          calendarStyle: CalendarStyle(
+            todayDecoration: BoxDecoration(
+              color: AppTheme.primary.withOpacity(0.25),
+              shape: BoxShape.circle,
+            ),
+            selectedDecoration: const BoxDecoration(
+              color: AppTheme.primary,
+              shape: BoxShape.circle,
+            ),
+            markerDecoration: const BoxDecoration(
+              color: AppTheme.accent,
+              shape: BoxShape.circle,
+            ),
+            markersMaxCount: 1,
+            markerSize: 6,
+            markerMargin: const EdgeInsets.only(top: 1),
+          ),
+          calendarBuilders: CalendarBuilders(
+            markerBuilder: (context, day, events) {
+              if (events.isEmpty) return null;
+              final plan = events.first as PlanServicio;
+              final color = plan.estaLleno
+                  ? AppTheme.error
+                  : plan.disponibles < (plan.cantidad * 0.2).ceil()
+                      ? AppTheme.warning
+                      : AppTheme.success;
+              return Positioned(
+                bottom: 4,
+                child: Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                      color: color, shape: BoxShape.circle),
+                ),
+              );
+            },
+          ),
+          headerStyle: const HeaderStyle(
+            formatButtonVisible: false,
+            titleCentered: true,
+            headerPadding: EdgeInsets.symmetric(vertical: 6),
+          ),
+          onDaySelected: (selected, focused) => onDayTapped(selected),
+          onPageChanged: onPageChanged,
+          availableGestures: AvailableGestures.horizontalSwipe,
+        ),
+        // Leyenda
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              _LegendaDot(color: AppTheme.success, label: 'Disponible'),
+              SizedBox(width: 14),
+              _LegendaDot(color: AppTheme.warning, label: 'Casi lleno'),
+              SizedBox(width: 14),
+              _LegendaDot(color: AppTheme.error, label: 'Lleno'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LegendaDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _LegendaDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+            width: 8,
+            height: 8,
+            decoration:
+                BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 4),
+        Text(label,
+            style: const TextStyle(
+                fontSize: 10, color: AppTheme.textSecondary)),
+      ],
+    );
+  }
+}
+
+// ── Sheet: info del día (planes existentes) ───────────────────
+class _DayInfoSheet extends StatefulWidget {
+  final DateTime dia;
+  final List<PlanServicio> planes;
+  final VoidCallback onUpdated;
+
+  const _DayInfoSheet(
+      {required this.dia,
+      required this.planes,
+      required this.onUpdated});
+
+  @override
+  State<_DayInfoSheet> createState() => _DayInfoSheetState();
+}
+
+class _DayInfoSheetState extends State<_DayInfoSheet> {
+  bool _saving = false;
+
+  Future<void> _editarCantidad(PlanServicio plan) async {
+    final ctrl =
+        TextEditingController(text: plan.cantidad.toString());
+    final result = await showDialog<int>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Modificar cantidad'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Agendados: ${plan.agendados}  ·  Mínimo: ${plan.agendados}',
+              style: const TextStyle(
+                  fontSize: 12, color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Nueva cantidad',
+                border: OutlineInputBorder(),
+              ),
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () {
+              final v = int.tryParse(ctrl.text.trim());
+              if (v == null || v < plan.agendados) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content:
+                      Text('Mínimo permitido: ${plan.agendados}'),
+                  backgroundColor: AppTheme.error,
+                ));
+                return;
+              }
+              Navigator.pop(context, v);
+            },
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() => _saving = true);
+    try {
+      await PlanServicioService.update(
+          id: plan.id, fecha: plan.fecha, cantidad: result);
+      widget.onUpdated();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppTheme.error));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _eliminar(PlanServicio plan) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Eliminar plan'),
+        content: const Text('¿Eliminar este plan del día?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar')),
+          ElevatedButton(
+            style:
+                ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _saving = true);
+    try {
+      await PlanServicioService.delete(plan.id);
+      widget.onUpdated();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppTheme.error));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                const Icon(Icons.calendar_today,
+                    size: 18, color: AppTheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    DateFormat('EEEE, dd \'de\' MMMM yyyy', 'es')
+                        .format(widget.dia),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_saving)
+            const Padding(
+              padding: EdgeInsets.all(20),
+              child: CircularProgressIndicator(),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+              itemCount: widget.planes.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (_, i) {
+                final plan = widget.planes[i];
+                final pct = plan.cantidad > 0
+                    ? plan.agendados / plan.cantidad
+                    : 0.0;
+                final color = pct >= 1.0
+                    ? AppTheme.error
+                    : pct >= 0.8
+                        ? AppTheme.warning
+                        : AppTheme.success;
+                return Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: Colors.grey.shade200)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
                             Container(
-                              padding: const EdgeInsets.all(6),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
-                                color: AppTheme.accent.withOpacity(0.1),
+                                color: color.withOpacity(0.12),
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: const Icon(
-                                  Icons.miscellaneous_services_outlined,
-                                  size: 16, color: AppTheme.accent),
+                              child: Text(
+                                '${plan.agendados} / ${plan.cantidad}',
+                                style: TextStyle(
+                                    color: color,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14),
+                              ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(ls.servicio?.nombre ?? '—',
-                                      style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600)),
-                                  if (ls.servicio?.descripcion != null)
-                                    Text(ls.servicio!.descripcion!,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                            fontSize: 12,
-                                            color: AppTheme.textSecondary)),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.link_off,
-                                  size: 18, color: AppTheme.error),
-                              tooltip: 'Desvincular',
-                              onPressed: () => onDelete(ls),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                  minWidth: 32, minHeight: 32),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        CrearPlanificacionScreen(
-                                            localServicio: ls),
-                                  ),
-                                ),
-                                icon: const Icon(
-                                    Icons.add_circle_outline,
-                                    size: 15),
-                                label: const Text('Crear plan',
-                                    style: TextStyle(fontSize: 12)),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor:
-                                      const Color(0xFF34C759),
-                                  side: const BorderSide(
-                                      color: Color(0xFF34C759)),
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 6),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LinearProgressIndicator(
+                                  value: pct.clamp(0.0, 1.0),
+                                  backgroundColor:
+                                      color.withOpacity(0.1),
+                                  valueColor:
+                                      AlwaysStoppedAnimation(color),
+                                  minHeight: 6,
                                 ),
                               ),
                             ),
                             const SizedBox(width: 8),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        RevisarPlanificacionScreen(
-                                            localServicio: ls),
-                                  ),
-                                ),
-                                icon: const Icon(
-                                    Icons.calendar_view_week,
-                                    size: 15),
-                                label: const Text('Revisar',
-                                    style: TextStyle(fontSize: 12)),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppTheme.primary,
-                                  side: BorderSide(
-                                      color: AppTheme.primary),
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 6),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                              ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined,
+                                  color: AppTheme.primary, size: 18),
+                              tooltip: 'Editar cantidad',
+                              onPressed: () => _editarCantidad(plan),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                  minWidth: 28, minHeight: 28),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline,
+                                  color: AppTheme.error, size: 18),
+                              tooltip: 'Eliminar plan',
+                              onPressed: () => _eliminar(plan),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                  minWidth: 28, minHeight: 28),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${plan.disponibles} turnos disponibles',
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary),
                         ),
                       ],
                     ),
                   ),
-                  if (idx < items.length - 1)
-                    const Divider(height: 1, indent: 16, endIndent: 16),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Sheet: crear plan para un día vacío ───────────────────────
+class _CrearPlanSheet extends StatefulWidget {
+  final LocalServicio ls;
+  final DateTime fechaInicial;
+  final VoidCallback onCreated;
+
+  const _CrearPlanSheet({
+    required this.ls,
+    required this.fechaInicial,
+    required this.onCreated,
+  });
+
+  @override
+  State<_CrearPlanSheet> createState() => _CrearPlanSheetState();
+}
+
+class _CrearPlanSheetState extends State<_CrearPlanSheet> {
+  final _cantidadCtrl = TextEditingController(text: '10');
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _cantidadCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final cantidad = int.tryParse(_cantidadCtrl.text.trim());
+    if (cantidad == null || cantidad <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Ingresa una cantidad válida mayor a 0'),
+        backgroundColor: AppTheme.error,
+      ));
+      return;
+    }
+
+    // Doble verificación: diálogo de confirmación
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (_) => _ConfirmDialog(
+        local: widget.ls.local,
+        servicio: widget.ls.servicio,
+        fecha: widget.fechaInicial,
+        cantidad: cantidad,
+      ),
+    );
+    if (confirmado != true || !mounted) return;
+
+    setState(() => _saving = true);
+    try {
+      await PlanServicioService.create(
+        idLocalServicio: widget.ls.id,
+        fecha: widget.fechaInicial,
+        cantidad: cantidad,
+      );
+      widget.onCreated();
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Plan creado correctamente'),
+          backgroundColor: AppTheme.success,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppTheme.error));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fechaStr = DateFormat('EEEE, dd \'de\' MMMM yyyy', 'es')
+        .format(widget.fechaInicial);
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2))),
+          ),
+          const SizedBox(height: 16),
+
+          // Título
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.success.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.add_circle_outline,
+                    color: AppTheme.success, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Planificar día',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text('Sin planificación aún',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textSecondary)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Info del día
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                  color: AppTheme.primary.withOpacity(0.15)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.calendar_today,
+                    size: 16, color: AppTheme.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(fechaStr,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: AppTheme.primary)),
+                      Text(
+                        '${widget.ls.servicio?.nombre ?? ''} · ${widget.ls.local?.nombre ?? ''}',
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Campo cantidad
+          TextField(
+            controller: _cantidadCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Cantidad de turnos *',
+              prefixIcon: Icon(Icons.group_outlined),
+              hintText: 'Ej: 20',
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          ElevatedButton.icon(
+            onPressed: _saving ? null : _submit,
+            icon: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.check_circle_outline, size: 18),
+            label: Text(_saving ? 'Creando...' : 'Crear plan',
+                style: const TextStyle(fontSize: 15)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Diálogo de confirmación ───────────────────────────────────
+class _ConfirmDialog extends StatelessWidget {
+  final dynamic local;
+  final dynamic servicio;
+  final DateTime fecha;
+  final int cantidad;
+
+  const _ConfirmDialog({
+    required this.local,
+    required this.servicio,
+    required this.fecha,
+    required this.cantidad,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fechaStr =
+        DateFormat('EEEE dd \'de\' MMMM yyyy', 'es').format(fecha);
+
+    return Dialog(
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding:
+          const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.fact_check_outlined,
+                      color: AppTheme.primary, size: 22),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Confirmar plan',
+                          style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold)),
+                      Text('Revisa antes de crear',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+            _ConfirmRow(
+                icon: Icons.store_outlined,
+                label: 'Local',
+                value: local?.nombre ?? '-',
+                color: const Color(0xFF4F7FFA)),
+            const SizedBox(height: 12),
+            _ConfirmRow(
+                icon: Icons.miscellaneous_services_outlined,
+                label: 'Servicio',
+                value: servicio?.nombre ?? '-',
+                color: const Color(0xFF7C5CFC)),
+            const SizedBox(height: 12),
+            _ConfirmRow(
+                icon: Icons.calendar_month_outlined,
+                label: 'Fecha',
+                value: fechaStr,
+                color: AppTheme.success),
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                  vertical: 14, horizontal: 18),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: AppTheme.primary.withOpacity(0.18)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withOpacity(0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.group_outlined,
+                        color: AppTheme.primary, size: 20),
+                  ),
+                  const SizedBox(width: 14),
+                  const Text('Cantidad de turnos',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary)),
+                  const Spacer(),
+                  Text('$cantidad',
+                      style: const TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primary)),
                 ],
-              );
-            }).toList(),
+              ),
+            ),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12))),
+                    child: const Text('Cancelar'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton.icon(
+                    onPressed: () => Navigator.pop(context, true),
+                    icon: const Icon(Icons.check_circle_outline,
+                        size: 17),
+                    label: const Text('Confirmar',
+                        style: TextStyle(fontSize: 15)),
+                    style: ElevatedButton.styleFrom(
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12))),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfirmRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  const _ConfirmRow(
+      {required this.icon,
+      required this.label,
+      required this.value,
+      required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: color, size: 15),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  style: const TextStyle(
+                      fontSize: 11, color: AppTheme.textSecondary)),
+              const SizedBox(height: 1),
+              Text(value,
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textPrimary)),
+            ],
           ),
         ),
       ],
@@ -389,15 +1205,17 @@ class _EmptyState extends StatelessWidget {
           Icon(Icons.account_tree_outlined,
               size: 72, color: AppTheme.primary.withOpacity(0.25)),
           const SizedBox(height: 16),
-          const Text('Sin planes de servicio',
+          const Text('Sin servicios vinculados',
               style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w600,
                   color: AppTheme.textPrimary)),
           const SizedBox(height: 8),
-          const Text('Vincula servicios a locales para\nhabilitar turnos y agenda.',
+          const Text(
+              'Vincula servicios a locales para\nhabilitar turnos y planificación.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+              style: TextStyle(
+                  color: AppTheme.textSecondary, fontSize: 13)),
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: onAdd,

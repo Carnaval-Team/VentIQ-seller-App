@@ -109,6 +109,57 @@ class _LocalServicioDetailScreenState
     }
   }
 
+  Future<void> _cambiarFecha() async {
+    final uuid = context.read<AuthProvider>().user?.id;
+    if (uuid == null || _miLugar == null) return;
+
+    final now = DateTime.now();
+    final fecha = await showDatePicker(
+      context: context,
+      initialDate: _miLugar!.fechaRegla.isAfter(now)
+          ? _miLugar!.fechaRegla
+          : now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+      helpText: '¿A partir de qué fecha quieres el turno?',
+      confirmText: 'Confirmar',
+      cancelText: 'Cancelar',
+    );
+    if (fecha == null || !mounted) return;
+
+    setState(() => _isActing = true);
+    try {
+      await ListaService.actualizarFechaRegla(
+        uuidUsuario: uuid,
+        idSalaEspera: _miLugar!.id,
+        fechaRegla: fecha,
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                '📅 Fecha actualizada al ${DateFormat('dd/MM/yyyy').format(fecha)}'),
+            backgroundColor: AppTheme.success,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: AppTheme.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isActing = false);
+    }
+  }
+
   Future<void> _salir() async {
     final uuid = context.read<AuthProvider>().user?.id;
     if (uuid == null) return;
@@ -229,6 +280,7 @@ class _LocalServicioDetailScreenState
             fontWeight: FontWeight.w800,
             fontSize: 16,
             letterSpacing: -0.3,
+            color: Colors.white,
           ),
         ),
         background: Stack(
@@ -416,29 +468,61 @@ class _LocalServicioDetailScreenState
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 9, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.calendar_today,
-                            color: Colors.white, size: 12),
-                        const SizedBox(width: 5),
-                        Text(
-                          'Desde ${DateFormat('dd/MM/yyyy').format(mi.fechaRegla)}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.calendar_today,
+                                color: Colors.white, size: 12),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Desde ${DateFormat('dd/MM/yyyy').format(mi.fechaRegla)}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: _isActing ? null : _cambiarFecha,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Icon(Icons.edit_calendar,
+                                  color: Colors.white, size: 13),
+                              SizedBox(width: 5),
+                              Text(
+                                'Modificar fecha',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ],
               ),
