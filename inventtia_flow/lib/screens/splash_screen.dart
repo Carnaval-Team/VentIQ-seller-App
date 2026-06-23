@@ -12,30 +12,67 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _fadeAnim;
-  late Animation<double> _scaleAnim;
+    with TickerProviderStateMixin {
+  // Controlador de la entrada (logo + wordmark).
+  late final AnimationController _introCtrl;
+  late final Animation<double> _logoScale;
+  late final Animation<double> _logoFade;
+  late final Animation<double> _textFade;
+  late final Animation<Offset> _textSlide;
+
+  // Controlador del "halo" que late suavemente detrás del logo.
+  late final AnimationController _pulseCtrl;
+
   String _statusText = 'Iniciando...';
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+
+    _introCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 1100),
     );
-    _fadeAnim = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
-    _scaleAnim = Tween<double>(begin: 0.82, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
+
+    // El logo entra con un rebote sutil.
+    _logoScale = Tween<double>(begin: 0.7, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _introCtrl,
+        curve: const Interval(0.0, 0.65, curve: Curves.easeOutBack),
+      ),
     );
-    _controller.forward();
+    _logoFade = CurvedAnimation(
+      parent: _introCtrl,
+      curve: const Interval(0.0, 0.45, curve: Curves.easeIn),
+    );
+
+    // El wordmark aparece un instante después, deslizándose hacia arriba.
+    _textFade = CurvedAnimation(
+      parent: _introCtrl,
+      curve: const Interval(0.45, 0.9, curve: Curves.easeIn),
+    );
+    _textSlide = Tween<Offset>(
+      begin: const Offset(0, 0.4),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _introCtrl,
+        curve: const Interval(0.45, 1.0, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat(reverse: true);
+
+    _introCtrl.forward();
     _init();
   }
 
   Future<void> _init() async {
     // Mínimo visual para que la animación se vea
-    await Future.delayed(const Duration(milliseconds: 600));
+    await Future.delayed(const Duration(milliseconds: 700));
 
     if (!mounted) return;
     _setStatus('Verificando sesión...');
@@ -83,96 +120,198 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
-    _controller.dispose();
+    _introCtrl.dispose();
+    _pulseCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: FadeTransition(
-        opacity: _fadeAnim,
-        child: Stack(
-          children: [
-            // Fondo con degradado sutil
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.white,
-                    AppTheme.primary.withOpacity(0.06),
+      body: Container(
+        // Fondo claro premium con un degradado diagonal muy sutil que
+        // mantiene los colores del logo como protagonistas.
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.white,
+              Color(0xFFEFF4FB),
+              Color(0xFFE7EEF8),
+            ],
+            stops: [0.0, 0.6, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              // ── Centro: logo + wordmark ──────────────────────────
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildLogo(),
+                    const SizedBox(height: 30),
+                    _buildWordmark(),
                   ],
                 ),
               ),
+
+              // ── Pie: indicador de carga + estado ─────────────────
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 48,
+                child: FadeTransition(
+                  opacity: _textFade,
+                  child: _buildLoader(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Logo dentro de una tarjeta elevada tipo "glass", con un halo de marca
+  // que late suavemente por detrás para dar sensación de vida.
+  Widget _buildLogo() {
+    return FadeTransition(
+      opacity: _logoFade,
+      child: ScaleTransition(
+        scale: _logoScale,
+        child: AnimatedBuilder(
+          animation: _pulseCtrl,
+          builder: (context, child) {
+            final t = _pulseCtrl.value;
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                // Halo difuso que respira.
+                Container(
+                  width: 168 + t * 14,
+                  height: 168 + t * 14,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        AppTheme.primary.withValues(alpha: 0.18 + t * 0.10),
+                        AppTheme.accent.withValues(alpha: 0.0),
+                      ],
+                    ),
+                  ),
+                ),
+                child!,
+              ],
+            );
+          },
+          child: Container(
+            width: 132,
+            height: 132,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(36),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primary.withValues(alpha: 0.18),
+                  blurRadius: 30,
+                  offset: const Offset(0, 14),
+                ),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-            // Contenido central
-            Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Logo con animación de escala
-                  ScaleTransition(
-                    scale: _scaleAnim,
-                    child: Image.asset(
-                      'assets/images/logo.png',
-                      width: 140,
-                      height: 140,
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                  const Text(
-                    'Flow',
-                    style: TextStyle(
-                      fontSize: 38,
-                      fontWeight: FontWeight.w800,
-                      color: AppTheme.primary,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Gestión de turnos inteligente',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppTheme.textSecondary,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ],
+            padding: const EdgeInsets.all(20),
+            child: Image.asset(
+              'assets/images/logonew_nobg.png',
+              fit: BoxFit.contain,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWordmark() {
+    return SlideTransition(
+      position: _textSlide,
+      child: FadeTransition(
+        opacity: _textFade,
+        child: Column(
+          children: [
+            // Wordmark con degradado de marca aplicado al texto.
+            ShaderMask(
+              shaderCallback: (bounds) => const LinearGradient(
+                colors: [AppTheme.primaryDark, AppTheme.primaryLight],
+              ).createShader(bounds),
+              child: const Text(
+                'Flow',
+                style: TextStyle(
+                  fontSize: 42,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white, // sustituido por el shader
+                  letterSpacing: 1.0,
+                  height: 1.0,
+                ),
               ),
             ),
-            // Indicador de carga en la parte inferior
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 60,
-              child: Column(
-                children: [
-                  SizedBox(
-                    width: 32,
-                    height: 32,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: AppTheme.primary.withOpacity(0.7),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _statusText,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textSecondary,
-                    ),
-                  ),
-                ],
+            const SizedBox(height: 8),
+            Text(
+              'Gestión de turnos inteligente',
+              style: TextStyle(
+                fontSize: 13.5,
+                color: AppTheme.textSecondary.withValues(alpha: 0.9),
+                letterSpacing: 0.4,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildLoader() {
+    return Column(
+      children: [
+        // Barra de progreso indeterminada M3, estrecha y con esquinas suaves.
+        SizedBox(
+          width: 140,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              minHeight: 4,
+              backgroundColor: AppTheme.primary.withValues(alpha: 0.12),
+              valueColor:
+                  const AlwaysStoppedAnimation<Color>(AppTheme.primary),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // El texto de estado cambia con un cross-fade suave.
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 350),
+          transitionBuilder: (child, anim) => FadeTransition(
+            opacity: anim,
+            child: child,
+          ),
+          child: Text(
+            _statusText,
+            key: ValueKey(_statusText),
+            style: TextStyle(
+              fontSize: 12.5,
+              color: AppTheme.textSecondary.withValues(alpha: 0.85),
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

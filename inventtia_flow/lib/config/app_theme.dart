@@ -20,6 +20,7 @@ class AppTheme {
         colorScheme: ColorScheme.fromSeed(
           seedColor: primary,
           brightness: Brightness.light,
+          dynamicSchemeVariant: DynamicSchemeVariant.expressive,
         ),
         textTheme: GoogleFonts.interTextTheme(),
         scaffoldBackgroundColor: surface,
