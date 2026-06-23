@@ -1016,6 +1016,141 @@
     box-shadow: 0 30px 80px -20px rgba(236, 72, 153, 0.55);
 }
 
+/* ---------- 8b. FLOW — turnos & colas (teal tone) ---------- */
+.v2-flow {
+    background: var(--v2-ink-950);
+    color: #fff;
+    border-radius: var(--v2-r-2xl);
+    margin-inline: clamp(12px, 3vw, 32px);
+    padding: clamp(40px, 6vw, 80px);
+    position: relative;
+    overflow: hidden;
+}
+
+.v2-flow::before {
+    content: '';
+    position: absolute;
+    inset: -20%;
+    background:
+        radial-gradient(620px 420px at 22% 28%, rgba(34, 211, 238, 0.22), transparent 60%),
+        radial-gradient(680px 500px at 82% 74%, rgba(16, 185, 129, 0.20), transparent 60%);
+    z-index: 0;
+    pointer-events: none;
+}
+
+/* Phone left, copy right — mirrors Carnaval but reversed for rhythm */
+.v2-flow-inner {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: clamp(32px, 5vw, 64px);
+    align-items: center;
+}
+
+.v2-flow-copy { order: 2; }
+.v2-flow-visual { order: 1; }
+
+@media (max-width: 880px) {
+    .v2-flow-inner { grid-template-columns: 1fr; }
+    .v2-flow-copy { order: 1; }
+    .v2-flow-visual { order: 2; }
+}
+
+.v2-flow h2 {
+    font-family: var(--v2-font-display);
+    font-weight: 600;
+    font-size: clamp(36px, 4.8vw, 62px);
+    letter-spacing: -0.03em;
+    line-height: 1.02;
+    color: #fff;
+    margin: 18px 0 16px;
+}
+
+.v2-flow p {
+    color: rgba(255,255,255,0.74);
+    font-size: 17px;
+    line-height: 1.55;
+    max-width: 50ch;
+    margin: 0 0 28px;
+}
+
+.v2-flow-tag {
+    display: inline-flex;
+    padding: 6px 12px;
+    border-radius: var(--v2-r-pill);
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    font-family: var(--v2-font-mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    border: 1px solid rgba(255,255,255,0.12);
+}
+
+.v2-flow-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 20px;
+    margin: 0 0 32px;
+    padding: 0;
+    list-style: none;
+}
+
+.v2-flow-list li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14.5px;
+    color: rgba(255,255,255,0.88);
+}
+
+.v2-flow-list i {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    display: grid;
+    place-items: center;
+    background: rgba(34, 211, 238, 0.16);
+    color: #67E8F9;
+    font-size: 11px;
+}
+
+/* "Flow" tone — teal iridescent shadow ring */
+.v2-phone[data-tone="flow"] {
+    box-shadow:
+        0 50px 100px -30px rgba(11, 14, 26, 0.55),
+        0 30px 60px -20px rgba(20, 184, 166, 0.50),
+        inset 0 0 0 1.5px rgba(255, 255, 255, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* Teal screen: brand-saturated radial with depth */
+.v2-phone .v2-phone-screen.v2-phone-screen-teal {
+    background:
+        radial-gradient(60% 55% at 50% 38%, #2DD4BF 0%, #0891B2 45%, #0E7490 100%) !important;
+}
+
+.v2-phone .v2-phone-screen.v2-phone-screen-teal::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(45% 45% at 30% 20%, rgba(255, 255, 255, 0.22), transparent 70%),
+        radial-gradient(40% 40% at 75% 85%, rgba(0, 0, 0, 0.30), transparent 70%);
+    pointer-events: none;
+    z-index: 1;
+}
+
+.v2-phone-screen-teal .v2-phone-status {
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.40);
+}
+
+.v2-flow .v2-btn-primary {
+    background: linear-gradient(135deg, #22D3EE 0%, #14B8A6 100%);
+    box-shadow: 0 30px 80px -20px rgba(20, 184, 166, 0.55);
+}
+
 /* ---------- 9. CTA FINAL ---------- */
 .v2-cta {
     text-align: center;
