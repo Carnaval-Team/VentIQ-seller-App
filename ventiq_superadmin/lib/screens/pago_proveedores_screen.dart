@@ -118,6 +118,12 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      // Limpiar caches de detalle: al cambiar el filtro de fecha las órdenes
+      // cacheadas por proveedor quedan obsoletas y _loadOrderDetails retornaría
+      // temprano mostrando el detalle del rango anterior.
+      _supplierOrders.clear();
+      _expandedSuppliers.clear();
+      _loadingOrders.clear();
     });
 
     try {
