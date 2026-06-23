@@ -16,14 +16,14 @@ subprojects {
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
 subprojects {
-    project.evaluationDependsOn(":app")
-}
-
-// Fuerza compileSdk >= 36 en todos los plugins para evitar conflictos de AAR metadata
-subprojects {
-    plugins.withId("com.android.library") {
-        extensions.findByType(com.android.build.gradle.LibraryExtension::class)?.compileSdk = 36
+    // Fuerza compileSdk >= 34 en todos los plugins para evitar conflictos de AAR metadata.
+    // Debe registrarse ANTES de evaluationDependsOn, que dispara la evaluación de los subproyectos.
+    afterEvaluate {
+        extensions.findByType(com.android.build.api.dsl.LibraryExtension::class)?.let {
+            it.compileSdk = 36
+        }
     }
+    project.evaluationDependsOn(":app")
 }
 
 tasks.register<Delete>("clean") {
