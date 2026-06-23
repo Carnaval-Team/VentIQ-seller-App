@@ -48,45 +48,190 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.surface,
-      appBar: AppBar(
-        title: const Text('Mis Reservas'),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
-          const Padding(
-            padding: EdgeInsets.only(right: 12, left: 4),
-            child: NotificacionesBell(color: Colors.white),
+      body: Column(
+        children: [
+          _buildHero(),
+          Expanded(
+            child: _isLoading
+                ? _buildLoading()
+                : _tickets.isEmpty
+                    ? _buildEmptyState()
+                    : RefreshIndicator(
+                        onRefresh: _load,
+                        color: AppTheme.primary,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                          itemCount: _tickets.length,
+                          itemBuilder: (_, i) =>
+                              _TicketCard(ticket: _tickets[i]),
+                        ),
+                      ),
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _buildLista(_tickets),
     );
   }
 
-  Widget _buildLista(List<Agenda> lista) {
-    if (lista.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.confirmation_number_outlined,
-                size: 64,
-                color: AppTheme.textSecondary.withOpacity(0.4)),
-            const SizedBox(height: 16),
-            const Text('No hay reservas',
-                style:
-                    TextStyle(fontSize: 16, color: AppTheme.textSecondary)),
-          ],
+  // Cabecera "hero" alineada con el catálogo y Mis Listas.
+  Widget _buildHero() {
+    final n = _tickets.length;
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppTheme.primaryDark, AppTheme.primary],
         ),
-      );
-    }
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x331565C0),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'TUS TURNOS',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Mis Reservas',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                        height: 1.1,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _isLoading
+                          ? 'Cargando tus reservas...'
+                          : n == 0
+                              ? 'No tienes reservas activas'
+                              : n == 1
+                                  ? 'Tienes 1 reserva activa'
+                                  : 'Tienes $n reservas activas',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.82),
+                        fontSize: 13.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                children: [
+                  _HeroIconButton(onTap: _load),
+                  const SizedBox(width: 4),
+                  const NotificacionesBell(color: Colors.white),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoading() {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircularProgressIndicator(color: AppTheme.primary),
+          SizedBox(height: 16),
+          Text('Cargando tus reservas...',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: lista.length,
-        itemBuilder: (_, i) => _TicketCard(ticket: lista[i]),
+      color: AppTheme.primary,
+      child: ListView(
+        children: [
+          SizedBox(height: MediaQuery.of(context).size.height * 0.12),
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 104,
+                  height: 104,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppTheme.primary.withValues(alpha: 0.10),
+                        AppTheme.accent.withValues(alpha: 0.10),
+                      ],
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.confirmation_number_rounded,
+                      size: 46, color: AppTheme.primary.withValues(alpha: 0.55)),
+                ),
+                const SizedBox(height: 18),
+                const Text('No hay reservas',
+                    style: TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                const Text('Tus turnos reservados aparecerán aquí',
+                    style:
+                        TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Botón circular translúcido para acciones dentro del hero.
+class _HeroIconButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _HeroIconButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.16),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.all(8),
+          child: Icon(Icons.refresh, color: Colors.white, size: 22),
+        ),
       ),
     );
   }
@@ -113,13 +258,13 @@ class _TicketCard extends StatelessWidget {
   IconData get _estadoIcon {
     switch (ticket.estado?.nombre) {
       case 'reservado':
-        return Icons.schedule;
+        return Icons.schedule_rounded;
       case 'completado':
-        return Icons.check_circle;
+        return Icons.check_circle_rounded;
       case 'cancelado':
-        return Icons.cancel;
+        return Icons.cancel_rounded;
       default:
-        return Icons.info;
+        return Icons.info_rounded;
     }
   }
 
@@ -129,109 +274,197 @@ class _TicketCard extends StatelessWidget {
     final servicio = ticket.localServicio?.servicio;
     final cliente = ticket.cliente;
     final fmt = DateFormat('dd/MM/yyyy HH:mm');
+    final color = _estadoColor;
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: _estadoColor.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child:
-                      Icon(_estadoIcon, color: _estadoColor, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        local?.nombre ?? 'Local',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          color: AppTheme.textPrimary,
+            // Franja de acento vertical, teñida según el estado.
+            Container(width: 5, color: color),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        // Ícono de estado.
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(_estadoIcon, color: color, size: 24),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                local?.nombre ?? 'Local',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
+                                  color: AppTheme.textPrimary,
+                                  letterSpacing: -0.3,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (servicio != null) ...[
+                                const SizedBox(height: 5),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.design_services_outlined,
+                                        size: 12, color: AppTheme.accent),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        servicio.nombre,
+                                        style: const TextStyle(
+                                          fontSize: 12.5,
+                                          color: AppTheme.accent,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Chip de estado.
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(20),
+                            border:
+                                Border.all(color: color.withValues(alpha: 0.30)),
+                          ),
+                          child: Text(
+                            ticket.estado?.nombre ?? '',
+                            style: TextStyle(
+                                color: color,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Container(height: 1, color: AppTheme.border),
+                    const SizedBox(height: 12),
+                    _InfoLinea(
+                      icon: Icons.calendar_today_rounded,
+                      texto:
+                          'Reserva: ${fmt.format(ticket.fechaHoraReserva.toLocal())}',
+                    ),
+                    if (ticket.fechaHoraAtencion != null) ...[
+                      const SizedBox(height: 6),
+                      _InfoLinea(
+                        icon: Icons.done_all_rounded,
+                        texto:
+                            'Atendido: ${fmt.format(ticket.fechaHoraAtencion!.toLocal())}',
+                        color: AppTheme.success,
+                      ),
+                    ],
+                    if (cliente != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surface,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'DATOS DEL CLIENTE',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1,
+                                color: AppTheme.textSecondary
+                                    .withValues(alpha: 0.8),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            if (cliente.nombreCompleto.isNotEmpty)
+                              _ClienteRow(Icons.person_outlined,
+                                  cliente.nombreCompleto),
+                            if (cliente.ci != null && cliente.ci!.isNotEmpty)
+                              _ClienteRow(
+                                  Icons.badge_outlined, 'CI: ${cliente.ci}'),
+                            if (cliente.telefono != null &&
+                                cliente.telefono!.isNotEmpty)
+                              _ClienteRow(
+                                  Icons.phone_outlined, cliente.telefono!),
+                          ],
                         ),
                       ),
-                      if (servicio != null)
-                        Text(servicio.nombre,
-                            style: const TextStyle(
-                                fontSize: 12, color: AppTheme.accent)),
                     ],
-                  ),
+                  ],
                 ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _estadoColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color: _estadoColor.withOpacity(0.3)),
-                  ),
-                  child: Text(
-                    ticket.estado?.nombre ?? '',
-                    style: TextStyle(
-                        color: _estadoColor,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Icon(Icons.calendar_today,
-                    size: 14, color: AppTheme.textSecondary),
-                const SizedBox(width: 6),
-                Text(
-                  'Reserva: ${fmt.format(ticket.fechaHoraReserva.toLocal())}',
-                  style: const TextStyle(
-                      fontSize: 12, color: AppTheme.textSecondary),
-                ),
-              ],
-            ),
-            if (ticket.fechaHoraAtencion != null) ...[
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(Icons.done_all,
-                      size: 14, color: AppTheme.success),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Atendido: ${fmt.format(ticket.fechaHoraAtencion!.toLocal())}',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppTheme.success),
-                  ),
-                ],
               ),
-            ],
-            if (cliente != null) ...[
-              const SizedBox(height: 10),
-              const Divider(height: 1),
-              const SizedBox(height: 10),
-              if (cliente.nombreCompleto.isNotEmpty)
-                _ClienteRow(
-                    Icons.person_outlined, cliente.nombreCompleto),
-              if (cliente.ci != null && cliente.ci!.isNotEmpty)
-                _ClienteRow(Icons.badge_outlined, 'CI: ${cliente.ci}'),
-              if (cliente.telefono != null && cliente.telefono!.isNotEmpty)
-                _ClienteRow(Icons.phone_outlined, cliente.telefono!),
-            ],
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+// Línea de info con ícono + texto (fechas del ticket).
+class _InfoLinea extends StatelessWidget {
+  final IconData icon;
+  final String texto;
+  final Color? color;
+
+  const _InfoLinea({required this.icon, required this.texto, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? AppTheme.textSecondary;
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: c),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            texto,
+            style: TextStyle(fontSize: 12, color: c),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -244,7 +477,7 @@ class _ClienteRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 3),
+      padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         children: [
           Icon(icon, size: 13, color: AppTheme.textSecondary),
@@ -252,7 +485,9 @@ class _ClienteRow extends StatelessWidget {
           Expanded(
             child: Text(text,
                 style: const TextStyle(
-                    fontSize: 12, color: AppTheme.textSecondary)),
+                    fontSize: 12.5,
+                    color: AppTheme.textPrimary,
+                    fontWeight: FontWeight.w500)),
           ),
         ],
       ),
