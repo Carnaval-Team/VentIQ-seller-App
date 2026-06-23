@@ -151,6 +151,26 @@ class ListaService {
     );
   }
 
+  /// Actualiza la fecha_regla de la entrada activa del usuario en la cola
+  static Future<void> actualizarFechaRegla({
+    required String uuidUsuario,
+    required int idSalaEspera,
+    required DateTime fechaRegla,
+  }) async {
+    final res = await _supabase.schema(_schema).rpc(
+      'cliente_actualizar_fecha_regla',
+      params: {
+        'p_uuid_usuario': uuidUsuario,
+        'p_id_sala_espera': idSalaEspera,
+        'p_fecha_regla': fechaRegla.toIso8601String().substring(0, 10),
+      },
+    );
+    final json = res as Map<String, dynamic>;
+    if (json['ok'] != true) {
+      throw Exception(json['error'] ?? 'No se pudo actualizar la fecha');
+    }
+  }
+
   /// Stream en tiempo real de la cola
   static Stream<List<Map<String, dynamic>>> watchLista(int idLocalServicio) {
     return _supabase

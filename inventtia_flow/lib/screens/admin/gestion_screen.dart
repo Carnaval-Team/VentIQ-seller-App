@@ -150,74 +150,67 @@ class _GestionBody extends StatelessWidget {
                   letterSpacing: 0.8)),
           const SizedBox(height: 12),
 
-          // Grid de módulos
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 1.4,
-            children: [
-              _ModuloCard(
-                icon: Icons.store_outlined,
-                title: 'Locales',
-                subtitle: 'Puntos de atención',
-                color: const Color(0xFF4F7FFA),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => GestionLocalesScreen(entidad: entidad)),
+          // Grid de módulos — columnas adaptativas según ancho disponible
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // 1 col < 300px | 2 col < 500px | 3 col < 750px | 4 col+
+              final w = constraints.maxWidth;
+              final cols = w < 300 ? 1 : w < 500 ? 2 : w < 750 ? 3 : 4;
+              final modulos = [
+                _ModuloCard(
+                  icon: Icons.store_outlined,
+                  title: 'Locales',
+                  subtitle: 'Puntos de atención',
+                  color: const Color(0xFF4F7FFA),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => GestionLocalesScreen(entidad: entidad))),
                 ),
-              ),
-              _ModuloCard(
-                icon: Icons.miscellaneous_services_outlined,
-                title: 'Servicios',
-                subtitle: 'Catálogo de servicios',
-                color: const Color(0xFF7C5CFC),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) =>
-                          GestionServiciosScreen(entidad: entidad)),
+                _ModuloCard(
+                  icon: Icons.miscellaneous_services_outlined,
+                  title: 'Servicios',
+                  subtitle: 'Catálogo de servicios',
+                  color: const Color(0xFF7C5CFC),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => GestionServiciosScreen(entidad: entidad))),
                 ),
-              ),
-              _ModuloCard(
-                icon: Icons.account_tree_outlined,
-                title: 'Planificación',
-                subtitle: 'Servicios por local',
-                color: const Color(0xFF34C759),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) =>
-                          PlanificacionScreen(entidad: entidad)),
+                _ModuloCard(
+                  icon: Icons.account_tree_outlined,
+                  title: 'Planificación',
+                  subtitle: 'Servicios por local',
+                  color: const Color(0xFF34C759),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => PlanificacionScreen(entidad: entidad))),
                 ),
-              ),
-              _ModuloCard(
-                icon: Icons.confirmation_number_outlined,
-                title: 'Reservas',
-                subtitle: 'Consultar y exportar',
-                color: const Color(0xFF5856D6),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => ReservasScreen(entidad: entidad)),
+                _ModuloCard(
+                  icon: Icons.confirmation_number_outlined,
+                  title: 'Reservas',
+                  subtitle: 'Consultar y exportar',
+                  color: const Color(0xFF5856D6),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => ReservasScreen(entidad: entidad))),
                 ),
-              ),
-              _ModuloCard(
-                icon: Icons.people_alt_outlined,
-                title: 'Admins',
-                subtitle: 'Gestionar accesos',
-                color: const Color(0xFFFF9500),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) =>
-                          EntidadDetailScreen(entidad: entidad)),
+                _ModuloCard(
+                  icon: Icons.people_alt_outlined,
+                  title: 'Admins',
+                  subtitle: 'Gestionar accesos',
+                  color: const Color(0xFFFF9500),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => EntidadDetailScreen(entidad: entidad))),
                 ),
-              ),
-            ],
+              ];
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cols,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 1.4,
+                ),
+                itemCount: modulos.length,
+                itemBuilder: (_, i) => modulos[i],
+              );
+            },
           ),
         ],
       ),
