@@ -18,7 +18,7 @@ class ProductMovementsService {
       print('Filtros: desde=$dateFrom, hasta=$dateTo, tipoOp=$operationTypeId, almacen=$warehouseId');
 
       final response = await _supabase.rpc(
-        'get_product_movements_v2',
+        'get_product_movements_v3',
         params: {
           'p_id_producto': productId,
           'p_fecha_desde': dateFrom == null

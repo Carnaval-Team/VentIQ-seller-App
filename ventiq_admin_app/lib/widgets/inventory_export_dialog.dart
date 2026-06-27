@@ -23,6 +23,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   bool _isLoading = false;
   bool _isExporting = false;
   String? _selectedExportMethod = 'pdf'; // PDF seleccionado por defecto
+  String _selectedReportType = 'ventas'; // 'ventas' (v4) o 'movimientos' (v5)
   int? _selectedWarehouseId;
   String _selectedWarehouseName = 'Todos';
   DateTime? _selectedDate;
@@ -120,14 +121,25 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         throw Exception('No se encontró el ID de tienda del usuario');
       }
 
-      // Obtener datos del inventario
-      final inventoryData = await InventoryService.getInventarioSimple(
-        idAlmacen: _selectedWarehouseId,
-        idTienda: storeId,
-        fechaDesde: _selectedDate,
-        fechaHasta: _selectedDateTo,
-        includeZero: _includeZeroStock,
-      );
+      // Obtener datos del inventario según el tipo de reporte seleccionado
+      final List<Map<String, dynamic>> inventoryData;
+      if (_selectedReportType == 'movimientos') {
+        inventoryData = await InventoryService.getInventarioMovimientos(
+          idAlmacen: _selectedWarehouseId,
+          idTienda: storeId,
+          fechaDesde: _selectedDate,
+          fechaHasta: _selectedDateTo,
+          includeZero: _includeZeroStock,
+        );
+      } else {
+        inventoryData = await InventoryService.getInventarioSimple(
+          idAlmacen: _selectedWarehouseId,
+          idTienda: storeId,
+          fechaDesde: _selectedDate,
+          fechaHasta: _selectedDateTo,
+          includeZero: _includeZeroStock,
+        );
+      }
 
       if (inventoryData.isEmpty) {
         throw Exception('No se encontraron datos de inventario para exportar');
@@ -341,6 +353,52 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Tipo de reporte
+                    const Text(
+                      'Tipo de Reporte',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _ExportMethodCard(
+                            icon: Icons.point_of_sale,
+                            label: 'Por ventas',
+                            description: 'Stock y ventas del período',
+                            color: Colors.blue,
+                            isSelected: _selectedReportType == 'ventas',
+                            onTap: () {
+                              setState(() {
+                                _selectedReportType = 'ventas';
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _ExportMethodCard(
+                            icon: Icons.swap_horiz,
+                            label: 'Por movimientos',
+                            description: 'Entradas, salidas y pendientes',
+                            color: Colors.deepPurple,
+                            isSelected: _selectedReportType == 'movimientos',
+                            onTap: () {
+                              setState(() {
+                                _selectedReportType = 'movimientos';
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+
                     // Método de exportación
                     const Text(
                       'Método de Exportación',
