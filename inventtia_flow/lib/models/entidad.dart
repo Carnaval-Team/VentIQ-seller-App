@@ -6,6 +6,7 @@ class Entidad {
   final String ownerUuid;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final int horasAnticipacionCancelacion;
 
   const Entidad({
     required this.id,
@@ -15,6 +16,7 @@ class Entidad {
     required this.ownerUuid,
     required this.createdAt,
     required this.updatedAt,
+    this.horasAnticipacionCancelacion = 0,
   });
 
   factory Entidad.fromJson(Map<String, dynamic> json) => Entidad(
@@ -22,9 +24,15 @@ class Entidad {
         denominacion: json['denominacion'] as String,
         direccion: json['direccion'] as String?,
         telefono: json['telefono'] as String?,
-        ownerUuid: json['owner_uuid'] as String,
-        createdAt: DateTime.parse(json['created_at'] as String),
-        updatedAt: DateTime.parse(json['updated_at'] as String),
+        ownerUuid: (json['owner_uuid'] as String?) ?? '',
+        createdAt: json['created_at'] != null
+            ? DateTime.parse(json['created_at'] as String)
+            : DateTime.now(),
+        updatedAt: json['updated_at'] != null
+            ? DateTime.parse(json['updated_at'] as String)
+            : DateTime.now(),
+        horasAnticipacionCancelacion:
+            (json['horas_anticipacion_cancelacion'] as num?)?.toInt() ?? 0,
       );
 
   Map<String, dynamic> toJson() => {
@@ -33,12 +41,14 @@ class Entidad {
         'direccion': direccion,
         'telefono': telefono,
         'owner_uuid': ownerUuid,
+        'horas_anticipacion_cancelacion': horasAnticipacionCancelacion,
       };
 
   Entidad copyWith({
     String? denominacion,
     String? direccion,
     String? telefono,
+    int? horasAnticipacionCancelacion,
   }) =>
       Entidad(
         id: id,
@@ -48,9 +58,14 @@ class Entidad {
         ownerUuid: ownerUuid,
         createdAt: createdAt,
         updatedAt: updatedAt,
+        horasAnticipacionCancelacion: horasAnticipacionCancelacion ??
+            this.horasAnticipacionCancelacion,
       );
 
   bool isOwner(String uuid) => ownerUuid == uuid;
+
+  /// True si la entidad permite que los clientes cancelen sus reservas.
+  bool get permiteCancelacionCliente => horasAnticipacionCancelacion > 0;
 }
 
 class EntidadAdmin {

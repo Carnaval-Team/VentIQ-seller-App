@@ -24,7 +24,7 @@ create or replace function flow.cliente_reservar_directo(
   p_uuid_usuario      uuid,
   p_id_local_servicio integer,
   p_fecha             date,
-  p_cantidad          integer default 1,
+  p_cantidad          integer default null,
   p_datos_adicionales jsonb   default null,
   p_para_tercero      boolean default false,
   p_t_nombre          text    default null,
@@ -40,6 +40,8 @@ set search_path = flow, public
 as $$
 declare
   v_permite         boolean;
+  v_cantidad_default integer;
+  v_cantidad_max    integer;
   v_plan_id         bigint;
   v_disponibles     integer;
   v_estado          integer;
@@ -55,16 +57,14 @@ begin
     return jsonb_build_object('ok', false, 'error', 'parametros obligatorios faltantes');
   end if;
 
-  v_cant := coalesce(p_cantidad, 1);
-  if v_cant < 1 then
-    return jsonb_build_object('ok', false, 'error', 'La cantidad debe ser al menos 1');
-  end if;
-
   -- Serializa con entrar/salir de la cola y con el bot de ESTE servicio.
   perform pg_advisory_xact_lock(hashtext('flow.sala_espera'), p_id_local_servicio);
 
   -- ¿El servicio permite reserva directa? (y, si aplica, terceros)
-  select ls.permite_reserva_directa into v_permite
+  select ls.permite_reserva_directa,
+         ls.cantidad_default,
+         ls.cantidad_max_capacidad
+    into v_permite, v_cantidad_default, v_cantidad_max
   from flow.local_servicio ls
   where ls.id = p_id_local_servicio;
 
@@ -88,6 +88,16 @@ begin
     v_titular := flow._resolver_perfil_tercero(p_t_nombre, p_t_apellidos, p_t_ci, p_t_telefono);
   else
     v_titular := p_uuid_usuario;
+  end if;
+
+  -- Resolver y validar cantidad contra la configuración del local_servicio.
+  v_cant := coalesce(p_cantidad, v_cantidad_default, 1);
+  if v_cant < 1 then
+    return jsonb_build_object('ok', false, 'error', 'La cantidad debe ser al menos 1');
+  end if;
+  if v_cant > v_cantidad_max then
+    return jsonb_build_object('ok', false, 'error',
+      'La cantidad maxima por reserva es ' || v_cantidad_max);
   end if;
 
   -- Estado destino (igual que el bot)

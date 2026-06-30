@@ -84,6 +84,7 @@ class EntidadProvider extends ChangeNotifier {
     required String denominacion,
     String? direccion,
     String? telefono,
+    int? horasAnticipacionCancelacion,
   }) async {
     _isLoading = true;
     _error = null;
@@ -94,6 +95,7 @@ class EntidadProvider extends ChangeNotifier {
         denominacion: denominacion,
         direccion: direccion,
         telefono: telefono,
+        horasAnticipacionCancelacion: horasAnticipacionCancelacion,
       );
       final idx = _misEntidades.indexWhere((e) => e.id == id);
       if (idx != -1) _misEntidades[idx] = updated;

@@ -25,7 +25,7 @@ class AgendaService {
     required String uuidUsuario,
     required int idLocalServicio,
     required DateTime fecha,
-    int cantidad = 1,
+    int? cantidad,
     Map<String, dynamic>? datosAdicionales,
     bool paraTercero = false,
     String? terceroNombre,
@@ -39,7 +39,7 @@ class AgendaService {
         'p_uuid_usuario': uuidUsuario,
         'p_id_local_servicio': idLocalServicio,
         'p_fecha': fecha.toIso8601String().substring(0, 10),
-        'p_cantidad': cantidad,
+        if (cantidad != null) 'p_cantidad': cantidad,
         if (datosAdicionales != null) 'p_datos_adicionales': datosAdicionales,
         'p_para_tercero': paraTercero,
         if (paraTercero) 'p_t_nombre': terceroNombre,
@@ -114,6 +114,25 @@ class AgendaService {
         )
         .single();
     return Agenda.fromJson(res);
+  }
+
+  /// Cancela una reserva como cliente. Si la entidad configuró horas de
+  /// anticipación, valida el plazo; de lo contrario permite cancelar en cualquier momento.
+  static Future<void> cancelarTicketCliente({
+    required String uuidUsuario,
+    required int idAgenda,
+  }) async {
+    final res = await _supabase.schema(_schema).rpc(
+      'cliente_cancelar_reserva',
+      params: {
+        'p_uuid_usuario': uuidUsuario,
+        'p_id_agenda': idAgenda,
+      },
+    );
+    final json = res as Map<String, dynamic>;
+    if (json['ok'] != true) {
+      throw Exception(json['error'] ?? 'No se pudo cancelar la reserva');
+    }
   }
 
   static Future<List<EstadoAgenda>> getEstados() async {

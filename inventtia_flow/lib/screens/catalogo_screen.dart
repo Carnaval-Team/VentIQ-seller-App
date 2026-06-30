@@ -10,10 +10,11 @@ class CatalogoScreen extends StatefulWidget {
   const CatalogoScreen({super.key});
 
   @override
-  State<CatalogoScreen> createState() => _CatalogoScreenState();
+  State<CatalogoScreen> createState() => CatalogoScreenState();
 }
 
-class _CatalogoScreenState extends State<CatalogoScreen> {
+class CatalogoScreenState extends State<CatalogoScreen> {
+  Future<void> reload() => _load();
   List<LocalServicio> _localServicios = [];
   bool _isLoading = true;
 

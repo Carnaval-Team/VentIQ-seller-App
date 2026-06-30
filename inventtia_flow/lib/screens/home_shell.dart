@@ -23,6 +23,8 @@ class _HomeShellState extends State<HomeShell> {
   int _currentIndex = 0;
 
   // GlobalKeys para poder llamar reload() en las pantallas con IndexedStack
+  final GlobalKey<CatalogoScreenState> _catalogoKey =
+      GlobalKey<CatalogoScreenState>();
   final GlobalKey<MisListasScreenState> _misListasKey =
       GlobalKey<MisListasScreenState>();
   final GlobalKey<MisTicketsScreenState> _misTicketsKey =
@@ -43,14 +45,14 @@ class _HomeShellState extends State<HomeShell> {
   void initState() {
     super.initState();
     _screens = [
-      const CatalogoScreen(),
+      CatalogoScreen(key: _catalogoKey),
       MisListasScreen(key: _misListasKey),
       MisTicketsScreen(key: _misTicketsKey),
       const GestionScreen(),
       const PerfilScreen(),
     ];
     _screensNoAdmin = [
-      const CatalogoScreen(),
+      CatalogoScreen(key: _catalogoKey),
       MisListasScreen(key: _misListasKey),
       MisTicketsScreen(key: _misTicketsKey),
       const PerfilScreen(),
@@ -267,6 +269,7 @@ class _HomeShellState extends State<HomeShell> {
   void _onTabSelected(int i, bool isAdmin) {
     final idxListas = isAdmin ? _idxListasAdmin : _idxListasNoAdmin;
     final idxTickets = isAdmin ? _idxTicketsAdmin : _idxTicketsNoAdmin;
+    if (i == 0) _catalogoKey.currentState?.reload();
     if (i == idxListas) _misListasKey.currentState?.reload();
     if (i == idxTickets) _misTicketsKey.currentState?.reload();
     setState(() => _currentIndex = i);

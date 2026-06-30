@@ -191,11 +191,42 @@ class CatalogoService {
   static Future<LocalServicio> createLocalServicio({
     required int idLocal,
     required int idServicio,
+    bool permiteReservaDirecta = false,
+    int cantidadDefault = 1,
+    int cantidadMaxCapacidad = 1,
   }) async {
     final res = await _supabase
         .schema(_schema)
         .from('local_servicio')
-        .insert({'id_local': idLocal, 'id_servicio': idServicio})
+        .insert({
+          'id_local': idLocal,
+          'id_servicio': idServicio,
+          'permite_reserva_directa': permiteReservaDirecta,
+          'cantidad_default': cantidadDefault,
+          'cantidad_max_capacidad': cantidadMaxCapacidad,
+        })
+        .select('*, app_dat_locales(*), app_dat_servicios(*)')
+        .single();
+    return LocalServicio.fromJson(res);
+  }
+
+  static Future<LocalServicio> updateLocalServicio({
+    required int id,
+    bool? permiteReservaDirecta,
+    int? cantidadDefault,
+    int? cantidadMaxCapacidad,
+  }) async {
+    final res = await _supabase
+        .schema(_schema)
+        .from('local_servicio')
+        .update({
+          if (permiteReservaDirecta != null)
+            'permite_reserva_directa': permiteReservaDirecta,
+          if (cantidadDefault != null) 'cantidad_default': cantidadDefault,
+          if (cantidadMaxCapacidad != null)
+            'cantidad_max_capacidad': cantidadMaxCapacidad,
+        })
+        .eq('id', id)
         .select('*, app_dat_locales(*), app_dat_servicios(*)')
         .single();
     return LocalServicio.fromJson(res);

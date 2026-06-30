@@ -397,18 +397,19 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
         top: 24,
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              widget.servicio == null ? 'Nuevo Servicio' : 'Editar Servicio',
-              style: const TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
+      child: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                widget.servicio == null ? 'Nuevo Servicio' : 'Editar Servicio',
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
 
             // ── Selector de imagen ────────────────────────
             GestureDetector(
@@ -540,6 +541,7 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

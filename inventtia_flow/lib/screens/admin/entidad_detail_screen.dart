@@ -346,6 +346,20 @@ class _InfoCard extends StatelessWidget {
                 ],
               ),
             ],
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(Icons.timer_outlined,
+                    size: 16, color: AppTheme.textSecondary),
+                const SizedBox(width: 6),
+                Text(
+                  entidad.permiteCancelacionCliente
+                      ? 'Cancelación permitida hasta ${entidad.horasAnticipacionCancelacion} horas antes'
+                      : 'Cancelación por cliente deshabilitada',
+                  style: const TextStyle(color: AppTheme.textSecondary),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -473,6 +487,7 @@ class _EditEntidadSheetState extends State<_EditEntidadSheet> {
   late final TextEditingController _denomCtrl;
   late final TextEditingController _dirCtrl;
   late final TextEditingController _telCtrl;
+  late final TextEditingController _horasCancelCtrl;
 
   @override
   void initState() {
@@ -480,6 +495,9 @@ class _EditEntidadSheetState extends State<_EditEntidadSheet> {
     _denomCtrl = TextEditingController(text: widget.entidad.denominacion);
     _dirCtrl = TextEditingController(text: widget.entidad.direccion ?? '');
     _telCtrl = TextEditingController(text: widget.entidad.telefono ?? '');
+    _horasCancelCtrl = TextEditingController(
+      text: widget.entidad.horasAnticipacionCancelacion.toString(),
+    );
   }
 
   @override
@@ -487,17 +505,20 @@ class _EditEntidadSheetState extends State<_EditEntidadSheet> {
     _denomCtrl.dispose();
     _dirCtrl.dispose();
     _telCtrl.dispose();
+    _horasCancelCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final horas = int.tryParse(_horasCancelCtrl.text.trim()) ?? 0;
     final provider = context.read<EntidadProvider>();
     final ok = await provider.actualizarEntidad(
       id: widget.entidad.id,
       denominacion: _denomCtrl.text.trim(),
       direccion: _dirCtrl.text.trim().isEmpty ? null : _dirCtrl.text.trim(),
       telefono: _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
+      horasAnticipacionCancelacion: horas,
     );
     if (!mounted) return;
     if (ok) {
@@ -555,6 +576,21 @@ class _EditEntidadSheetState extends State<_EditEntidadSheet> {
                 labelText: 'Teléfono de contacto',
                 prefixIcon: Icon(Icons.phone_outlined),
               ),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _horasCancelCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Horas de anticipación para cancelar',
+                prefixIcon: Icon(Icons.timer_outlined),
+                helperText: '0 = el cliente no puede cancelar',
+              ),
+              validator: (v) {
+                final n = int.tryParse(v?.trim() ?? '');
+                if (n == null || n < 0) return 'Valor inválido';
+                return null;
+              },
             ),
             const SizedBox(height: 20),
             ElevatedButton(

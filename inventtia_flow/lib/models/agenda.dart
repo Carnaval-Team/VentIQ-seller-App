@@ -1,3 +1,4 @@
+import 'entidad.dart';
 import 'servicio.dart';
 
 class EstadoAgenda {
@@ -59,6 +60,7 @@ class Agenda {
   final DateTime updatedAt;
   final EstadoAgenda? estado;
   final LocalServicio? localServicio;
+  final Entidad? entidad;
   final ClientePerfil? cliente;
   final int cantidad;
   final Map<String, dynamic>? datosAdicionales;
@@ -75,6 +77,7 @@ class Agenda {
     required this.updatedAt,
     this.estado,
     this.localServicio,
+    this.entidad,
     this.cliente,
     this.cantidad = 1,
     this.datosAdicionales,
@@ -88,12 +91,21 @@ class Agenda {
   factory Agenda.fromJson(Map<String, dynamic> json) {
     // Soporta dos formatos:
     // 1. RPC admin: local/servicio/entidad/cliente como objetos planos al nivel raíz
-    // 2. RPC cliente / PostgREST: local_servicio anidado
+    // 2. RPC cliente / PostgREST: local_servicio anidado + local/servicio planos
     LocalServicio? ls;
     if (json['local_servicio'] != null) {
-      ls = LocalServicio.fromJson(json['local_servicio'] as Map<String, dynamic>);
+      final lsJson = Map<String, dynamic>.from(json['local_servicio'] as Map);
+      if (json['local'] != null) lsJson['local'] = json['local'];
+      if (json['servicio'] != null) lsJson['servicio'] = json['servicio'];
+      ls = LocalServicio.fromJson(lsJson);
     } else if (json['local'] != null || json['servicio'] != null) {
       ls = LocalServicio.fromJson(json);
+    }
+
+    // Entidad dueña del local (disponible en el RPC cliente).
+    Entidad? entidad;
+    if (json['entidad'] != null) {
+      entidad = Entidad.fromJson(json['entidad'] as Map<String, dynamic>);
     }
 
     return Agenda(
@@ -112,6 +124,7 @@ class Agenda {
               (json['estado'] ?? json['nom_estado_agenda']) as Map<String, dynamic>)
           : null,
       localServicio: ls,
+      entidad: entidad,
       cliente: json['cliente'] != null
           ? ClientePerfil.fromJson(json['cliente'] as Map<String, dynamic>)
           : null,

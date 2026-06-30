@@ -93,6 +93,8 @@ class LocalServicio {
   final Servicio? servicio;
   final DateTime createdAt;
   final bool permiteReservaDirecta;
+  final int cantidadDefault;
+  final int cantidadMaxCapacidad;
 
   LocalServicio({
     required this.id,
@@ -102,6 +104,8 @@ class LocalServicio {
     this.servicio,
     required this.createdAt,
     this.permiteReservaDirecta = false,
+    this.cantidadDefault = 1,
+    this.cantidadMaxCapacidad = 1,
   });
 
   factory LocalServicio.fromJson(Map<String, dynamic> json) {
@@ -125,10 +129,18 @@ class LocalServicio {
           : DateTime.now(),
       permiteReservaDirecta:
           (json['permite_reserva_directa'] as bool?) ?? false,
+      cantidadDefault: (json['cantidad_default'] as num?)?.toInt() ?? 1,
+      cantidadMaxCapacidad:
+          (json['cantidad_max_capacidad'] as num?)?.toInt() ?? 1,
     );
   }
 
-  LocalServicio copyWith({bool? permiteReservaDirecta}) => LocalServicio(
+  LocalServicio copyWith({
+    bool? permiteReservaDirecta,
+    int? cantidadDefault,
+    int? cantidadMaxCapacidad,
+  }) =>
+      LocalServicio(
         id: id,
         idLocal: idLocal,
         idServicio: idServicio,
@@ -137,5 +149,8 @@ class LocalServicio {
         createdAt: createdAt,
         permiteReservaDirecta:
             permiteReservaDirecta ?? this.permiteReservaDirecta,
+        cantidadDefault: cantidadDefault ?? this.cantidadDefault,
+        cantidadMaxCapacidad:
+            cantidadMaxCapacidad ?? this.cantidadMaxCapacidad,
       );
 }

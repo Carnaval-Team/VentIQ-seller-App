@@ -52,6 +52,7 @@ class EntidadService {
     String? direccion,
     String? telefono,
     required String ownerUuid,
+    int horasAnticipacionCancelacion = 0,
   }) async {
     final res = await _supabase
         .schema(_schema)
@@ -61,6 +62,7 @@ class EntidadService {
           'direccion': direccion,
           'telefono': telefono,
           'owner_uuid': ownerUuid,
+          'horas_anticipacion_cancelacion': horasAnticipacionCancelacion,
         })
         .select()
         .single();
@@ -72,6 +74,7 @@ class EntidadService {
     required String denominacion,
     String? direccion,
     String? telefono,
+    int? horasAnticipacionCancelacion,
   }) async {
     final res = await _supabase
         .schema(_schema)
@@ -80,6 +83,8 @@ class EntidadService {
           'denominacion': denominacion,
           'direccion': direccion,
           'telefono': telefono,
+          if (horasAnticipacionCancelacion != null)
+            'horas_anticipacion_cancelacion': horasAnticipacionCancelacion,
         })
         .eq('id', id)
         .select()

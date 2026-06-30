@@ -157,7 +157,7 @@ class _LocalServicioDetailScreenState
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _DisponibilidadSheet(
-        servicio: widget.localServicio.servicio,
+        localServicio: widget.localServicio,
         dias: dias,
       ),
     );
@@ -813,78 +813,57 @@ class _LocalServicioDetailScreenState
     final enLista = _miLugar != null;
     final permiteDirecta = widget.localServicio.permiteReservaDirecta;
 
-    final Widget child;
+    Widget child;
     if (enLista) {
-      child = OutlinedButton.icon(
+      child = _ActionButton(
         onPressed: _isActing ? null : _salir,
-        icon: _isActing
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2))
-            : const Icon(Icons.exit_to_app),
-        label: const Text('Salir de la lista'),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppTheme.error,
-          side: const BorderSide(color: AppTheme.error),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-        ),
+        isLoading: _isActing,
+        icon: Icons.exit_to_app,
+        label: 'Salir de la lista',
+        variant: _ButtonVariant.danger,
       );
     } else if (permiteDirecta) {
-      // Reserva directa habilitada: "Reservar ahora" (primaria) + lista (secundaria).
+      // Reserva directa habilitada: acción primaria clara + alternativa secundaria.
       child = Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ElevatedButton.icon(
+          _ActionButton(
             onPressed: _isActing ? null : _reservarAhora,
-            icon: _isActing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                        color: Colors.white, strokeWidth: 2))
-                : const Icon(Icons.event_available),
-            label: const Text('Reservar ahora',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size.fromHeight(0),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
+            isLoading: _isActing,
+            icon: Icons.event_available,
+            label: 'Reservar ahora',
+            variant: _ButtonVariant.primary,
           ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
+          const SizedBox(height: 10),
+          _ActionButton(
             onPressed: _isActing ? null : _anotarse,
-            icon: const Icon(Icons.playlist_add, size: 18),
-            label: const Text('Anotarme en la lista'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppTheme.primary,
-              side: const BorderSide(color: AppTheme.primary),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
+            isLoading: false,
+            icon: Icons.playlist_add,
+            label: 'Anotarme en la lista',
+            variant: _ButtonVariant.secondary,
           ),
         ],
       );
     } else {
-      child = ElevatedButton.icon(
+      child = _ActionButton(
         onPressed: _isActing ? null : _anotarse,
-        icon: _isActing
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                    color: Colors.white, strokeWidth: 2))
-            : const Icon(Icons.playlist_add),
-        label: const Text('Anotarme en la lista',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-        style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-        ),
+        isLoading: _isActing,
+        icon: Icons.playlist_add,
+        label: 'Anotarme en la lista',
+        variant: _ButtonVariant.primary,
       );
     }
+
+    // AnimatedSwitcher para transiciones suaves entre estados (lista ↔ no lista).
+    child = AnimatedSwitcher(
+      duration: const Duration(milliseconds: 200),
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeIn,
+      child: Container(
+        key: ValueKey('bottom-${enLista ? 'lista' : (permiteDirecta ? 'directa' : 'cola')}'),
+        child: child,
+      ),
+    );
 
     return Container(
       decoration: const BoxDecoration(
@@ -900,10 +879,132 @@ class _LocalServicioDetailScreenState
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
           child: child,
         ),
       ),
+    );
+  }
+}
+
+enum _ButtonVariant { primary, secondary, danger }
+
+/// Botón de acción con feedback físico al presionar (scale 0.97, 120ms ease-out).
+/// Los botones ocupan el ancho disponible, tienen altura táctil generosa y
+/// muestran un indicador de carga sin cambiar de tamaño.
+class _ActionButton extends StatefulWidget {
+  final VoidCallback? onPressed;
+  final bool isLoading;
+  final IconData icon;
+  final String label;
+  final _ButtonVariant variant;
+
+  const _ActionButton({
+    required this.onPressed,
+    required this.isLoading,
+    required this.icon,
+    required this.label,
+    required this.variant,
+  });
+
+  @override
+  State<_ActionButton> createState() => _ActionButtonState();
+}
+
+class _ActionButtonState extends State<_ActionButton> {
+  bool _pressed = false;
+
+  Color get _foregroundColor {
+    switch (widget.variant) {
+      case _ButtonVariant.primary:
+        return Colors.white;
+      case _ButtonVariant.secondary:
+        return AppTheme.primary;
+      case _ButtonVariant.danger:
+        return AppTheme.error;
+    }
+  }
+
+  Color get _backgroundColor {
+    switch (widget.variant) {
+      case _ButtonVariant.primary:
+        return AppTheme.primary;
+      case _ButtonVariant.secondary:
+        return Colors.white;
+      case _ButtonVariant.danger:
+        return const Color(0xFFFFF5F5);
+    }
+  }
+
+  Color get _borderColor {
+    switch (widget.variant) {
+      case _ButtonVariant.primary:
+        return AppTheme.primary;
+      case _ButtonVariant.secondary:
+        return AppTheme.primary;
+      case _ButtonVariant.danger:
+        return AppTheme.error;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onPressed != null;
+
+    Widget button = Material(
+      color: _backgroundColor,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: enabled && !widget.isLoading ? widget.onPressed : null,
+        onTapDown: enabled && !widget.isLoading
+            ? (_) => setState(() => _pressed = true)
+            : null,
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 52,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _borderColor, width: 1.5),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (widget.isLoading)
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(_foregroundColor),
+                  ),
+                )
+              else
+                Icon(widget.icon, size: 20, color: _foregroundColor),
+              const SizedBox(width: 10),
+              Text(
+                widget.label,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: _foregroundColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // Scale físico al presionar: elementos reales se comprimen ligeramente,
+    // confirmando que la interfaz escuchó el toque.
+    return AnimatedScale(
+      scale: _pressed && enabled ? 0.97 : 1.0,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+      child: button,
     );
   }
 }
@@ -1036,14 +1137,25 @@ class _DatosReserva {
 class _CantidadDialog extends StatefulWidget {
   final DateTime fecha;
   final int maximo;
-  const _CantidadDialog({required this.fecha, required this.maximo});
+  final int inicial;
+  const _CantidadDialog({
+    required this.fecha,
+    required this.maximo,
+    this.inicial = 1,
+  });
 
   @override
   State<_CantidadDialog> createState() => _CantidadDialogState();
 }
 
 class _CantidadDialogState extends State<_CantidadDialog> {
-  int _cantidad = 1;
+  late int _cantidad;
+
+  @override
+  void initState() {
+    super.initState();
+    _cantidad = widget.inicial.clamp(1, widget.maximo);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1305,10 +1417,10 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
 
 // ── Hoja: calendario de disponibilidad para "Reservar ahora" ──
 class _DisponibilidadSheet extends StatefulWidget {
-  final Servicio? servicio;
+  final LocalServicio localServicio;
   final List<DisponibilidadDia> dias;
 
-  const _DisponibilidadSheet({required this.servicio, required this.dias});
+  const _DisponibilidadSheet({required this.localServicio, required this.dias});
 
   @override
   State<_DisponibilidadSheet> createState() => _DisponibilidadSheetState();
@@ -1338,16 +1450,27 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
     final disp = _disp(day);
     if (disp == null || disp.disponibles <= 0) return;
     final fecha = DateTime(day.year, day.month, day.day);
-    final maxCant = disp.disponibles;
-    // Si solo hay 1 cupo, no preguntamos cantidad.
-    if (maxCant <= 1) {
+
+    final ls = widget.localServicio;
+    final cantidadDefault = ls.cantidadDefault;
+    final cantidadMax = ls.cantidadMaxCapacidad;
+    final disponibles = disp.disponibles;
+
+    // Si solo hay 1 cupo o el máximo configurado es 1, no preguntamos cantidad.
+    if (disponibles <= 1 || cantidadMax <= 1) {
       if (!mounted) return;
       Navigator.pop(context, (fecha: fecha, cantidad: 1));
       return;
     }
+
+    final maxCant = cantidadMax < disponibles ? cantidadMax : disponibles;
     final cantidad = await showDialog<int>(
       context: context,
-      builder: (_) => _CantidadDialog(fecha: fecha, maximo: maxCant),
+      builder: (_) => _CantidadDialog(
+        fecha: fecha,
+        maximo: maxCant,
+        inicial: cantidadDefault.clamp(1, maxCant),
+      ),
     );
     if (cantidad == null || !mounted) return;
     Navigator.pop(context, (fecha: fecha, cantidad: cantidad));
@@ -1392,7 +1515,7 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
                           style: TextStyle(
                               fontWeight: FontWeight.w800, fontSize: 16)),
                       Text(
-                        widget.servicio?.nombre ?? 'Servicio',
+                        widget.localServicio.servicio?.nombre ?? 'Servicio',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(

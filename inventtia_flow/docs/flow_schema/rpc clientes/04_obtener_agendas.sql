@@ -34,6 +34,12 @@ as $$
           'descripcion', e.descripcion
         ),
         'id_local_servicio', ls.id,
+        'local_servicio', jsonb_build_object(
+          'id',                     ls.id,
+          'permite_reserva_directa', ls.permite_reserva_directa,
+          'cantidad_default',       ls.cantidad_default,
+          'cantidad_max_capacidad', ls.cantidad_max_capacidad
+        ),
         'servicio', jsonb_build_object(
           'id',                 s.id,
           'nombre',             s.nombre,
@@ -50,6 +56,11 @@ as $$
           'horario_atencion', l.horario_atencion,
           'coordenadas',      l.coordenadas,
           'foto',             l.foto
+        ),
+        'entidad', jsonb_build_object(
+          'id',                             en.id,
+          'denominacion',                   en.denominacion,
+          'horas_anticipacion_cancelacion', en.horas_anticipacion_cancelacion
         ),
         -- Titular de la reserva (para mostrar "Para: <nombre>" si es un tercero)
         'cliente', case when p.id is null then null else jsonb_build_object(
@@ -70,6 +81,7 @@ as $$
   join flow.app_dat_locales   l  on l.id  = ls.id_local
   join flow.app_dat_servicios s  on s.id  = ls.id_servicio
   join flow.nom_estado_agenda e  on e.id  = a.id_estado
+  join flow.entidad          en on en.id = l.id_entidad
   left join flow.perfil       p  on p.uuid_usuario = a.uuid_usuario
   -- El usuario ve sus propias reservas Y las que hizo para terceros.
   where (a.uuid_usuario = p_uuid_usuario or a.reservado_por = p_uuid_usuario)

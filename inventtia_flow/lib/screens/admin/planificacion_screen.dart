@@ -315,6 +315,28 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
     ).then((_) => _cargarPlanes());
   }
 
+  void _abrirConfigCapacidades() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _ConfigCapacidadesSheet(
+        localServicio: widget.ls,
+        onUpdated: (ls) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Capacidades actualizadas'),
+                backgroundColor: AppTheme.success,
+              ),
+            );
+          }
+        },
+      ),
+    );
+  }
+
   String _dayKey(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'
@@ -480,6 +502,23 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
                   foregroundColor: AppTheme.primary,
                   side: BorderSide(
                       color: AppTheme.primary.withValues(alpha: 0.4)),
+                  minimumSize: const Size.fromHeight(40),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+            // Configuración de capacidades por reserva
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: OutlinedButton.icon(
+                onPressed: _abrirConfigCapacidades,
+                icon: const Icon(Icons.confirmation_number_outlined, size: 18),
+                label: const Text('Capacidades por reserva'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.accent,
+                  side: BorderSide(
+                      color: AppTheme.accent.withValues(alpha: 0.4)),
                   minimumSize: const Size.fromHeight(40),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10)),
@@ -1577,6 +1616,152 @@ class _SelectorDropdown<T> extends StatelessWidget {
                   ))
               .toList(),
         ),
+      ),
+    );
+  }
+}
+
+// ── Sheet: configurar cantidad default y máxima por reserva ───────────
+class _ConfigCapacidadesSheet extends StatefulWidget {
+  final LocalServicio localServicio;
+  final ValueChanged<LocalServicio> onUpdated;
+
+  const _ConfigCapacidadesSheet({
+    super.key,
+    required this.localServicio,
+    required this.onUpdated,
+  });
+
+  @override
+  State<_ConfigCapacidadesSheet> createState() =>
+      _ConfigCapacidadesSheetState();
+}
+
+class _ConfigCapacidadesSheetState extends State<_ConfigCapacidadesSheet> {
+  late final TextEditingController _defaultCtrl;
+  late final TextEditingController _maxCtrl;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _defaultCtrl = TextEditingController(
+      text: widget.localServicio.cantidadDefault.toString(),
+    );
+    _maxCtrl = TextEditingController(
+      text: widget.localServicio.cantidadMaxCapacidad.toString(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _defaultCtrl.dispose();
+    _maxCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final defaultValue = int.tryParse(_defaultCtrl.text.trim()) ?? 1;
+    final maxValue = int.tryParse(_maxCtrl.text.trim()) ?? 1;
+
+    if (defaultValue < 1 || maxValue < 1 || defaultValue > maxValue) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La cantidad default debe estar entre 1 y el máximo'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      final updated = await CatalogoService.updateLocalServicio(
+        id: widget.localServicio.id,
+        cantidadDefault: defaultValue,
+        cantidadMaxCapacidad: maxValue,
+      );
+      if (!mounted) return;
+      Navigator.pop(context);
+      widget.onUpdated(updated);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.confirmation_number_outlined,
+                    color: AppTheme.accent, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Text('Capacidades por reserva',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            widget.localServicio.servicio?.nombre ?? 'Servicio',
+            style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+          ),
+          const SizedBox(height: 20),
+          TextFormField(
+            controller: _defaultCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Cantidad default *',
+              prefixIcon: Icon(Icons.looks_one_outlined),
+              helperText: 'Turnos que se reservan por defecto',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _maxCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Cantidad máxima por reserva *',
+              prefixIcon: Icon(Icons.confirmation_number_outlined),
+              helperText: 'Límite de turnos que puede reservar un cliente',
+            ),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: _saving ? null : _submit,
+            icon: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.save, size: 18),
+            label: Text(_saving ? 'Guardando...' : 'Guardar',
+                style: const TextStyle(fontSize: 16)),
+          ),
+        ],
       ),
     );
   }

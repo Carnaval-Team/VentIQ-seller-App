@@ -27,6 +27,74 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
 
   void reload() => _load();
 
+  Future<void> _cancelar(Agenda ticket) async {
+    final uuid = context.read<AuthProvider>().user?.id ?? '';
+    if (uuid.isEmpty) return;
+
+    final entidad = ticket.entidad;
+    final horas = entidad?.horasAnticipacionCancelacion ?? 0;
+
+    // Si la entidad configuró horas de anticipación, validamos el plazo.
+    // Si no hay configuración (0 o null), el cliente puede cancelar en cualquier momento.
+    if (horas > 0) {
+      final ahora = DateTime.now();
+      final limite = ticket.fechaHoraReserva.subtract(Duration(hours: horas));
+      if (ahora.isAfter(limite)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Solo puedes cancelar hasta $horas horas antes de la reserva'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+        return;
+      }
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Cancelar reserva'),
+        content: const Text('¿Estás seguro de que quieres cancelar esta reserva?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('No')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Cancelar reserva'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    try {
+      await AgendaService.cancelarTicketCliente(
+        uuidUsuario: uuid,
+        idAgenda: ticket.id,
+      );
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Reserva cancelada'),
+          backgroundColor: AppTheme.success,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+    }
+  }
+
   Future<void> _load() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
@@ -67,6 +135,7 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                             ticket: _tickets[i],
                             miUuid:
                                 context.read<AuthProvider>().user?.id ?? '',
+                            onCancelar: _cancelar,
                           ),
                         ),
                       ),
@@ -244,8 +313,13 @@ class _HeroIconButton extends StatelessWidget {
 class _TicketCard extends StatelessWidget {
   final Agenda ticket;
   final String miUuid;
+  final ValueChanged<Agenda> onCancelar;
 
-  const _TicketCard({required this.ticket, required this.miUuid});
+  const _TicketCard({
+    required this.ticket,
+    required this.miUuid,
+    required this.onCancelar,
+  });
 
   Color get _estadoColor {
     switch (ticket.estado?.nombre) {
@@ -258,6 +332,14 @@ class _TicketCard extends StatelessWidget {
       default:
         return AppTheme.textSecondary;
     }
+  }
+
+  bool get _puedeCancelar {
+    if (ticket.estado?.nombre != 'reservado') return false;
+    final horas = ticket.entidad?.horasAnticipacionCancelacion ?? 0;
+    if (horas <= 0) return true;
+    final limite = ticket.fechaHoraReserva.subtract(Duration(hours: horas));
+    return DateTime.now().isBefore(limite);
   }
 
   IconData get _estadoIcon {
@@ -482,6 +564,24 @@ class _TicketCard extends StatelessWidget {
                               _ClienteRow(
                                   Icons.phone_outlined, cliente.telefono!),
                           ],
+                        ),
+                      ),
+                    ],
+                    if (_puedeCancelar) ...[
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => onCancelar(ticket),
+                          icon: const Icon(Icons.cancel_outlined, size: 18),
+                          label: const Text('Cancelar reserva'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.error,
+                            side: const BorderSide(color: AppTheme.error),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
                         ),
                       ),
                     ],

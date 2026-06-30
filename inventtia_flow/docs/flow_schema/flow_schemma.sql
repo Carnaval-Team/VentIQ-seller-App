@@ -45,6 +45,9 @@ CREATE TABLE flow.local_servicio (
   id_local integer NOT NULL,
   id_servicio integer NOT NULL,
   created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  permite_reserva_directa boolean NOT NULL DEFAULT false,
+  cantidad_default integer NOT NULL DEFAULT 1,
+  cantidad_max_capacidad integer NOT NULL DEFAULT 1,
   CONSTRAINT local_servicio_pkey PRIMARY KEY (id),
   CONSTRAINT local_servicio_id_servicio_fkey FOREIGN KEY (id_servicio) REFERENCES flow.app_dat_servicios(id),
   CONSTRAINT local_servicio_id_local_fkey FOREIGN KEY (id_local) REFERENCES flow.app_dat_locales(id)
@@ -118,6 +121,7 @@ CREATE TABLE flow.entidad (
   owner_uuid uuid NOT NULL,
   created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  horas_anticipacion_cancelacion integer NOT NULL DEFAULT 0,
   CONSTRAINT entidad_pkey PRIMARY KEY (id),
   CONSTRAINT entidad_owner_uuid_fkey FOREIGN KEY (owner_uuid) REFERENCES auth.users(id)
 );

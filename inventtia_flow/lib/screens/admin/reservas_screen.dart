@@ -539,6 +539,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
 
   Widget _buildTabla() {
     final grupos = _agruparPorLocal();
+    // Columnas dinámicas de datos adicionales y terceros calculadas sobre todo
+    // el listado para mantener consistencia entre grupos y reportes.
+    final cols = _columnasDatos(_reservas);
+    final conTerceros = _hayTerceros(_reservas);
+
     return ListView.builder(
       padding: const EdgeInsets.all(12),
       itemCount: grupos.length,
@@ -584,26 +589,37 @@ class _ReservasScreenState extends State<ReservasScreen> {
                       color: AppTheme.textPrimary),
                   dataTextStyle: const TextStyle(
                       fontSize: 12, color: AppTheme.textSecondary),
-                  columns: const [
-                    DataColumn(label: Text('Servicio')),
-                    DataColumn(label: Text('Fecha')),
-                    DataColumn(label: Text('Nombre')),
-                    DataColumn(label: Text('Apellidos')),
-                    DataColumn(label: Text('CI')),
+                  columns: [
+                    const DataColumn(label: Text('Servicio')),
+                    const DataColumn(label: Text('Fecha')),
+                    const DataColumn(label: Text('Nombre')),
+                    const DataColumn(label: Text('Apellidos')),
+                    const DataColumn(label: Text('CI')),
+                    const DataColumn(label: Text('Teléfono')),
+                    const DataColumn(label: Text('Cant.')),
+                    if (conTerceros)
+                      const DataColumn(label: Text('Para tercero')),
+                    ...cols.map((c) => DataColumn(label: Text(c.etiqueta))),
                   ],
                   rows: lista.map((r) {
                     final cli = r.cliente;
+                    final esTercero = r.reservadoPor != null &&
+                        r.uuidUsuario != null &&
+                        r.reservadoPor != r.uuidUsuario;
                     return DataRow(cells: [
                       DataCell(Text(
                           r.localServicio?.servicio?.nombre ?? '-',
                           style: const TextStyle(
                               fontWeight: FontWeight.w500,
                               color: AppTheme.textPrimary))),
-                      DataCell(Text(
-                          _fmt.format(r.fechaHoraReserva))),
+                      DataCell(Text(_fmt.format(r.fechaHoraReserva))),
                       DataCell(Text(cli?.nombre ?? '-')),
                       DataCell(Text(cli?.apellidos ?? '-')),
                       DataCell(Text(cli?.ci ?? '-')),
+                      DataCell(Text(cli?.telefono ?? '-')),
+                      DataCell(Text('${r.cantidad}')),
+                      if (conTerceros) DataCell(Text(esTercero ? 'Sí' : 'No')),
+                      ...cols.map((c) => DataCell(Text(_valorDato(r, c.clave)))),
                     ]);
                   }).toList(),
                 ),

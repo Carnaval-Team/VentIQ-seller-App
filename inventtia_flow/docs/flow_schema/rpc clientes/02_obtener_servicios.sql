@@ -29,6 +29,8 @@ as $$
         'id_local_servicio',       ls.id,
         'created_at',              ls.created_at,
         'permite_reserva_directa', ls.permite_reserva_directa,
+        'cantidad_default',        ls.cantidad_default,
+        'cantidad_max_capacidad',  ls.cantidad_max_capacidad,
         'servicio', jsonb_build_object(
           'id',                 s.id,
           'nombre',             s.nombre,
@@ -49,10 +51,11 @@ as $$
           'foto',             l.foto
         ),
         'entidad', case when en.id is null then null else jsonb_build_object(
-          'id',           en.id,
-          'denominacion', en.denominacion,
-          'direccion',    en.direccion,
-          'telefono',     en.telefono
+          'id',                           en.id,
+          'denominacion',                 en.denominacion,
+          'direccion',                    en.direccion,
+          'telefono',                     en.telefono,
+          'horas_anticipacion_cancelacion', en.horas_anticipacion_cancelacion
         ) end
       )
       order by l.nombre, s.nombre
