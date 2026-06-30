@@ -12,6 +12,7 @@ import 'dart:io';
 
 import '../../config/app_theme.dart';
 import '../../models/agenda.dart';
+import '../../models/campo_adicional.dart';
 import '../../models/entidad.dart';
 import '../../models/servicio.dart';
 import '../../providers/auth_provider.dart';
