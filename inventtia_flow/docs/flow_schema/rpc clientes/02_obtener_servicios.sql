@@ -26,13 +26,16 @@ as $$
   select coalesce(
     jsonb_agg(
       jsonb_build_object(
-        'id_local_servicio', ls.id,
-        'created_at',        ls.created_at,
+        'id_local_servicio',       ls.id,
+        'created_at',              ls.created_at,
+        'permite_reserva_directa', ls.permite_reserva_directa,
         'servicio', jsonb_build_object(
-          'id',          s.id,
-          'nombre',      s.nombre,
-          'descripcion', s.descripcion,
-          'foto',        s.foto
+          'id',                 s.id,
+          'nombre',             s.nombre,
+          'descripcion',        s.descripcion,
+          'foto',               s.foto,
+          'campos_adicionales', s.campos_adicionales,
+          'permite_tercero',    s.permite_tercero
         ),
         'local', jsonb_build_object(
           'id',               l.id,

@@ -5,11 +5,18 @@ class ListaService {
   static final SupabaseClient _supabase = Supabase.instance.client;
   static const String _schema = 'flow';
 
-  /// Entra a la sala de espera usando el RPC seguro (con advisory lock + antifraude)
+  /// Entra a la sala de espera usando el RPC seguro (con advisory lock + antifraude).
+  /// Opcionalmente con datos adicionales y/o a nombre de un tercero.
   static Future<void> entrarSalaEspera({
     required String uuidUsuario,
     required int idLocalServicio,
     required DateTime fechaRegla,
+    Map<String, dynamic>? datosAdicionales,
+    bool paraTercero = false,
+    String? terceroNombre,
+    String? terceroApellidos,
+    String? terceroCi,
+    String? terceroTelefono,
   }) async {
     final res = await _supabase.schema(_schema).rpc(
       'cliente_entrar_sala_espera',
@@ -17,6 +24,12 @@ class ListaService {
         'p_uuid_usuario': uuidUsuario,
         'p_id_local_servicio': idLocalServicio,
         'p_fecha_regla': fechaRegla.toIso8601String(),
+        if (datosAdicionales != null) 'p_datos_adicionales': datosAdicionales,
+        'p_para_tercero': paraTercero,
+        if (paraTercero) 'p_t_nombre': terceroNombre,
+        if (paraTercero) 'p_t_apellidos': terceroApellidos,
+        if (paraTercero) 'p_t_ci': terceroCi,
+        if (paraTercero) 'p_t_telefono': terceroTelefono,
       },
     );
     final json = res as Map<String, dynamic>;

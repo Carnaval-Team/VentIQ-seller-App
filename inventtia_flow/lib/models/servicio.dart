@@ -1,9 +1,13 @@
+import 'campo_adicional.dart';
+
 class Servicio {
   final int id;
   final String nombre;
   final String? descripcion;
   final String? foto;
   final DateTime createdAt;
+  final List<CampoAdicional> camposAdicionales;
+  final bool permiteTercero;
 
   Servicio({
     required this.id,
@@ -11,7 +15,9 @@ class Servicio {
     this.descripcion,
     this.foto,
     required this.createdAt,
-  });
+    List<CampoAdicional>? camposAdicionales,
+    this.permiteTercero = false,
+  }) : camposAdicionales = camposAdicionales ?? [];
 
   factory Servicio.fromJson(Map<String, dynamic> json) => Servicio(
         id: (json['id'] as num).toInt(),
@@ -21,6 +27,12 @@ class Servicio {
         createdAt: json['created_at'] != null
             ? DateTime.parse(json['created_at'] as String)
             : DateTime.now(),
+        camposAdicionales: (json['campos_adicionales'] as List?)
+                ?.map((e) =>
+                    CampoAdicional.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            [],
+        permiteTercero: (json['permite_tercero'] as bool?) ?? false,
       );
 }
 
@@ -80,6 +92,7 @@ class LocalServicio {
   final Local? local;
   final Servicio? servicio;
   final DateTime createdAt;
+  final bool permiteReservaDirecta;
 
   LocalServicio({
     required this.id,
@@ -88,6 +101,7 @@ class LocalServicio {
     this.local,
     this.servicio,
     required this.createdAt,
+    this.permiteReservaDirecta = false,
   });
 
   factory LocalServicio.fromJson(Map<String, dynamic> json) {
@@ -109,6 +123,19 @@ class LocalServicio {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
+      permiteReservaDirecta:
+          (json['permite_reserva_directa'] as bool?) ?? false,
     );
   }
+
+  LocalServicio copyWith({bool? permiteReservaDirecta}) => LocalServicio(
+        id: id,
+        idLocal: idLocal,
+        idServicio: idServicio,
+        local: local,
+        servicio: servicio,
+        createdAt: createdAt,
+        permiteReservaDirecta:
+            permiteReservaDirecta ?? this.permiteReservaDirecta,
+      );
 }

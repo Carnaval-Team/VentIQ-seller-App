@@ -143,3 +143,19 @@ CREATE TABLE flow.bot_log (
   created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT bot_log_pkey PRIMARY KEY (id)
 );
+CREATE TABLE flow.notificaciones (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  uuid_usuario uuid NOT NULL,
+  tipo text NOT NULL DEFAULT 'sistema'::text,
+  titulo text NOT NULL,
+  mensaje text NOT NULL,
+  leida boolean NOT NULL DEFAULT false,
+  leida_at timestamp without time zone,
+  id_local_servicio integer,
+  id_referencia bigint,
+  data jsonb,
+  created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT notificaciones_pkey PRIMARY KEY (id),
+  CONSTRAINT notificaciones_uuid_usuario_fkey FOREIGN KEY (uuid_usuario) REFERENCES flow.perfil(uuid_usuario),
+  CONSTRAINT notificaciones_id_local_servicio_fkey FOREIGN KEY (id_local_servicio) REFERENCES flow.local_servicio(id)
+);

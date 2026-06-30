@@ -95,7 +95,7 @@ begin
   -- El CTE 'notificados' crea una notificacion por cada reserva confirmada;
   -- como es data-modifying, Postgres lo ejecuta siempre aunque no se lea.
   with candidatos as (
-    select se.id, se.uuid_usuario
+    select se.id, se.uuid_usuario, se.datos_adicionales, se.reservado_por
     from flow.sala_espera se
     where se.id_local_servicio = v_ls
       -- Compara por DIA en hora local (America/Havana). Antes era
@@ -110,8 +110,11 @@ begin
     for update skip locked
   ),
   insertados as (
-    insert into flow.agenda (uuid_usuario, id_local_servicio, id_estado, fecha_hora_reserva)
-    select c.uuid_usuario, v_ls, v_estado, v_fecha
+    insert into flow.agenda
+      (uuid_usuario, id_local_servicio, id_estado, fecha_hora_reserva,
+       cantidad, datos_adicionales, reservado_por)
+    select c.uuid_usuario, v_ls, v_estado, v_fecha,
+           1, c.datos_adicionales, c.reservado_por
     from candidatos c
     returning uuid_usuario, id, fecha_hora_reserva
   ),

@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:table_calendar/table_calendar.dart';
 import '../config/app_theme.dart';
+import '../models/campo_adicional.dart';
 import '../models/servicio.dart';
 import '../models/sala_espera.dart';
+import '../models/disponibilidad_dia.dart';
 import '../providers/auth_provider.dart';
 import '../services/lista_service.dart';
+import '../services/agenda_service.dart';
+import '../widgets/datos_adicionales_form.dart';
 import '../widgets/net_image.dart';
 
 class LocalServicioDetailScreen extends StatefulWidget {
@@ -76,12 +82,22 @@ class _LocalServicioDetailScreenState
     );
     if (fecha == null || !mounted) return;
 
+    final datos = await _recolectarDatosReserva();
+    if (datos == null || !mounted) return;
+
     setState(() => _isActing = true);
     try {
       await ListaService.entrarSalaEspera(
         uuidUsuario: uuid,
         idLocalServicio: widget.localServicio.id,
         fechaRegla: fecha,
+        datosAdicionales:
+            datos.datosAdicionales.isEmpty ? null : datos.datosAdicionales,
+        paraTercero: datos.paraTercero,
+        terceroNombre: datos.tNombre,
+        terceroApellidos: datos.tApellidos,
+        terceroCi: datos.tCi,
+        terceroTelefono: datos.tTelefono,
       );
       await _load();
       if (mounted) {
@@ -107,6 +123,120 @@ class _LocalServicioDetailScreenState
     } finally {
       if (mounted) setState(() => _isActing = false);
     }
+  }
+
+  // ── Reserva directa: abre el calendario de disponibilidad ──
+  Future<void> _reservarAhora() async {
+    final uuid = context.read<AuthProvider>().user?.id;
+    if (uuid == null) return;
+
+    setState(() => _isActing = true);
+    List<DisponibilidadDia> dias;
+    try {
+      dias = await AgendaService.getDisponibilidad(widget.localServicio.id);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: AppTheme.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    } finally {
+      if (mounted) setState(() => _isActing = false);
+    }
+    if (!mounted) return;
+
+    final sel = await showModalBottomSheet<({DateTime fecha, int cantidad})>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _DisponibilidadSheet(
+        servicio: widget.localServicio.servicio,
+        dias: dias,
+      ),
+    );
+    if (sel == null || !mounted) return;
+
+    final datos = await _recolectarDatosReserva();
+    if (datos == null || !mounted) return;
+
+    await _confirmarReservaDirecta(uuid, sel.fecha, sel.cantidad, datos);
+  }
+
+  Future<void> _confirmarReservaDirecta(
+      String uuid, DateTime fecha, int cantidad, _DatosReserva datos) async {
+    setState(() => _isActing = true);
+    try {
+      await AgendaService.reservarDirecto(
+        uuidUsuario: uuid,
+        idLocalServicio: widget.localServicio.id,
+        fecha: fecha,
+        cantidad: cantidad,
+        datosAdicionales:
+            datos.datosAdicionales.isEmpty ? null : datos.datosAdicionales,
+        paraTercero: datos.paraTercero,
+        terceroNombre: datos.tNombre,
+        terceroApellidos: datos.tApellidos,
+        terceroCi: datos.tCi,
+        terceroTelefono: datos.tTelefono,
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                '✅ Reservado ${cantidad > 1 ? '($cantidad turnos) ' : ''}para el ${DateFormat('dd/MM/yyyy').format(fecha)}'),
+            backgroundColor: AppTheme.success,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: AppTheme.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isActing = false);
+    }
+  }
+
+  /// Flujo previo común a reserva directa y cola: si el servicio permite
+  /// terceros pregunta "¿para ti o para alguien más?" (y pide el perfil del
+  /// tercero), y si tiene campos adicionales los recolecta. Devuelve null si
+  /// el usuario cancela. Si el servicio no requiere nada, devuelve datos vacíos
+  /// sin mostrar diálogo.
+  Future<_DatosReserva?> _recolectarDatosReserva() async {
+    final servicio = widget.localServicio.servicio;
+    final campos = servicio?.camposAdicionales ?? const <CampoAdicional>[];
+    final permiteTercero = servicio?.permiteTercero ?? false;
+
+    if (!permiteTercero && campos.isEmpty) {
+      return const _DatosReserva(paraTercero: false, datosAdicionales: {});
+    }
+
+    return showModalBottomSheet<_DatosReserva>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _DatosReservaSheet(
+        campos: campos,
+        permiteTercero: permiteTercero,
+      ),
+    );
   }
 
   Future<void> _cambiarFecha() async {
@@ -681,6 +811,81 @@ class _LocalServicioDetailScreenState
   // ── Barra de acción fija abajo ──
   Widget _buildBottomBar() {
     final enLista = _miLugar != null;
+    final permiteDirecta = widget.localServicio.permiteReservaDirecta;
+
+    final Widget child;
+    if (enLista) {
+      child = OutlinedButton.icon(
+        onPressed: _isActing ? null : _salir,
+        icon: _isActing
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.exit_to_app),
+        label: const Text('Salir de la lista'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppTheme.error,
+          side: const BorderSide(color: AppTheme.error),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    } else if (permiteDirecta) {
+      // Reserva directa habilitada: "Reservar ahora" (primaria) + lista (secundaria).
+      child = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ElevatedButton.icon(
+            onPressed: _isActing ? null : _reservarAhora,
+            icon: _isActing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.event_available),
+            label: const Text('Reservar ahora',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size.fromHeight(0),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _isActing ? null : _anotarse,
+            icon: const Icon(Icons.playlist_add, size: 18),
+            label: const Text('Anotarme en la lista'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppTheme.primary,
+              side: const BorderSide(color: AppTheme.primary),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
+      );
+    } else {
+      child = ElevatedButton.icon(
+        onPressed: _isActing ? null : _anotarse,
+        icon: _isActing
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                    color: Colors.white, strokeWidth: 2))
+            : const Icon(Icons.playlist_add),
+        label: const Text('Anotarme en la lista',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+        ),
+      );
+    }
+
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -696,41 +901,7 @@ class _LocalServicioDetailScreenState
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: enLista
-              ? OutlinedButton.icon(
-                  onPressed: _isActing ? null : _salir,
-                  icon: _isActing
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child:
-                              CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.exit_to_app),
-                  label: const Text('Salir de la lista'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.error,
-                    side: const BorderSide(color: AppTheme.error),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                )
-              : ElevatedButton.icon(
-                  onPressed: _isActing ? null : _anotarse,
-                  icon: _isActing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2))
-                      : const Icon(Icons.playlist_add),
-                  label: const Text('Anotarme en la lista',
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                ),
+          child: child,
         ),
       ),
     );
@@ -838,6 +1009,492 @@ class _StatItem extends StatelessWidget {
             style: const TextStyle(
                 fontSize: 12, color: AppTheme.textSecondary)),
       ],
+    );
+  }
+}
+
+/// Datos recolectados antes de reservar: tercero (si aplica) + datos adicionales.
+class _DatosReserva {
+  final bool paraTercero;
+  final String? tNombre;
+  final String? tApellidos;
+  final String? tCi;
+  final String? tTelefono;
+  final Map<String, dynamic> datosAdicionales;
+
+  const _DatosReserva({
+    required this.paraTercero,
+    this.tNombre,
+    this.tApellidos,
+    this.tCi,
+    this.tTelefono,
+    required this.datosAdicionales,
+  });
+}
+
+/// Diálogo simple para elegir la cantidad de turnos en reserva directa.
+class _CantidadDialog extends StatefulWidget {
+  final DateTime fecha;
+  final int maximo;
+  const _CantidadDialog({required this.fecha, required this.maximo});
+
+  @override
+  State<_CantidadDialog> createState() => _CantidadDialogState();
+}
+
+class _CantidadDialogState extends State<_CantidadDialog> {
+  int _cantidad = 1;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text('¿Cuántos turnos?'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '${DateFormat('dd/MM/yyyy').format(widget.fecha)} · ${widget.maximo} disponibles',
+            style: const TextStyle(
+                fontSize: 12.5, color: AppTheme.textSecondary),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton.filledTonal(
+                onPressed: _cantidad > 1
+                    ? () => setState(() => _cantidad--)
+                    : null,
+                icon: const Icon(Icons.remove),
+              ),
+              SizedBox(
+                width: 64,
+                child: Text(
+                  '$_cantidad',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 28, fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton.filledTonal(
+                onPressed: _cantidad < widget.maximo
+                    ? () => setState(() => _cantidad++)
+                    : null,
+                icon: const Icon(Icons.add),
+              ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar')),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, _cantidad),
+          child: const Text('Continuar'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Hoja para recolectar: ¿para ti o un tercero? + perfil del tercero + datos
+/// adicionales configurados por el admin.
+class _DatosReservaSheet extends StatefulWidget {
+  final List<CampoAdicional> campos;
+  final bool permiteTercero;
+
+  const _DatosReservaSheet({
+    required this.campos,
+    required this.permiteTercero,
+  });
+
+  @override
+  State<_DatosReservaSheet> createState() => _DatosReservaSheetState();
+}
+
+class _DatosReservaSheetState extends State<_DatosReservaSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _datosKey = GlobalKey<DatosAdicionalesFormState>();
+  bool _paraTercero = false;
+
+  final _nombreCtrl = TextEditingController();
+  final _apellidosCtrl = TextEditingController();
+  final _ciCtrl = TextEditingController();
+  final _telefonoCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _nombreCtrl.dispose();
+    _apellidosCtrl.dispose();
+    _ciCtrl.dispose();
+    _telefonoCtrl.dispose();
+    super.dispose();
+  }
+
+  void _confirmar() {
+    final formOk = _formKey.currentState?.validate() ?? true;
+    final datosOk = _datosKey.currentState?.validar() ?? true;
+    if (!formOk || !datosOk) return;
+
+    final valores = _datosKey.currentState?.valores ?? {};
+    Navigator.pop(
+      context,
+      _DatosReserva(
+        paraTercero: _paraTercero,
+        tNombre: _paraTercero ? _nombreCtrl.text.trim() : null,
+        tApellidos: _paraTercero ? _apellidosCtrl.text.trim() : null,
+        tCi: _paraTercero ? _ciCtrl.text.trim() : null,
+        tTelefono: _paraTercero ? _telefonoCtrl.text.trim() : null,
+        datosAdicionales: valores,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2))),
+            ),
+            const SizedBox(height: 16),
+            const Text('Datos de la reserva',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+
+            // ── ¿Para ti o alguien más? ──
+            if (widget.permiteTercero) ...[
+              const Text('¿Para quién es la reserva?',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(
+                      value: false,
+                      label: Text('Para mí'),
+                      icon: Icon(Icons.person)),
+                  ButtonSegment(
+                      value: true,
+                      label: Text('Para alguien más'),
+                      icon: Icon(Icons.group_add)),
+                ],
+                selected: {_paraTercero},
+                onSelectionChanged: (s) =>
+                    setState(() => _paraTercero = s.first),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_paraTercero) ...[
+                    const Text('Datos de la persona',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _nombreCtrl,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre *',
+                        prefixIcon: Icon(Icons.badge_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Requerido'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _apellidosCtrl,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Apellidos *',
+                        prefixIcon: Icon(Icons.badge_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Requerido'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _ciCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(11),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: 'Carné de identidad *',
+                        prefixIcon: Icon(Icons.credit_card),
+                        border: OutlineInputBorder(),
+                        counterText: '',
+                      ),
+                      validator: (v) {
+                        final t = (v ?? '').trim();
+                        if (t.isEmpty) return 'Requerido';
+                        if (t.length != 11) return 'El CI debe tener 11 dígitos';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _telefonoCtrl,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: 'Teléfono *',
+                        prefixIcon: Icon(Icons.phone_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Requerido'
+                          : null,
+                    ),
+                    if (widget.campos.isNotEmpty) const SizedBox(height: 16),
+                  ],
+
+                  // ── Datos adicionales del servicio ──
+                  if (widget.campos.isNotEmpty) ...[
+                    const Text('Información adicional',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    DatosAdicionalesForm(
+                      key: _datosKey,
+                      campos: widget.campos,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: _confirmar,
+              style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14)),
+              child: const Text('Continuar',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Hoja: calendario de disponibilidad para "Reservar ahora" ──
+class _DisponibilidadSheet extends StatefulWidget {
+  final Servicio? servicio;
+  final List<DisponibilidadDia> dias;
+
+  const _DisponibilidadSheet({required this.servicio, required this.dias});
+
+  @override
+  State<_DisponibilidadSheet> createState() => _DisponibilidadSheetState();
+}
+
+class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
+  late final Map<String, DisponibilidadDia> _porDia;
+  late DateTime _focusedDay;
+
+  String _key(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
+  @override
+  void initState() {
+    super.initState();
+    _porDia = {for (final d in widget.dias) _key(d.fecha): d};
+    // Enfoca el primer día con cupo (o hoy si la lista está vacía).
+    _focusedDay =
+        widget.dias.isNotEmpty ? widget.dias.first.fecha : DateTime.now();
+  }
+
+  DisponibilidadDia? _disp(DateTime day) => _porDia[_key(day)];
+
+  Future<void> _confirmar(DateTime day) async {
+    final disp = _disp(day);
+    if (disp == null || disp.disponibles <= 0) return;
+    final fecha = DateTime(day.year, day.month, day.day);
+    final maxCant = disp.disponibles;
+    // Si solo hay 1 cupo, no preguntamos cantidad.
+    if (maxCant <= 1) {
+      if (!mounted) return;
+      Navigator.pop(context, (fecha: fecha, cantidad: 1));
+      return;
+    }
+    final cantidad = await showDialog<int>(
+      context: context,
+      builder: (_) => _CantidadDialog(fecha: fecha, maximo: maxCant),
+    );
+    if (cantidad == null || !mounted) return;
+    Navigator.pop(context, (fecha: fecha, cantidad: cantidad));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vacio = widget.dias.isEmpty;
+    final first = widget.dias.isNotEmpty
+        ? widget.dias.first.fecha
+        : DateTime.now();
+    final last = widget.dias.isNotEmpty
+        ? widget.dias.last.fecha
+        : DateTime.now().add(const Duration(days: 90));
+
+    return Padding(
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                const Icon(Icons.event_available,
+                    size: 20, color: AppTheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Reservar ahora',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w800, fontSize: 16)),
+                      Text(
+                        widget.servicio?.nombre ?? 'Servicio',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 12, color: AppTheme.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (vacio)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 28, 24, 40),
+              child: Column(
+                children: [
+                  Icon(Icons.event_busy_outlined,
+                      size: 56, color: AppTheme.textSecondary),
+                  SizedBox(height: 12),
+                  Text('No hay turnos disponibles',
+                      style: TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w700)),
+                  SizedBox(height: 6),
+                  Text(
+                    'Por ahora no quedan cupos para reservar.\nPuedes anotarte en la lista de espera.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 12.5, color: AppTheme.textSecondary),
+                  ),
+                ],
+              ),
+            )
+          else ...[
+            TableCalendar<DisponibilidadDia>(
+              locale: 'es_ES',
+              firstDay: DateTime.utc(first.year, first.month, 1),
+              lastDay: DateTime.utc(last.year, last.month + 1, 0),
+              focusedDay: _focusedDay,
+              eventLoader: (day) {
+                final d = _disp(day);
+                return d != null && d.disponibles > 0 ? [d] : [];
+              },
+              enabledDayPredicate: (day) {
+                final d = _disp(day);
+                return d != null && d.disponibles > 0;
+              },
+              calendarStyle: CalendarStyle(
+                outsideDaysVisible: false,
+                disabledTextStyle:
+                    TextStyle(color: Colors.grey.shade300),
+                todayDecoration: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.18),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              calendarBuilders: CalendarBuilders(
+                markerBuilder: (context, day, events) {
+                  if (events.isEmpty) return null;
+                  final disp = events.first;
+                  return Positioned(
+                    bottom: 2,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: AppTheme.success.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '${disp.disponibles}',
+                        style: const TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.success,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              headerStyle: const HeaderStyle(
+                formatButtonVisible: false,
+                titleCentered: true,
+                headerPadding: EdgeInsets.symmetric(vertical: 6),
+              ),
+              availableGestures: AvailableGestures.horizontalSwipe,
+              onPageChanged: (f) => setState(() => _focusedDay = f),
+              onDaySelected: (selected, focused) => _confirmar(selected),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 4, 20, 18),
+              child: Text(
+                'Toca un día con cupo para reservar. El número indica los turnos libres.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 11.5, color: AppTheme.textSecondary),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

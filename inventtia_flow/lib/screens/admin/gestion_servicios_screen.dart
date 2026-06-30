@@ -3,9 +3,12 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
+import '../../models/campo_adicional.dart';
 import '../../models/entidad.dart';
 import '../../models/servicio.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/imagen_service.dart';
 import '../../widgets/net_image.dart';
@@ -191,6 +194,10 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
   String? _fotoUrl;
   bool _saving = false;
 
+  // Datos adicionales + terceros
+  bool _permiteTercero = false;
+  late List<_CampoEditable> _campos;
+
   @override
   void initState() {
     super.initState();
@@ -199,14 +206,68 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
     _descCtrl =
         TextEditingController(text: widget.servicio?.descripcion ?? '');
     _fotoUrl = widget.servicio?.foto;
+    _permiteTercero = widget.servicio?.permiteTercero ?? false;
+    _campos = (widget.servicio?.camposAdicionales ?? [])
+        .map(_CampoEditable.fromModel)
+        .toList();
   }
 
   @override
   void dispose() {
     _nombreCtrl.dispose();
     _descCtrl.dispose();
+    for (final c in _campos) {
+      c.dispose();
+    }
     super.dispose();
   }
+
+  /// Construye la lista de campos en formato jsonb, autogenerando claves únicas.
+  /// Devuelve null si hay un campo inválido (sin etiqueta, o select sin opciones).
+  List<Map<String, dynamic>>? _camposToJson() {
+    final out = <Map<String, dynamic>>[];
+    final usadas = <String>{};
+    for (final c in _campos) {
+      final etiqueta = c.etiquetaCtrl.text.trim();
+      if (etiqueta.isEmpty) {
+        _campoError = 'Cada dato adicional necesita una etiqueta';
+        return null;
+      }
+      final opciones = c.tipo == TipoCampo.select
+          ? c.opcionesCtrl.text
+              .split(',')
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList()
+          : <String>[];
+      if (c.tipo == TipoCampo.select && opciones.isEmpty) {
+        _campoError = '"$etiqueta": un seleccionable necesita opciones';
+        return null;
+      }
+      // Clave única (slug de la etiqueta, con sufijo si colisiona).
+      var clave = CampoAdicional.slug(etiqueta);
+      var base = clave;
+      var n = 2;
+      while (usadas.contains(clave)) {
+        clave = '${base}_$n';
+        n++;
+      }
+      usadas.add(clave);
+      out.add({
+        'clave': clave,
+        'etiqueta': etiqueta,
+        'tipo': c.tipo.valor,
+        'requerido': c.requerido,
+        'opciones': opciones,
+        if (c.min != null) 'min': c.min,
+        if (c.max != null) 'max': c.max,
+      });
+    }
+    _campoError = null;
+    return out;
+  }
+
+  String? _campoError;
 
   Future<void> _pickImagen(ImageSource source) async {
     final file = await ImagenService.seleccionarImagen(source: source);
@@ -244,9 +305,21 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final campos = _camposToJson();
+    if (campos == null) {
+      setState(() {}); // refresca para mostrar _campoError
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(_campoError ?? 'Revisa los datos adicionales'),
+            backgroundColor: AppTheme.error),
+      );
+      return;
+    }
+    final uuid = context.read<AuthProvider>().user?.id ?? '';
     setState(() => _saving = true);
     try {
       String? fotoFinal = _fotoUrl;
+      int idServicio;
       if (widget.servicio == null) {
         final nuevo = await CatalogoService.createServicio(
           nombre: _nombreCtrl.text.trim(),
@@ -255,6 +328,7 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
               : _descCtrl.text.trim(),
           idEntidad: widget.idEntidad,
         );
+        idServicio = nuevo.id;
         if (_imagenFile != null) {
           fotoFinal = await ImagenService.subirImagen(
             imagen: _imagenFile!,
@@ -268,6 +342,7 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
           );
         }
       } else {
+        idServicio = widget.servicio!.id;
         if (_imagenFile != null) {
           fotoFinal = await ImagenService.subirImagen(
             imagen: _imagenFile!,
@@ -283,6 +358,13 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
           foto: fotoFinal,
         );
       }
+      // Guarda datos adicionales + flag de terceros (RPC admin)
+      await CatalogoService.guardarDatosServicio(
+        uuidUsuario: uuid,
+        idServicio: idServicio,
+        campos: campos,
+        permiteTercero: _permiteTercero,
+      );
       if (!mounted) return;
       Navigator.pop(context);
     } catch (e) {
@@ -293,6 +375,17 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
             content: Text('Error: $e'), backgroundColor: AppTheme.error),
       );
     }
+  }
+
+  void _agregarCampo() {
+    setState(() => _campos.add(_CampoEditable.nuevo()));
+  }
+
+  void _quitarCampo(int i) {
+    setState(() {
+      _campos[i].dispose();
+      _campos.removeAt(i);
+    });
   }
 
   @override
@@ -376,6 +469,59 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
                 prefixIcon: Icon(Icons.notes),
               ),
             ),
+            const SizedBox(height: 8),
+            const Divider(),
+
+            // ── Reservar para terceros ────────────────────
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _permiteTercero,
+              onChanged: (v) => setState(() => _permiteTercero = v),
+              title: const Text('Permitir reservar para terceros'),
+              subtitle: const Text(
+                  'El cliente podrá reservar a nombre de otra persona',
+                  style: TextStyle(fontSize: 12)),
+            ),
+            const Divider(),
+
+            // ── Datos adicionales ─────────────────────────
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('Datos adicionales',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 15)),
+                ),
+                TextButton.icon(
+                  onPressed: _agregarCampo,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Agregar'),
+                ),
+              ],
+            ),
+            if (_campos.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                    'Sin datos adicionales. El cliente solo verá lo básico.',
+                    style: TextStyle(
+                        fontSize: 12, color: AppTheme.textSecondary)),
+              ),
+            for (var i = 0; i < _campos.length; i++)
+              _CampoEditableTile(
+                key: ValueKey(_campos[i]),
+                campo: _campos[i],
+                onChanged: () => setState(() {}),
+                onRemove: () => _quitarCampo(i),
+              ),
+            if (_campoError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(_campoError!,
+                    style: const TextStyle(
+                        color: AppTheme.error, fontSize: 12)),
+              ),
+
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: _saving ? null : _submit,
@@ -394,6 +540,194 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Estado mutable de un campo adicional mientras se edita en el formulario.
+class _CampoEditable {
+  final TextEditingController etiquetaCtrl;
+  final TextEditingController opcionesCtrl; // CSV para select
+  TipoCampo tipo;
+  bool requerido;
+  int? min;
+  int? max;
+  final TextEditingController minCtrl;
+  final TextEditingController maxCtrl;
+
+  _CampoEditable({
+    required String etiqueta,
+    required this.tipo,
+    required this.requerido,
+    required List<String> opciones,
+    this.min,
+    this.max,
+  })  : etiquetaCtrl = TextEditingController(text: etiqueta),
+        opcionesCtrl = TextEditingController(text: opciones.join(', ')),
+        minCtrl = TextEditingController(text: min?.toString() ?? ''),
+        maxCtrl = TextEditingController(text: max?.toString() ?? '');
+
+  factory _CampoEditable.nuevo() => _CampoEditable(
+        etiqueta: '',
+        tipo: TipoCampo.texto,
+        requerido: false,
+        opciones: [],
+      );
+
+  factory _CampoEditable.fromModel(CampoAdicional c) => _CampoEditable(
+        etiqueta: c.etiqueta,
+        tipo: c.tipo,
+        requerido: c.requerido,
+        opciones: c.opciones,
+        min: c.min,
+        max: c.max,
+      );
+
+  void dispose() {
+    etiquetaCtrl.dispose();
+    opcionesCtrl.dispose();
+    minCtrl.dispose();
+    maxCtrl.dispose();
+  }
+}
+
+/// Tarjeta editable para un campo adicional (etiqueta, tipo, requerido, opciones, min/max).
+class _CampoEditableTile extends StatelessWidget {
+  final _CampoEditable campo;
+  final VoidCallback onChanged;
+  final VoidCallback onRemove;
+
+  const _CampoEditableTile({
+    super.key,
+    required this.campo,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 12),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: campo.etiquetaCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Etiqueta',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline,
+                    color: AppTheme.error, size: 20),
+                onPressed: onRemove,
+                tooltip: 'Quitar',
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<TipoCampo>(
+                  value: campo.tipo,
+                  isDense: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Tipo',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  items: TipoCampo.values
+                      .map((t) => DropdownMenuItem(
+                          value: t, child: Text(t.etiqueta)))
+                      .toList(),
+                  onChanged: (t) {
+                    if (t != null) {
+                      campo.tipo = t;
+                      onChanged();
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Row(
+                  children: [
+                    Checkbox(
+                      value: campo.requerido,
+                      onChanged: (v) {
+                        campo.requerido = v ?? false;
+                        onChanged();
+                      },
+                    ),
+                    const Flexible(child: Text('Requerido')),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (campo.tipo == TipoCampo.select) ...[
+            const SizedBox(height: 8),
+            TextField(
+              controller: campo.opcionesCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Opciones (separadas por coma)',
+                hintText: 'Casado, Viudo, Soltero',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+          if (campo.tipo != TipoCampo.select) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: campo.minCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: campo.tipo == TipoCampo.numero
+                          ? 'Mín. dígitos'
+                          : 'Mín. caracteres',
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => campo.min = int.tryParse(v.trim()),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: campo.maxCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: campo.tipo == TipoCampo.numero
+                          ? 'Máx. dígitos'
+                          : 'Máx. caracteres',
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => campo.max = int.tryParse(v.trim()),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }

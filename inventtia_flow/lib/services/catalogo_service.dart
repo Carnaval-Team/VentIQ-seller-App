@@ -209,6 +209,52 @@ class CatalogoService {
         .eq('id', id);
   }
 
+  /// Guarda los datos adicionales (campos configurables) y el flag de terceros
+  /// de un servicio. RPC admin, valida pertenencia a la entidad.
+  static Future<void> guardarDatosServicio({
+    required String uuidUsuario,
+    required int idServicio,
+    required List<Map<String, dynamic>> campos,
+    required bool permiteTercero,
+  }) async {
+    final res = await _supabase.schema(_schema).rpc(
+      'admin_guardar_datos_servicio',
+      params: {
+        'p_uuid_usuario': uuidUsuario,
+        'p_id_servicio': idServicio,
+        'p_campos': campos,
+        'p_permite_tercero': permiteTercero,
+      },
+    );
+    final json = res as Map<String, dynamic>;
+    if (json['ok'] != true) {
+      throw Exception(json['error'] ?? 'No se pudieron guardar los datos del servicio');
+    }
+  }
+
+  /// Habilita/deshabilita la reserva directa de un local_servicio (RPC admin,
+  /// valida pertenencia a la entidad).
+  static Future<bool> setReservaDirecta({
+    required String uuidUsuario,
+    required int idLocalServicio,
+    required bool permite,
+  }) async {
+    final res = await _supabase.schema(_schema).rpc(
+      'admin_set_reserva_directa',
+      params: {
+        'p_uuid_usuario': uuidUsuario,
+        'p_id_local_servicio': idLocalServicio,
+        'p_permite': permite,
+      },
+    );
+    final json = res as Map<String, dynamic>;
+    if (json['ok'] != true) {
+      throw Exception(json['error'] ?? 'No se pudo cambiar la reserva directa');
+    }
+    return (json['data'] as Map<String, dynamic>)['permite_reserva_directa']
+        as bool;
+  }
+
   static Future<bool> existeLocalServicio({
     required int idLocal,
     required int idServicio,

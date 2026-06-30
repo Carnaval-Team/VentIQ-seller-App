@@ -34,11 +34,11 @@ Para la app del cliente final. `security invoker`, concedidas a `authenticated` 
 - **Parámetros:** todos opcionales y combinables.
   - `p_id_local`, `p_id_servicio`, `p_id_entidad` (int) → filtro exacto por id.
   - `p_nombre_local`, `p_nombre_servicio`, `p_pais`, `p_provincia` (text) → búsqueda **parcial** insensible a mayúsculas (`ILIKE %texto%`).
-- **Responde:** array con `id_local_servicio`, `servicio`, `local`, `entidad`.
+- **Responde:** array con `id_local_servicio`, `permite_reserva_directa`, `servicio`, `local`, `entidad`.
 ```json
 [
   {
-    "id_local_servicio": 7, "created_at": "...",
+    "id_local_servicio": 7, "created_at": "...", "permite_reserva_directa": true,
     "servicio": { "id": 3, "nombre": "...", "descripcion": "...", "foto": "..." },
     "local":    { "id": 1, "nombre": "...", "direccion": "...", ... },
     "entidad":  { "id": 2, "denominacion": "...", ... }
@@ -93,6 +93,20 @@ Para la app del cliente final. `security invoker`, concedidas a `authenticated` 
 ```json
 { "ok": true, "data": { "id_local_servicio": 7, "numero_liberado": 4, "reordenados": 3 } }
 ```
+
+### `cliente_obtener_disponibilidad(p_id_local_servicio int, p_desde date = hoy, p_hasta date = hoy+90)`
+- **Para qué:** días con cupo libre para **reserva directa**. Pinta el calendario de "Reservar ahora" con la capacidad disponible de cada día. Agrupa por día local (`America/Havana`) y filtra `disponibles > 0`.
+- **Responde:** array (`[]` si no hay días con cupo).
+```json
+[ { "fecha": "2026-07-03", "cantidad": 50, "agendados": 12, "disponibles": 38 } ]
+```
+
+### `cliente_reservar_directo(p_uuid_usuario uuid, p_id_local_servicio int, p_fecha date)` — **ACCIÓN**
+- **Para qué:** reservar al instante **sin pasar por la cola**, cuando el servicio tiene `permite_reserva_directa = true` y hay un `plan_servicios` con cupo ese día. Crea la agenda en estado `Reservado`, suma `agendados` y emite notificación. `security definer`.
+- **Concurrencia:** toma el mismo `pg_advisory_xact_lock(hashtext('flow.sala_espera'), id_ls)` que la cola y el bot → no sobre-reserva.
+- **Idempotencia:** si el usuario ya tiene agenda `Reservado` ese día/servicio, no crea otra.
+- **Responde (éxito):** `{ "ok": true, "data": { "id_agenda": 30, "fecha": "2026-07-03" } }`
+- **Responde (error):** `{ "ok": false, "error": "No hay turnos disponibles" }` · `"Reserva directa no habilitada para este servicio"` · `"Ya tienes una reserva ese dia"`
 
 ---
 
@@ -162,6 +176,23 @@ Para el panel de administración. `security invoker`, concedidas a `authenticate
 - **Para qué:** ver las colas en vivo de sus servicios: quién espera, con qué número y sus datos de contacto.
 - **Responde:** array con `numero_cola`, `servicio`, `local`, `entidad`, `cliente` (perfil resumido), ordenado por `numero_cola`.
 
+### `admin_set_reserva_directa(p_uuid_usuario uuid, p_id_local_servicio int, p_permite bool)` — **ACCIÓN**
+- **Para qué:** habilitar/deshabilitar la **reserva directa** de un `local_servicio` (flag `permite_reserva_directa`). Valida pertenencia con el helper (no fuga entre entidades).
+- **Responde:** `{ "ok": true, "data": { "id_local_servicio": 7, "permite_reserva_directa": true } }` o `{ "ok": false, "error": "local_servicio inexistente o sin permiso" }`.
+
+### `admin_guardar_config_plan(p_uuid_usuario uuid, p_id_local_servicio int, p_config jsonb, p_activo bool = true)` — **ACCIÓN**
+- **Para qué:** guardar (upsert) la **config recurrente** de capacidades por día de la semana (`flow.plan_config`). Una fila por `local_servicio`.
+- **Formato de `p_config`:** `{ "default": 30, "por_dia": { "1": 50, "4": 60 } }` — día ISO 1=lunes…7=domingo. Día sin entrada → usa `default`; capacidad `0` → ese día no se planifica.
+- **Responde:** `{ "ok": true, "data": { ...config persistida... } }`.
+
+### `admin_obtener_config_plan(p_uuid_usuario uuid, p_id_local_servicio int)`
+- **Para qué:** leer la config recurrente guardada de un `local_servicio` (o `null` si no hay / sin permiso).
+- **Responde:** objeto `{ id, id_local_servicio, config, activo, updated_at }` o `null`.
+
+### `admin_generar_plan_mensual(p_uuid_usuario uuid, p_id_local_servicio int, p_anio int, p_mes int)` — **ACCIÓN**
+- **Para qué:** generar los `plan_servicios` de **un mes** a partir de `plan_config`. Por cada día: capacidad = `por_dia[isodow]` o `default`; capacidad `0` se omite (día cerrado). Si no existe plan ese día → `insert`; si existe → `update cantidad = greatest(nueva, agendados)` (respeta el mínimo ya reservado). El trigger `trg_plan_servicio_aiu` reparte la cola pendiente automáticamente.
+- **Responde:** `{ "ok": true, "creados": 22, "actualizados": 4, "omitidos": 0, "dias_sin_cupo": 4 }`.
+
 ---
 
 ## 4. Tablas de apoyo creadas por las migraciones
@@ -171,6 +202,8 @@ Para el panel de administración. `security invoker`, concedidas a `authenticate
 | `plan_servicios.agendados` (col) | Contador de agendas creadas por el bot para ese plan. Bot trabaja mientras `agendados < cantidad`. |
 | `sala_espera_fraude` (tabla) | Registro de intentos sospechosos: `motivo` (`duplicado`/`flood`/`local_servicio_inexistente`) + `detalle` jsonb. |
 | Estado `'Agendado'` en `nom_estado_agenda` | Estado con el que el bot crea las agendas. |
+| `local_servicio.permite_reserva_directa` (col) | Si `true`, el cliente puede reservar directo (sin cola) cuando hay plan con cupo. Migración 08. |
+| `plan_config` (tabla) | Config recurrente de capacidades por día de la semana (1 fila por `local_servicio`) para generar `plan_servicios` en lote. Migración 09. |
 
 ## 5. Índices creados
 
@@ -196,6 +229,8 @@ Para el panel de administración. `security invoker`, concedidas a `authenticate
 | `cliente_obtener_agendas` | cliente | array | mis reservas |
 | `cliente_entrar_sala_espera` | cliente | acción | unirme a una cola |
 | `cliente_salir_sala_espera` | cliente | acción | salir de una cola |
+| `cliente_obtener_disponibilidad` | cliente | array | días con cupo para reserva directa |
+| `cliente_reservar_directo` | cliente | acción | reservar al instante (sin cola) |
 | `bot_procesar_plan` | service | objeto | mover cola→agenda de un plan |
 | `bot_sweep` | service | objeto | procesar todos los planes (cron) |
 | `admin_entidades_de_usuario` | admin | tabla | helper de seguridad |
@@ -205,3 +240,7 @@ Para el panel de administración. `security invoker`, concedidas a `authenticate
 | `admin_listar_locales_servicios` | admin | array | asignaciones local-servicio |
 | `admin_listar_agendas` | admin | array | reservas + perfil del cliente |
 | `admin_listar_salas_espera` | admin | array | colas en vivo + cliente |
+| `admin_set_reserva_directa` | admin | acción | habilitar/deshabilitar reserva directa |
+| `admin_guardar_config_plan` | admin | acción | guardar config recurrente por día |
+| `admin_obtener_config_plan` | admin | objeto | leer config recurrente guardada |
+| `admin_generar_plan_mensual` | admin | acción | generar plan_servicios de un mes |

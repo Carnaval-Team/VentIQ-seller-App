@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../../config/app_theme.dart';
 import '../../models/entidad.dart';
 import '../../models/plan_servicio.dart';
 import '../../models/servicio.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/plan_servicio_service.dart';
+import 'config_plan_mensual_screen.dart';
 
 class PlanificacionScreen extends StatefulWidget {
   final Entidad entidad;
@@ -266,6 +269,51 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
   bool _loadingPlanes = false;
   bool _expanded = false;
   DateTime _focusedDay = DateTime.now();
+  late bool _permiteDirecta;
+  bool _togglingDirecta = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _permiteDirecta = widget.ls.permiteReservaDirecta;
+  }
+
+  Future<void> _toggleReservaDirecta(bool value) async {
+    final uuid = context.read<AuthProvider>().user?.id ?? '';
+    setState(() {
+      _permiteDirecta = value; // optimista
+      _togglingDirecta = true;
+    });
+    try {
+      await CatalogoService.setReservaDirecta(
+        uuidUsuario: uuid,
+        idLocalServicio: widget.ls.id,
+        permite: value,
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _permiteDirecta = !value); // revertir
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Error: $e'), backgroundColor: AppTheme.error),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _togglingDirecta = false);
+    }
+  }
+
+  void _abrirConfigMensual() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ConfigPlanMensualScreen(
+          localServicio: widget.ls.copyWith(
+              permiteReservaDirecta: _permiteDirecta),
+        ),
+      ),
+    ).then((_) => _cargarPlanes());
+  }
 
   String _dayKey(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-'
@@ -396,6 +444,48 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
             if (v && _planes.isEmpty) _cargarPlanes();
           },
           children: [
+            const Divider(height: 1),
+            // Toggle de reserva directa
+            SwitchListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+              dense: true,
+              value: _permiteDirecta,
+              onChanged: _togglingDirecta ? null : _toggleReservaDirecta,
+              secondary: Icon(
+                _permiteDirecta
+                    ? Icons.flash_on
+                    : Icons.flash_off_outlined,
+                color: _permiteDirecta
+                    ? AppTheme.success
+                    : AppTheme.textSecondary,
+              ),
+              title: const Text('Reserva directa',
+                  style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w700)),
+              subtitle: const Text(
+                'Permite reservar al instante si hay cupo (sin cola)',
+                style: TextStyle(
+                    fontSize: 11.5, color: AppTheme.textSecondary),
+              ),
+            ),
+            // Acceso a la configuración mensual recurrente
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: OutlinedButton.icon(
+                onPressed: _abrirConfigMensual,
+                icon: const Icon(Icons.event_repeat, size: 18),
+                label: const Text('Configuración mensual'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.primary,
+                  side: BorderSide(
+                      color: AppTheme.primary.withValues(alpha: 0.4)),
+                  minimumSize: const Size.fromHeight(40),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
             const Divider(height: 1),
             if (_loadingPlanes)
               const Padding(

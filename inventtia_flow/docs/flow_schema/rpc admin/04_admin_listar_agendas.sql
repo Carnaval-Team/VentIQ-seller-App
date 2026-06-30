@@ -31,6 +31,9 @@ as $$
         'fecha_hora_atencion', a.fecha_hora_atencion,
         'created_at',          a.created_at,
         'updated_at',          a.updated_at,
+        'cantidad',            a.cantidad,
+        'datos_adicionales',   a.datos_adicionales,
+        'reservado_por',       a.reservado_por,
         'estado', jsonb_build_object(
           'id',          es.id,
           'nombre',      es.nombre,
@@ -38,10 +41,11 @@ as $$
         ),
         'id_local_servicio', ls.id,
         'servicio', jsonb_build_object(
-          'id',          s.id,
-          'nombre',      s.nombre,
-          'descripcion', s.descripcion,
-          'foto',        s.foto
+          'id',                 s.id,
+          'nombre',             s.nombre,
+          'descripcion',        s.descripcion,
+          'foto',               s.foto,
+          'campos_adicionales', s.campos_adicionales
         ),
         'local', jsonb_build_object(
           'id',               l.id,

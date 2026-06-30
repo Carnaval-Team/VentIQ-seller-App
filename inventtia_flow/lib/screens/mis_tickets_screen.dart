@@ -5,6 +5,7 @@ import '../config/app_theme.dart';
 import '../models/agenda.dart';
 import '../providers/auth_provider.dart';
 import '../services/agenda_service.dart';
+import '../widgets/datos_adicionales_view.dart';
 import '../widgets/notificaciones_bell.dart';
 
 class MisTicketsScreen extends StatefulWidget {
@@ -62,8 +63,11 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                         child: ListView.builder(
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                           itemCount: _tickets.length,
-                          itemBuilder: (_, i) =>
-                              _TicketCard(ticket: _tickets[i]),
+                          itemBuilder: (_, i) => _TicketCard(
+                            ticket: _tickets[i],
+                            miUuid:
+                                context.read<AuthProvider>().user?.id ?? '',
+                          ),
                         ),
                       ),
           ),
@@ -239,8 +243,9 @@ class _HeroIconButton extends StatelessWidget {
 
 class _TicketCard extends StatelessWidget {
   final Agenda ticket;
+  final String miUuid;
 
-  const _TicketCard({required this.ticket});
+  const _TicketCard({required this.ticket, required this.miUuid});
 
   Color get _estadoColor {
     switch (ticket.estado?.nombre) {
@@ -275,6 +280,7 @@ class _TicketCard extends StatelessWidget {
     final cliente = ticket.cliente;
     final fmt = DateFormat('dd/MM/yyyy HH:mm');
     final color = _estadoColor;
+    final esTercero = ticket.esParaTercero(miUuid);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -385,6 +391,23 @@ class _TicketCard extends StatelessWidget {
                       texto:
                           'Reserva: ${fmt.format(ticket.fechaHoraReserva.toLocal())}',
                     ),
+                    if (ticket.cantidad > 1) ...[
+                      const SizedBox(height: 6),
+                      _InfoLinea(
+                        icon: Icons.confirmation_number_outlined,
+                        texto: '${ticket.cantidad} turnos reservados',
+                        color: AppTheme.accent,
+                      ),
+                    ],
+                    if (esTercero) ...[
+                      const SizedBox(height: 6),
+                      _InfoLinea(
+                        icon: Icons.group_outlined,
+                        texto:
+                            'Para: ${cliente?.nombreCompleto.isNotEmpty == true ? cliente!.nombreCompleto : 'otra persona'}',
+                        color: AppTheme.accent,
+                      ),
+                    ],
                     if (ticket.fechaHoraAtencion != null) ...[
                       const SizedBox(height: 6),
                       _InfoLinea(
@@ -392,6 +415,38 @@ class _TicketCard extends StatelessWidget {
                         texto:
                             'Atendido: ${fmt.format(ticket.fechaHoraAtencion!.toLocal())}',
                         color: AppTheme.success,
+                      ),
+                    ],
+                    if (ticket.datosAdicionales != null &&
+                        ticket.datosAdicionales!.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surface,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'INFORMACIÓN ADICIONAL',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1,
+                                color: AppTheme.textSecondary
+                                    .withValues(alpha: 0.8),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            DatosAdicionalesView(
+                              valores: ticket.datosAdicionales,
+                              campos: servicio?.camposAdicionales ?? const [],
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                     if (cliente != null) ...[

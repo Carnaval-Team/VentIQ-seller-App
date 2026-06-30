@@ -153,6 +153,41 @@ class _ReservasScreenState extends State<ReservasScreen> {
     return map;
   }
 
+  /// Columnas dinámicas para datos adicionales: unión ordenada de claves que
+  /// aparecen en las reservas listadas. Devuelve pares (clave, etiqueta).
+  /// La etiqueta sale de campos_adicionales del servicio si está disponible.
+  List<({String clave, String etiqueta})> _columnasDatos(List<Agenda> lista) {
+    final etiquetas = <String, String>{};
+    final orden = <String>[];
+    for (final r in lista) {
+      // Rotula con la config del servicio (si viene).
+      for (final c in r.localServicio?.servicio?.camposAdicionales ??
+          const <CampoAdicional>[]) {
+        etiquetas[c.clave] = c.etiqueta;
+      }
+      // Asegura incluir claves presentes en los valores aunque no haya config.
+      final datos = r.datosAdicionales;
+      if (datos != null) {
+        for (final k in datos.keys) {
+          if (!orden.contains(k)) orden.add(k);
+          etiquetas.putIfAbsent(k, () => k);
+        }
+      }
+    }
+    return orden.map((k) => (clave: k, etiqueta: etiquetas[k] ?? k)).toList();
+  }
+
+  /// ¿Alguna reserva de la lista fue hecha para un tercero?
+  bool _hayTerceros(List<Agenda> lista) =>
+      lista.any((r) => r.reservadoPor != null &&
+          r.uuidUsuario != null &&
+          r.reservadoPor != r.uuidUsuario);
+
+  String _valorDato(Agenda r, String clave) {
+    final v = r.datosAdicionales?[clave];
+    return v == null ? '-' : '$v';
+  }
+
   Future<void> _exportPdf() async {
     final fontRegular = await PdfGoogleFonts.robotoRegular();
     final fontBold = await PdfGoogleFonts.robotoBold();
@@ -184,6 +219,8 @@ class _ReservasScreenState extends State<ReservasScreen> {
         build: (_) {
           final widgets = <pw.Widget>[];
           grupos.forEach((localNombre, lista) {
+            final cols = _columnasDatos(lista);
+            final conTerceros = _hayTerceros(lista);
             widgets.add(
               pw.Text(localNombre,
                   style: pw.TextStyle(
@@ -200,20 +237,17 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     const pw.BoxDecoration(color: PdfColors.grey300),
                 cellStyle: pw.TextStyle(font: fontRegular, fontSize: 9),
                 cellHeight: 22,
-                cellAlignments: {
-                  0: pw.Alignment.centerLeft,
-                  1: pw.Alignment.centerLeft,
-                  2: pw.Alignment.centerLeft,
-                  3: pw.Alignment.centerLeft,
-                  4: pw.Alignment.centerLeft,
-                  5: pw.Alignment.centerLeft,
-                },
                 headers: [
                   'Servicio', 'Fecha reserva',
-                  'Nombre', 'Apellidos', 'CI', 'Telefono',
+                  'Nombre', 'Apellidos', 'CI', 'Telefono', 'Cant.',
+                  if (conTerceros) 'Tercero',
+                  ...cols.map((c) => c.etiqueta),
                 ],
                 data: lista.map((r) {
                   final cli = r.cliente;
+                  final esTercero = r.reservadoPor != null &&
+                      r.uuidUsuario != null &&
+                      r.reservadoPor != r.uuidUsuario;
                   return [
                     r.localServicio?.servicio?.nombre ?? '-',
                     _fmtHora.format(r.fechaHoraReserva),
@@ -221,6 +255,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     cli?.apellidos ?? '-',
                     cli?.ci ?? '-',
                     cli?.telefono ?? '-',
+                    '${r.cantidad}',
+                    if (conTerceros) (esTercero ? 'Sí' : 'No'),
+                    ...cols.map((c) => _valorDato(r, c.clave)),
                   ];
                 }).toList(),
               ),
@@ -246,9 +283,16 @@ class _ReservasScreenState extends State<ReservasScreen> {
     final excel = xl.Excel.createExcel();
     final sheet = excel['Reservas'];
 
+    // Columnas dinámicas (datos adicionales) y bandera de terceros sobre TODAS
+    // las reservas, para que la hoja única tenga columnas consistentes.
+    final cols = _columnasDatos(_reservas);
+    final conTerceros = _hayTerceros(_reservas);
+
     final headers = [
       'Local', 'Servicio', 'Fecha reserva',
-      'Nombre', 'Apellidos', 'CI', 'Telefono',
+      'Nombre', 'Apellidos', 'CI', 'Telefono', 'Cantidad',
+      if (conTerceros) 'Para tercero',
+      ...cols.map((c) => c.etiqueta),
     ];
     for (var i = 0; i < headers.length; i++) {
       final cell = sheet
@@ -263,6 +307,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
     grupos.forEach((localNombre, lista) {
       for (final ag in lista) {
         final cli = ag.cliente;
+        final esTercero = ag.reservadoPor != null &&
+            ag.uuidUsuario != null &&
+            ag.reservadoPor != ag.uuidUsuario;
         final row = [
           localNombre,
           ag.localServicio?.servicio?.nombre ?? '',
@@ -271,6 +318,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
           cli?.apellidos ?? '',
           cli?.ci ?? '',
           cli?.telefono ?? '',
+          '${ag.cantidad}',
+          if (conTerceros) (esTercero ? 'Sí' : 'No'),
+          ...cols.map((c) => _valorDato(ag, c.clave)),
         ];
         for (var c = 0; c < row.length; c++) {
           sheet

@@ -24,6 +24,10 @@ as $$
         'fecha_hora_atencion',  a.fecha_hora_atencion,
         'created_at',           a.created_at,
         'updated_at',           a.updated_at,
+        'cantidad',             a.cantidad,
+        'datos_adicionales',    a.datos_adicionales,
+        'reservado_por',        a.reservado_por,
+        'uuid_usuario',         a.uuid_usuario,
         'estado', jsonb_build_object(
           'id',          e.id,
           'nombre',      e.nombre,
@@ -31,10 +35,11 @@ as $$
         ),
         'id_local_servicio', ls.id,
         'servicio', jsonb_build_object(
-          'id',          s.id,
-          'nombre',      s.nombre,
-          'descripcion', s.descripcion,
-          'foto',        s.foto
+          'id',                 s.id,
+          'nombre',             s.nombre,
+          'descripcion',        s.descripcion,
+          'foto',               s.foto,
+          'campos_adicionales', s.campos_adicionales
         ),
         'local', jsonb_build_object(
           'id',               l.id,
@@ -45,7 +50,16 @@ as $$
           'horario_atencion', l.horario_atencion,
           'coordenadas',      l.coordenadas,
           'foto',             l.foto
-        )
+        ),
+        -- Titular de la reserva (para mostrar "Para: <nombre>" si es un tercero)
+        'cliente', case when p.id is null then null else jsonb_build_object(
+          'id',           p.id,
+          'uuid_usuario', p.uuid_usuario,
+          'nombre',       p.nombre,
+          'apellidos',    p.apellidos,
+          'ci',           p.ci,
+          'telefono',     p.telefono
+        ) end
       )
       order by a.fecha_hora_reserva desc
     ),
@@ -56,7 +70,9 @@ as $$
   join flow.app_dat_locales   l  on l.id  = ls.id_local
   join flow.app_dat_servicios s  on s.id  = ls.id_servicio
   join flow.nom_estado_agenda e  on e.id  = a.id_estado
-  where a.uuid_usuario = p_uuid_usuario
+  left join flow.perfil       p  on p.uuid_usuario = a.uuid_usuario
+  -- El usuario ve sus propias reservas Y las que hizo para terceros.
+  where (a.uuid_usuario = p_uuid_usuario or a.reservado_por = p_uuid_usuario)
     and (p_id_estado is null or a.id_estado = p_id_estado);
 $$;
 

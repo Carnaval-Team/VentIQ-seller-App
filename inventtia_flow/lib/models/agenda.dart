@@ -60,6 +60,9 @@ class Agenda {
   final EstadoAgenda? estado;
   final LocalServicio? localServicio;
   final ClientePerfil? cliente;
+  final int cantidad;
+  final Map<String, dynamic>? datosAdicionales;
+  final String? reservadoPor;
 
   Agenda({
     required this.id,
@@ -73,7 +76,14 @@ class Agenda {
     this.estado,
     this.localServicio,
     this.cliente,
+    this.cantidad = 1,
+    this.datosAdicionales,
+    this.reservadoPor,
   });
+
+  /// True si la reserva la hizo el usuario [uuid] para un tercero (titular ≠ quien reservó).
+  bool esParaTercero(String uuid) =>
+      reservadoPor == uuid && uuidUsuario != null && uuidUsuario != uuid;
 
   factory Agenda.fromJson(Map<String, dynamic> json) {
     // Soporta dos formatos:
@@ -105,6 +115,9 @@ class Agenda {
       cliente: json['cliente'] != null
           ? ClientePerfil.fromJson(json['cliente'] as Map<String, dynamic>)
           : null,
+      cantidad: (json['cantidad'] as num?)?.toInt() ?? 1,
+      datosAdicionales: (json['datos_adicionales'] as Map?)?.cast<String, dynamic>(),
+      reservadoPor: json['reservado_por'] as String?,
     );
   }
 }

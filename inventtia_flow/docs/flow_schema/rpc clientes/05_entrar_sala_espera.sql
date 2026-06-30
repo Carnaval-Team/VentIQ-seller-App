@@ -16,10 +16,19 @@
 -- Añadir columna si no existe (ejecutar una sola vez en migracion):
 -- ALTER TABLE flow.ultimo_numero ADD COLUMN IF NOT EXISTS ultimo_en_anotarse integer NOT NULL DEFAULT 0;
 
+-- Firma anterior (3 params) reemplazada por la nueva (con datos/tercero).
+drop function if exists flow.cliente_entrar_sala_espera(uuid, integer, timestamp without time zone);
+
 create or replace function flow.cliente_entrar_sala_espera(
   p_uuid_usuario      uuid,
   p_id_local_servicio integer,
-  p_fecha_regla       timestamp without time zone default null
+  p_fecha_regla       timestamp without time zone default null,
+  p_datos_adicionales jsonb   default null,
+  p_para_tercero      boolean default false,
+  p_t_nombre          text    default null,
+  p_t_apellidos       text    default null,
+  p_t_ci              text    default null,
+  p_t_telefono        text    default null
 )
 returns jsonb
 language plpgsql
@@ -35,6 +44,7 @@ declare
   v_recientes integer;
   v_nombre_servicio text;
   v_nombre_local    text;
+  v_titular uuid;   -- a nombre de quien queda la entrada en cola
   -- Antifraude: no mas de N entradas (a cualquier cola) por ventana de tiempo
   c_flood_ventana constant interval := interval '1 minute';
   c_flood_max     constant integer  := 5;
@@ -57,15 +67,32 @@ begin
     return jsonb_build_object('ok', false, 'error', 'El id_local_servicio no existe');
   end if;
 
-  -- ANTIFRAUDE 1: mismo usuario no entra dos veces a la misma cola
+  -- Resolver el titular de la entrada: uno mismo o un tercero.
+  if coalesce(p_para_tercero, false) then
+    if not exists (
+      select 1 from flow.local_servicio ls
+      join flow.app_dat_servicios s on s.id = ls.id_servicio
+      where ls.id = p_id_local_servicio and s.permite_tercero = true
+    ) then
+      return jsonb_build_object('ok', false, 'error', 'Este servicio no permite reservar para terceros');
+    end if;
+    v_titular := flow._resolver_perfil_tercero(p_t_nombre, p_t_apellidos, p_t_ci, p_t_telefono);
+  else
+    v_titular := p_uuid_usuario;
+  end if;
+
+  -- ANTIFRAUDE 1: el titular no entra dos veces a la misma cola
   if exists (
     select 1 from flow.sala_espera se
     where se.id_local_servicio = p_id_local_servicio
-      and se.uuid_usuario = p_uuid_usuario
+      and se.uuid_usuario = v_titular
   ) then
     insert into flow.sala_espera_fraude (uuid_usuario, id_local_servicio, motivo, detalle)
     values (p_uuid_usuario, p_id_local_servicio, 'duplicado', null);
-    return jsonb_build_object('ok', false, 'error', 'El usuario ya esta en esta cola');
+    return jsonb_build_object('ok', false, 'error',
+      case when v_titular = p_uuid_usuario
+           then 'El usuario ya esta en esta cola'
+           else 'Esa persona ya esta en esta cola' end);
   end if;
 
   -- ANTIFRAUDE 2: flood / bots. Demasiadas entradas en poco tiempo.
@@ -91,8 +118,12 @@ begin
   v_numero := v_numero + 1;
   v_fecha  := coalesce(p_fecha_regla, current_timestamp);
 
-  insert into flow.sala_espera (uuid_usuario, id_local_servicio, fecha_regla, numero_cola)
-  values (p_uuid_usuario, p_id_local_servicio, v_fecha, v_numero)
+  insert into flow.sala_espera
+    (uuid_usuario, id_local_servicio, fecha_regla, numero_cola,
+     datos_adicionales, reservado_por)
+  values
+    (v_titular, p_id_local_servicio, v_fecha, v_numero,
+     p_datos_adicionales, p_uuid_usuario)
   returning id, created_at into v_id, v_created;
 
   -- Actualizar ultimo_en_anotarse en ultimo_numero (upsert atomico bajo el mismo advisory lock)
@@ -147,11 +178,18 @@ begin
 end;
 $$;
 
-grant execute on function flow.cliente_entrar_sala_espera(uuid, integer, timestamp without time zone) to authenticated;
+grant execute on function flow.cliente_entrar_sala_espera(
+  uuid, integer, timestamp without time zone, jsonb, boolean, text, text, text, text
+) to authenticated;
 
 -- Migracion requerida (ejecutar una sola vez en Supabase):
 --   ALTER TABLE flow.ultimo_numero ADD COLUMN IF NOT EXISTS ultimo_en_anotarse integer NOT NULL DEFAULT 0;
+--   (datos_adicionales/reservado_por -> migracion 11; permite_tercero -> migracion 10)
 --
 -- Uso:
---   select flow.cliente_entrar_sala_espera('00000000-0000-0000-0000-000000000000', 5);
+--   select flow.cliente_entrar_sala_espera('00000000-...', 5);
 --   select flow.cliente_entrar_sala_espera('00000000-...', 5, '2026-06-22 10:00:00');
+--   select flow.cliente_entrar_sala_espera('00000000-...', 5, null,
+--            '{"codigo_pais":"53"}'::jsonb);                                  -- con datos
+--   select flow.cliente_entrar_sala_espera('00000000-...', 5, null, null,
+--            true, 'Ana', 'Paz', '85010112345', '55512345');                 -- para tercero

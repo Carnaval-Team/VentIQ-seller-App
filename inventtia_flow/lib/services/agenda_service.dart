@@ -1,9 +1,58 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/agenda.dart';
+import '../models/disponibilidad_dia.dart';
 
 class AgendaService {
   static final SupabaseClient _supabase = Supabase.instance.client;
   static const String _schema = 'flow';
+
+  /// Días con disponibilidad para reserva directa de un local_servicio.
+  static Future<List<DisponibilidadDia>> getDisponibilidad(
+      int idLocalServicio) async {
+    final res = await _supabase.schema(_schema).rpc(
+      'cliente_obtener_disponibilidad',
+      params: {'p_id_local_servicio': idLocalServicio},
+    );
+    if (res == null) return [];
+    return (res as List)
+        .map((e) => DisponibilidadDia.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Reserva directa (sin cola) para una fecha con cupo. Lanza si falla.
+  /// Permite cantidad (1..disponibles), datos adicionales y reservar para tercero.
+  static Future<void> reservarDirecto({
+    required String uuidUsuario,
+    required int idLocalServicio,
+    required DateTime fecha,
+    int cantidad = 1,
+    Map<String, dynamic>? datosAdicionales,
+    bool paraTercero = false,
+    String? terceroNombre,
+    String? terceroApellidos,
+    String? terceroCi,
+    String? terceroTelefono,
+  }) async {
+    final res = await _supabase.schema(_schema).rpc(
+      'cliente_reservar_directo',
+      params: {
+        'p_uuid_usuario': uuidUsuario,
+        'p_id_local_servicio': idLocalServicio,
+        'p_fecha': fecha.toIso8601String().substring(0, 10),
+        'p_cantidad': cantidad,
+        if (datosAdicionales != null) 'p_datos_adicionales': datosAdicionales,
+        'p_para_tercero': paraTercero,
+        if (paraTercero) 'p_t_nombre': terceroNombre,
+        if (paraTercero) 'p_t_apellidos': terceroApellidos,
+        if (paraTercero) 'p_t_ci': terceroCi,
+        if (paraTercero) 'p_t_telefono': terceroTelefono,
+      },
+    );
+    final json = res as Map<String, dynamic>;
+    if (json['ok'] != true) {
+      throw Exception(json['error'] ?? 'No se pudo reservar');
+    }
+  }
 
   static Future<List<Agenda>> getMisTickets(String uuidUsuario,
       {int? idEstado}) async {
