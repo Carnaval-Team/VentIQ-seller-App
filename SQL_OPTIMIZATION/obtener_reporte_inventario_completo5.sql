@@ -1,21 +1,24 @@
 -- ============================================================================
--- FUNCIÓN: obtener_reporte_inventario_completo4
--- Variante de obtener_reporte_inventario_completo3 que agrega la columna
--- cantidad_reservada (operaciones pendientes, estado = 1) en el resultado.
+-- FUNCIÓN: obtener_reporte_inventario_completo5
+-- Variante de obtener_reporte_inventario_completo4 que reorganiza el cálculo
+-- de movimientos partiendo de app_dat_inventario_productos.
 -- ============================================================================
--- Diferencias respecto a la versión 3:
---   1. Se agrega la columna OUT `cantidad_reservada NUMERIC` en RETURNS TABLE.
---   2. El campo `stock_reservado` (ya existente, alias de sr.reservado) se
---      mantiene intacto para no romper compatibilidad.
---   3. Se agrega como último campo `COALESCE(sr.reservado, 0)::NUMERIC AS cantidad_reservada`
---      para que Flutter lo pueda leer con la clave 'cantidad_reservada'.
+-- Diferencias respecto a la versión 4:
+--   1. Se listan todos los productos de la tienda y se cruzan con sus ubicaciones.
+--   2. Se buscan los movimientos de inventario de cada producto/ubicación en
+--      el rango de fechas, y desde esos movimientos se obtienen las operaciones
+--      para conocer estado y tipo (entrada, extracción, venta).
+--   3. Se separan los pendientes en:
+--        - cantidad_reservada: salidas/extracciones en operaciones pendientes (estado = 1)
+--        - cantidad_pendiente_entrada: recepciones en operaciones pendientes (estado = 1)
+--   4. Se mantiene stock_reservado como alias de cantidad_reservada por compatibilidad.
 -- ============================================================================
 
-DROP FUNCTION IF EXISTS public.obtener_reporte_inventario_completo4(
+DROP FUNCTION IF EXISTS public.obtener_reporte_inventario_completo5(
     BIGINT, TEXT, TEXT, BIGINT, BOOLEAN
 );
 
-CREATE OR REPLACE FUNCTION public.obtener_reporte_inventario_completo4(
+CREATE OR REPLACE FUNCTION public.obtener_reporte_inventario_completo5(
     p_id_tienda   BIGINT,
     p_fecha_desde TEXT    DEFAULT NULL,
     p_fecha_hasta TEXT    DEFAULT NULL,
@@ -73,6 +76,8 @@ RETURNS TABLE (
     deleted_at                  TIMESTAMP,
     -- NUEVA COLUMNA: cantidad reservada en operaciones pendientes
     cantidad_reservada          NUMERIC,
+    -- NUEVA COLUMNA: recepciones pendientes (estado = 1)
+    cantidad_pendiente_entrada  NUMERIC,
     -- Alias de compatibilidad para el código Dart/Flutter
     sku_producto                TEXT
 )
@@ -172,53 +177,133 @@ BEGIN
             AND COALESCE(ii.id_ubicacion, 0) = COALESCE(ifin.id_ubicacion, 0)
         )
     ),
+    -- Movimientos de inventario en el rango/ubicación, para identificar operaciones
+    movimientos_inventario AS (
+        SELECT DISTINCT
+            i.id_producto,
+            COALESCE(i.id_variante, 0) as id_variante,
+            COALESCE(i.id_opcion_variante, 0) as id_opcion_variante,
+            COALESCE(i.id_presentacion, 0) as id_presentacion,
+            i.id_ubicacion,
+            i.id_operacion
+        FROM app_dat_inventario_productos i
+        INNER JOIN ubicaciones_filtro uf ON i.id_ubicacion = uf.id_ubicacion
+        WHERE i.id_operacion IS NOT NULL
+          AND (v_fecha_hasta_ts IS NULL OR i.created_at <= v_fecha_hasta_ts)
+          AND (v_fecha_desde_ts IS NULL OR i.created_at >= v_fecha_desde_ts)
+    ),
+    -- Operaciones asociadas a los movimientos, con su estado actual
+    operaciones_movimientos AS (
+        SELECT DISTINCT
+            mi.id_producto,
+            mi.id_variante,
+            mi.id_opcion_variante,
+            mi.id_presentacion,
+            mi.id_ubicacion,
+            mi.id_operacion,
+            COALESCE(eo.estado, 0) as estado
+        FROM movimientos_inventario mi
+        INNER JOIN app_dat_operaciones o ON mi.id_operacion = o.id
+        LEFT JOIN app_dat_estado_operacion eo ON o.id = eo.id_operacion
+    ),
+    -- Entradas del periodo: recepciones completadas vinculadas a movimientos de inventario
+    entradas_periodo AS (
+        SELECT
+            om.id_producto,
+            om.id_variante,
+            om.id_opcion_variante,
+            om.id_presentacion,
+            om.id_ubicacion,
+            SUM(rp.cantidad) as cantidad_entradas
+        FROM operaciones_movimientos om
+        INNER JOIN app_dat_operacion_recepcion orp ON om.id_operacion = orp.id_operacion
+        INNER JOIN app_dat_recepcion_productos rp ON (
+            om.id_operacion = rp.id_operacion
+            AND om.id_producto = rp.id_producto
+            AND om.id_variante = COALESCE(rp.id_variante, 0)
+            AND om.id_opcion_variante = COALESCE(rp.id_opcion_variante, 0)
+            AND om.id_presentacion = COALESCE(rp.id_presentacion, 0)
+            AND om.id_ubicacion = rp.id_ubicacion
+        )
+        WHERE om.estado = 2
+        GROUP BY om.id_producto, om.id_variante, om.id_opcion_variante, om.id_presentacion, om.id_ubicacion
+    ),
+    -- Extracciones del periodo (no ventas): extracciones completadas vinculadas a movimientos
+    extracciones_periodo AS (
+        SELECT
+            om.id_producto,
+            om.id_variante,
+            om.id_opcion_variante,
+            om.id_presentacion,
+            om.id_ubicacion,
+            SUM(ep.cantidad) as cantidad_extracciones
+        FROM operaciones_movimientos om
+        INNER JOIN app_dat_operacion_extraccion oe ON om.id_operacion = oe.id_operacion
+        INNER JOIN app_dat_extraccion_productos ep ON (
+            om.id_operacion = ep.id_operacion
+            AND om.id_producto = ep.id_producto
+            AND om.id_variante = COALESCE(ep.id_variante, 0)
+            AND om.id_opcion_variante = COALESCE(ep.id_opcion_variante, 0)
+            AND om.id_presentacion = COALESCE(ep.id_presentacion, 0)
+            AND om.id_ubicacion = ep.id_ubicacion
+        )
+        WHERE om.estado = 2
+          AND oe.id_motivo_operacion <= 10
+        GROUP BY om.id_producto, om.id_variante, om.id_opcion_variante, om.id_presentacion, om.id_ubicacion
+    ),
+    -- Ventas del periodo: extracciones completadas que son operaciones de venta
+    ventas_periodo AS (
+        SELECT
+            om.id_producto,
+            om.id_variante,
+            om.id_opcion_variante,
+            om.id_presentacion,
+            om.id_ubicacion,
+            SUM(ep.cantidad) as cantidad_ventas
+        FROM operaciones_movimientos om
+        INNER JOIN app_dat_operacion_venta ov ON om.id_operacion = ov.id_operacion
+        INNER JOIN app_dat_extraccion_productos ep ON (
+            om.id_operacion = ep.id_operacion
+            AND om.id_producto = ep.id_producto
+            AND om.id_variante = COALESCE(ep.id_variante, 0)
+            AND om.id_opcion_variante = COALESCE(ep.id_opcion_variante, 0)
+            AND om.id_presentacion = COALESCE(ep.id_presentacion, 0)
+            AND om.id_ubicacion = ep.id_ubicacion
+        )
+        WHERE om.estado = 2
+        GROUP BY om.id_producto, om.id_variante, om.id_opcion_variante, om.id_presentacion, om.id_ubicacion
+    ),
+    -- Stock reservado: salidas pendientes (extracciones en operaciones con estado = 1)
+    -- NOTA: se calcula directamente desde operaciones, ya que las operaciones pendientes
+    -- aún no generan movimiento de inventario.
     stock_reservado AS (
-        SELECT ep.id_producto, COALESCE(ep.id_variante, 0) as id_variante,
-            COALESCE(ep.id_opcion_variante, 0) as id_opcion_variante, ep.id_ubicacion, SUM(ep.cantidad) AS reservado
+        SELECT
+            ep.id_producto,
+            COALESCE(ep.id_variante, 0) as id_variante,
+            COALESCE(ep.id_opcion_variante, 0) as id_opcion_variante,
+            COALESCE(ep.id_presentacion, 0) as id_presentacion,
+            ep.id_ubicacion,
+            SUM(ep.cantidad) AS reservado
         FROM app_dat_extraccion_productos ep
         INNER JOIN app_dat_operaciones o ON ep.id_operacion = o.id
         INNER JOIN app_dat_estado_operacion eo ON o.id = eo.id_operacion
         WHERE eo.estado = 1
-        GROUP BY ep.id_producto, COALESCE(ep.id_variante, 0), COALESCE(ep.id_opcion_variante, 0), ep.id_ubicacion
+        GROUP BY ep.id_producto, COALESCE(ep.id_variante, 0), COALESCE(ep.id_opcion_variante, 0), COALESCE(ep.id_presentacion, 0), ep.id_ubicacion
     ),
-    entradas_periodo AS (
-        SELECT rp.id_producto, COALESCE(rp.id_variante, 0) as id_variante,
-            COALESCE(rp.id_opcion_variante, 0) as id_opcion_variante, COALESCE(rp.id_presentacion, 0) as id_presentacion,
-            rp.id_ubicacion, SUM(rp.cantidad) as cantidad_entradas
+    -- Pendientes de entrada: recepciones en operaciones con estado = 1
+    pendientes_entrada AS (
+        SELECT
+            rp.id_producto,
+            COALESCE(rp.id_variante, 0) as id_variante,
+            COALESCE(rp.id_opcion_variante, 0) as id_opcion_variante,
+            COALESCE(rp.id_presentacion, 0) as id_presentacion,
+            rp.id_ubicacion,
+            SUM(rp.cantidad) AS cantidad_pendiente_entrada
         FROM app_dat_recepcion_productos rp
         INNER JOIN app_dat_operaciones o ON rp.id_operacion = o.id
-        INNER JOIN app_dat_operacion_recepcion orp ON o.id = orp.id_operacion
-        WHERE (v_fecha_hasta_ts IS NULL OR rp.created_at <= v_fecha_hasta_ts)
-          AND (v_fecha_desde_ts IS NULL OR rp.created_at >= v_fecha_desde_ts)
-        GROUP BY rp.id_producto, COALESCE(rp.id_variante, 0), COALESCE(rp.id_opcion_variante, 0), 
-                 COALESCE(rp.id_presentacion, 0), rp.id_ubicacion
-    ),
-    extracciones_periodo AS (
-        SELECT ep.id_producto, COALESCE(ep.id_variante, 0) as id_variante,
-            COALESCE(ep.id_opcion_variante, 0) as id_opcion_variante, COALESCE(ep.id_presentacion, 0) as id_presentacion,
-            ep.id_ubicacion, SUM(ep.cantidad) as cantidad_extracciones
-        FROM app_dat_extraccion_productos ep
-        INNER JOIN app_dat_operaciones o ON ep.id_operacion = o.id
-        INNER JOIN app_dat_operacion_extraccion oe ON o.id = oe.id_operacion
-        WHERE (v_fecha_hasta_ts IS NULL OR ep.created_at <= v_fecha_hasta_ts)
-          AND (v_fecha_desde_ts IS NULL OR ep.created_at >= v_fecha_desde_ts)
-          AND oe.id_motivo_operacion <= 10
-        GROUP BY ep.id_producto, COALESCE(ep.id_variante, 0), COALESCE(ep.id_opcion_variante, 0), 
-                 COALESCE(ep.id_presentacion, 0), ep.id_ubicacion
-    ),
-    ventas_periodo AS (
-        SELECT ep.id_producto, COALESCE(ep.id_variante, 0) as id_variante,
-            COALESCE(ep.id_opcion_variante, 0) as id_opcion_variante, COALESCE(ep.id_presentacion, 0) as id_presentacion,
-            ep.id_ubicacion, SUM(ep.cantidad) as cantidad_ventas
-        FROM app_dat_extraccion_productos ep
-        INNER JOIN app_dat_operaciones o ON ep.id_operacion = o.id
-        INNER JOIN app_dat_operacion_venta ov ON o.id = ov.id_operacion
         INNER JOIN app_dat_estado_operacion eo ON o.id = eo.id_operacion
-        WHERE eo.estado = 2
-          AND (v_fecha_hasta_ts IS NULL OR ep.created_at <= v_fecha_hasta_ts)
-          AND (v_fecha_desde_ts IS NULL OR ep.created_at >= v_fecha_desde_ts)
-        GROUP BY ep.id_producto, COALESCE(ep.id_variante, 0), COALESCE(ep.id_opcion_variante, 0), 
-                 COALESCE(ep.id_presentacion, 0), ep.id_ubicacion
+        WHERE eo.estado = 1
+        GROUP BY rp.id_producto, COALESCE(rp.id_variante, 0), COALESCE(rp.id_opcion_variante, 0), COALESCE(rp.id_presentacion, 0), rp.id_ubicacion
     ),
     costo_promedio_productos AS (
         SELECT rp.id_producto, COALESCE(rp.id_variante, 0) as id_variante,
@@ -364,6 +449,8 @@ BEGIN
         pic.deleted_at::TIMESTAMP,
         -- NUEVA COLUMNA: cantidad reservada (igual que stock_reservado, alias explícito)
         COALESCE(sr.reservado, 0)::NUMERIC AS cantidad_reservada,
+        -- NUEVA COLUMNA: recepciones pendientes (estado = 1)
+        COALESCE(pe.cantidad_pendiente_entrada, 0)::NUMERIC AS cantidad_pendiente_entrada,
         -- Alias de compatibilidad para el código Dart/Flutter
         COALESCE(pic.sku, '')::TEXT AS sku_producto
     FROM productos_inventario_completo pic
@@ -371,7 +458,15 @@ BEGIN
         pic.id = sr.id_producto
         AND COALESCE(pic.inv_id_variante, 0) = sr.id_variante
         AND COALESCE(pic.inv_id_opcion_variante, 0) = sr.id_opcion_variante
+        AND COALESCE(pic.inv_id_presentacion, 0) = sr.id_presentacion
         AND pic.id_ubicacion = sr.id_ubicacion
+    )
+    LEFT JOIN pendientes_entrada pe ON (
+        pic.id = pe.id_producto
+        AND COALESCE(pic.inv_id_variante, 0) = pe.id_variante
+        AND COALESCE(pic.inv_id_opcion_variante, 0) = pe.id_opcion_variante
+        AND COALESCE(pic.inv_id_presentacion, 0) = pe.id_presentacion
+        AND pic.id_ubicacion = pe.id_ubicacion
     )
     LEFT JOIN entradas_periodo ent ON (
         pic.id = ent.id_producto
@@ -413,6 +508,7 @@ BEGIN
                 OR COALESCE(ent.cantidad_entradas, 0) > 0
                 OR COALESCE(ext.cantidad_extracciones, 0) > 0
                 OR COALESCE(vent.cantidad_ventas, 0) > 0
+                OR COALESCE(pe.cantidad_pendiente_entrada, 0) > 0
             )
         END
     )
@@ -422,12 +518,12 @@ END;
 $$;
 
 -- Grants de acceso
-GRANT EXECUTE ON FUNCTION public.obtener_reporte_inventario_completo4(BIGINT, TEXT, TEXT, BIGINT, BOOLEAN)
+GRANT EXECUTE ON FUNCTION public.obtener_reporte_inventario_completo5(BIGINT, TEXT, TEXT, BIGINT, BOOLEAN)
     TO authenticated, anon;
 
 -- ============================================================================
 -- VERIFICACIÓN: Confirmar que retorna la nueva columna
--- SELECT id_producto, nombre_producto, stock_disponible, stock_reservado, cantidad_reservada
--- FROM obtener_reporte_inventario_completo4(1)
+-- SELECT id_producto, nombre_producto, stock_disponible, stock_reservado, cantidad_reservada, cantidad_pendiente_entrada
+-- FROM obtener_reporte_inventario_completo5(1)
 -- LIMIT 10;
 -- ============================================================================
