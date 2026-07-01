@@ -1,8 +1,35 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.0.0",
-  "build": 1,
+  "current_version": "1.1.0",
+  "build": 2,
   "changelogs": [
+    {
+      "version": "1.1.0",
+      "date": "2026-07-01",
+      "title": "🚀 Actualización de Flow",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Cancelación de reservas",
+          "description": "Los clientes pueden cancelar sus reservas desde Mis Tickets. Si la entidad no define horas de anticipación, la cancelación está permitida en cualquier momento."
+        },
+        {
+          "type": "feature",
+          "title": "Configuración de anticipación y capacidad",
+          "description": "Las entidades pueden configurar horas de anticipación para cancelaciones y definir cantidad default/máxima por reserva."
+        },
+        {
+          "type": "improvement",
+          "title": "UI polish en reservas",
+          "description": "Mejor feedback visual en los botones de Reservar ahora y Anotarme en la lista con transiciones suaves y escala al presionar."
+        },
+        {
+          "type": "fix",
+          "title": "Información adicional en reservas",
+          "description": "El listado de reservas del admin y los reportes PDF/Excel ahora incluyen la información adicional de cada reserva."
+        }
+      ]
+    },
     {
       "version": "1.0.0",
       "date": "2026-06-22",
