@@ -60,6 +60,20 @@ class PerfilService {
     return Perfil.fromJson(res);
   }
 
+  static Future<String?> getUuidByEmail(String email) async {
+    final res = await _supabase
+        .rpc('get_uuid_by_email', params: {'p_email': email.toLowerCase().trim()});
+    print('[flow] getUuidByEmail → res=$res (${res?.runtimeType})');
+    if (res == null) return null;
+    return res.toString();
+  }
+
+  static Future<Perfil?> getPerfilByEmail(String email) async {
+    final uuid = await getUuidByEmail(email);
+    if (uuid == null) return null;
+    return getPerfil(uuid);
+  }
+
   static Future<Perfil?> getPerfilByCi(String ci) async {
     final res = await _supabase
         .schema(_schema)

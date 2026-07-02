@@ -144,4 +144,71 @@ class EntidadService {
         .maybeSingle();
     return res != null;
   }
+
+  // ── Vendedores ──────────────────────────────────────────────
+
+  static Future<List<EntidadVendedor>> getVendedores(int idEntidad) async {
+    final res = await _supabase
+        .schema(_schema)
+        .from('entidad_vendedor')
+        .select()
+        .eq('id_entidad', idEntidad)
+        .order('created_at');
+    return (res as List).map((e) => EntidadVendedor.fromJson(e)).toList();
+  }
+
+  static Future<EntidadVendedor> addVendedor({
+    required int idEntidad,
+    required String uuidUsuario,
+    required String asignadoPor,
+  }) async {
+    final res = await _supabase
+        .schema(_schema)
+        .from('entidad_vendedor')
+        .insert({
+          'id_entidad': idEntidad,
+          'uuid_usuario': uuidUsuario,
+          'asignado_por': asignadoPor,
+        })
+        .select()
+        .single();
+    return EntidadVendedor.fromJson(res);
+  }
+
+  static Future<void> removeVendedor(int idEntidadVendedor) async {
+    await _supabase
+        .schema(_schema)
+        .from('entidad_vendedor')
+        .delete()
+        .eq('id', idEntidadVendedor);
+  }
+
+  static Future<bool> isVendedor(int idEntidad, String uuidUsuario) async {
+    final res = await _supabase
+        .schema(_schema)
+        .from('entidad_vendedor')
+        .select('id')
+        .eq('id_entidad', idEntidad)
+        .eq('uuid_usuario', uuidUsuario)
+        .maybeSingle();
+    return res != null;
+  }
+
+  static Future<List<Entidad>> getMisEntidadesComoVendedor(
+      String uuidUsuario) async {
+    final rows = await _supabase
+        .schema(_schema)
+        .from('entidad_vendedor')
+        .select('id_entidad, entidad(*)')
+        .eq('uuid_usuario', uuidUsuario);
+
+    final List<Entidad> result = [];
+    for (final row in rows as List) {
+      if (row['entidad'] != null) {
+        result.add(Entidad.fromJson(row['entidad'] as Map<String, dynamic>));
+      }
+    }
+    result.sort((a, b) => a.denominacion.compareTo(b.denominacion));
+    return result;
+  }
 }

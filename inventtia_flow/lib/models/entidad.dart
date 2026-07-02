@@ -91,3 +91,28 @@ class EntidadAdmin {
         createdAt: DateTime.parse(json['created_at'] as String),
       );
 }
+
+class EntidadVendedor {
+  final int id;
+  final int idEntidad;
+  final String uuidUsuario;
+  final String asignadoPor;
+  final DateTime createdAt;
+
+  const EntidadVendedor({
+    required this.id,
+    required this.idEntidad,
+    required this.uuidUsuario,
+    required this.asignadoPor,
+    required this.createdAt,
+  });
+
+  factory EntidadVendedor.fromJson(Map<String, dynamic> json) =>
+      EntidadVendedor(
+        id: json['id'] as int,
+        idEntidad: json['id_entidad'] as int,
+        uuidUsuario: json['uuid_usuario'] as String,
+        asignadoPor: json['asignado_por'] as String,
+        createdAt: DateTime.parse(json['created_at'] as String),
+      );
+}
