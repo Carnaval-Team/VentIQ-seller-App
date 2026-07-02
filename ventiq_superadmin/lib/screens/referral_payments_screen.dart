@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../config/app_colors.dart';
 import '../services/referral_payments_service.dart';
+import '../services/referral_pdf_service.dart';
 import '../widgets/app_drawer.dart';
 
 class ReferralPaymentsScreen extends StatefulWidget {
@@ -30,6 +31,8 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
   List<_ReferrerRow> _referrers = [];
   _ReferrerRow? _selected;
   List<Map<String, dynamic>> _selectedOrders = [];
+
+  bool _excludeZeroPayments = false;
 
   final NumberFormat _moneyFmt = NumberFormat('#,##0.00');
 
@@ -94,18 +97,23 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
       ));
     }
 
-    // Orden principal: cantidad de referidos (desc). Desempate: comisión CUP (desc).
+    // Orden principal: cantidad a pagar (desc). Desempate: cantidad de referidos (desc).
     rows.sort((a, b) {
-      final byReferred = b.referredCount.compareTo(a.referredCount);
-      if (byReferred != 0) return byReferred;
-      return b.summary.comisionCup.compareTo(a.summary.comisionCup);
+      final byAmount = b.summary.comisionCup.compareTo(a.summary.comisionCup);
+      if (byAmount != 0) return byAmount;
+      return b.referredCount.compareTo(a.referredCount);
     });
+
+    // Filtrar referrers con pagos en cero si la opción está activada
+    final filteredRows = _excludeZeroPayments
+        ? rows.where((row) => row.summary.comisionCup > 0).toList()
+        : rows;
 
     if (mounted) {
       setState(() {
-        _referrers = rows;
+        _referrers = filteredRows;
         if (_selected != null) {
-          final match = rows.firstWhere(
+          final match = filteredRows.firstWhere(
             (r) => r.referralCode == _selected!.referralCode,
             orElse: () => _ReferrerRow.empty(),
           );
@@ -158,6 +166,35 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
       _selected = row;
       _selectedOrders = row.orders;
     });
+  }
+
+  Future<void> _exportToPdf() async {
+    if (_selected == null) return;
+
+    try {
+      await ReferralPdfService.generateAndSaveReferralReport(
+        referrer: _selected!.user,
+        referralCode: _selected!.referralCode,
+        referredCount: _selected!.referredCount,
+        summary: _selected!.summary,
+        orders: _selected!.orders,
+        fromDate: _fromDate,
+        toDate: _toDate,
+        valorUsd: _valorUsd,
+        valorEuro: _valorEuro,
+        pctNacional: _pctNacional,
+        pctInternacional: _pctInternacional,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -237,6 +274,7 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
             label: const Text('Aplicar'),
             onPressed: _isLoading ? null : _onFiltersChanged,
           ),
+          _buildExcludeZeroCheckbox(),
           _buildRatesChip(),
         ],
       ),
@@ -331,6 +369,52 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildExcludeZeroCheckbox() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: _excludeZeroPayments 
+            ? AppColors.primary.withOpacity(0.1)
+            : AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: _excludeZeroPayments 
+              ? AppColors.primary
+              : Colors.transparent,
+          width: 1,
+        ),
+      ),
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _excludeZeroPayments = !_excludeZeroPayments;
+          });
+          _onFiltersChanged();
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _excludeZeroPayments ? Icons.check_box : Icons.check_box_outline_blank,
+              size: 18,
+              color: _excludeZeroPayments ? AppColors.primary : AppColors.textSecondary,
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'Excluir \$0',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -708,6 +792,15 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
                             fontSize: 12, color: AppColors.textSecondary),
                       ),
                     ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.picture_as_pdf),
+                  tooltip: 'Exportar a PDF',
+                  onPressed: _exportToPdf,
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.primary.withOpacity(0.1),
+                    foregroundColor: AppColors.primary,
                   ),
                 ),
               ],
