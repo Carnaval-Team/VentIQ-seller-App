@@ -250,7 +250,7 @@ class _SplashScreenState extends State<SplashScreen>
                 colors: [AppTheme.primaryDark, AppTheme.primaryLight],
               ).createShader(bounds),
               child: const Text(
-                'Flow',
+                'GoReserva',
                 style: TextStyle(
                   fontSize: 42,
                   fontWeight: FontWeight.w800,

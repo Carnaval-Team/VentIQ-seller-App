@@ -1,11 +1,11 @@
 {
-    "name": "Flow",
-    "short_name": "Flow",
+    "name": "Inventtia GoReserva",
+    "short_name": "GoReserva",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#FFFFFF",
     "theme_color": "#1565C0",
-    "description": "A new Flutter project.",
+    "description": "GoReserva - Gestión de colas y turnos de servicios",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

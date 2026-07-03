@@ -1,12 +1,49 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.0.0",
-  "build": 1,
+  "current_version": "1.1.0",
+  "build": 2,
   "changelogs": [
+    {
+      "version": "1.1.0",
+      "date": "2026-07-03",
+      "title": "✨ Ahora somos Inventtia GoReserva",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Nuevo nombre: Inventtia GoReserva",
+          "description": "La app cambió de nombre a Inventtia GoReserva. Es la misma aplicación de siempre, ahora con una imagen renovada."
+        },
+        {
+          "type": "feature",
+          "title": "Cancela tus reservas",
+          "description": "Ahora puedes cancelar una reserva que ya no vayas a usar directamente desde tus tickets, liberando el turno para otras personas."
+        },
+        {
+          "type": "feature",
+          "title": "Planificación de turnos recurrentes",
+          "description": "Los administradores pueden programar turnos que se repiten de forma automática (por ejemplo, cada semana), sin tener que crearlos uno por uno."
+        },
+        {
+          "type": "feature",
+          "title": "Reserva directa de turnos",
+          "description": "En los servicios que lo permitan, ahora puedes reservar un turno al instante sin pasos adicionales."
+        },
+        {
+          "type": "improvement",
+          "title": "Capacidad de locales y servicios",
+          "description": "Cada local y servicio ahora define cuántas personas puede atender, para que las reservas reflejen mejor la disponibilidad real."
+        },
+        {
+          "type": "improvement",
+          "title": "Mejoras en la gestión de servicios y reservas",
+          "description": "Se mejoró la pantalla de detalle de los locales y la gestión de servicios y reservas para hacerlas más claras y fáciles de usar."
+        }
+      ]
+    },
     {
       "version": "1.0.0",
       "date": "2026-06-22",
-      "title": "🚀 Lanzamiento inicial de Flow",
+      "title": "🚀 Lanzamiento inicial",
       "changes": [
         {
           "type": "feature",

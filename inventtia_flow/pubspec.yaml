@@ -1,5 +1,5 @@
 name: inventtia_flow
-description: "Flow - Gestión de colas y turnos de servicios"
+description: "GoReserva - Gestión de colas y turnos de servicios"
 publish_to: 'none'
 version: 1.0.0+1
 

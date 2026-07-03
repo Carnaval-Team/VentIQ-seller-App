@@ -104,7 +104,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'Bienvenido a Flow',
+              'Bienvenido a GoReserva',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 24,

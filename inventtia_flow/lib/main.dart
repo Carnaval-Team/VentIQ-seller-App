@@ -44,7 +44,7 @@ class FlowApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => NotificacionProvider()),
       ],
       child: MaterialApp(
-        title: 'Flow',
+        title: 'GoReserva',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
         locale: const Locale('es'),
