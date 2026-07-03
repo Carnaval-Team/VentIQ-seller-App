@@ -1,8 +1,30 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.1.0",
-  "build": 2,
+  "current_version": "1.2.0",
+  "build": 3,
   "changelogs": [
+    {
+      "version": "1.2.0",
+      "date": "2026-07-03",
+      "title": "🎨 Nueva imagen más azul",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Colores renovados",
+          "description": "Ajustamos los azules de la app para que los botones, encabezados y fondos combinen mejor y se vean más elegantes."
+        },
+        {
+          "type": "improvement",
+          "title": "Notificaciones más claras",
+          "description": "La pantalla de notificaciones ahora tiene el mismo estilo que tus listas y reservas, con tarjetas más ordenadas y fáciles de leer."
+        },
+        {
+          "type": "improvement",
+          "title": "Bienvenida con más estilo",
+          "description": "Rediseñamos la pantalla de inicio de sesión y registro, resaltando el nombre GoReserva con un toque de color."
+        }
+      ]
+    },
     {
       "version": "1.1.0",
       "date": "2026-07-03",
