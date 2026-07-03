@@ -12,41 +12,35 @@ class NotificacionesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.surface,
-      appBar: AppBar(
-        title: const Text('Notificaciones'),
-        actions: [
-          Consumer<NotificacionProvider>(
-            builder: (_, prov, __) {
-              if (!prov.hayNoLeidas) return const SizedBox.shrink();
-              return TextButton.icon(
-                onPressed: prov.marcarTodasLeidas,
-                icon: const Icon(Icons.done_all,
-                    color: Colors.white, size: 18),
-                label: const Text('Marcar leídas',
-                    style: TextStyle(color: Colors.white, fontSize: 13)),
-              );
-            },
-          ),
-        ],
-      ),
       body: Consumer<NotificacionProvider>(
         builder: (_, prov, __) {
           final items = prov.items;
-          return RefreshIndicator(
-            onRefresh: prov.recargar,
-            color: AppTheme.primary,
-            child: items.isEmpty
-                ? _EmptyState()
-                : ListView.separated(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) => _NotificacionTile(
-                      notif: items[i],
-                      onTap: () => prov.marcarLeida(items[i].id),
-                    ),
-                  ),
+          return Column(
+            children: [
+              _Hero(
+                total: items.length,
+                noLeidas: prov.unreadCount,
+                hayNoLeidas: prov.hayNoLeidas,
+                onMarcarTodas: prov.marcarTodasLeidas,
+              ),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: prov.recargar,
+                  color: AppTheme.primary,
+                  child: items.isEmpty
+                      ? _EmptyState()
+                      : ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                          itemCount: items.length,
+                          itemBuilder: (_, i) => _NotificacionCard(
+                            notif: items[i],
+                            onTap: () => prov.marcarLeida(items[i].id),
+                          ),
+                        ),
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -54,101 +48,303 @@ class NotificacionesScreen extends StatelessWidget {
   }
 }
 
-class _NotificacionTile extends StatelessWidget {
-  final Notificacion notif;
-  final VoidCallback onTap;
+// Cabecera "hero" alineada con Mis Listas y Mis Reservas: degradado de marca,
+// botón de atrás, eyebrow, título grande, contador de no leídas y la acción
+// "marcar todas leídas".
+class _Hero extends StatelessWidget {
+  final int total;
+  final int noLeidas;
+  final bool hayNoLeidas;
+  final VoidCallback onMarcarTodas;
 
-  const _NotificacionTile({required this.notif, required this.onTap});
+  const _Hero({
+    required this.total,
+    required this.noLeidas,
+    required this.hayNoLeidas,
+    required this.onMarcarTodas,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final noLeida = !notif.leida;
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: noLeida
-                  ? notif.color.withValues(alpha: 0.35)
-                  : AppTheme.border,
-            ),
-            color: noLeida ? notif.color.withValues(alpha: 0.04) : Colors.white,
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppTheme.primaryDark, AppTheme.primary],
+        ),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x33405F90),
+            blurRadius: 24,
+            offset: Offset(0, 10),
           ),
-          padding: const EdgeInsets.all(14),
+        ],
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 20, 22),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: notif.color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(notif.icono, color: notif.color, size: 22),
+              _HeroIconButton(
+                icon: Icons.arrow_back_rounded,
+                onTap: () => Navigator.maybePop(context),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 6),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            notif.titulo,
-                            style: TextStyle(
-                              fontSize: 14.5,
-                              fontWeight: noLeida
-                                  ? FontWeight.w800
-                                  : FontWeight.w600,
-                              color: AppTheme.textPrimary,
-                            ),
-                          ),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'TUS AVISOS',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 2,
                         ),
-                        if (noLeida)
-                          Container(
-                            width: 9,
-                            height: 9,
-                            margin: const EdgeInsets.only(left: 6, top: 4),
-                            decoration: BoxDecoration(
-                              color: notif.color,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      notif.mensaje,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        height: 1.4,
-                        color: AppTheme.textSecondary,
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _fechaRelativa(notif.createdAt),
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textSecondary.withValues(alpha: 0.8),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Notificaciones',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                          height: 1.1,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 4),
+                      Text(
+                        total == 0
+                            ? 'No tienes notificaciones'
+                            : noLeidas == 0
+                                ? 'Estás al día'
+                                : noLeidas == 1
+                                    ? 'Tienes 1 sin leer'
+                                    : 'Tienes $noLeidas sin leer',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.82),
+                          fontSize: 13.5,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
+              if (hayNoLeidas)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: _HeroIconButton(
+                    icon: Icons.done_all_rounded,
+                    onTap: onMarcarTodas,
+                    tooltip: 'Marcar todas leídas',
+                  ),
+                ),
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+// Botón circular translúcido para acciones dentro del hero.
+class _HeroIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final String? tooltip;
+
+  const _HeroIconButton({
+    required this.icon,
+    required this.onTap,
+    this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final btn = Material(
+      color: Colors.white.withValues(alpha: 0.16),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, color: Colors.white, size: 22),
+        ),
+      ),
+    );
+    return tooltip == null ? btn : Tooltip(message: tooltip!, child: btn);
+  }
+}
+
+class _NotificacionCard extends StatelessWidget {
+  final Notificacion notif;
+  final VoidCallback onTap;
+
+  const _NotificacionCard({required this.notif, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final noLeida = !notif.leida;
+    final color = notif.color;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Franja de acento vertical, teñida según el tipo de aviso.
+                Container(width: 5, color: color),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Ícono del tipo de notificación.
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: color.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Icon(notif.icono, color: color, size: 24),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    notif.titulo,
+                                    style: TextStyle(
+                                      fontWeight: noLeida
+                                          ? FontWeight.w800
+                                          : FontWeight.w700,
+                                      fontSize: 15.5,
+                                      color: AppTheme.textPrimary,
+                                      letterSpacing: -0.3,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    notif.mensaje,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      height: 1.4,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (noLeida) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                width: 10,
+                                height: 10,
+                                margin: const EdgeInsets.only(top: 4),
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Container(height: 1, color: AppTheme.border),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Icon(Icons.access_time_rounded,
+                                size: 14, color: color.withValues(alpha: 0.9)),
+                            const SizedBox(width: 6),
+                            Text(
+                              _fechaRelativa(notif.createdAt),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                            const Spacer(),
+                            // Chip del tipo de aviso.
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: color.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                    color: color.withValues(alpha: 0.30)),
+                              ),
+                              child: Text(
+                                _etiquetaTipo(notif.tipo),
+                                style: TextStyle(
+                                  color: color,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _etiquetaTipo(String tipo) {
+    switch (tipo) {
+      case 'sala_espera':
+        return 'Cola';
+      case 'reserva':
+        return 'Reserva';
+      case 'promo':
+        return 'Promo';
+      case 'sistema':
+      default:
+        return 'Aviso';
+    }
   }
 
   String _fechaRelativa(DateTime fecha) {
@@ -169,7 +365,7 @@ class _EmptyState extends StatelessWidget {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
-        SizedBox(height: MediaQuery.of(context).size.height * 0.22),
+        SizedBox(height: MediaQuery.of(context).size.height * 0.12),
         Center(
           child: Column(
             children: [

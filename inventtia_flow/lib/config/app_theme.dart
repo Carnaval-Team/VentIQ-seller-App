@@ -2,9 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  static const Color primary = Color(0xFF1565C0);
-  static const Color primaryLight = Color(0xFF1E88E5);
-  static const Color primaryDark = Color(0xFF0D47A1);
+  /// Semilla original de marca. Solo alimenta `ColorScheme.fromSeed`; NO se usa
+  /// directamente en la UI. Los tonos de marca visibles (abajo) son los que
+  /// `tonalSpot` genera a partir de esta semilla, fijados como constantes para
+  /// que los gradientes escritos a mano coincidan con `scheme.primary`.
+  static const Color _seed = Color(0xFF1565C0);
+
+  // Familia primaria = tonos del palette de `tonalSpot` (seed 0xFF1565C0).
+  // primary == scheme.primary (tone 40) → gradientes y botones idénticos.
+  static const Color primary = Color(0xFF405F90); // tone 40
+  static const Color primaryLight = Color(0xFF5A79AC); // tone 50
+  static const Color primaryDark = Color(0xFF274777); // tone 30
   static const Color accent = Color(0xFF00BCD4);
   static const Color success = Color(0xFF43A047);
   static const Color warning = Color(0xFFFB8C00);
@@ -17,9 +25,9 @@ class AppTheme {
 
   static ThemeData get light {
     final scheme = ColorScheme.fromSeed(
-      seedColor: primary,
+      seedColor: _seed,
       brightness: Brightness.light,
-      dynamicSchemeVariant: DynamicSchemeVariant.expressive,
+      dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
     );
     return ThemeData(
       useMaterial3: true,

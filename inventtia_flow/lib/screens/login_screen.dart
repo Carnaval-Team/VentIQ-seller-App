@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/brand_title.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -269,24 +270,9 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Bienvenido a GoReserva',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textPrimary,
-                letterSpacing: -0.5,
-              ),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Inicia sesión para continuar',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 15,
-                color: AppTheme.textSecondary,
-              ),
+            const BrandTitle(
+              eyebrow: 'Bienvenido a',
+              subtitle: 'Inicia sesión para continuar',
             ),
             const SizedBox(height: 28),
             TextFormField(
