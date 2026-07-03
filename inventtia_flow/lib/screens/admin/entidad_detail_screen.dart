@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
 import '../../models/entidad.dart';
+import '../../models/perfil.dart';
 import '../../models/servicio.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/entidad_provider.dart';
 import '../../services/catalogo_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/entidad_service.dart';
 import '../../services/perfil_service.dart';
 import 'gestion_locales_screen.dart';
@@ -75,74 +77,47 @@ class _EntidadDetailScreenState extends State<EntidadDetailScreen> {
   }
 
   Future<void> _agregarVendedor() async {
-    final emailCtrl = TextEditingController();
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Agregar Vendedor'),
-        content: TextField(
-          controller: emailCtrl,
-          keyboardType: TextInputType.emailAddress,
-          autocorrect: false,
-          decoration: const InputDecoration(
-            labelText: 'Correo del usuario',
-            prefixIcon: Icon(Icons.email_outlined),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final email = emailCtrl.text.trim();
-              if (!email.contains('@')) return;
-              Navigator.pop(ctx);
-              await _buscarYAgregarVendedor(email);
-            },
-            child: const Text('Agregar'),
-          ),
-        ],
-      ),
-    );
+    final uuid = await _showAgregarUsuarioDialog('Agregar Vendedor');
+    if (uuid != null) await _vincularMiembro(uuid, rol: 'vendedor');
   }
 
-  Future<void> _buscarYAgregarVendedor(String email) async {
+  Future<void> _agregarAdmin() async {
+    final uuid = await _showAgregarUsuarioDialog('Agregar Administrador');
+    if (uuid != null) await _vincularMiembro(uuid, rol: 'admin');
+  }
+
+  Future<void> _vincularMiembro(String uuid, {required String rol}) async {
     try {
-      final uuid = await PerfilService.getUuidByEmail(email);
-      if (uuid == null) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No se encontró un usuario registrado con ese correo'),
-            backgroundColor: AppTheme.error,
-          ),
-        );
-        return;
-      }
       final perfil = await PerfilService.getPerfil(uuid);
       final myUuid = context.read<AuthProvider>().user!.id;
-      await EntidadService.addVendedor(
-        idEntidad: _entidad.id,
-        uuidUsuario: uuid,
-        asignadoPor: myUuid,
-      );
+      if (rol == 'vendedor') {
+        await EntidadService.addVendedor(
+          idEntidad: _entidad.id,
+          uuidUsuario: uuid,
+          asignadoPor: myUuid,
+        );
+      } else {
+        await EntidadService.addAdmin(
+          idEntidad: _entidad.id,
+          uuidUsuario: uuid,
+          asignadoPor: myUuid,
+        );
+      }
       await _cargar();
       if (!mounted) return;
-      final nombre = perfil?.nombreCompleto ?? email;
+      final nombre = perfil?.nombreCompleto ?? uuid;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('$nombre agregado como vendedor'),
+          content: Text('$nombre agregado como ${rol == 'vendedor' ? 'vendedor' : 'administrador'}'),
           backgroundColor: AppTheme.success,
         ),
       );
     } catch (e) {
-      print('[flow] _buscarYAgregarVendedor ERROR: $e');
+      print('[flow] _vincularMiembro ERROR: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al agregar vendedor: $e'),
+          content: Text('Error al agregar ${rol == 'vendedor' ? 'vendedor' : 'administrador'}: $e'),
           backgroundColor: AppTheme.error,
         ),
       );
@@ -174,79 +149,11 @@ class _EntidadDetailScreenState extends State<EntidadDetailScreen> {
     }
   }
 
-  Future<void> _agregarAdmin() async {
-    final emailCtrl = TextEditingController();
-    await showDialog(
+  Future<String?> _showAgregarUsuarioDialog(String title) async {
+    return showDialog<String?>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Agregar Administrador'),
-        content: TextField(
-          controller: emailCtrl,
-          keyboardType: TextInputType.emailAddress,
-          autocorrect: false,
-          decoration: const InputDecoration(
-            labelText: 'Correo del usuario',
-            prefixIcon: Icon(Icons.email_outlined),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final email = emailCtrl.text.trim();
-              if (!email.contains('@')) return;
-              Navigator.pop(ctx);
-              await _buscarYAgregarAdmin(email);
-            },
-            child: const Text('Agregar'),
-          ),
-        ],
-      ),
+      builder: (ctx) => _AgregarUsuarioDialog(title: title),
     );
-  }
-
-  Future<void> _buscarYAgregarAdmin(String email) async {
-    try {
-      final uuid = await PerfilService.getUuidByEmail(email);
-      if (uuid == null) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No se encontró un usuario registrado con ese correo'),
-            backgroundColor: AppTheme.error,
-          ),
-        );
-        return;
-      }
-      final perfil = await PerfilService.getPerfil(uuid);
-      final myUuid = context.read<AuthProvider>().user!.id;
-      await EntidadService.addAdmin(
-        idEntidad: _entidad.id,
-        uuidUsuario: uuid,
-        asignadoPor: myUuid,
-      );
-      await _cargar();
-      if (!mounted) return;
-      final nombre = perfil?.nombreCompleto ?? email;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$nombre agregado como admin'),
-          backgroundColor: AppTheme.success,
-        ),
-      );
-    } catch (e) {
-      print('[flow] _buscarYAgregarAdmin ERROR: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al agregar administrador: $e'),
-          backgroundColor: AppTheme.error,
-        ),
-      );
-    }
   }
 
   Future<void> _quitarAdmin(EntidadAdmin admin) async {
@@ -363,6 +270,7 @@ class _EntidadDetailScreenState extends State<EntidadDetailScreen> {
                   ..._admins.map((a) => _AdminTile(
                         label: 'Admin',
                         uuid: a.uuidUsuario,
+                        email: a.email,
                         isOwner: false,
                         canRemove: _isOwner,
                         onRemove: () => _quitarAdmin(a),
@@ -381,7 +289,7 @@ class _EntidadDetailScreenState extends State<EntidadDetailScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      _SectionTitle('Vendedores'),
+                      _SectionTitle('Trabajadores'),
                       if (_isOwner)
                         TextButton.icon(
                           onPressed: _agregarVendedor,
@@ -395,6 +303,7 @@ class _EntidadDetailScreenState extends State<EntidadDetailScreen> {
                   ..._vendedores.map((v) => _AdminTile(
                         label: 'Vendedor',
                         uuid: v.uuidUsuario,
+                        email: v.email,
                         isOwner: false,
                         roleColor: const Color(0xFF34C759),
                         canRemove: _isOwner,
@@ -568,6 +477,7 @@ class _AdminTile extends StatelessWidget {
   final String label;
   final String uuid;
   final bool isOwner;
+  final String? email;
   final Color? roleColor;
   final bool canRemove;
   final VoidCallback? onRemove;
@@ -576,6 +486,7 @@ class _AdminTile extends StatelessWidget {
     required this.label,
     required this.uuid,
     required this.isOwner,
+    this.email,
     this.roleColor,
     required this.canRemove,
     required this.onRemove,
@@ -601,7 +512,7 @@ class _AdminTile extends StatelessWidget {
         style: const TextStyle(fontWeight: FontWeight.w500),
       ),
       subtitle: Text(
-        '${uuid.substring(0, 8)}...',
+        email ?? '${uuid.substring(0, 8)}...',
         style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
       ),
       trailing: canRemove
@@ -611,6 +522,268 @@ class _AdminTile extends StatelessWidget {
               onPressed: onRemove,
             )
           : null,
+    );
+  }
+}
+
+class _AgregarUsuarioDialog extends StatefulWidget {
+  final String title;
+  const _AgregarUsuarioDialog({required this.title});
+
+  @override
+  State<_AgregarUsuarioDialog> createState() => _AgregarUsuarioDialogState();
+}
+
+class _AgregarUsuarioDialogState extends State<_AgregarUsuarioDialog> {
+  int _tab = 0;
+  bool _loading = false;
+  String? _error;
+
+  // Vincular existente
+  final _emailBuscarCtrl = TextEditingController();
+  Perfil? _encontrado;
+  String? _uuidEncontrado;
+
+  // Crear nuevo
+  final _emailCrearCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  final _nombreCtrl = TextEditingController();
+  final _apellidosCtrl = TextEditingController();
+  final _ciCtrl = TextEditingController();
+  final _telefonoCtrl = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+
+  Future<void> _buscar() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _encontrado = null;
+      _uuidEncontrado = null;
+    });
+    try {
+      final email = _emailBuscarCtrl.text.trim();
+      final uuid = await PerfilService.getUuidByEmail(email);
+      if (uuid == null) {
+        setState(() => _error = 'No se encontró un usuario registrado con ese correo');
+      } else {
+        _uuidEncontrado = uuid;
+        // Intentar obtener el perfil, pero permitir vincular igual si no existe.
+        final perfil = await PerfilService.getPerfil(uuid);
+        setState(() => _encontrado = perfil);
+      }
+    } catch (e) {
+      setState(() => _error = 'Error al buscar: $e');
+    } finally {
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _crear() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final uuid = await AuthService.createUserFromAdmin(
+        email: _emailCrearCtrl.text.trim(),
+        password: _passCtrl.text,
+        nombre: _nombreCtrl.text.trim(),
+        apellidos: _apellidosCtrl.text.trim(),
+        ci: _ciCtrl.text.trim(),
+        telefono: _telefonoCtrl.text.trim().isEmpty
+            ? null
+            : _telefonoCtrl.text.trim(),
+      );
+      if (mounted) Navigator.pop(context, uuid);
+    } catch (e) {
+      setState(() => _error = 'Error al crear usuario: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 320,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+            Row(
+              children: [
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Text('Vincular existente'),
+                    selected: _tab == 0,
+                    onSelected: (_) => setState(() => _tab = 0),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Text('Crear nuevo'),
+                    selected: _tab == 1,
+                    onSelected: (_) => setState(() => _tab = 1),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (_tab == 0) ...[
+              TextField(
+                controller: _emailBuscarCtrl,
+                keyboardType: TextInputType.emailAddress,
+                autocorrect: false,
+                decoration: const InputDecoration(
+                  labelText: 'Correo del usuario',
+                  prefixIcon: Icon(Icons.email_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _loading ? null : _buscar,
+                  child: _loading
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Buscar'),
+                ),
+              ),
+              if (_uuidEncontrado != null) ...[
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.person_outline),
+                  title: Text(_encontrado?.nombreCompleto ?? _emailBuscarCtrl.text.trim()),
+                  subtitle: _encontrado != null
+                      ? Text(_emailBuscarCtrl.text.trim())
+                      : const Text('Usuario sin perfil completo', style: TextStyle(fontStyle: FontStyle.italic)),
+                ),
+              ],
+            ] else ...[
+              Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: _emailCrearCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      autocorrect: false,
+                      decoration: const InputDecoration(
+                        labelText: 'Correo electrónico',
+                        prefixIcon: Icon(Icons.email_outlined),
+                      ),
+                      validator: (v) {
+                        final email = v?.trim() ?? '';
+                        if (!email.contains('@')) return 'Correo inválido';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: _passCtrl,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Contraseña temporal',
+                        prefixIcon: Icon(Icons.lock_outlined),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.length < 6) ? 'Mínimo 6 caracteres' : null,
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: _nombreCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: _apellidosCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Apellidos',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: _ciCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'CI',
+                        prefixIcon: Icon(Icons.badge_outlined),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: _telefonoCtrl,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: 'Teléfono (opcional)',
+                        prefixIcon: Icon(Icons.phone_outlined),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: const TextStyle(color: AppTheme.error, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+      actions: [
+        TextButton(
+          onPressed: _loading ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        if (_tab == 0)
+          ElevatedButton(
+            onPressed: _uuidEncontrado == null || _loading
+                ? null
+                : () => Navigator.pop(context, _uuidEncontrado),
+            child: _loading
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Vincular'),
+          )
+        else
+          ElevatedButton(
+            onPressed: _loading ? null : _crear,
+            child: _loading
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Crear y vincular'),
+          ),
+      ],
     );
   }
 }

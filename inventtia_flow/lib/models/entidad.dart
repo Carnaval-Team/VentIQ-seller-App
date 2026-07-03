@@ -74,6 +74,7 @@ class EntidadAdmin {
   final String uuidUsuario;
   final String asignadoPor;
   final DateTime createdAt;
+  final String? email;
 
   const EntidadAdmin({
     required this.id,
@@ -81,6 +82,7 @@ class EntidadAdmin {
     required this.uuidUsuario,
     required this.asignadoPor,
     required this.createdAt,
+    this.email,
   });
 
   factory EntidadAdmin.fromJson(Map<String, dynamic> json) => EntidadAdmin(
@@ -89,6 +91,7 @@ class EntidadAdmin {
         uuidUsuario: json['uuid_usuario'] as String,
         asignadoPor: json['asignado_por'] as String,
         createdAt: DateTime.parse(json['created_at'] as String),
+        email: json['email'] as String?,
       );
 }
 
@@ -98,6 +101,7 @@ class EntidadVendedor {
   final String uuidUsuario;
   final String asignadoPor;
   final DateTime createdAt;
+  final String? email;
 
   const EntidadVendedor({
     required this.id,
@@ -105,6 +109,7 @@ class EntidadVendedor {
     required this.uuidUsuario,
     required this.asignadoPor,
     required this.createdAt,
+    this.email,
   });
 
   factory EntidadVendedor.fromJson(Map<String, dynamic> json) =>
@@ -114,5 +119,6 @@ class EntidadVendedor {
         uuidUsuario: json['uuid_usuario'] as String,
         asignadoPor: json['asignado_por'] as String,
         createdAt: DateTime.parse(json['created_at'] as String),
+        email: json['email'] as String?,
       );
 }

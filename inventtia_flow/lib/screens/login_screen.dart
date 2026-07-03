@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
+import '../services/update_service.dart';
 import '../widgets/brand_title.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -104,53 +105,29 @@ class _LoginScreenState extends State<LoginScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Descargar GoReserva'),
+          title: const Text('Descargar VentIQ Flow'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Selecciona tu plataforma para descargar la aplicación:',
+                'Descarga la aplicación directamente para obtener la mejor experiencia:',
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildStoreButton(
-                    'App Store',
-                    Icons.apple,
-                    AppTheme.primary,
-                    () => _launchUrl('https://apps.apple.com/app/goreserva/id123456789'),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _launchUrl(UpdateService.downloadUrl);
+                  },
+                  icon: const Icon(Icons.download),
+                  label: const Text('Descargar App Directamente'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
-                  _buildStoreButton(
-                    'Google Play',
-                    Icons.android,
-                    AppTheme.success,
-                    () => _launchUrl('https://play.google.com/store/apps/details?id=com.inventtia.goreserva'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'O escanea el código QR:',
-                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-              ),
-              const SizedBox(height: 8),
-              // Placeholder for QR code - you can add an actual QR code image here
-              Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.qr_code, size: 40, color: Colors.grey),
-                    SizedBox(height: 4),
-                    Text('QR Code', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                  ],
                 ),
               ),
             ],

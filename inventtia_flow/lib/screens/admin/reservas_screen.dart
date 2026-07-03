@@ -17,7 +17,9 @@ import '../../models/entidad.dart';
 import '../../models/servicio.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/agenda_admin_service.dart';
+import '../../services/agenda_service.dart';
 import '../../services/catalogo_service.dart';
+import '../../services/notificacion_service.dart';
 
 class ReservasScreen extends StatefulWidget {
   final Entidad entidad;
@@ -36,9 +38,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
   LocalServicio? _lsFiltro;
   DateTime? _desde;
   DateTime? _hasta;
+  EstadoAgenda? _estadoFiltro;
 
   List<Local> _locales = [];
   List<LocalServicio> _localServicios = [];
+  List<EstadoAgenda> _estados = [];
 
   final _fmt = DateFormat('dd/MM/yyyy');
   final _fmtHora = DateFormat('dd/MM/yyyy HH:mm');
@@ -56,7 +60,17 @@ class _ReservasScreenState extends State<ReservasScreen> {
   Future<void> _loadFiltros() async {
     final locales =
         await CatalogoService.getLocalesByEntidad(widget.entidad.id);
-    if (mounted) setState(() => _locales = locales);
+    final estados = await AgendaService.getEstados();
+    if (mounted) {
+      setState(() {
+        _locales = locales;
+        _estados = estados;
+        final reservado = estados
+            .where((e) => e.nombre.toLowerCase() == 'reservado')
+            .firstOrNull;
+        _estadoFiltro = reservado ?? estados.firstOrNull;
+      });
+    }
     await _load();
   }
 
@@ -71,6 +85,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
         idEntidad: widget.entidad.id,
         idLocal: _localFiltro?.id,
         idLocalServicio: _lsFiltro?.id,
+        idEstado: _estadoFiltro?.id,
         desde: _desde,
         hasta: _hasta,
       );
@@ -81,6 +96,75 @@ class _ReservasScreenState extends State<ReservasScreen> {
           SnackBar(
               content: Text('Error: $e'),
               backgroundColor: AppTheme.error),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _cancelarReserva(Agenda reserva) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Cancelar reserva'),
+        content: Text(
+          '¿Estás seguro de cancelar la reserva de '
+          '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
+          'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.error),
+            child: const Text('Sí, cancelar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    setState(() => _loading = true);
+    try {
+      await AgendaService.cancelarTicket(reserva.id);
+
+      // Notificar al cliente si tiene uuid_usuario
+      final uuidCliente = reserva.uuidUsuario;
+      if (uuidCliente != null && uuidCliente.isNotEmpty) {
+        await NotificacionService.crearNotificacion(
+          uuidUsuario: uuidCliente,
+          tipo: 'reserva',
+          titulo: 'Reserva cancelada',
+          mensaje:
+              'Tu reserva para ${reserva.localServicio?.servicio?.nombre ?? 'el servicio'} '
+              'el ${DateFormat('dd/MM/yyyy HH:mm').format(reserva.fechaHoraReserva)} '
+              'ha sido cancelada por la administración.',
+          idLocalServicio: reserva.idLocalServicio,
+          idReferencia: reserva.id,
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Reserva cancelada y cliente notificado'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+        _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cancelar: $e'),
+            backgroundColor: AppTheme.error,
+          ),
         );
       }
     } finally {
@@ -137,6 +221,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
       _localServicios = [];
       _desde = DateTime(now.year, now.month, now.day);
       _hasta = DateTime(now.year, now.month, now.day, 23, 59, 59);
+      _estadoFiltro = _estados
+          .where((e) => e.nombre.toLowerCase() == 'reservado')
+          .firstOrNull;
     });
     _load();
   }
@@ -157,19 +244,24 @@ class _ReservasScreenState extends State<ReservasScreen> {
   /// Columnas dinámicas para datos adicionales: unión ordenada de claves que
   /// aparecen en las reservas listadas. Devuelve pares (clave, etiqueta).
   /// La etiqueta sale de campos_adicionales del servicio si está disponible.
+  /// Se excluyen las claves que ya se muestran como columnas fijas.
   List<({String clave, String etiqueta})> _columnasDatos(List<Agenda> lista) {
+    const clavesFijas = {'nombre', 'apellidos', 'ci', 'telefono'};
     final etiquetas = <String, String>{};
     final orden = <String>[];
     for (final r in lista) {
       // Rotula con la config del servicio (si viene).
       for (final c in r.localServicio?.servicio?.camposAdicionales ??
           const <CampoAdicional>[]) {
-        etiquetas[c.clave] = c.etiqueta;
+        if (!clavesFijas.contains(c.clave)) {
+          etiquetas[c.clave] = c.etiqueta;
+        }
       }
       // Asegura incluir claves presentes en los valores aunque no haya config.
       final datos = r.datosAdicionales;
       if (datos != null) {
         for (final k in datos.keys) {
+          if (clavesFijas.contains(k)) continue;
           if (!orden.contains(k)) orden.add(k);
           etiquetas.putIfAbsent(k, () => k);
         }
@@ -189,7 +281,37 @@ class _ReservasScreenState extends State<ReservasScreen> {
     return v == null ? '-' : '$v';
   }
 
+  /// Devuelve el dato del cliente real. Si la reserva fue creada por un
+  /// administrador, los datos del cliente se guardan en [datosAdicionales].
+  /// Si no, se usa el perfil del cliente ([r.cliente]).
+  String _datoCliente(Agenda r, String clave) {
+    final v = r.datosAdicionales?[clave];
+    if (v != null && v.toString().trim().isNotEmpty) {
+      return v.toString().trim();
+    }
+    final cli = r.cliente;
+    switch (clave) {
+      case 'nombre':
+        return cli?.nombre ?? '-';
+      case 'apellidos':
+        return cli?.apellidos ?? '-';
+      case 'ci':
+        return cli?.ci ?? '-';
+      case 'telefono':
+        return cli?.telefono ?? '-';
+      case 'email':
+        return '-';
+      default:
+        return '-';
+    }
+  }
+
   Future<void> _exportPdf() async {
+    if (!_esUnaSolaFecha()) {
+      _mostrarCartelExportacion();
+      return;
+    }
+
     final fontRegular = await PdfGoogleFonts.robotoRegular();
     final fontBold = await PdfGoogleFonts.robotoBold();
 
@@ -245,17 +367,16 @@ class _ReservasScreenState extends State<ReservasScreen> {
                   ...cols.map((c) => c.etiqueta),
                 ],
                 data: lista.map((r) {
-                  final cli = r.cliente;
                   final esTercero = r.reservadoPor != null &&
                       r.uuidUsuario != null &&
                       r.reservadoPor != r.uuidUsuario;
                   return [
                     r.localServicio?.servicio?.nombre ?? '-',
                     _fmtHora.format(r.fechaHoraReserva),
-                    cli?.nombre ?? '-',
-                    cli?.apellidos ?? '-',
-                    cli?.ci ?? '-',
-                    cli?.telefono ?? '-',
+                    _datoCliente(r, 'nombre'),
+                    _datoCliente(r, 'apellidos'),
+                    _datoCliente(r, 'ci'),
+                    _datoCliente(r, 'telefono'),
                     '${r.cantidad}',
                     if (conTerceros) (esTercero ? 'Sí' : 'No'),
                     ...cols.map((c) => _valorDato(r, c.clave)),
@@ -281,6 +402,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
   // EXPORT EXCEL
   // ──────────────────────────────────────────────────────────────────
   Future<void> _exportExcel() async {
+    if (!_esUnaSolaFecha()) {
+      _mostrarCartelExportacion();
+      return;
+    }
+
     final excel = xl.Excel.createExcel();
     final sheet = excel['Reservas'];
 
@@ -307,7 +433,6 @@ class _ReservasScreenState extends State<ReservasScreen> {
     int rowIdx = 1;
     grupos.forEach((localNombre, lista) {
       for (final ag in lista) {
-        final cli = ag.cliente;
         final esTercero = ag.reservadoPor != null &&
             ag.uuidUsuario != null &&
             ag.reservadoPor != ag.uuidUsuario;
@@ -315,10 +440,10 @@ class _ReservasScreenState extends State<ReservasScreen> {
           localNombre,
           ag.localServicio?.servicio?.nombre ?? '',
           _fmtHora.format(ag.fechaHoraReserva),
-          cli?.nombre ?? '',
-          cli?.apellidos ?? '',
-          cli?.ci ?? '',
-          cli?.telefono ?? '',
+          _datoCliente(ag, 'nombre'),
+          _datoCliente(ag, 'apellidos'),
+          _datoCliente(ag, 'ci'),
+          _datoCliente(ag, 'telefono'),
           '${ag.cantidad}',
           if (conTerceros) (esTercero ? 'Sí' : 'No'),
           ...cols.map((c) => _valorDato(ag, c.clave)),
@@ -353,6 +478,40 @@ class _ReservasScreenState extends State<ReservasScreen> {
     if (_desde != null) parts.add('Desde: ${_fmt.format(_desde!)}');
     if (_hasta != null) parts.add('Hasta: ${_fmt.format(_hasta!)}');
     return parts.join('  ·  ');
+  }
+
+  /// True si el filtro de fecha abarca exactamente un solo día.
+  bool _esUnaSolaFecha() {
+    if (_desde == null || _hasta == null) return false;
+    return _desde!.year == _hasta!.year &&
+        _desde!.month == _hasta!.month &&
+        _desde!.day == _hasta!.day;
+  }
+
+  /// Muestra cartel indicando que se debe filtrar una sola fecha para exportar.
+  void _mostrarCartelExportacion() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.info_outline, color: AppTheme.warning),
+            SizedBox(width: 8),
+            Text('Exportar reservas'),
+          ],
+        ),
+        content: const Text(
+          'Para exportar el listado de reservas debes filtrar una sola fecha.\n\n'
+          'Por favor, selecciona el mismo día en los campos "Desde" y "Hasta".',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -466,6 +625,28 @@ class _ReservasScreenState extends State<ReservasScreen> {
                   },
                 ),
               ),
+              const SizedBox(width: 8),
+              // Estado
+              Expanded(
+                child: DropdownButtonFormField<EstadoAgenda?>(
+                  value: _estadoFiltro,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Estado',
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: _estados.map((e) => DropdownMenuItem(
+                      value: e,
+                      child: Text(e.nombre, overflow: TextOverflow.ellipsis))).toList(),
+                  onChanged: (v) {
+                    setState(() => _estadoFiltro = v);
+                    _load();
+                  },
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -544,89 +725,149 @@ class _ReservasScreenState extends State<ReservasScreen> {
     final cols = _columnasDatos(_reservas);
     final conTerceros = _hayTerceros(_reservas);
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: grupos.length,
-      itemBuilder: (_, gi) {
-        final localNombre = grupos.keys.elementAt(gi);
-        final lista = grupos[localNombre]!;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (grupos.length > 1) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(0, 8, 0, 6),
-                child: Row(
-                  children: [
-                    const Icon(Icons.store_outlined,
-                        size: 14, color: AppTheme.primary),
-                    const SizedBox(width: 6),
-                    Text(localNombre,
-                        style: const TextStyle(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Ancho mínimo para forzar scroll horizontal cuando hay muchas columnas
+        final minWidth = constraints.maxWidth < 800 ? 800.0 : constraints.maxWidth;
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: grupos.length,
+          itemBuilder: (_, gi) {
+            final localNombre = grupos.keys.elementAt(gi);
+            final lista = grupos[localNombre]!;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (grupos.length > 1) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 8, 0, 6),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.store_outlined,
+                            size: 14, color: AppTheme.primary),
+                        const SizedBox(width: 6),
+                        Text(localNombre,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: AppTheme.primary)),
+                      ],
+                    ),
+                  ),
+                ],
+                Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(color: Colors.grey.shade200),
+                  ),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minWidth: minWidth),
+                      child: DataTable(
+                        headingRowHeight: 36,
+                        dataRowMinHeight: 32,
+                        dataRowMaxHeight: 44,
+                        columnSpacing: 12,
+                        headingTextStyle: const TextStyle(
                             fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: AppTheme.primary)),
-                  ],
+                            fontSize: 12,
+                            color: AppTheme.textPrimary),
+                        dataTextStyle: const TextStyle(
+                            fontSize: 12, color: AppTheme.textSecondary),
+                        columns: [
+                          const DataColumn(label: Text('Servicio')),
+                          const DataColumn(label: Text('Fecha')),
+                          const DataColumn(label: Text('Nombre')),
+                          const DataColumn(label: Text('Apellidos')),
+                          const DataColumn(label: Text('CI')),
+                          const DataColumn(label: Text('Teléfono')),
+                          const DataColumn(label: Text('Cant.')),
+                          if (conTerceros)
+                            const DataColumn(label: Text('Tercero')),
+                          ...cols.map((c) => DataColumn(
+                                label: SizedBox(
+                                  width: 120,
+                                  child: Text(
+                                    c.etiqueta,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )),
+                          const DataColumn(label: Text('Acciones')),
+                        ],
+                        rows: lista.map((r) {
+                          final esTercero = r.reservadoPor != null &&
+                              r.uuidUsuario != null &&
+                              r.reservadoPor != r.uuidUsuario;
+                          final puedeCancelar = r.estado?.esCancelado != true;
+                          return DataRow(cells: [
+                            DataCell(Text(
+                                r.localServicio?.servicio?.nombre ?? '-',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    color: AppTheme.textPrimary))),
+                            DataCell(Text(_fmt.format(r.fechaHoraReserva))),
+                            DataCell(Text(
+                              _datoCliente(r, 'nombre'),
+                              overflow: TextOverflow.ellipsis,
+                            )),
+                            DataCell(Text(
+                              _datoCliente(r, 'apellidos'),
+                              overflow: TextOverflow.ellipsis,
+                            )),
+                            DataCell(Text(
+                              _datoCliente(r, 'ci'),
+                              overflow: TextOverflow.ellipsis,
+                            )),
+                            DataCell(Text(
+                              _datoCliente(r, 'telefono'),
+                              overflow: TextOverflow.ellipsis,
+                            )),
+                            DataCell(Text('${r.cantidad}')),
+                            if (conTerceros)
+                              DataCell(Text(esTercero ? 'Sí' : 'No')),
+                            ...cols.map((c) => DataCell(
+                                  SizedBox(
+                                    width: 120,
+                                    child: Text(
+                                      _valorDato(r, c.clave),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                    ),
+                                  ),
+                                )),
+                            DataCell(
+                              puedeCancelar
+                                  ? IconButton(
+                                      icon: const Icon(Icons.cancel_outlined,
+                                          color: AppTheme.error, size: 20),
+                                      tooltip: 'Cancelar reserva',
+                                      padding: EdgeInsets.zero,
+                                      constraints:
+                                          const BoxConstraints(minWidth: 32),
+                                      onPressed: () => _cancelarReserva(r),
+                                    )
+                                  : const Text(
+                                      'Cancelada',
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          color: AppTheme.error,
+                                          fontStyle: FontStyle.italic),
+                                    ),
+                            ),
+                          ]);
+                        }).toList(),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ],
-            Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-                side: BorderSide(color: Colors.grey.shade200),
-              ),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  headingRowHeight: 36,
-                  dataRowMinHeight: 32,
-                  dataRowMaxHeight: 44,
-                  columnSpacing: 16,
-                  headingTextStyle: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                      color: AppTheme.textPrimary),
-                  dataTextStyle: const TextStyle(
-                      fontSize: 12, color: AppTheme.textSecondary),
-                  columns: [
-                    const DataColumn(label: Text('Servicio')),
-                    const DataColumn(label: Text('Fecha')),
-                    const DataColumn(label: Text('Nombre')),
-                    const DataColumn(label: Text('Apellidos')),
-                    const DataColumn(label: Text('CI')),
-                    const DataColumn(label: Text('Teléfono')),
-                    const DataColumn(label: Text('Cant.')),
-                    if (conTerceros)
-                      const DataColumn(label: Text('Para tercero')),
-                    ...cols.map((c) => DataColumn(label: Text(c.etiqueta))),
-                  ],
-                  rows: lista.map((r) {
-                    final cli = r.cliente;
-                    final esTercero = r.reservadoPor != null &&
-                        r.uuidUsuario != null &&
-                        r.reservadoPor != r.uuidUsuario;
-                    return DataRow(cells: [
-                      DataCell(Text(
-                          r.localServicio?.servicio?.nombre ?? '-',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w500,
-                              color: AppTheme.textPrimary))),
-                      DataCell(Text(_fmt.format(r.fechaHoraReserva))),
-                      DataCell(Text(cli?.nombre ?? '-')),
-                      DataCell(Text(cli?.apellidos ?? '-')),
-                      DataCell(Text(cli?.ci ?? '-')),
-                      DataCell(Text(cli?.telefono ?? '-')),
-                      DataCell(Text('${r.cantidad}')),
-                      if (conTerceros) DataCell(Text(esTercero ? 'Sí' : 'No')),
-                      ...cols.map((c) => DataCell(Text(_valorDato(r, c.clave)))),
-                    ]);
-                  }).toList(),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
+                const SizedBox(height: 8),
+              ],
+            );
+          },
         );
       },
     );

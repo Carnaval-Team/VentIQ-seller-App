@@ -5,23 +5,75 @@ class CatalogoService {
   static final SupabaseClient _supabase = Supabase.instance.client;
   static const String _schema = 'flow';
 
+  /// Check if we have access to the flow schema
+  static Future<bool> checkSchemaAccess() async {
+    try {
+      await _supabase.schema(_schema).from('app_dat_servicios').select('id').limit(1);
+      return true;
+    } catch (e) {
+      print('[flow] CatalogoService.checkSchemaAccess ERROR: $e');
+      if (e.toString().contains('permission denied') || e.toString().contains('42501')) {
+        print('[flow] ERROR CRÍTICO: Permiso denegado para el esquema "flow".');
+        print('[flow] ================================================');
+        print('[flow] SOLUCIÓN - Ejecutar estos comandos SQL en Supabase:');
+        print('[flow] 1. GRANT USAGE ON SCHEMA flow TO authenticated;');
+        print('[flow] 2. GRANT USAGE ON SCHEMA flow TO anon;');
+        print('[flow] 3. GRANT ALL ON ALL TABLES IN SCHEMA flow TO authenticated;');
+        print('[flow] 4. GRANT ALL ON ALL TABLES IN SCHEMA flow TO anon;');
+        print('[flow] 5. GRANT ALL ON ALL SEQUENCES IN SCHEMA flow TO authenticated;');
+        print('[flow] 6. GRANT ALL ON ALL SEQUENCES IN SCHEMA flow TO anon;');
+        print('[flow] ================================================');
+      }
+      return false;
+    }
+  }
+
+  /// Handle schema permission errors with user-friendly messages
+  static Exception handleSchemaPermissionError(Exception e) {
+    if (e.toString().contains('permission denied') || e.toString().contains('42501')) {
+      return Exception(
+        'ERROR DE PERMISOS DE BASE DE DATOS\n\n'
+        'No se puede acceder al esquema "flow" de la base de datos.\n\n'
+        'SOLUCIÓN:\n'
+        '1. Ve al panel de Supabase > SQL Editor\n'
+        '2. Ejecuta los siguientes comandos:\n\n'
+        'GRANT USAGE ON SCHEMA flow TO authenticated;\n'
+        'GRANT USAGE ON SCHEMA flow TO anon;\n'
+        'GRANT ALL ON ALL TABLES IN SCHEMA flow TO authenticated;\n'
+        'GRANT ALL ON ALL TABLES IN SCHEMA flow TO anon;\n'
+        'GRANT ALL ON ALL SEQUENCES IN SCHEMA flow TO authenticated;\n'
+        'GRANT ALL ON ALL SEQUENCES IN SCHEMA flow TO anon;\n\n'
+        'Error original: ${e.toString()}'
+      );
+    }
+    return e;
+  }
+
   static Future<List<Servicio>> getServicios() async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('app_dat_servicios')
-        .select()
-        .order('nombre');
-    return (res as List).map((e) => Servicio.fromJson(e)).toList();
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('app_dat_servicios')
+          .select()
+          .order('nombre');
+      return (res as List).map((e) => Servicio.fromJson(e)).toList();
+    } catch (e) {
+      throw handleSchemaPermissionError(Exception(e.toString()));
+    }
   }
 
   static Future<List<Servicio>> getServiciosByEntidad(int idEntidad) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('app_dat_servicios')
-        .select()
-        .eq('id_entidad', idEntidad)
-        .order('nombre');
-    return (res as List).map((e) => Servicio.fromJson(e)).toList();
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('app_dat_servicios')
+          .select()
+          .eq('id_entidad', idEntidad)
+          .order('nombre');
+      return (res as List).map((e) => Servicio.fromJson(e)).toList();
+    } catch (e) {
+      throw handleSchemaPermissionError(Exception(e.toString()));
+    }
   }
 
   static Future<Servicio> createServicio({
@@ -65,22 +117,30 @@ class CatalogoService {
   }
 
   static Future<List<Local>> getLocales() async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('app_dat_locales')
-        .select()
-        .order('nombre');
-    return (res as List).map((e) => Local.fromJson(e)).toList();
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('app_dat_locales')
+          .select()
+          .order('nombre');
+      return (res as List).map((e) => Local.fromJson(e)).toList();
+    } catch (e) {
+      throw handleSchemaPermissionError(Exception(e.toString()));
+    }
   }
 
   static Future<List<Local>> getLocalesByEntidad(int idEntidad) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('app_dat_locales')
-        .select()
-        .eq('id_entidad', idEntidad)
-        .order('nombre');
-    return (res as List).map((e) => Local.fromJson(e)).toList();
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('app_dat_locales')
+          .select()
+          .eq('id_entidad', idEntidad)
+          .order('nombre');
+      return (res as List).map((e) => Local.fromJson(e)).toList();
+    } catch (e) {
+      throw handleSchemaPermissionError(Exception(e.toString()));
+    }
   }
 
   static Future<Local> createLocal({
@@ -177,15 +237,19 @@ class CatalogoService {
 
   static Future<List<LocalServicio>> getLocalServiciosByEntidad(
       int idEntidad) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('local_servicio')
-        .select('*, app_dat_locales(*), app_dat_servicios(*)')
-        .eq('app_dat_locales.id_entidad', idEntidad);
-    return (res as List)
-        .where((e) => e['app_dat_locales'] != null)
-        .map((e) => LocalServicio.fromJson(e))
-        .toList();
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('local_servicio')
+          .select('*, app_dat_locales(*), app_dat_servicios(*)')
+          .eq('app_dat_locales.id_entidad', idEntidad);
+      return (res as List)
+          .where((e) => e['app_dat_locales'] != null)
+          .map((e) => LocalServicio.fromJson(e))
+          .toList();
+    } catch (e) {
+      throw handleSchemaPermissionError(Exception(e.toString()));
+    }
   }
 
   static Future<LocalServicio> createLocalServicio({

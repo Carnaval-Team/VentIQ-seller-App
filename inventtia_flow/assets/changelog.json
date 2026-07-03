@@ -1,8 +1,40 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.2.0",
-  "build": 3,
+  "current_version": "1.3.0",
+  "build": 4,
   "changelogs": [
+    {
+      "version": "1.3.0",
+      "date": "2026-07-03",
+      "title": "⚙️ Mejoras en administración y reservas",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Cancelar reservas desde administración",
+          "description": "Los administradores pueden cancelar reservas directamente desde el listado. El cliente recibe una notificación automática cuando su reserva es cancelada."
+        },
+        {
+          "type": "feature",
+          "title": "Gestión de administradores y trabajadores mejorada",
+          "description": "Al agregar un administrador o trabajador ahora se puede vincular un usuario existente buscando por correo, o crear un nuevo usuario con sus datos y contraseña temporal."
+        },
+        {
+          "type": "feature",
+          "title": "Filtro por estado en reservas",
+          "description": "El listado de reservas administrativo ahora incluye un filtro de estado (Reservado, Cancelado o Completado), mostrando por defecto las reservas activas."
+        },
+        {
+          "type": "improvement",
+          "title": "Exportación de reservas más controlada",
+          "description": "Para exportar reservas a PDF o Excel ahora se debe filtrar exactamente un solo día. Si no se cumple, se muestra un mensaje informativo."
+        },
+        {
+          "type": "improvement",
+          "title": "Datos del cliente en reservas y exportaciones",
+          "description": "La tabla de reservas y los reportes exportados ahora muestran únicamente los datos del cliente, evitando que aparezcan datos del usuario administrativo."
+        }
+      ]
+    },
     {
       "version": "1.2.0",
       "date": "2026-07-03",

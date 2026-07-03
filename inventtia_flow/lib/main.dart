@@ -10,6 +10,7 @@ import 'providers/auth_provider.dart';
 import 'providers/entidad_provider.dart';
 import 'providers/notificacion_provider.dart';
 import 'services/local_notifications.dart';
+import 'services/catalogo_service.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
@@ -25,6 +26,13 @@ Future<void> main() async {
     url: SupabaseConfig.supabaseUrl,
     anonKey: SupabaseConfig.supabaseAnonKey,
   );
+
+  // Check schema access permissions for web deployment
+  final hasSchemaAccess = await CatalogoService.checkSchemaAccess();
+  if (!hasSchemaAccess) {
+    print('[flow] ERROR: No se puede acceder al esquema "flow". La aplicación no funcionará correctamente.');
+    print('[flow] Por favor, ejecuta los comandos SQL proporcionados arriba en Supabase.');
+  }
 
   // Notificaciones locales del sistema (no-op en Web).
   await LocalNotifications.init();

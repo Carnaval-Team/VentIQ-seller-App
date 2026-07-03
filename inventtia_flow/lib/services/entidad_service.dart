@@ -5,46 +5,75 @@ class EntidadService {
   static final SupabaseClient _supabase = Supabase.instance.client;
   static const String _schema = 'flow';
 
+  /// Handle schema permission errors with user-friendly messages
+  static Exception handleSchemaPermissionError(Exception e) {
+    if (e.toString().contains('permission denied') || e.toString().contains('42501')) {
+      return Exception(
+        'ERROR DE PERMISOS DE BASE DE DATOS\n\n'
+        'No se puede acceder al esquema "flow" de la base de datos.\n\n'
+        'SOLUCIÓN:\n'
+        '1. Ve al panel de Supabase > SQL Editor\n'
+        '2. Ejecuta los siguientes comandos:\n\n'
+        'GRANT USAGE ON SCHEMA flow TO authenticated;\n'
+        'GRANT USAGE ON SCHEMA flow TO anon;\n'
+        'GRANT ALL ON ALL TABLES IN SCHEMA flow TO authenticated;\n'
+        'GRANT ALL ON ALL TABLES IN SCHEMA flow TO anon;\n'
+        'GRANT ALL ON ALL SEQUENCES IN SCHEMA flow TO authenticated;\n'
+        'GRANT ALL ON ALL SEQUENCES IN SCHEMA flow TO anon;\n\n'
+        'Error original: ${e.toString()}'
+      );
+    }
+    return e;
+  }
+
   // ── Entidades ──────────────────────────────────────────────
 
   static Future<List<Entidad>> getEntidades() async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('entidad')
-        .select()
-        .order('denominacion');
-    return (res as List).map((e) => Entidad.fromJson(e)).toList();
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('entidad')
+          .select()
+          .order('denominacion');
+      return (res as List).map((e) => Entidad.fromJson(e)).toList();
+    } catch (e) {
+      throw handleSchemaPermissionError(Exception(e.toString()));
+    }
   }
 
   static Future<List<Entidad>> getMisEntidades(String uuidUsuario) async {
-    final owned = await _supabase
-        .schema(_schema)
-        .from('entidad')
-        .select()
-        .eq('owner_uuid', uuidUsuario)
-        .order('denominacion');
+    try {
+      final owned = await _supabase
+          .schema(_schema)
+          .from('entidad')
+          .select()
+          .eq('owner_uuid', uuidUsuario)
+          .order('denominacion');
 
-    final adminOf = await _supabase
-        .schema(_schema)
-        .from('entidad_admin')
-        .select('id_entidad, entidad(*)')
-        .eq('uuid_usuario', uuidUsuario);
+      final adminOf = await _supabase
+          .schema(_schema)
+          .from('entidad_admin')
+          .select('id_entidad, entidad(*)')
+          .eq('uuid_usuario', uuidUsuario);
 
-    final Set<int> ids = {};
-    final List<Entidad> result = [];
+      final Set<int> ids = {};
+      final List<Entidad> result = [];
 
-    for (final row in owned as List) {
-      final e = Entidad.fromJson(row);
-      if (ids.add(e.id)) result.add(e);
-    }
-    for (final row in adminOf as List) {
-      if (row['entidad'] != null) {
-        final e = Entidad.fromJson(row['entidad'] as Map<String, dynamic>);
+      for (final row in owned as List) {
+        final e = Entidad.fromJson(row);
         if (ids.add(e.id)) result.add(e);
       }
+      for (final row in adminOf as List) {
+        if (row['entidad'] != null) {
+          final e = Entidad.fromJson(row['entidad'] as Map<String, dynamic>);
+          if (ids.add(e.id)) result.add(e);
+        }
+      }
+      result.sort((a, b) => a.denominacion.compareTo(b.denominacion));
+      return result;
+    } catch (e) {
+      throw handleSchemaPermissionError(Exception(e.toString()));
     }
-    result.sort((a, b) => a.denominacion.compareTo(b.denominacion));
-    return result;
   }
 
   static Future<Entidad> createEntidad({
@@ -99,12 +128,11 @@ class EntidadService {
   // ── Administradores ────────────────────────────────────────
 
   static Future<List<EntidadAdmin>> getAdmins(int idEntidad) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('entidad_admin')
-        .select()
-        .eq('id_entidad', idEntidad)
-        .order('created_at');
+    final res = await _supabase.schema(_schema).rpc(
+      'admin_listar_admins',
+      params: {'p_id_entidad': idEntidad},
+    );
+    if (res == null) return [];
     return (res as List).map((e) => EntidadAdmin.fromJson(e)).toList();
   }
 
@@ -148,12 +176,11 @@ class EntidadService {
   // ── Vendedores ──────────────────────────────────────────────
 
   static Future<List<EntidadVendedor>> getVendedores(int idEntidad) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('entidad_vendedor')
-        .select()
-        .eq('id_entidad', idEntidad)
-        .order('created_at');
+    final res = await _supabase.schema(_schema).rpc(
+      'admin_listar_vendedores',
+      params: {'p_id_entidad': idEntidad},
+    );
+    if (res == null) return [];
     return (res as List).map((e) => EntidadVendedor.fromJson(e)).toList();
   }
 

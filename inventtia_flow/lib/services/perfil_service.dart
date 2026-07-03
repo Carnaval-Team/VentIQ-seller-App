@@ -6,14 +6,39 @@ class PerfilService {
   static const String _schema = 'flow';
   static const String _table = 'perfil';
 
+  /// Handle schema permission errors with user-friendly messages
+  static Exception handleSchemaPermissionError(Exception e) {
+    if (e.toString().contains('permission denied') || e.toString().contains('42501')) {
+      return Exception(
+        'ERROR DE PERMISOS DE BASE DE DATOS\n\n'
+        'No se puede acceder al esquema "flow" de la base de datos.\n\n'
+        'SOLUCIÓN:\n'
+        '1. Ve al panel de Supabase > SQL Editor\n'
+        '2. Ejecuta los siguientes comandos:\n\n'
+        'GRANT USAGE ON SCHEMA flow TO authenticated;\n'
+        'GRANT USAGE ON SCHEMA flow TO anon;\n'
+        'GRANT ALL ON ALL TABLES IN SCHEMA flow TO authenticated;\n'
+        'GRANT ALL ON ALL TABLES IN SCHEMA flow TO anon;\n'
+        'GRANT ALL ON ALL SEQUENCES IN SCHEMA flow TO authenticated;\n'
+        'GRANT ALL ON ALL SEQUENCES IN SCHEMA flow TO anon;\n\n'
+        'Error original: ${e.toString()}'
+      );
+    }
+    return e;
+  }
+
   static Future<Perfil?> getPerfil(String uuidUsuario) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from(_table)
-        .select()
-        .eq('uuid_usuario', uuidUsuario)
-        .maybeSingle();
-    return res != null ? Perfil.fromJson(res) : null;
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from(_table)
+          .select()
+          .eq('uuid_usuario', uuidUsuario)
+          .maybeSingle();
+      return res != null ? Perfil.fromJson(res) : null;
+    } catch (e) {
+      throw handleSchemaPermissionError(Exception(e.toString()));
+    }
   }
 
   static Future<Perfil> createPerfil({

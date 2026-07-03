@@ -7,6 +7,7 @@ import '../../models/entidad.dart';
 import '../../models/plan_servicio.dart';
 import '../../models/servicio.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/agenda_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/plan_servicio_service.dart';
 import '../../services/agenda_admin_service.dart';
@@ -2016,13 +2017,38 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate() || _selectedLocalServicio == null) return;
-    
+
+    final uuid = context.read<AuthProvider>().user?.id;
+    if (uuid == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo obtener el usuario autenticado'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() => _saving = true);
     try {
-      // Create reservation logic here
-      // This would involve calling the appropriate service to create a reservation
-      // For now, we'll just show success and close
-      
+      // Crear reserva usando la misma función que el cliente
+      await AgendaService.reservarDirecto(
+        uuidUsuario: uuid,
+        idLocalServicio: _selectedLocalServicio!.id,
+        fecha: widget.dia,
+        cantidad: _cantidad,
+        datosAdicionales: {
+          'ci': _ciCtrl.text.trim(),
+          'nombre': _nombreCtrl.text.trim(),
+          'apellidos': _apellidosCtrl.text.trim(),
+          'telefono': _telefonoCtrl.text.trim(),
+          'email': _emailCtrl.text.trim(),
+          'notas': _notasCtrl.text.trim(),
+        },
+      );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
