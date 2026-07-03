@@ -52,6 +52,9 @@ class _SalesScreenState extends State<SalesScreen>
   bool _isGeneratingPdf = false;
   bool _isPdfFabExpanded = false;
   String _selectedTPV = 'Todos';
+  // Tab TPVs: si es true, el reporte de vendedores se extiende hasta el cierre
+  // del turno cuando este cerró después de la fecha_hasta (o hasta ahora si sigue abierto).
+  bool _tpvHastaCierreTurno = false;
   double _totalSales = 0.0;
   int _totalProductsSold = 0;
   bool _isLoadingMetrics = false;
@@ -1910,6 +1913,7 @@ class _SalesScreenState extends State<SalesScreen>
       final reports = await SalesService.getSalesVendorReport(
         fechaDesde: _startDate,
         fechaHasta: _endDate,
+        hastaCierreTurno: _tpvHastaCierreTurno,
       );
 
       // Load egresos for each vendor
@@ -5036,11 +5040,48 @@ class _SalesScreenState extends State<SalesScreen>
         );
       });
 
+      // Solo en el tab de TPVs (índice 1) preguntamos si se debe mostrar
+      // hasta el cierre del turno. En cualquier otro tab se mantiene el
+      // comportamiento actual (false).
+      if (_tabController.index == 1) {
+        final mostrarHastaCierre = await _askMostrarHastaCierreTurno();
+        _tpvHastaCierreTurno = mostrarHastaCierre;
+      } else {
+        _tpvHastaCierreTurno = false;
+      }
+
       // Reload data with new date range
       _loadProductSalesData(); // encadena _loadSupplierReports internamente
       _loadVendorReports();
       _loadProductAnalysis();
     }
+  }
+
+  /// Muestra un diálogo Sí/No preguntando si el reporte de TPVs debe extenderse
+  /// hasta el cierre del turno. Devuelve true si el usuario elige "Sí".
+  Future<bool> _askMostrarHastaCierreTurno() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Mostrar hasta el cierre de turno'),
+        content: const Text(
+          '¿Desea incluir las ventas hasta el cierre del turno cuando este '
+          'cerró después de la fecha final seleccionada (o hasta ahora si el '
+          'turno sigue abierto)?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('No'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Sí'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   void _showVendorEgresosDetail(SalesVendorReport vendor) async {

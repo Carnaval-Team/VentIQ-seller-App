@@ -628,6 +628,7 @@ class SalesService {
     DateTime? fechaDesde,
     DateTime? fechaHasta,
     String? uuidUsuario,
+    bool hastaCierreTurno = false,
   }) async {
     try {
       // Get store ID from preferences
@@ -643,9 +644,13 @@ class SalesService {
       print('- p_fecha_desde: $fechaDesde');
       print('- p_fecha_hasta: $fechaHasta');
       print('- p_uuid_usuario: $uuidUsuario');
+      print('- p_hasta_cierre_turno: $hastaCierreTurno');
 
       // Prepare parameters
-      final Map<String, dynamic> params = {'p_id_tienda': idTienda};
+      final Map<String, dynamic> params = {
+        'p_id_tienda': idTienda,
+        'p_hasta_cierre_turno': hastaCierreTurno,
+      };
 
       if (fechaDesde != null) {
         params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
@@ -659,7 +664,7 @@ class SalesService {
 
       // Call the RPC function
       final response = await _supabase.rpc(
-        'fn_reporte_ventas_por_vendedor',
+        'fn_reporte_ventas_por_vendedor_sch',
         params: params,
       );
 

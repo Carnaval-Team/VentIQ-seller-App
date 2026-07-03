@@ -1,9 +1,31 @@
 {
-  "current_version": "2.2.8",
-  "build": 228,
+  "current_version": "2.2.9",
+  "build": 229,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.2.9",
+      "date": "2026-07-03",
+      "title": "🕒 Ventas por TPV hasta el cierre de turno",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Incluye las ventas hasta que cierra el turno",
+          "description": "En la pestaña de TPVs, al elegir un rango de fechas ahora te preguntamos si quieres mostrar las ventas hasta el cierre del turno. Ideal para turnos que empiezan en un día y terminan en otro: ya no se te quedan ventas fuera del reporte."
+        },
+        {
+          "type": "improvement",
+          "title": "Tú decides en cada consulta",
+          "description": "Un sencillo Sí/No al filtrar por fecha te deja elegir el comportamiento que necesitas en el momento. Si eliges No, todo funciona igual que siempre, respetando exactamente la fecha final que seleccionaste."
+        },
+        {
+          "type": "improvement",
+          "title": "Cuadres de caja más exactos",
+          "description": "Cuando el turno sigue abierto, el reporte llega hasta este instante; y si cerró después de tu fecha final, lo extiende hasta el cierre real. Así el total de cada TPV refleja el turno completo y cuadrar caja es más fácil."
+        }
+      ]
+    },
     {
       "version": "2.2.8",
       "date": "2026-06-05",
