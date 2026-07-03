@@ -43,6 +43,7 @@ class _GestionLocalesScreenState extends State<GestionLocalesScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      enableDrag: false,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -54,6 +55,7 @@ class _GestionLocalesScreenState extends State<GestionLocalesScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      enableDrag: false,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -399,10 +401,23 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                widget.local == null ? 'Nuevo Local' : 'Editar Local',
-                style: const TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.bold),
+              Row(
+                children: [
+                  Text(
+                    widget.local == null ? 'Nuevo Local' : 'Editar Local',
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.grey.shade100,
+                      foregroundColor: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
 

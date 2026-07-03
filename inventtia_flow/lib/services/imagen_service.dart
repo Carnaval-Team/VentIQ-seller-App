@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -26,17 +27,31 @@ class ImagenService {
     required XFile imagen,
     required String path,
   }) async {
-    final tmpDir = await getTemporaryDirectory();
-    final compressedPath = '${tmpDir.path}/upload_compressed.jpg';
+    Uint8List bytes;
+    
+    if (kIsWeb) {
+      // Web: Read bytes directly and compress in memory
+      final originalBytes = await imagen.readAsBytes();
+      final compressedBytes = await FlutterImageCompress.compressWithList(
+        originalBytes,
+        quality: 80,
+        format: CompressFormat.jpeg,
+      );
+      bytes = compressedBytes;
+    } else {
+      // Mobile: Use temporary directory for compression
+      final tmpDir = await getTemporaryDirectory();
+      final compressedPath = '${tmpDir.path}/upload_compressed.jpg';
 
-    final compressed = await FlutterImageCompress.compressAndGetFile(
-      imagen.path,
-      compressedPath,
-      quality: 80,
-      format: CompressFormat.jpeg,
-    );
+      final compressed = await FlutterImageCompress.compressAndGetFile(
+        imagen.path,
+        compressedPath,
+        quality: 80,
+        format: CompressFormat.jpeg,
+      );
 
-    final bytes = await (compressed ?? imagen).readAsBytes();
+      bytes = await (compressed ?? imagen).readAsBytes();
+    }
 
     await _supabase.storage.from(_bucket).uploadBinary(
           path,

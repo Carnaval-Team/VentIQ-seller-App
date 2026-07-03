@@ -28,6 +28,7 @@ class _LocalServicioDetailScreenState
     extends State<LocalServicioDetailScreen> {
   bool _isLoading = true;
   bool _isActing = false;
+  bool _hasDisponibilidad = false;
   SalaEspera? _miLugar;
   int _ultimoOtorgado = 0;
   int _ultimoEnAnotarse = 0;
@@ -37,6 +38,7 @@ class _LocalServicioDetailScreenState
   void initState() {
     super.initState();
     _load();
+    _checkDisponibilidad();
   }
 
   Future<void> _load() async {
@@ -66,6 +68,33 @@ class _LocalServicioDetailScreenState
     }
   }
 
+  Future<void> _checkDisponibilidad() async {
+    try {
+      final dias = await AgendaService.getDisponibilidad(widget.localServicio.id);
+      
+      // Check if there are available slots for future dates
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      bool hasAvailable = false;
+      
+      for (final dia in dias) {
+        final selectedDay = DateTime(dia.fecha.year, dia.fecha.month, dia.fecha.day);
+        if (selectedDay.isAfter(today) && dia.disponibles > 0) {
+          hasAvailable = true;
+          break;
+        }
+      }
+      
+      if (mounted) {
+        setState(() => _hasDisponibilidad = hasAvailable);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _hasDisponibilidad = false);
+      }
+    }
+  }
+
   Future<void> _anotarse() async {
     final uuid = context.read<AuthProvider>().user?.id;
     if (uuid == null) return;
@@ -73,8 +102,8 @@ class _LocalServicioDetailScreenState
     final now = DateTime.now();
     final fecha = await showDatePicker(
       context: context,
-      initialDate: now,
-      firstDate: now,
+      initialDate: now.add(const Duration(days: 1)),
+      firstDate: now.add(const Duration(days: 1)),
       lastDate: now.add(const Duration(days: 365)),
       helpText: '¿A partir de qué fecha quieres el turno?',
       confirmText: 'Confirmar',
@@ -134,6 +163,35 @@ class _LocalServicioDetailScreenState
     List<DisponibilidadDia> dias;
     try {
       dias = await AgendaService.getDisponibilidad(widget.localServicio.id);
+      
+      // Check if there are available slots for future dates
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      bool hasAvailable = false;
+      
+      for (final dia in dias) {
+        final selectedDay = DateTime(dia.fecha.year, dia.fecha.month, dia.fecha.day);
+        if (selectedDay.isAfter(today) && dia.disponibles > 0) {
+          hasAvailable = true;
+          break;
+        }
+      }
+      
+      if (!hasAvailable) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No hay turnos disponibles para reservar'),
+              backgroundColor: AppTheme.warning,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        setState(() => _hasDisponibilidad = false);
+        return;
+      }
+      
+      setState(() => _hasDisponibilidad = true);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -144,6 +202,7 @@ class _LocalServicioDetailScreenState
           ),
         );
       }
+      setState(() => _hasDisponibilidad = false);
       return;
     } finally {
       if (mounted) setState(() => _isActing = false);
@@ -244,12 +303,13 @@ class _LocalServicioDetailScreenState
     if (uuid == null || _miLugar == null) return;
 
     final now = DateTime.now();
+    final tomorrow = now.add(const Duration(days: 1));
     final fecha = await showDatePicker(
       context: context,
-      initialDate: _miLugar!.fechaRegla.isAfter(now)
+      initialDate: _miLugar!.fechaRegla.isAfter(tomorrow)
           ? _miLugar!.fechaRegla
-          : now,
-      firstDate: now,
+          : tomorrow,
+      firstDate: tomorrow,
       lastDate: now.add(const Duration(days: 365)),
       helpText: '¿A partir de qué fecha quieres el turno?',
       confirmText: 'Confirmar',
@@ -824,25 +884,32 @@ class _LocalServicioDetailScreenState
       );
     } else if (permiteDirecta) {
       // Reserva directa habilitada: acción primaria clara + alternativa secundaria.
+      List<Widget> buttons = [];
+      
+      // Solo mostrar el botón de "Reservar ahora" si hay disponibilidad
+      if (_hasDisponibilidad) {
+        buttons.add(_ActionButton(
+          onPressed: _isActing ? null : _reservarAhora,
+          isLoading: _isActing,
+          icon: Icons.event_available,
+          label: 'Reservar ahora',
+          variant: _ButtonVariant.primary,
+        ));
+        buttons.add(const SizedBox(height: 10));
+      }
+      
+      // Siempre mostrar el botón de "Anotarme en la lista"
+      buttons.add(_ActionButton(
+        onPressed: _isActing ? null : _anotarse,
+        isLoading: false,
+        icon: Icons.playlist_add,
+        label: 'Anotarme en la lista',
+        variant: _ButtonVariant.secondary,
+      ));
+      
       child = Column(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          _ActionButton(
-            onPressed: _isActing ? null : _reservarAhora,
-            isLoading: _isActing,
-            icon: Icons.event_available,
-            label: 'Reservar ahora',
-            variant: _ButtonVariant.primary,
-          ),
-          const SizedBox(height: 10),
-          _ActionButton(
-            onPressed: _isActing ? null : _anotarse,
-            isLoading: false,
-            icon: Icons.playlist_add,
-            label: 'Anotarme en la lista',
-            variant: _ButtonVariant.secondary,
-          ),
-        ],
+        children: buttons,
       );
     } else {
       child = _ActionButton(
@@ -1288,8 +1355,24 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                       borderRadius: BorderRadius.circular(2))),
             ),
             const SizedBox(height: 16),
-            const Text('Datos de la reserva',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back, size: 24),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.grey.shade100,
+                    foregroundColor: AppTheme.textPrimary,
+                  ),
+                ),
+                const Expanded(
+                  child: Text('Datos de la reserva',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(width: 48), // Balance the back button
+              ],
+            ),
             const SizedBox(height: 16),
 
             // ── ¿Para ti o alguien más? ──
@@ -1557,19 +1640,66 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
               focusedDay: _focusedDay,
               eventLoader: (day) {
                 final d = _disp(day);
-                return d != null && d.disponibles > 0 ? [d] : [];
+                final now = DateTime.now();
+                final today = DateTime(now.year, now.month, now.day);
+                final selectedDay = DateTime(day.year, day.month, day.day);
+                
+                // Don't show events for current day
+                final isTomorrowOrLater = selectedDay.isAfter(today);
+                
+                return d != null && d.disponibles > 0 && isTomorrowOrLater ? [d] : [];
               },
               enabledDayPredicate: (day) {
                 final d = _disp(day);
-                return d != null && d.disponibles > 0;
+                final now = DateTime.now();
+                final today = DateTime(now.year, now.month, now.day);
+                final selectedDay = DateTime(day.year, day.month, day.day);
+                
+                // Disable current day and only allow from tomorrow onwards
+                final isTomorrowOrLater = selectedDay.isAfter(today);
+                
+                return d != null && d.disponibles > 0 && isTomorrowOrLater;
               },
               calendarStyle: CalendarStyle(
                 outsideDaysVisible: false,
                 disabledTextStyle:
-                    TextStyle(color: Colors.grey.shade300),
+                    TextStyle(color: Colors.grey.shade300, fontSize: 14),
+                defaultTextStyle: const TextStyle(fontSize: 15),
+                selectedTextStyle: const TextStyle(
+                  fontSize: 15, 
+                  fontWeight: FontWeight.bold, 
+                  color: Colors.white
+                ),
+                todayTextStyle: const TextStyle(
+                  fontSize: 15, 
+                  fontWeight: FontWeight.bold, 
+                  color: AppTheme.primary
+                ),
+                weekendTextStyle: const TextStyle(fontSize: 15),
+                holidayTextStyle: const TextStyle(fontSize: 15),
+                markersMaxCount: 1,
+                markerDecoration: const BoxDecoration(
+                  color: AppTheme.success,
+                  shape: BoxShape.circle,
+                ),
                 todayDecoration: BoxDecoration(
                   color: AppTheme.primary.withValues(alpha: 0.18),
                   shape: BoxShape.circle,
+                  border: Border.all(color: AppTheme.primary, width: 1.5),
+                ),
+                selectedDecoration: const BoxDecoration(
+                  color: AppTheme.primary,
+                  shape: BoxShape.circle,
+                ),
+                cellMargin: const EdgeInsets.all(4),
+                cellPadding: const EdgeInsets.all(8),
+                rowDecoration: BoxDecoration(
+                  border: Border.symmetric(
+                    horizontal: BorderSide(
+                      color: Colors.grey.shade200, 
+                      width: 0.5
+                    )
+                  )
                 ),
               ),
               calendarBuilders: CalendarBuilders(
@@ -1577,20 +1707,22 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
                   if (events.isEmpty) return null;
                   final disp = events.first;
                   return Positioned(
-                    bottom: 2,
+                    top: 2,
+                    right: 2,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 1),
+                          horizontal: 4, vertical: 1),
                       decoration: BoxDecoration(
-                        color: AppTheme.success.withValues(alpha: 0.15),
+                        color: AppTheme.success,
                         borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.white, width: 1),
                       ),
                       child: Text(
                         '${disp.disponibles}',
                         style: const TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w700,
-                          color: AppTheme.success,
+                          color: Colors.white,
                         ),
                       ),
                     ),
@@ -1600,19 +1732,28 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
               headerStyle: const HeaderStyle(
                 formatButtonVisible: false,
                 titleCentered: true,
-                headerPadding: EdgeInsets.symmetric(vertical: 6),
+                headerPadding: EdgeInsets.symmetric(vertical: 12),
+                titleTextStyle: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textPrimary,
+                ),
+                leftChevronIcon: Icon(Icons.chevron_left, size: 24),
+                rightChevronIcon: Icon(Icons.chevron_right, size: 24),
               ),
               availableGestures: AvailableGestures.horizontalSwipe,
               onPageChanged: (f) => setState(() => _focusedDay = f),
               onDaySelected: (selected, focused) => _confirmar(selected),
             ),
             const Padding(
-              padding: EdgeInsets.fromLTRB(20, 4, 20, 18),
+              padding: EdgeInsets.fromLTRB(20, 8, 20, 24),
               child: Text(
                 'Toca un día con cupo para reservar. El número indica los turnos libres.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    fontSize: 11.5, color: AppTheme.textSecondary),
+                    fontSize: 14, 
+                    color: AppTheme.textSecondary,
+                    fontWeight: FontWeight.w500),
               ),
             ),
           ],

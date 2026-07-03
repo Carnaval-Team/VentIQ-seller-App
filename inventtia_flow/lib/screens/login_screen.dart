@@ -1,5 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
 
@@ -15,6 +18,13 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _obscure = true;
+  bool _rememberPassword = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
 
   @override
   void dispose() {
@@ -23,12 +33,51 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  Future<void> _loadSavedCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedEmail = prefs.getString('saved_email');
+      final savedPassword = prefs.getString('saved_password');
+      final rememberPassword = prefs.getBool('remember_password') ?? false;
+
+      if (mounted && rememberPassword && savedEmail != null && savedPassword != null) {
+        setState(() {
+          _emailCtrl.text = savedEmail;
+          _passCtrl.text = savedPassword;
+          _rememberPassword = true;
+        });
+      }
+    } catch (e) {
+      // Silently handle errors
+    }
+  }
+
+  Future<void> _saveCredentials(bool remember) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (remember) {
+        await prefs.setString('saved_email', _emailCtrl.text.trim());
+        await prefs.setString('saved_password', _passCtrl.text);
+        await prefs.setBool('remember_password', true);
+      } else {
+        await prefs.remove('saved_email');
+        await prefs.remove('saved_password');
+        await prefs.setBool('remember_password', false);
+      }
+    } catch (e) {
+      // Silently handle errors
+    }
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
     final ok = await auth.signIn(_emailCtrl.text.trim(), _passCtrl.text);
     if (!mounted) return;
     if (ok) {
+      // Save credentials if remember password is checked
+      await _saveCredentials(_rememberPassword);
+      
       if (auth.hasPerfil) {
         Navigator.pushReplacementNamed(context, '/home');
       } else {
@@ -46,6 +95,118 @@ class _LoginScreenState extends State<LoginScreen> {
           duration: const Duration(seconds: 8),
         ),
       );
+    }
+  }
+
+  void _downloadApp() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Descargar GoReserva'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Selecciona tu plataforma para descargar la aplicación:',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildStoreButton(
+                    'App Store',
+                    Icons.apple,
+                    AppTheme.primary,
+                    () => _launchUrl('https://apps.apple.com/app/goreserva/id123456789'),
+                  ),
+                  _buildStoreButton(
+                    'Google Play',
+                    Icons.android,
+                    AppTheme.success,
+                    () => _launchUrl('https://play.google.com/store/apps/details?id=com.inventtia.goreserva'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'O escanea el código QR:',
+                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+              ),
+              const SizedBox(height: 8),
+              // Placeholder for QR code - you can add an actual QR code image here
+              Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.qr_code, size: 40, color: Colors.grey),
+                    SizedBox(height: 4),
+                    Text('QR Code', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildStoreButton(String storeName, IconData icon, Color color, VoidCallback onPressed) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 32, color: color),
+            const SizedBox(height: 8),
+            Text(
+              storeName,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo abrir la tienda de aplicaciones'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
     }
   }
 
@@ -158,6 +319,27 @@ class _LoginScreenState extends State<LoginScreen> {
               validator: (v) =>
                   (v == null || v.length < 6) ? 'Mínimo 6 caracteres' : null,
             ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Checkbox(
+                  value: _rememberPassword,
+                  onChanged: (value) {
+                    setState(() {
+                      _rememberPassword = value ?? false;
+                    });
+                  },
+                  activeColor: AppTheme.primary,
+                ),
+                const Text(
+                  'Recordar contraseña',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 4),
             Align(
               alignment: Alignment.centerRight,
@@ -200,6 +382,62 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ],
             ),
+            if (kIsWeb) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryLight.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.primaryLight.withOpacity(0.3)),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.download,
+                      color: AppTheme.primary,
+                      size: 24,
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Obtén la mejor experiencia',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Descarga nuestra aplicación móvil',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _downloadApp,
+                        icon: const Icon(Icons.smartphone, size: 18),
+                        label: const Text('Descargar App'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
