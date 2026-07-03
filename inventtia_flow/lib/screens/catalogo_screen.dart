@@ -165,7 +165,7 @@ class CatalogoScreenState extends State<CatalogoScreen> {
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
         boxShadow: [
           BoxShadow(
-            color: Color(0x331565C0),
+            color: Color(0x33405F90),
             blurRadius: 24,
             offset: Offset(0, 10),
           ),
