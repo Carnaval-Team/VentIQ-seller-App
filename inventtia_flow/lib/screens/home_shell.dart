@@ -22,6 +22,7 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _currentIndex = 0;
+  bool _isInitialLoading = true;
 
   // GlobalKeys para poder llamar reload() en las pantallas con IndexedStack
   final GlobalKey<CatalogoScreenState> _catalogoKey =
@@ -50,9 +51,6 @@ class _HomeShellState extends State<HomeShell> {
   void initState() {
     super.initState();
     _screens = [
-      CatalogoScreen(key: _catalogoKey),
-      MisListasScreen(key: _misListasKey),
-      MisTicketsScreen(key: _misTicketsKey),
       const GestionScreen(),
       const PerfilScreen(),
     ];
@@ -63,27 +61,32 @@ class _HomeShellState extends State<HomeShell> {
       const PerfilScreen(),
     ];
     _screensVendedor = [
-      CatalogoScreen(key: _catalogoKey),
-      MisListasScreen(key: _misListasKey),
       MisTicketsScreen(key: _misTicketsKey),
-      const VendedorScreen(),
       const PerfilScreen(),
     ];
     _screensVendedorAdmin = [
-      CatalogoScreen(key: _catalogoKey),
-      MisListasScreen(key: _misListasKey),
       MisTicketsScreen(key: _misTicketsKey),
       const GestionScreen(),
-      const VendedorScreen(),
       const PerfilScreen(),
     ];
+    
+    // Load entities immediately to prevent UI flash
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final uuid = context.read<AuthProvider>().user?.id;
-      if (uuid != null) {
-        context.read<EntidadProvider>().cargarMisEntidades(uuid);
-      }
-      _checkForUpdatesAfterNavigation();
+      _loadInitialData();
     });
+  }
+
+  Future<void> _loadInitialData() async {
+    final uuid = context.read<AuthProvider>().user?.id;
+    if (uuid != null) {
+      await context.read<EntidadProvider>().cargarMisEntidades(uuid);
+    }
+    if (mounted) {
+      setState(() {
+        _isInitialLoading = false;
+      });
+    }
+    _checkForUpdatesAfterNavigation();
   }
 
   static const String _lastUpdateDialogKey = 'flow_last_update_dialog';
@@ -287,11 +290,14 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _onTabSelected(int i, bool isAdmin) {
-    final idxListas = isAdmin ? _idxListasAdmin : _idxListasNoAdmin;
-    final idxTickets = isAdmin ? _idxTicketsAdmin : _idxTicketsNoAdmin;
-    if (i == 0) _catalogoKey.currentState?.reload();
-    if (i == idxListas) _misListasKey.currentState?.reload();
-    if (i == idxTickets) _misTicketsKey.currentState?.reload();
+    if (!isAdmin) {
+      final idxListas = _idxListasNoAdmin;
+      final idxTickets = _idxTicketsNoAdmin;
+      if (i == 0) _catalogoKey.currentState?.reload();
+      if (i == idxListas) _misListasKey.currentState?.reload();
+      if (i == idxTickets) _misTicketsKey.currentState?.reload();
+    }
+    // Admin users don't need to reload catalog, listas, or tickets since they don't have those screens
     setState(() => _currentIndex = i);
   }
 
@@ -300,6 +306,15 @@ class _HomeShellState extends State<HomeShell> {
     final entidadProvider = context.watch<EntidadProvider>();
     final isAdmin = entidadProvider.isAdmin;
     final isVendedor = entidadProvider.isVendedor;
+
+    // Show loading indicator during initial data loading
+    if (_isInitialLoading || entidadProvider.isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
 
     final List<Widget> screens;
     if (isAdmin && isVendedor) {
@@ -323,34 +338,30 @@ class _HomeShellState extends State<HomeShell> {
         backgroundColor: Colors.white,
         indicatorColor: AppTheme.primary.withOpacity(0.12),
         destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.grid_view_outlined),
-            selectedIcon: Icon(Icons.grid_view, color: AppTheme.primary),
-            label: 'Servicios',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.list_alt_outlined),
-            selectedIcon: Icon(Icons.list_alt, color: AppTheme.primary),
-            label: 'Mis Listas',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.confirmation_number_outlined),
-            selectedIcon:
-                Icon(Icons.confirmation_number, color: AppTheme.primary),
-            label: 'Reservas',
-          ),
           if (isAdmin)
             const NavigationDestination(
               icon: Icon(Icons.business_outlined),
               selectedIcon: Icon(Icons.business, color: AppTheme.primary),
               label: 'Admin',
             ),
-          if (isVendedor)
+          if (!isAdmin && !isVendedor)
             const NavigationDestination(
-              icon: Icon(Icons.point_of_sale_outlined),
+              icon: Icon(Icons.grid_view_outlined),
+              selectedIcon: Icon(Icons.grid_view, color: AppTheme.primary),
+              label: 'Servicios',
+            ),
+          if (!isAdmin && !isVendedor)
+            const NavigationDestination(
+              icon: Icon(Icons.list_alt_outlined),
+              selectedIcon: Icon(Icons.list_alt, color: AppTheme.primary),
+              label: 'Mis Listas',
+            ),
+          if (!isAdmin)
+            const NavigationDestination(
+              icon: Icon(Icons.confirmation_number_outlined),
               selectedIcon:
-                  Icon(Icons.point_of_sale, color: AppTheme.primary),
-              label: 'Vendedor',
+                  Icon(Icons.confirmation_number, color: AppTheme.primary),
+              label: 'Reservas',
             ),
           const NavigationDestination(
             icon: Icon(Icons.person_outlined),

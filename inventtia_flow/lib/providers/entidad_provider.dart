@@ -94,7 +94,10 @@ class EntidadProvider extends ChangeNotifier {
       );
       _misEntidades.add(entidad);
       _misEntidades.sort((a, b) => a.denominacion.compareTo(b.denominacion));
+      // Auto-selectar la nueva entidad creada
+      _entidadSeleccionada = entidad;
       print('[flow] EntidadProvider → entidad creada id: ${entidad.id}');
+      print('[flow] EntidadProvider → entidad seleccionada: ${entidad.denominacion}');
       _isLoading = false;
       notifyListeners();
       return entidad;

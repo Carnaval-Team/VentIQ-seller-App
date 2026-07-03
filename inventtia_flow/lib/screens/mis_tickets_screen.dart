@@ -17,7 +17,10 @@ class MisTicketsScreen extends StatefulWidget {
 
 class MisTicketsScreenState extends State<MisTicketsScreen> {
   List<Agenda> _tickets = [];
+  List<Agenda> _filteredTickets = [];
   bool _isLoading = true;
+  final _searchController = TextEditingController();
+  bool _isSearching = false;
 
   @override
   void initState() {
@@ -26,6 +29,47 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
   }
 
   void reload() => _load();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _filterTickets(String query) {
+    setState(() {
+      _isSearching = query.isNotEmpty;
+      if (query.isEmpty) {
+        _filteredTickets = _tickets;
+      } else {
+        _filteredTickets = _tickets.where((ticket) {
+          final searchLower = query.toLowerCase();
+          final cliente = ticket.cliente;
+          
+          if (cliente == null) return false;
+          
+          // Search by CI
+          if (cliente.ci != null && cliente.ci!.toLowerCase().contains(searchLower)) {
+            return true;
+          }
+          // Search by name
+          if (cliente.nombre != null && cliente.nombre!.toLowerCase().contains(searchLower)) {
+            return true;
+          }
+          // Search by last name
+          if (cliente.apellidos != null && cliente.apellidos!.toLowerCase().contains(searchLower)) {
+            return true;
+          }
+          // Search by full name combination
+          final fullName = cliente.nombreCompleto.toLowerCase();
+          if (fullName.contains(searchLower)) {
+            return true;
+          }
+          return false;
+        }).toList();
+      }
+    });
+  }
 
   Future<void> _cancelar(Agenda ticket) async {
     final uuid = context.read<AuthProvider>().user?.id ?? '';
@@ -105,6 +149,7 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
       if (!mounted) return;
       setState(() {
         _tickets = tickets;
+        _filteredTickets = tickets;
         _isLoading = false;
       });
     } catch (e) {
@@ -120,19 +165,20 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
       body: Column(
         children: [
           _buildHero(),
+          _buildSearchBar(),
           Expanded(
             child: _isLoading
                 ? _buildLoading()
-                : _tickets.isEmpty
-                    ? _buildEmptyState()
+                : _filteredTickets.isEmpty
+                    ? _isSearching ? _buildNoResultsState() : _buildEmptyState()
                     : RefreshIndicator(
                         onRefresh: _load,
                         color: AppTheme.primary,
                         child: ListView.builder(
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                          itemCount: _tickets.length,
+                          itemCount: _filteredTickets.length,
                           itemBuilder: (_, i) => _TicketCard(
-                            ticket: _tickets[i],
+                            ticket: _filteredTickets[i],
                             miUuid:
                                 context.read<AuthProvider>().user?.id ?? '',
                             onCancelar: _cancelar,
@@ -643,6 +689,77 @@ class _ClienteRow extends StatelessWidget {
                     fontSize: 12.5,
                     color: AppTheme.textPrimary,
                     fontWeight: FontWeight.w500)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Extension for search functionality
+extension _SearchWidgets on MisTicketsScreenState {
+  Widget _buildSearchBar() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        onChanged: _filterTickets,
+        decoration: InputDecoration(
+          hintText: 'Buscar por CI, nombre o apellidos...',
+          prefixIcon: const Icon(Icons.search, color: AppTheme.textSecondary),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, color: AppTheme.textSecondary),
+                  onPressed: () {
+                    _searchController.clear();
+                    _filterTickets('');
+                  },
+                )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoResultsState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.search_off,
+            size: 64,
+            color: AppTheme.textSecondary,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No se encontraron resultados',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Intenta con otros términos de búsqueda',
+            style: TextStyle(
+              fontSize: 14,
+              color: AppTheme.textSecondary,
+            ),
           ),
         ],
       ),

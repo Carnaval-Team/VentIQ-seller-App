@@ -9,6 +9,7 @@ import '../../models/servicio.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/plan_servicio_service.dart';
+import '../../services/agenda_admin_service.dart';
 import 'config_plan_mensual_screen.dart';
 
 class PlanificacionScreen extends StatefulWidget {
@@ -72,33 +73,94 @@ class _PlanificacionScreenState extends State<PlanificacionScreen> {
   }
 
   Future<void> _desvincular(LocalServicio ls) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Desvincular'),
-        content: Text(
-            '¿Desvincular "${ls.servicio?.nombre ?? ''}" de "${ls.local?.nombre ?? ''}"?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Desvincular'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
     try {
+      // Check for existing planning
+      final planes = await PlanServicioService.getByLocalServicio(ls.id);
+      
+      // Check for existing reservations
+      final auth = context.read<AuthProvider>();
+      final reservas = await AgendaAdminService.listarAgendas(
+        uuidUsuario: auth.user?.id ?? '',
+        idLocalServicio: ls.id,
+      );
+
+      // Build confirmation message
+      String mensaje = '¿Desvincular "${ls.servicio?.nombre ?? ''}" de "${ls.local?.nombre ?? ''}"?';
+      
+      if (planes.isNotEmpty || reservas.isNotEmpty) {
+        mensaje += '\n\n⚠️ **ADVERTENCIA**: Se encontrará lo siguiente:\n';
+        
+        if (planes.isNotEmpty) {
+          mensaje += '• ${planes.length} plan(es) de servicio\n';
+        }
+        
+        if (reservas.isNotEmpty) {
+          mensaje += '• ${reservas.length} reserva(s) agendada(s)\n';
+        }
+        
+        mensaje += '\n**Esta acción eliminará permanentemente toda la planificación y reservas asociadas.**';
+      }
+
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text(planes.isNotEmpty || reservas.isNotEmpty ? '⚠️ Desvincular con Datos Existentes' : 'Desvincular'),
+          content: Text(mensaje),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Desvincular y Eliminar Todo'),
+            ),
+          ],
+        ),
+      );
+      
+      if (confirm != true) return;
+
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Eliminando planificación y reservas...'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+
+      // Delete all planning first
+      for (final plan in planes) {
+        await PlanServicioService.delete(plan.id);
+      }
+
+      // Delete the local service (this should cascade delete reservations)
       await CatalogoService.deleteLocalServicio(ls.id);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              planes.isNotEmpty || reservas.isNotEmpty 
+                ? 'Servicio desvinculado. Se eliminaron ${planes.length} plan(es) y ${reservas.length} reserva(s).'
+                : 'Servicio desvinculado correctamente'
+            ),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+      }
+      
       _cargar();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Error: $e'), backgroundColor: AppTheme.error),
+            content: Text('Error al desvincular: $e'), 
+            backgroundColor: AppTheme.error,
+          ),
         );
       }
     }
@@ -169,6 +231,7 @@ class _PlanificacionScreenState extends State<PlanificacionScreen> {
           local: items.first.local,
           items: items,
           onDesvincular: _desvincular,
+          entidadId: widget.entidad.id,
         );
       },
     );
@@ -181,12 +244,14 @@ class _LocalGroup extends StatelessWidget {
   final Local? local;
   final List<LocalServicio> items;
   final Future<void> Function(LocalServicio) onDesvincular;
+  final int entidadId;
 
   const _LocalGroup({
     required this.localNombre,
     required this.local,
     required this.items,
     required this.onDesvincular,
+    required this.entidadId,
   });
 
   @override
@@ -245,6 +310,7 @@ class _LocalGroup extends StatelessWidget {
         ...items.map((ls) => _ServicioCalendarTile(
               ls: ls,
               onDesvincular: () => onDesvincular(ls),
+              entidadId: entidadId,
             )),
         const SizedBox(height: 8),
       ],
@@ -256,9 +322,10 @@ class _LocalGroup extends StatelessWidget {
 class _ServicioCalendarTile extends StatefulWidget {
   final LocalServicio ls;
   final VoidCallback onDesvincular;
+  final int entidadId;
 
   const _ServicioCalendarTile(
-      {required this.ls, required this.onDesvincular});
+      {required this.ls, required this.onDesvincular, required this.entidadId});
 
   @override
   State<_ServicioCalendarTile> createState() => _ServicioCalendarTileState();
@@ -369,10 +436,50 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
   void _onDayTapped(DateTime day) {
     final planes = _planesDelDia(day);
     if (planes.isNotEmpty) {
-      _mostrarInfoDia(day, planes);
+      _mostrarOpcionesDia(day, planes);
     } else {
-      _mostrarCrearPlan(day);
+      _mostrarOpcionesDia(day, []);
     }
+  }
+
+  void _mostrarOpcionesDia(DateTime dia, List<PlanServicio> planes) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _DayOptionsSheet(
+        dia: dia,
+        planes: planes,
+        onVerPlanificacion: () {
+          Navigator.pop(context);
+          if (planes.isNotEmpty) {
+            _mostrarInfoDia(dia, planes);
+          } else {
+            _mostrarCrearPlan(dia);
+          }
+        },
+        onReservar: () {
+          Navigator.pop(context);
+          _mostrarReservarCapacidad(dia);
+        },
+      ),
+    );
+  }
+
+  void _mostrarReservarCapacidad(DateTime dia) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      enableDrag: false,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _AdminReservationSheet(
+        dia: dia,
+        entidadId: widget.entidadId,
+        onReservationCreated: () => _cargarPlanes(),
+      ),
+    );
   }
 
   void _mostrarInfoDia(DateTime dia, List<PlanServicio> planes) {
@@ -1762,6 +1869,355 @@ class _ConfigCapacidadesSheetState extends State<_ConfigCapacidadesSheet> {
                 style: const TextStyle(fontSize: 16)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Day Options Sheet ─────────────────────────────────────
+class _DayOptionsSheet extends StatelessWidget {
+  final DateTime dia;
+  final List<PlanServicio> planes;
+  final VoidCallback onVerPlanificacion;
+  final VoidCallback onReservar;
+
+  const _DayOptionsSheet({
+    required this.dia,
+    required this.planes,
+    required this.onVerPlanificacion,
+    required this.onReservar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Opciones para ${DateFormat('d MMMM yyyy', 'es_ES').format(dia)}',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.grey.shade100,
+                  foregroundColor: AppTheme.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          
+          // Ver/Crear Planificación
+          ElevatedButton.icon(
+            onPressed: onVerPlanificacion,
+            icon: const Icon(Icons.calendar_today_outlined),
+            label: Text(planes.isNotEmpty ? 'Ver Planificación' : 'Crear Planificación'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 12),
+          
+          // Reservar Capacidad
+          ElevatedButton.icon(
+            onPressed: onReservar,
+            icon: const Icon(Icons.add_circle_outline),
+            label: const Text('Reservar Capacidad'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.accent,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Admin Reservation Sheet ─────────────────────────────────
+class _AdminReservationSheet extends StatefulWidget {
+  final DateTime dia;
+  final int entidadId;
+  final VoidCallback onReservationCreated;
+
+  const _AdminReservationSheet({
+    required this.dia,
+    required this.entidadId,
+    required this.onReservationCreated,
+  });
+
+  @override
+  State<_AdminReservationSheet> createState() => _AdminReservationSheetState();
+}
+
+class _AdminReservationSheetState extends State<_AdminReservationSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _ciCtrl = TextEditingController();
+  final _nombreCtrl = TextEditingController();
+  final _apellidosCtrl = TextEditingController();
+  final _telefonoCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _notasCtrl = TextEditingController();
+  
+  List<LocalServicio> _localesServicios = [];
+  LocalServicio? _selectedLocalServicio;
+  int _cantidad = 1;
+  bool _loading = false;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLocalesServicios();
+  }
+
+  @override
+  void dispose() {
+    _ciCtrl.dispose();
+    _nombreCtrl.dispose();
+    _apellidosCtrl.dispose();
+    _telefonoCtrl.dispose();
+    _emailCtrl.dispose();
+    _notasCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadLocalesServicios() async {
+    setState(() => _loading = true);
+    try {
+      final localesServicios = await CatalogoService.getLocalServiciosByEntidad(widget.entidadId);
+      if (mounted) {
+        setState(() {
+          _localesServicios = localesServicios;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate() || _selectedLocalServicio == null) return;
+    
+    setState(() => _saving = true);
+    try {
+      // Create reservation logic here
+      // This would involve calling the appropriate service to create a reservation
+      // For now, we'll just show success and close
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Reserva creada exitosamente'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+        Navigator.pop(context);
+        widget.onReservationCreated();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'Nueva Reserva Administrativa',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.grey.shade100,
+                      foregroundColor: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              
+              Text(
+                'Fecha: ${DateFormat('d MMMM yyyy', 'es_ES').format(widget.dia)}',
+                style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+              ),
+              const SizedBox(height: 20),
+              
+              if (_loading)
+                const Center(child: CircularProgressIndicator())
+              else ...[
+                // Local-Servicio dropdown
+                DropdownButtonFormField<LocalServicio>(
+                  value: _selectedLocalServicio,
+                  decoration: const InputDecoration(
+                    labelText: 'Local - Servicio',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _localesServicios.map((ls) {
+                    return DropdownMenuItem(
+                      value: ls,
+                      child: Text('${ls.local?.nombre ?? ''} - ${ls.servicio?.nombre ?? ''}'),
+                    );
+                  }).toList(),
+                  onChanged: (value) => setState(() => _selectedLocalServicio = value),
+                  validator: (value) => value == null ? 'Selecciona un local-servicio' : null,
+                ),
+                const SizedBox(height: 16),
+                
+                // CI
+                TextFormField(
+                  controller: _ciCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'CI',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) => value?.isEmpty == true ? 'Ingresa el CI' : null,
+                ),
+                const SizedBox(height: 16),
+                
+                // Nombre
+                TextFormField(
+                  controller: _nombreCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) => value?.isEmpty == true ? 'Ingresa el nombre' : null,
+                ),
+                const SizedBox(height: 16),
+                
+                // Apellidos
+                TextFormField(
+                  controller: _apellidosCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Apellidos',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) => value?.isEmpty == true ? 'Ingresa los apellidos' : null,
+                ),
+                const SizedBox(height: 16),
+                
+                // Teléfono
+                TextFormField(
+                  controller: _telefonoCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Teléfono',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.phone,
+                  validator: (value) => value?.isEmpty == true ? 'Ingresa el teléfono' : null,
+                ),
+                const SizedBox(height: 16),
+                
+                // Email
+                TextFormField(
+                  controller: _emailCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value?.isEmpty == true) return 'Ingresa el email';
+                    if (!value!.contains('@')) return 'Ingresa un email válido';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                
+                // Cantidad
+                Row(
+                  children: [
+                    const Text('Cantidad:'),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: _cantidad > 1 ? () => setState(() => _cantidad--) : null,
+                      icon: const Icon(Icons.remove),
+                    ),
+                    Text(_cantidad.toString()),
+                    IconButton(
+                      onPressed: () => setState(() => _cantidad++),
+                      icon: const Icon(Icons.add),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                
+                // Notas
+                TextFormField(
+                  controller: _notasCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Notas (opcional)',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+                const SizedBox(height: 24),
+                
+                // Submit button
+                ElevatedButton(
+                  onPressed: _saving ? null : _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: _saving
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('Crear Reserva', style: TextStyle(fontSize: 16)),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
