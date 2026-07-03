@@ -22,6 +22,7 @@ class EntidadDetailScreen extends StatefulWidget {
 class _EntidadDetailScreenState extends State<EntidadDetailScreen> {
   late Entidad _entidad;
   List<EntidadAdmin> _admins = [];
+  List<EntidadVendedor> _vendedores = [];
   List<Local> _locales = [];
   List<Servicio> _servicios = [];
   bool _loading = true;
@@ -40,10 +41,12 @@ class _EntidadDetailScreenState extends State<EntidadDetailScreen> {
         EntidadService.getAdmins(_entidad.id),
         CatalogoService.getLocalesByEntidad(_entidad.id),
         CatalogoService.getServiciosByEntidad(_entidad.id),
+        EntidadService.getVendedores(_entidad.id),
       ]);
       _admins = results[0] as List<EntidadAdmin>;
       _locales = results[1] as List<Local>;
       _servicios = results[2] as List<Servicio>;
+      _vendedores = results[3] as List<EntidadVendedor>;
     } catch (e) {
       print('[flow] EntidadDetailScreen _cargar ERROR: $e');
     }
@@ -71,19 +74,19 @@ class _EntidadDetailScreenState extends State<EntidadDetailScreen> {
     });
   }
 
-  Future<void> _agregarAdmin() async {
-    final ciCtrl = TextEditingController();
+  Future<void> _agregarVendedor() async {
+    final emailCtrl = TextEditingController();
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Agregar Administrador'),
+        title: const Text('Agregar Vendedor'),
         content: TextField(
-          controller: ciCtrl,
-          keyboardType: TextInputType.number,
-          maxLength: 11,
+          controller: emailCtrl,
+          keyboardType: TextInputType.emailAddress,
+          autocorrect: false,
           decoration: const InputDecoration(
-            labelText: 'CI del usuario (11 dígitos)',
-            prefixIcon: Icon(Icons.badge_outlined),
+            labelText: 'Correo del usuario',
+            prefixIcon: Icon(Icons.email_outlined),
           ),
         ),
         actions: [
@@ -93,10 +96,10 @@ class _EntidadDetailScreenState extends State<EntidadDetailScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              final ci = ciCtrl.text.trim();
-              if (ci.length != 11) return;
+              final email = emailCtrl.text.trim();
+              if (!email.contains('@')) return;
               Navigator.pop(ctx);
-              await _buscarYAgregarAdmin(ci);
+              await _buscarYAgregarVendedor(email);
             },
             child: const Text('Agregar'),
           ),
@@ -105,31 +108,132 @@ class _EntidadDetailScreenState extends State<EntidadDetailScreen> {
     );
   }
 
-  Future<void> _buscarYAgregarAdmin(String ci) async {
+  Future<void> _buscarYAgregarVendedor(String email) async {
     try {
-      // Buscar perfil por CI
-      final perfiles = await PerfilService.getPerfilByCi(ci);
-      if (perfiles == null) {
+      final uuid = await PerfilService.getUuidByEmail(email);
+      if (uuid == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No se encontró un usuario con ese CI'),
+            content: Text('No se encontró un usuario registrado con ese correo'),
             backgroundColor: AppTheme.error,
           ),
         );
         return;
       }
+      final perfil = await PerfilService.getPerfil(uuid);
       final myUuid = context.read<AuthProvider>().user!.id;
-      await EntidadService.addAdmin(
+      await EntidadService.addVendedor(
         idEntidad: _entidad.id,
-        uuidUsuario: perfiles.uuidUsuario,
+        uuidUsuario: uuid,
         asignadoPor: myUuid,
       );
       await _cargar();
       if (!mounted) return;
+      final nombre = perfil?.nombreCompleto ?? email;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${perfiles.nombreCompleto} agregado como admin'),
+          content: Text('$nombre agregado como vendedor'),
+          backgroundColor: AppTheme.success,
+        ),
+      );
+    } catch (e) {
+      print('[flow] _buscarYAgregarVendedor ERROR: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al agregar vendedor: $e'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _quitarVendedor(EntidadVendedor vendedor) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Quitar Vendedor'),
+        content: const Text('¿Estás seguro de quitar a este vendedor?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
+          ElevatedButton(
+            style:
+                ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Quitar'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await EntidadService.removeVendedor(vendedor.id);
+      await _cargar();
+    }
+  }
+
+  Future<void> _agregarAdmin() async {
+    final emailCtrl = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Agregar Administrador'),
+        content: TextField(
+          controller: emailCtrl,
+          keyboardType: TextInputType.emailAddress,
+          autocorrect: false,
+          decoration: const InputDecoration(
+            labelText: 'Correo del usuario',
+            prefixIcon: Icon(Icons.email_outlined),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final email = emailCtrl.text.trim();
+              if (!email.contains('@')) return;
+              Navigator.pop(ctx);
+              await _buscarYAgregarAdmin(email);
+            },
+            child: const Text('Agregar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _buscarYAgregarAdmin(String email) async {
+    try {
+      final uuid = await PerfilService.getUuidByEmail(email);
+      if (uuid == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se encontró un usuario registrado con ese correo'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+        return;
+      }
+      final perfil = await PerfilService.getPerfil(uuid);
+      final myUuid = context.read<AuthProvider>().user!.id;
+      await EntidadService.addAdmin(
+        idEntidad: _entidad.id,
+        uuidUsuario: uuid,
+        asignadoPor: myUuid,
+      );
+      await _cargar();
+      if (!mounted) return;
+      final nombre = perfil?.nombreCompleto ?? email;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$nombre agregado como admin'),
           backgroundColor: AppTheme.success,
         ),
       );
@@ -137,8 +241,8 @@ class _EntidadDetailScreenState extends State<EntidadDetailScreen> {
       print('[flow] _buscarYAgregarAdmin ERROR: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Error al agregar administrador'),
+        SnackBar(
+          content: Text('Error al agregar administrador: $e'),
           backgroundColor: AppTheme.error,
         ),
       );
@@ -268,6 +372,39 @@ class _EntidadDetailScreenState extends State<EntidadDetailScreen> {
                       padding: EdgeInsets.symmetric(vertical: 8),
                       child: Text(
                         'Sin administradores adicionales',
+                        style: TextStyle(color: AppTheme.textSecondary),
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+
+                  // Vendedores
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _SectionTitle('Vendedores'),
+                      if (_isOwner)
+                        TextButton.icon(
+                          onPressed: _agregarVendedor,
+                          icon: const Icon(Icons.person_add_outlined,
+                              size: 18),
+                          label: const Text('Agregar'),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ..._vendedores.map((v) => _AdminTile(
+                        label: 'Vendedor',
+                        uuid: v.uuidUsuario,
+                        isOwner: false,
+                        roleColor: const Color(0xFF34C759),
+                        canRemove: _isOwner,
+                        onRemove: () => _quitarVendedor(v),
+                      )),
+                  if (_vendedores.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        'Sin vendedores asignados',
                         style: TextStyle(color: AppTheme.textSecondary),
                       ),
                     ),
@@ -431,6 +568,7 @@ class _AdminTile extends StatelessWidget {
   final String label;
   final String uuid;
   final bool isOwner;
+  final Color? roleColor;
   final bool canRemove;
   final VoidCallback? onRemove;
 
@@ -438,25 +576,28 @@ class _AdminTile extends StatelessWidget {
     required this.label,
     required this.uuid,
     required this.isOwner,
+    this.roleColor,
     required this.canRemove,
     required this.onRemove,
   });
 
   @override
   Widget build(BuildContext context) {
+    final color = isOwner
+        ? AppTheme.primary
+        : (roleColor ?? AppTheme.textSecondary);
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: CircleAvatar(
-        backgroundColor:
-            isOwner ? AppTheme.primary.withOpacity(0.15) : Colors.grey.shade100,
+        backgroundColor: color.withOpacity(0.15),
         child: Icon(
           isOwner ? Icons.star : Icons.person_outline,
-          color: isOwner ? AppTheme.primary : AppTheme.textSecondary,
+          color: color,
           size: 20,
         ),
       ),
       title: Text(
-        isOwner ? 'Propietario' : 'Administrador',
+        isOwner ? 'Propietario' : label,
         style: const TextStyle(fontWeight: FontWeight.w500),
       ),
       subtitle: Text(

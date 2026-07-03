@@ -124,7 +124,7 @@ class AuthProvider extends ChangeNotifier {
     if (raw.contains('rate limit') || raw.contains('too many')) {
       return 'Demasiados intentos. Espera unos minutos e intenta nuevamente.';
     }
-    return 'Error de autenticación. Verifica tus datos e intenta nuevamente.';
+    return 'Error de autenticación: $msg';
   }
 
   Future<void> signOut() async {
@@ -202,7 +202,7 @@ class AuthProvider extends ChangeNotifier {
     if (raw.contains('jwt') || raw.contains('token') || raw.contains('session')) {
       return 'Tu sesión expiró. Vuelve a iniciar sesión.';
     }
-    return 'Ocurrió un error inesperado. Intenta nuevamente.';
+    return 'Error inesperado: $e';
   }
 
   void clearError() {

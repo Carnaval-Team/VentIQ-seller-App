@@ -37,8 +37,13 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(auth.error ?? 'Error al iniciar sesión'),
+          content: Text(
+            auth.error ?? 'Error al iniciar sesión',
+            maxLines: 6,
+            overflow: TextOverflow.ellipsis,
+          ),
           backgroundColor: AppTheme.error,
+          duration: const Duration(seconds: 8),
         ),
       );
     }

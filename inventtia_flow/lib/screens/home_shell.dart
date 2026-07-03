@@ -11,6 +11,7 @@ import 'mis_listas_screen.dart';
 import 'mis_tickets_screen.dart';
 import 'perfil_screen.dart';
 import 'admin/gestion_screen.dart';
+import 'vendedor/vendedor_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -32,10 +33,14 @@ class _HomeShellState extends State<HomeShell> {
 
   late final List<Widget> _screens;
   late final List<Widget> _screensNoAdmin;
+  late final List<Widget> _screensVendedor;
+  late final List<Widget> _screensVendedorAdmin;
 
   // Índice de tab → tipo de pantalla a refrescar
-  // Admin:    0=Catalogo 1=MisListas 2=MisTickets 3=Gestion 4=Perfil
-  // No admin: 0=Catalogo 1=MisListas 2=MisTickets 3=Perfil
+  // Admin:           0=Catalogo 1=MisListas 2=MisTickets 3=Gestion 4=Perfil
+  // No admin:        0=Catalogo 1=MisListas 2=MisTickets 3=Perfil
+  // Vendedor:        0=Catalogo 1=MisListas 2=MisTickets 3=Vendedor 4=Perfil
+  // Admin+Vendedor:  0=Catalogo 1=MisListas 2=MisTickets 3=Gestion 4=Vendedor 5=Perfil
   static const int _idxListasAdmin = 1;
   static const int _idxTicketsAdmin = 2;
   static const int _idxListasNoAdmin = 1;
@@ -55,6 +60,21 @@ class _HomeShellState extends State<HomeShell> {
       CatalogoScreen(key: _catalogoKey),
       MisListasScreen(key: _misListasKey),
       MisTicketsScreen(key: _misTicketsKey),
+      const PerfilScreen(),
+    ];
+    _screensVendedor = [
+      CatalogoScreen(key: _catalogoKey),
+      MisListasScreen(key: _misListasKey),
+      MisTicketsScreen(key: _misTicketsKey),
+      const VendedorScreen(),
+      const PerfilScreen(),
+    ];
+    _screensVendedorAdmin = [
+      CatalogoScreen(key: _catalogoKey),
+      MisListasScreen(key: _misListasKey),
+      MisTicketsScreen(key: _misTicketsKey),
+      const GestionScreen(),
+      const VendedorScreen(),
       const PerfilScreen(),
     ];
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -279,7 +299,18 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final entidadProvider = context.watch<EntidadProvider>();
     final isAdmin = entidadProvider.isAdmin;
-    final screens = isAdmin ? _screens : _screensNoAdmin;
+    final isVendedor = entidadProvider.isVendedor;
+
+    final List<Widget> screens;
+    if (isAdmin && isVendedor) {
+      screens = _screensVendedorAdmin;
+    } else if (isAdmin) {
+      screens = _screens;
+    } else if (isVendedor) {
+      screens = _screensVendedor;
+    } else {
+      screens = _screensNoAdmin;
+    }
 
     // Mantener índice válido si el rol cambia
     final safeIndex = _currentIndex.clamp(0, screens.length - 1);
@@ -313,6 +344,13 @@ class _HomeShellState extends State<HomeShell> {
               icon: Icon(Icons.business_outlined),
               selectedIcon: Icon(Icons.business, color: AppTheme.primary),
               label: 'Admin',
+            ),
+          if (isVendedor)
+            const NavigationDestination(
+              icon: Icon(Icons.point_of_sale_outlined),
+              selectedIcon:
+                  Icon(Icons.point_of_sale, color: AppTheme.primary),
+              label: 'Vendedor',
             ),
           const NavigationDestination(
             icon: Icon(Icons.person_outlined),
