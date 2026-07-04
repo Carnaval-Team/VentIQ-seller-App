@@ -11,7 +11,10 @@ SET search_path = flow
 AS $$
 DECLARE
   v_id_estado int;
+  v_id_estado_reservado int;
   v_result json;
+  v_agenda record;
+  v_plan_id bigint;
 BEGIN
   -- 1. Verificar que el usuario autenticado tenga permisos sobre la reserva.
   IF NOT EXISTS (
@@ -33,21 +36,52 @@ BEGIN
     RAISE EXCEPTION 'No tiene permisos para cancelar esta reserva';
   END IF;
 
-  -- 2. Obtener el id del estado 'cancelado'.
+  -- 2. Cargar la reserva y validar que esté activa.
+  SELECT a.id, a.uuid_usuario, a.id_local_servicio, a.id_estado,
+         a.fecha_hora_reserva, a.cantidad
+    INTO v_agenda
+    FROM flow.agenda a
+   WHERE a.id = p_id_agenda;
+
+  SELECT id INTO v_id_estado_reservado
+    FROM flow.nom_estado_agenda
+   WHERE nombre = 'Reservado';
+
+  IF v_agenda.id_estado IS DISTINCT FROM v_id_estado_reservado THEN
+    RAISE EXCEPTION 'Solo se pueden cancelar reservas activas';
+  END IF;
+
+  -- 3. Obtener el id del estado 'cancelado'.
   SELECT id INTO v_id_estado
-  FROM flow.nom_estado_agenda
-  WHERE nombre = 'Cancelado';
+    FROM flow.nom_estado_agenda
+   WHERE nombre = 'Cancelado';
 
   IF v_id_estado IS NULL THEN
     RAISE EXCEPTION 'Estado cancelado no encontrado';
   END IF;
 
-  -- 3. Actualizar el estado de la agenda.
-  UPDATE flow.agenda
-  SET id_estado = v_id_estado
-  WHERE id = p_id_agenda;
+  -- 4. Buscar el plan del día para liberar la capacidad.
+  SELECT ps.id INTO v_plan_id
+    FROM flow.plan_servicios ps
+   WHERE ps.id_local_servicio = v_agenda.id_local_servicio
+     AND (ps.fecha at time zone 'America/Havana')::date =
+         (v_agenda.fecha_hora_reserva at time zone 'America/Havana')::date
+   LIMIT 1;
 
-  -- 4. Devolver la agenda actualizada en el formato que espera Agenda.fromJson.
+  -- 5. Actualizar el estado de la agenda.
+  UPDATE flow.agenda
+     SET id_estado = v_id_estado,
+         updated_at = current_timestamp
+   WHERE id = p_id_agenda;
+
+  -- 6. Liberar la capacidad ocupada por la reserva.
+  IF v_plan_id IS NOT NULL THEN
+    UPDATE flow.plan_servicios
+       SET agendados = GREATEST(0, agendados - v_agenda.cantidad)
+     WHERE id = v_plan_id;
+  END IF;
+
+  -- 7. Devolver la agenda actualizada en el formato que espera Agenda.fromJson.
   SELECT json_build_object(
     'id', a.id,
     'uuid_usuario', a.uuid_usuario,
