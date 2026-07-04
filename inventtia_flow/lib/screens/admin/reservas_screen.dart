@@ -20,6 +20,7 @@ import '../../services/agenda_admin_service.dart';
 import '../../services/agenda_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/notificacion_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ReservasScreen extends StatefulWidget {
   final Entidad entidad;
@@ -822,10 +823,32 @@ class _ReservasScreenState extends State<ReservasScreen> {
                               _datoCliente(r, 'ci'),
                               overflow: TextOverflow.ellipsis,
                             )),
-                            DataCell(Text(
-                              _datoCliente(r, 'telefono'),
-                              overflow: TextOverflow.ellipsis,
-                            )),
+                            DataCell(
+                              _datoCliente(r, 'telefono') == '-' || _datoCliente(r, 'telefono').isEmpty
+                                  ? const Text('-')
+                                  : GestureDetector(
+                                      onTap: () async {
+                                        final uri = Uri(scheme: 'tel', path: _datoCliente(r, 'telefono'));
+                                        if (await canLaunchUrl(uri)) launchUrl(uri);
+                                      },
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.phone, size: 12, color: AppTheme.primary),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            _datoCliente(r, 'telefono'),
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: AppTheme.primary,
+                                              decoration: TextDecoration.underline,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                            ),
                             DataCell(Text('${r.cantidad}')),
                             if (conTerceros)
                               DataCell(Text(esTercero ? 'Sí' : 'No')),
@@ -977,7 +1000,7 @@ class _ReservaCard extends StatelessWidget {
               if (cliente.ci != null && cliente.ci!.isNotEmpty)
                 _InfoRow(Icons.badge_outlined, 'CI: ${cliente.ci}'),
               if (cliente.telefono != null && cliente.telefono!.isNotEmpty)
-                _InfoRow(Icons.phone_outlined, cliente.telefono!),
+                _PhoneRow(cliente.telefono!),
             ],
             const SizedBox(height: 4),
             _InfoRow(Icons.tag, 'ID: ${agenda.id}'),
@@ -1008,6 +1031,38 @@ class _InfoRow extends StatelessWidget {
                 style: TextStyle(fontSize: 12, color: color)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PhoneRow extends StatelessWidget {
+  final String telefono;
+  const _PhoneRow(this.telefono);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: GestureDetector(
+        onTap: () async {
+          final uri = Uri(scheme: 'tel', path: telefono);
+          if (await canLaunchUrl(uri)) launchUrl(uri);
+        },
+        child: Row(
+          children: [
+            const Icon(Icons.phone, size: 13, color: AppTheme.primary),
+            const SizedBox(width: 4),
+            Text(
+              telefono,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppTheme.primary,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

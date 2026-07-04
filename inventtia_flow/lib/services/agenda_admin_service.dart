@@ -30,6 +30,34 @@ class AgendaAdminService {
     return list.map((e) => Agenda.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  static Future<void> crearReservaDirecta({
+    required String uuidAdmin,
+    required int idLocalServicio,
+    required DateTime fecha,
+    int? cantidad,
+    Map<String, dynamic>? datosAdicionales,
+  }) async {
+    try {
+      final res = await _supabase.schema(_schema).rpc(
+        'admin_crear_reserva_directa',
+        params: {
+          'p_uuid_admin': uuidAdmin,
+          'p_id_local_servicio': idLocalServicio,
+          'p_fecha': fecha.toIso8601String().substring(0, 10),
+          if (cantidad != null) 'p_cantidad': cantidad,
+          if (datosAdicionales != null) 'p_datos_adicionales': datosAdicionales,
+        },
+      );
+      final json = res as Map<String, dynamic>;
+      if (json['ok'] != true) {
+        throw Exception(json['error'] ?? 'No se pudo crear la reserva');
+      }
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception(e.toString());
+    }
+  }
+
   static Future<List<Agenda>> listarAgendasVendedor({
     required String uuidUsuario,
     int? idEntidad,

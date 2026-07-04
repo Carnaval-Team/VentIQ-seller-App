@@ -2083,9 +2083,8 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
         datosAdicionales.addAll(_datosAdicionalesValores);
       }
 
-      // Crear reserva usando la misma función que el cliente
-      await AgendaService.reservarDirecto(
-        uuidUsuario: uuid,
+      await AgendaAdminService.crearReservaDirecta(
+        uuidAdmin: uuid,
         idLocalServicio: _selectedLocalServicio!.id,
         fecha: widget.dia,
         cantidad: _cantidad,
@@ -2104,10 +2103,18 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: AppTheme.error,
+        final msg = e.toString().replaceFirst('Exception: ', '');
+        showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Error al crear reserva'),
+            content: Text(msg),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Aceptar'),
+              ),
+            ],
           ),
         );
       }

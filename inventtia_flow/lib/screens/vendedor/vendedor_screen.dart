@@ -19,6 +19,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/entidad_provider.dart';
 import '../../services/agenda_admin_service.dart';
 import '../../services/catalogo_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class VendedorScreen extends StatefulWidget {
   const VendedorScreen({super.key});
@@ -647,7 +648,31 @@ class _VendedorScreenState extends State<VendedorScreen> {
                       DataCell(Text(cli?.nombre ?? '-')),
                       DataCell(Text(cli?.apellidos ?? '-')),
                       DataCell(Text(cli?.ci ?? '-')),
-                      DataCell(Text(cli?.telefono ?? '-')),
+                      DataCell(
+                        cli?.telefono != null && cli!.telefono!.isNotEmpty
+                            ? GestureDetector(
+                                onTap: () async {
+                                  final uri = Uri(scheme: 'tel', path: cli.telefono);
+                                  if (await canLaunchUrl(uri)) launchUrl(uri);
+                                },
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.phone, size: 12, color: AppTheme.primary),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      cli.telefono!,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppTheme.primary,
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : const Text('-'),
+                      ),
                       DataCell(Text('${r.cantidad}')),
                       if (conTerceros)
                         DataCell(Text(esTercero ? 'Sí' : 'No')),
