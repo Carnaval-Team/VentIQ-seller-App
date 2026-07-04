@@ -11,6 +11,7 @@ import '../models/disponibilidad_dia.dart';
 import '../providers/auth_provider.dart';
 import '../services/lista_service.dart';
 import '../services/agenda_service.dart';
+import '../services/catalogo_service.dart';
 import '../widgets/datos_adicionales_form.dart';
 import '../widgets/net_image.dart';
 
@@ -26,6 +27,7 @@ class LocalServicioDetailScreen extends StatefulWidget {
 
 class _LocalServicioDetailScreenState
     extends State<LocalServicioDetailScreen> {
+  late LocalServicio _localServicio;
   bool _isLoading = true;
   bool _isActing = false;
   bool _hasDisponibilidad = false;
@@ -37,8 +39,27 @@ class _LocalServicioDetailScreenState
   @override
   void initState() {
     super.initState();
+    _localServicio = widget.localServicio;
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _ensureFullService();
     _load();
     _checkDisponibilidad();
+  }
+
+  /// Si el servicio no vino con campos adicionales, recarga el local-servicio
+  /// completo para asegurar que el cliente vea y envíe los datos configurados.
+  Future<void> _ensureFullService() async {
+    final servicio = _localServicio.servicio;
+    if (servicio != null && servicio.camposAdicionales.isNotEmpty) return;
+    try {
+      final refreshed = await CatalogoService.getLocalServicio(_localServicio.id);
+      if (mounted) setState(() => _localServicio = refreshed);
+    } catch (_) {
+      // Si falla, seguimos con el objeto original.
+    }
   }
 
   Future<void> _load() async {
@@ -47,13 +68,13 @@ class _LocalServicioDetailScreenState
       final uuid = context.read<AuthProvider>().user?.id ?? '';
       final results = await Future.wait([
         ListaService.getMisListas(uuid),
-        ListaService.getContadoresCola(widget.localServicio.id),
+        ListaService.getContadoresCola(_localServicio.id),
       ]);
       final listas = results[0] as List<SalaEspera>;
       final contadores =
           results[1] as ({int ultimoOtorgado, int ultimoEnAnotarse});
       final miLugar = listas
-          .where((s) => s.idLocalServicio == widget.localServicio.id)
+          .where((s) => s.idLocalServicio == _localServicio.id)
           .firstOrNull;
       if (mounted) {
         setState(() {
@@ -70,7 +91,7 @@ class _LocalServicioDetailScreenState
 
   Future<void> _checkDisponibilidad() async {
     try {
-      final dias = await AgendaService.getDisponibilidad(widget.localServicio.id);
+      final dias = await AgendaService.getDisponibilidad(_localServicio.id);
       
       // Check if there are available slots for future dates
       final now = DateTime.now();
@@ -118,7 +139,7 @@ class _LocalServicioDetailScreenState
     try {
       await ListaService.entrarSalaEspera(
         uuidUsuario: uuid,
-        idLocalServicio: widget.localServicio.id,
+        idLocalServicio: _localServicio.id,
         fechaRegla: fecha,
         datosAdicionales:
             datos.datosAdicionales.isEmpty ? null : datos.datosAdicionales,
@@ -162,7 +183,7 @@ class _LocalServicioDetailScreenState
     setState(() => _isActing = true);
     List<DisponibilidadDia> dias;
     try {
-      dias = await AgendaService.getDisponibilidad(widget.localServicio.id);
+      dias = await AgendaService.getDisponibilidad(_localServicio.id);
       
       // Check if there are available slots for future dates
       final now = DateTime.now();
@@ -216,7 +237,7 @@ class _LocalServicioDetailScreenState
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _DisponibilidadSheet(
-        localServicio: widget.localServicio,
+        localServicio: _localServicio,
         dias: dias,
       ),
     );
@@ -234,7 +255,7 @@ class _LocalServicioDetailScreenState
     try {
       await AgendaService.reservarDirecto(
         uuidUsuario: uuid,
-        idLocalServicio: widget.localServicio.id,
+        idLocalServicio: _localServicio.id,
         fecha: fecha,
         cantidad: cantidad,
         datosAdicionales:
@@ -277,7 +298,7 @@ class _LocalServicioDetailScreenState
   /// el usuario cancela. Si el servicio no requiere nada, devuelve datos vacíos
   /// sin mostrar diálogo.
   Future<_DatosReserva?> _recolectarDatosReserva() async {
-    final servicio = widget.localServicio.servicio;
+    final servicio = _localServicio.servicio;
     final campos = servicio?.camposAdicionales ?? const <CampoAdicional>[];
     final permiteTercero = servicio?.permiteTercero ?? false;
 
@@ -378,7 +399,7 @@ class _LocalServicioDetailScreenState
     try {
       await ListaService.salirSalaEspera(
         uuidUsuario: uuid,
-        idLocalServicio: widget.localServicio.id,
+        idLocalServicio: _localServicio.id,
       );
       await _load();
       if (mounted) {
@@ -406,8 +427,8 @@ class _LocalServicioDetailScreenState
 
   @override
   Widget build(BuildContext context) {
-    final local = widget.localServicio.local;
-    final servicio = widget.localServicio.servicio;
+    final local = _localServicio.local;
+    final servicio = _localServicio.servicio;
     final enLista = _miLugar != null;
 
     return Scaffold(
@@ -787,6 +808,13 @@ class _LocalServicioDetailScreenState
         value: local!.ubicacion,
       ));
     }
+    if (servicio?.camposAdicionales.isNotEmpty == true) {
+      rows.add(_InfoRow(
+        icon: Icons.format_list_bulleted_outlined,
+        label: 'Información adicional requerida',
+        value: servicio!.camposAdicionales.map((c) => c.etiqueta).join(', '),
+      ));
+    }
 
     if (rows.isEmpty) return const SizedBox.shrink();
 
@@ -871,7 +899,7 @@ class _LocalServicioDetailScreenState
   // ── Barra de acción fija abajo ──
   Widget _buildBottomBar() {
     final enLista = _miLugar != null;
-    final permiteDirecta = widget.localServicio.permiteReservaDirecta;
+    final permiteDirecta = _localServicio.permiteReservaDirecta;
 
     Widget child;
     if (enLista) {

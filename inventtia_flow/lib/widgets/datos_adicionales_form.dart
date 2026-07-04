@@ -14,7 +14,8 @@ import '../models/campo_adicional.dart';
 ///   }
 class DatosAdicionalesForm extends StatefulWidget {
   final List<CampoAdicional> campos;
-  const DatosAdicionalesForm({super.key, required this.campos});
+  final ValueChanged<Map<String, dynamic>>? onChanged;
+  const DatosAdicionalesForm({super.key, required this.campos, this.onChanged});
 
   @override
   State<DatosAdicionalesForm> createState() => DatosAdicionalesFormState();
@@ -32,7 +33,9 @@ class DatosAdicionalesFormState extends State<DatosAdicionalesForm> {
       if (c.tipo == TipoCampo.select) {
         _selects[c.clave] = null;
       } else {
-        _ctrls[c.clave] = TextEditingController();
+        final ctrl = TextEditingController();
+        ctrl.addListener(_notifyChange);
+        _ctrls[c.clave] = ctrl;
       }
     }
   }
@@ -40,9 +43,14 @@ class DatosAdicionalesFormState extends State<DatosAdicionalesForm> {
   @override
   void dispose() {
     for (final c in _ctrls.values) {
+      c.removeListener(_notifyChange);
       c.dispose();
     }
     super.dispose();
+  }
+
+  void _notifyChange() {
+    widget.onChanged?.call(valores);
   }
 
   /// Valida todos los campos. Devuelve true si son válidos.
@@ -122,7 +130,10 @@ class DatosAdicionalesFormState extends State<DatosAdicionalesForm> {
         items: c.opciones
             .map((o) => DropdownMenuItem(value: o, child: Text(o)))
             .toList(),
-        onChanged: (v) => setState(() => _selects[c.clave] = v),
+        onChanged: (v) {
+          setState(() => _selects[c.clave] = v);
+          _notifyChange();
+        },
         validator: (v) =>
             (c.requerido && (v == null || v.isEmpty)) ? 'Requerido' : null,
       );

@@ -11,6 +11,7 @@ import '../../services/agenda_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/plan_servicio_service.dart';
 import '../../services/agenda_admin_service.dart';
+import '../../widgets/datos_adicionales_form.dart';
 import 'config_plan_mensual_screen.dart';
 
 class PlanificacionScreen extends StatefulWidget {
@@ -478,6 +479,7 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
       builder: (_) => _AdminReservationSheet(
         dia: dia,
         entidadId: widget.entidadId,
+        localServicio: widget.ls,
         onReservationCreated: () => _cargarPlanes(),
       ),
     );
@@ -1956,11 +1958,13 @@ class _DayOptionsSheet extends StatelessWidget {
 class _AdminReservationSheet extends StatefulWidget {
   final DateTime dia;
   final int entidadId;
+  final LocalServicio? localServicio;
   final VoidCallback onReservationCreated;
 
   const _AdminReservationSheet({
     required this.dia,
     required this.entidadId,
+    this.localServicio,
     required this.onReservationCreated,
   });
 
@@ -1970,22 +1974,29 @@ class _AdminReservationSheet extends StatefulWidget {
 
 class _AdminReservationSheetState extends State<_AdminReservationSheet> {
   final _formKey = GlobalKey<FormState>();
+  GlobalKey<DatosAdicionalesFormState> _datosAdicionalesKey = GlobalKey<DatosAdicionalesFormState>();
   final _ciCtrl = TextEditingController();
   final _nombreCtrl = TextEditingController();
   final _apellidosCtrl = TextEditingController();
   final _telefonoCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _notasCtrl = TextEditingController();
-  
+
   List<LocalServicio> _localesServicios = [];
   LocalServicio? _selectedLocalServicio;
+  Map<String, dynamic> _datosAdicionalesValores = {};
   int _cantidad = 1;
   bool _loading = false;
   bool _saving = false;
 
+  bool get _servicioPreseleccionado => widget.localServicio != null;
+
   @override
   void initState() {
     super.initState();
+    if (_servicioPreseleccionado) {
+      _selectedLocalServicio = widget.localServicio;
+    }
     _loadLocalesServicios();
   }
 
@@ -2001,6 +2012,26 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
   }
 
   Future<void> _loadLocalesServicios() async {
+    if (_servicioPreseleccionado) {
+      final servicio = _selectedLocalServicio?.servicio;
+      if (servicio != null && servicio.camposAdicionales.isNotEmpty) {
+        setState(() => _loading = false);
+        return;
+      }
+      setState(() => _loading = true);
+      try {
+        final refreshed = await CatalogoService.getLocalServicio(_selectedLocalServicio!.id);
+        if (mounted) {
+          setState(() {
+            _selectedLocalServicio = refreshed;
+            _loading = false;
+          });
+        }
+      } catch (e) {
+        if (mounted) setState(() => _loading = false);
+      }
+      return;
+    }
     setState(() => _loading = true);
     try {
       final localesServicios = await CatalogoService.getLocalServiciosByEntidad(widget.entidadId);
@@ -2018,6 +2049,13 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate() || _selectedLocalServicio == null) return;
 
+    final camposAdicionales = _selectedLocalServicio!.servicio?.camposAdicionales ?? [];
+    if (camposAdicionales.isNotEmpty &&
+        _datosAdicionalesKey.currentState != null &&
+        !_datosAdicionalesKey.currentState!.validar()) {
+      return;
+    }
+
     final uuid = context.read<AuthProvider>().user?.id;
     if (uuid == null) {
       if (mounted) {
@@ -2033,20 +2071,25 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
 
     setState(() => _saving = true);
     try {
+      final datosAdicionales = <String, dynamic>{
+        'ci': _ciCtrl.text.trim(),
+        'nombre': _nombreCtrl.text.trim(),
+        'apellidos': _apellidosCtrl.text.trim(),
+        'telefono': _telefonoCtrl.text.trim(),
+        'email': _emailCtrl.text.trim(),
+        'notas': _notasCtrl.text.trim(),
+      };
+      if (camposAdicionales.isNotEmpty) {
+        datosAdicionales.addAll(_datosAdicionalesValores);
+      }
+
       // Crear reserva usando la misma función que el cliente
       await AgendaService.reservarDirecto(
         uuidUsuario: uuid,
         idLocalServicio: _selectedLocalServicio!.id,
         fecha: widget.dia,
         cantidad: _cantidad,
-        datosAdicionales: {
-          'ci': _ciCtrl.text.trim(),
-          'nombre': _nombreCtrl.text.trim(),
-          'apellidos': _apellidosCtrl.text.trim(),
-          'telefono': _telefonoCtrl.text.trim(),
-          'email': _emailCtrl.text.trim(),
-          'notas': _notasCtrl.text.trim(),
-        },
+        datosAdicionales: datosAdicionales,
       );
 
       if (mounted) {
@@ -2113,28 +2156,46 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
                 style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
               ),
               const SizedBox(height: 20),
-              
+
               if (_loading)
                 const Center(child: CircularProgressIndicator())
               else ...[
-                // Local-Servicio dropdown
-                DropdownButtonFormField<LocalServicio>(
-                  value: _selectedLocalServicio,
-                  decoration: const InputDecoration(
-                    labelText: 'Local - Servicio',
-                    border: OutlineInputBorder(),
+                // Local-Servicio: solo dropdown si no viene preseleccionado
+                if (_servicioPreseleccionado) ...[
+                  InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Local - Servicio',
+                      border: OutlineInputBorder(),
+                    ),
+                    child: Text(
+                      '${_selectedLocalServicio?.local?.nombre ?? ''} - ${_selectedLocalServicio?.servicio?.nombre ?? ''}',
+                      style: const TextStyle(fontSize: 15),
+                    ),
                   ),
-                  items: _localesServicios.map((ls) {
-                    return DropdownMenuItem(
-                      value: ls,
-                      child: Text('${ls.local?.nombre ?? ''} - ${ls.servicio?.nombre ?? ''}'),
-                    );
-                  }).toList(),
-                  onChanged: (value) => setState(() => _selectedLocalServicio = value),
-                  validator: (value) => value == null ? 'Selecciona un local-servicio' : null,
-                ),
+                ] else ...[
+                  DropdownButtonFormField<LocalServicio>(
+                    value: _selectedLocalServicio,
+                    decoration: const InputDecoration(
+                      labelText: 'Local - Servicio',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _localesServicios.map((ls) {
+                      return DropdownMenuItem(
+                        value: ls,
+                        child: Text('${ls.local?.nombre ?? ''} - ${ls.servicio?.nombre ?? ''}'),
+                      );
+                    }).toList(),
+                    onChanged: (value) => setState(() {
+                      _selectedLocalServicio = value;
+                      _datosAdicionalesValores = {};
+                      _datosAdicionalesKey = GlobalKey<DatosAdicionalesFormState>();
+                    }),
+                    validator: (value) => value == null ? 'Selecciona un local-servicio' : null,
+                  ),
+                ],
                 const SizedBox(height: 16),
-                
+
+                // ── Datos del cliente ──
                 // CI
                 TextFormField(
                   controller: _ciCtrl,
@@ -2145,7 +2206,7 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
                   validator: (value) => value?.isEmpty == true ? 'Ingresa el CI' : null,
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Nombre
                 TextFormField(
                   controller: _nombreCtrl,
@@ -2156,7 +2217,7 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
                   validator: (value) => value?.isEmpty == true ? 'Ingresa el nombre' : null,
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Apellidos
                 TextFormField(
                   controller: _apellidosCtrl,
@@ -2167,7 +2228,7 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
                   validator: (value) => value?.isEmpty == true ? 'Ingresa los apellidos' : null,
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Teléfono
                 TextFormField(
                   controller: _telefonoCtrl,
@@ -2179,7 +2240,7 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
                   validator: (value) => value?.isEmpty == true ? 'Ingresa el teléfono' : null,
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Email
                 TextFormField(
                   controller: _emailCtrl,
@@ -2195,7 +2256,7 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
                   },
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Cantidad
                 Row(
                   children: [
@@ -2213,7 +2274,7 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Notas
                 TextFormField(
                   controller: _notasCtrl,
@@ -2223,6 +2284,35 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
                   ),
                   maxLines: 3,
                 ),
+                const SizedBox(height: 16),
+
+                // Campos adicionales del servicio (después de los datos del cliente)
+                if (_selectedLocalServicio?.servicio?.camposAdicionales.isNotEmpty ?? false) ...[
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Información adicional requerida',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 12),
+                        DatosAdicionalesForm(
+                          key: _datosAdicionalesKey,
+                          campos: _selectedLocalServicio!.servicio!.camposAdicionales,
+                          onChanged: (v) => setState(() => _datosAdicionalesValores = v),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 const SizedBox(height: 24),
                 
                 // Submit button
