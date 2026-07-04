@@ -829,7 +829,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
                                   : GestureDetector(
                                       onTap: () async {
                                         final uri = Uri(scheme: 'tel', path: _datoCliente(r, 'telefono'));
-                                        if (await canLaunchUrl(uri)) launchUrl(uri);
+                                        try {
+                                          await launchUrl(uri);
+                                        } catch (_) {}
                                       },
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
@@ -1047,7 +1049,9 @@ class _PhoneRow extends StatelessWidget {
       child: GestureDetector(
         onTap: () async {
           final uri = Uri(scheme: 'tel', path: telefono);
-          if (await canLaunchUrl(uri)) launchUrl(uri);
+          try {
+            await launchUrl(uri);
+          } catch (_) {}
         },
         child: Row(
           children: [

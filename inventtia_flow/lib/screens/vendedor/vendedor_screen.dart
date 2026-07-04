@@ -653,7 +653,9 @@ class _VendedorScreenState extends State<VendedorScreen> {
                             ? GestureDetector(
                                 onTap: () async {
                                   final uri = Uri(scheme: 'tel', path: cli.telefono);
-                                  if (await canLaunchUrl(uri)) launchUrl(uri);
+                                  try {
+                                    await launchUrl(uri);
+                                  } catch (_) {}
                                 },
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
