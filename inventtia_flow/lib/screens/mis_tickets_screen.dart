@@ -3,10 +3,16 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../config/app_theme.dart';
 import '../models/agenda.dart';
+import '../models/entidad.dart';
+import '../models/servicio.dart';
 import '../providers/auth_provider.dart';
+import '../providers/entidad_provider.dart';
+import '../services/agenda_admin_service.dart';
 import '../services/agenda_service.dart';
+import '../services/catalogo_service.dart';
 import '../widgets/datos_adicionales_view.dart';
 import '../widgets/notificaciones_bell.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class MisTicketsScreen extends StatefulWidget {
   const MisTicketsScreen({super.key});
@@ -19,16 +25,51 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
   List<Agenda> _tickets = [];
   List<Agenda> _filteredTickets = [];
   bool _isLoading = true;
+  bool _filtrosExpanded = false;
   final _searchController = TextEditingController();
   bool _isSearching = false;
+
+  DateTime _fecha = DateTime.now();
+  int? _idEstadoFiltro;
+  Local? _localFiltro;
+  LocalServicio? _lsFiltro;
+  List<Local> _locales = [];
+  List<LocalServicio> _localServicios = [];
+  List<EstadoAgenda> _estados = [];
+
+  final _fmt = DateFormat('dd/MM/yyyy');
+  final _fmtDiaSemana = DateFormat('EEEE', 'es');
+
+  bool get _esHoy {
+    final now = DateTime.now();
+    return _fecha.year == now.year &&
+        _fecha.month == now.month &&
+        _fecha.day == now.day;
+  }
+
+  bool get _hayFiltrosActivos =>
+      _idEstadoFiltro != null || _localFiltro != null || _lsFiltro != null;
+
+  Entidad? get _entidad =>
+      context.read<EntidadProvider>().entidadVendedorSeleccionada;
+
+  bool get _esVendedor => _entidad != null;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    final now = DateTime.now();
+    _fecha = DateTime(now.year, now.month, now.day);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadLocales();
+      _load();
+    });
   }
 
-  void reload() => _load();
+  void reload() {
+    _loadLocales();
+    _load();
+  }
 
   @override
   void dispose() {
@@ -39,36 +80,21 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
   void _filterTickets(String query) {
     setState(() {
       _isSearching = query.isNotEmpty;
-      if (query.isEmpty) {
-        _filteredTickets = _tickets;
-      } else {
-        _filteredTickets = _tickets.where((ticket) {
-          final searchLower = query.toLowerCase();
-          final cliente = ticket.cliente;
-          
-          if (cliente == null) return false;
-          
-          // Search by CI
-          if (cliente.ci != null && cliente.ci!.toLowerCase().contains(searchLower)) {
-            return true;
-          }
-          // Search by name
-          if (cliente.nombre != null && cliente.nombre!.toLowerCase().contains(searchLower)) {
-            return true;
-          }
-          // Search by last name
-          if (cliente.apellidos != null && cliente.apellidos!.toLowerCase().contains(searchLower)) {
-            return true;
-          }
-          // Search by full name combination
-          final fullName = cliente.nombreCompleto.toLowerCase();
-          if (fullName.contains(searchLower)) {
-            return true;
-          }
-          return false;
-        }).toList();
-      }
+      _filteredTickets = _applySearch(_tickets, query);
     });
+  }
+
+  String _datoCliente(Agenda r, String clave) {
+    final v = r.datosAdicionales?[clave];
+    if (v != null && v.toString().trim().isNotEmpty) return v.toString().trim();
+    final cli = r.cliente;
+    return switch (clave) {
+      'nombre' => cli?.nombre ?? '-',
+      'apellidos' => cli?.apellidos ?? '-',
+      'ci' => cli?.ci ?? '-',
+      'telefono' => cli?.telefono ?? '-',
+      _ => '-',
+    };
   }
 
   Future<void> _cancelar(Agenda ticket) async {
@@ -139,17 +165,130 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     }
   }
 
+  void _irDia(int delta) {
+    if (_isLoading) return;
+    setState(() {
+      _fecha = _fecha.add(Duration(days: delta));
+      _searchController.clear();
+      _isSearching = false;
+    });
+    _load();
+  }
+
+  Future<void> _pickFecha() async {
+    if (_isLoading) return;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _fecha,
+      firstDate: DateTime(2024),
+      lastDate: DateTime(2028),
+    );
+    if (picked != null) {
+      setState(() {
+        _fecha = DateTime(picked.year, picked.month, picked.day);
+        _searchController.clear();
+        _isSearching = false;
+      });
+      _load();
+    }
+  }
+
+  void _irHoy() {
+    if (_isLoading) return;
+    final now = DateTime.now();
+    setState(() {
+      _fecha = DateTime(now.year, now.month, now.day);
+      _searchController.clear();
+      _isSearching = false;
+    });
+    _load();
+  }
+
+  void _resetFiltros() {
+    if (_isLoading) return;
+    final reservado = _estados.firstWhere(
+      (e) => e.nombre.toLowerCase() == 'reservado',
+      orElse: () => _estados.isNotEmpty
+          ? _estados.first
+          : EstadoAgenda(id: 1, nombre: 'reservado'),
+    );
+    setState(() {
+      _idEstadoFiltro = reservado.id;
+      _localFiltro = null;
+      _lsFiltro = null;
+      _localServicios = [];
+      _filtrosExpanded = false;
+    });
+    _load();
+  }
+
+  Future<void> _onLocalChange(Local? local) async {
+    if (_isLoading) return;
+    setState(() {
+      _localFiltro = local;
+      _lsFiltro = null;
+      _localServicios = [];
+    });
+    if (local != null) {
+      final ls = await CatalogoService.getLocalServicios(idLocal: local.id);
+      if (mounted) setState(() => _localServicios = ls);
+    }
+    _load();
+  }
+
+  Future<void> _loadLocales() async {
+    final entidad = _entidad;
+    if (entidad == null) return;
+    final results = await Future.wait([
+      CatalogoService.getLocalesByEntidad(entidad.id),
+      AgendaService.getEstados(),
+    ]);
+    if (!mounted) return;
+    final estados = results[1] as List<EstadoAgenda>;
+    final reservado = estados.firstWhere(
+      (e) => e.nombre.toLowerCase() == 'reservado',
+      orElse: () => estados.isNotEmpty
+          ? estados.first
+          : EstadoAgenda(id: 1, nombre: 'reservado'),
+    );
+    setState(() {
+      _locales = results[0] as List<Local>;
+      _estados = estados;
+      if (_idEstadoFiltro == null) _idEstadoFiltro = reservado.id;
+    });
+  }
+
   Future<void> _load() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final uuid = context.read<AuthProvider>().user?.id ?? '';
-      // Solo reservas en estado 'reservado' (id = 1)
-      final tickets = await AgendaService.getMisTickets(uuid, idEstado: 1);
+      List<Agenda> tickets;
+      if (_esVendedor) {
+        final entidad = _entidad!;
+        final desde = DateTime(_fecha.year, _fecha.month, _fecha.day);
+        final hasta =
+            DateTime(_fecha.year, _fecha.month, _fecha.day, 23, 59, 59);
+        tickets = await AgendaAdminService.listarAgendasVendedor(
+          uuidUsuario: uuid,
+          idEntidad: entidad.id,
+          idLocal: _localFiltro?.id,
+          idLocalServicio: _lsFiltro?.id,
+          idEstado: _idEstadoFiltro,
+          desde: desde,
+          hasta: hasta,
+        );
+      } else {
+        tickets = await AgendaService.getMisTickets(uuid);
+        tickets.sort((a, b) =>
+            a.fechaHoraReserva.compareTo(b.fechaHoraReserva));
+      }
       if (!mounted) return;
       setState(() {
         _tickets = tickets;
-        _filteredTickets = tickets;
+        _filteredTickets = _isSearching
+            ? _applySearch(tickets, _searchController.text)
+            : tickets;
         _isLoading = false;
       });
     } catch (e) {
@@ -158,34 +297,343 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     }
   }
 
+  List<Agenda> _applySearch(List<Agenda> source, String query) {
+    if (query.isEmpty) return source;
+    final q = query.toLowerCase();
+    return source.where((ticket) {
+      final cli = ticket.cliente;
+      final datos = ticket.datosAdicionales;
+      if (cli != null) {
+        if (cli.ci?.toLowerCase().contains(q) == true) return true;
+        if (cli.nombre?.toLowerCase().contains(q) == true) return true;
+        if (cli.apellidos?.toLowerCase().contains(q) == true) return true;
+        if (cli.nombreCompleto.toLowerCase().contains(q)) return true;
+      }
+      if (datos != null) {
+        if (datos['ci']?.toString().toLowerCase().contains(q) == true) return true;
+        if (datos['nombre']?.toString().toLowerCase().contains(q) == true) return true;
+        if (datos['apellidos']?.toString().toLowerCase().contains(q) == true) return true;
+      }
+      return false;
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.surface,
-      body: Column(
-        children: [
-          _buildHero(),
-          _buildSearchBar(),
-          Expanded(
-            child: _isLoading
-                ? _buildLoading()
-                : _filteredTickets.isEmpty
-                    ? _isSearching ? _buildNoResultsState() : _buildEmptyState()
-                    : RefreshIndicator(
-                        onRefresh: _load,
-                        color: AppTheme.primary,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                          itemCount: _filteredTickets.length,
-                          itemBuilder: (_, i) => _TicketCard(
-                            ticket: _filteredTickets[i],
-                            miUuid:
-                                context.read<AuthProvider>().user?.id ?? '',
-                            onCancelar: _cancelar,
+    return AbsorbPointer(
+      absorbing: _isLoading,
+      child: Scaffold(
+        backgroundColor: AppTheme.surface,
+        body: Column(
+          children: [
+            _buildHero(),
+            if (_esVendedor) _buildBarraFecha(),
+            if (_esVendedor) _buildFiltrosColapsables(),
+            _buildSearchBar(),
+            Expanded(
+              child: GestureDetector(
+                onHorizontalDragEnd: (details) {
+                  if (_isLoading || !_esVendedor) return;
+                  final v = details.primaryVelocity ?? 0;
+                  if (v < -200) _irDia(1);
+                  if (v > 200) _irDia(-1);
+                },
+                child: _isLoading
+                    ? _buildLoading()
+                    : _filteredTickets.isEmpty
+                        ? _isSearching
+                            ? _buildNoResultsState()
+                            : _buildEmptyState()
+                        : RefreshIndicator(
+                            onRefresh: _load,
+                            color: AppTheme.primary,
+                            child: ListView.builder(
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                              itemCount: _filteredTickets.length,
+                              itemBuilder: (_, i) => _TicketCard(
+                                ticket: _filteredTickets[i],
+                                miUuid: context
+                                        .read<AuthProvider>()
+                                        .user
+                                        ?.id ??
+                                    '',
+                                onCancelar: null,
+                              ),
+                            ),
                           ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBarraFecha() {
+    final diaSemana = _fmtDiaSemana.format(_fecha);
+    final diaCapitalizado =
+        diaSemana[0].toUpperCase() + diaSemana.substring(1);
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            tooltip: 'Día anterior',
+            onPressed: _isLoading ? null : () => _irDia(-1),
+            color: AppTheme.primary,
+          ),
+          Expanded(
+            child: InkWell(
+              onTap: _pickFecha,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Column(
+                  children: [
+                    Text(
+                      _fmt.format(_fecha),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: _isLoading
+                            ? AppTheme.textSecondary
+                            : AppTheme.textPrimary,
+                      ),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          diaCapitalizado,
+                          style: const TextStyle(
+                              fontSize: 12, color: AppTheme.textSecondary),
+                        ),
+                        if (_esHoy) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'Hoy',
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: AppTheme.primary,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            tooltip: 'Día siguiente',
+            onPressed: _isLoading ? null : () => _irDia(1),
+            color: AppTheme.primary,
+          ),
+          if (!_esHoy)
+            TextButton(
+              onPressed: _isLoading ? null : _irHoy,
+              style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8)),
+              child: const Text('Hoy',
+                  style: TextStyle(fontSize: 12, color: AppTheme.primary)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFiltrosColapsables() {
+    return Container(
+      color: Colors.white,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: _isLoading
+                ? null
+                : () =>
+                    setState(() => _filtrosExpanded = !_filtrosExpanded),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.filter_list,
+                    size: 16,
+                    color: _hayFiltrosActivos
+                        ? AppTheme.primary
+                        : AppTheme.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      () {
+                        final parts = [
+                          if (_localFiltro != null) _localFiltro!.nombre,
+                          if (_lsFiltro != null)
+                            _lsFiltro!.servicio?.nombre ?? '',
+                          if (_idEstadoFiltro != null)
+                            _estados
+                                .firstWhere(
+                                    (e) => e.id == _idEstadoFiltro,
+                                    orElse: () =>
+                                        EstadoAgenda(id: 0, nombre: ''))
+                                .nombre,
+                        ].where((s) => s.isNotEmpty).join(' · ');
+                        return parts.isNotEmpty ? parts : 'Filtros';
+                      }(),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _hayFiltrosActivos
+                            ? AppTheme.primary
+                            : AppTheme.textSecondary,
+                        fontWeight: _hayFiltrosActivos
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                  if (_filteredTickets.isNotEmpty)
+                    Text(
+                      '${_filteredTickets.length} reserva${_filteredTickets.length == 1 ? '' : 's'}',
+                      style: const TextStyle(
+                          fontSize: 11, color: AppTheme.textSecondary),
+                    ),
+                  const SizedBox(width: 6),
+                  if (_hayFiltrosActivos)
+                    GestureDetector(
+                      onTap: _isLoading ? null : _resetFiltros,
+                      child: const Icon(Icons.clear,
+                          size: 16, color: AppTheme.textSecondary),
+                    )
+                  else
+                    Icon(
+                      _filtrosExpanded
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                      size: 18,
+                      color: AppTheme.textSecondary,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (_filtrosExpanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<Local?>(
+                          value: _localFiltro,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Local',
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            const DropdownMenuItem(
+                                value: null, child: Text('Todos')),
+                            ..._locales.map((l) => DropdownMenuItem(
+                                value: l,
+                                child: Text(l.nombre,
+                                    overflow: TextOverflow.ellipsis))),
+                          ],
+                          onChanged: _isLoading ? null : _onLocalChange,
                         ),
                       ),
-          ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<LocalServicio?>(
+                          value: _lsFiltro,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Servicio',
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            const DropdownMenuItem(
+                                value: null, child: Text('Todos')),
+                            ..._localServicios.map((ls) => DropdownMenuItem(
+                                value: ls,
+                                child: Text(ls.servicio?.nombre ?? '',
+                                    overflow: TextOverflow.ellipsis))),
+                          ],
+                          onChanged: _isLoading
+                              ? null
+                              : (v) {
+                                  setState(() {
+                                    _lsFiltro = v;
+                                    _filtrosExpanded = false;
+                                  });
+                                  _load();
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_estados.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        _FiltroChip(
+                          label: 'Todos',
+                          selected: _idEstadoFiltro == null,
+                          onTap: () {
+                            setState(() {
+                              _idEstadoFiltro = null;
+                              _filtrosExpanded = false;
+                            });
+                            _load();
+                          },
+                        ),
+                        ..._estados.map((e) => _FiltroChip(
+                              label: e.nombre[0].toUpperCase() +
+                                  e.nombre.substring(1),
+                              selected: _idEstadoFiltro == e.id,
+                              onTap: () {
+                                setState(() {
+                                  _idEstadoFiltro = e.id;
+                                  _filtrosExpanded = false;
+                                });
+                                _load();
+                              },
+                            )),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -359,12 +807,12 @@ class _HeroIconButton extends StatelessWidget {
 class _TicketCard extends StatelessWidget {
   final Agenda ticket;
   final String miUuid;
-  final ValueChanged<Agenda> onCancelar;
+  final ValueChanged<Agenda>? onCancelar;
 
   const _TicketCard({
     required this.ticket,
     required this.miUuid,
-    required this.onCancelar,
+    this.onCancelar,
   });
 
   Color get _estadoColor {
@@ -545,80 +993,69 @@ class _TicketCard extends StatelessWidget {
                         color: AppTheme.success,
                       ),
                     ],
-                    if (ticket.datosAdicionales != null &&
-                        ticket.datosAdicionales!.isNotEmpty) ...[
+                    ...[
                       const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surface,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'INFORMACIÓN ADICIONAL',
-                              style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 1,
-                                color: AppTheme.textSecondary
-                                    .withValues(alpha: 0.8),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            DatosAdicionalesView(
-                              valores: ticket.datosAdicionales,
-                              campos: servicio?.camposAdicionales ?? const [],
-                            ),
-                          ],
-                        ),
-                      ),
+                      _ClienteDataSection(ticket: ticket),
                     ],
-                    if (cliente != null) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surface,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'DATOS DEL CLIENTE',
-                              style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 1,
-                                color: AppTheme.textSecondary
-                                    .withValues(alpha: 0.8),
-                              ),
+                    () {
+                      const clavesFijas = {
+                        'nombre', 'apellidos', 'ci',
+                        'telefono', 'email', 'notas',
+                      };
+                      final datos = ticket.datosAdicionales;
+                      if (datos == null) return const SizedBox.shrink();
+                      final camposAdic = servicio?.camposAdicionales ?? [];
+                      final extras = datos.entries
+                          .where((e) =>
+                              !clavesFijas.contains(e.key) &&
+                              e.value != null &&
+                              e.value.toString().trim().isNotEmpty)
+                          .toList();
+                      if (extras.isEmpty) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppTheme.surface,
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                            const SizedBox(height: 8),
-                            if (cliente.nombreCompleto.isNotEmpty)
-                              _ClienteRow(Icons.person_outlined,
-                                  cliente.nombreCompleto),
-                            if (cliente.ci != null && cliente.ci!.isNotEmpty)
-                              _ClienteRow(
-                                  Icons.badge_outlined, 'CI: ${cliente.ci}'),
-                            if (cliente.telefono != null &&
-                                cliente.telefono!.isNotEmpty)
-                              _ClienteRow(
-                                  Icons.phone_outlined, cliente.telefono!),
-                          ],
-                        ),
-                      ),
-                    ],
-                    if (_puedeCancelar) ...[
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'INFORMACIÓN ADICIONAL',
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1,
+                                    color: AppTheme.textSecondary
+                                        .withValues(alpha: 0.8),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                DatosAdicionalesView(
+                                  valores: Map.fromEntries(extras),
+                                  campos: camposAdic
+                                      .where((c) =>
+                                          !clavesFijas.contains(c.clave))
+                                      .toList(),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    }(),
+                    if (_puedeCancelar && onCancelar != null) ...[
                       const SizedBox(height: 14),
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
-                          onPressed: () => onCancelar(ticket),
+                          onPressed: () => onCancelar!(ticket),
                           icon: const Icon(Icons.cancel_outlined, size: 18),
                           label: const Text('Cancelar reserva'),
                           style: OutlinedButton.styleFrom(
@@ -633,6 +1070,118 @@ class _TicketCard extends StatelessWidget {
                     ],
                   ],
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ClienteDataSection extends StatelessWidget {
+  final Agenda ticket;
+  const _ClienteDataSection({required this.ticket});
+
+  String _dato(String clave) {
+    final v = ticket.datosAdicionales?[clave]?.toString().trim();
+    if (v != null && v.isNotEmpty) return v;
+    final cli = ticket.cliente;
+    return switch (clave) {
+      'nombre' => cli?.nombre ?? '',
+      'apellidos' => cli?.apellidos ?? '',
+      'ci' => cli?.ci ?? '',
+      'telefono' => cli?.telefono ?? '',
+      _ => '',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nombre = _dato('nombre');
+    final apellidos = _dato('apellidos');
+    final ci = _dato('ci');
+    final telefono = _dato('telefono');
+    final email = _dato('email');
+    final notas = _dato('notas');
+
+    final nombreCompleto = [nombre, apellidos]
+        .where((s) => s.isNotEmpty)
+        .join(' ');
+
+    final hayDatos = nombreCompleto.isNotEmpty ||
+        ci.isNotEmpty ||
+        telefono.isNotEmpty ||
+        email.isNotEmpty ||
+        notas.isNotEmpty;
+
+    if (!hayDatos) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'DATOS DEL CLIENTE',
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1,
+              color: AppTheme.textSecondary.withValues(alpha: 0.8),
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (nombreCompleto.isNotEmpty)
+            _ClienteRow(Icons.person_outlined, nombreCompleto),
+          if (ci.isNotEmpty)
+            _ClienteRow(Icons.badge_outlined, 'CI: $ci'),
+          if (telefono.isNotEmpty)
+            _TelefonoRow(telefono),
+          if (email.isNotEmpty)
+            _ClienteRow(Icons.email_outlined, email),
+          if (notas.isNotEmpty)
+            _ClienteRow(Icons.notes_outlined, notas),
+        ],
+      ),
+    );
+  }
+}
+
+class _TelefonoRow extends StatelessWidget {
+  final String telefono;
+  const _TelefonoRow(this.telefono);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: GestureDetector(
+        onTap: () async {
+          final uri = Uri(scheme: 'tel', path: telefono);
+          try {
+            await launchUrl(uri);
+          } catch (_) {}
+        },
+        child: Row(
+          children: [
+            const Icon(Icons.phone_outlined, size: 13, color: AppTheme.primary),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                telefono,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  color: AppTheme.primary,
+                  fontWeight: FontWeight.w500,
+                  decoration: TextDecoration.underline,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -691,6 +1240,45 @@ class _ClienteRow extends StatelessWidget {
                     fontWeight: FontWeight.w500)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _FiltroChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _FiltroChip(
+      {required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppTheme.primary
+              : AppTheme.primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected
+                ? AppTheme.primary
+                : AppTheme.primary.withValues(alpha: 0.2),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: selected ? Colors.white : AppTheme.primary,
+          ),
+        ),
       ),
     );
   }

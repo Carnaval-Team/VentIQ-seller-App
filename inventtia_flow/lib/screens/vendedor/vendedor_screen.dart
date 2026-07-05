@@ -18,6 +18,7 @@ import '../../models/servicio.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/entidad_provider.dart';
 import '../../services/agenda_admin_service.dart';
+import '../../services/agenda_service.dart';
 import '../../services/catalogo_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -31,35 +32,61 @@ class VendedorScreen extends StatefulWidget {
 class _VendedorScreenState extends State<VendedorScreen> {
   List<Agenda> _reservas = [];
   bool _loading = true;
+  bool _filtrosExpanded = false;
 
   Local? _localFiltro;
   LocalServicio? _lsFiltro;
-  DateTime? _desde;
-  DateTime? _hasta;
+  late DateTime _fecha;
+  int? _idEstadoFiltro;
 
   List<Local> _locales = [];
   List<LocalServicio> _localServicios = [];
+  List<EstadoAgenda> _estados = [];
 
   final _fmt = DateFormat('dd/MM/yyyy');
+  final _fmtDiaSemana = DateFormat('EEEE', 'es');
   final _fmtHora = DateFormat('dd/MM/yyyy HH:mm');
 
   Entidad? get _entidad =>
       context.read<EntidadProvider>().entidadVendedorSeleccionada;
 
+  DateTime get _desde => DateTime(_fecha.year, _fecha.month, _fecha.day);
+  DateTime get _hasta =>
+      DateTime(_fecha.year, _fecha.month, _fecha.day, 23, 59, 59);
+
+  bool get _esHoy {
+    final now = DateTime.now();
+    return _fecha.year == now.year &&
+        _fecha.month == now.month &&
+        _fecha.day == now.day;
+  }
+
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
-    _desde = DateTime(now.year, now.month, now.day);
-    _hasta = DateTime(now.year, now.month, now.day, 23, 59, 59);
+    _fecha = DateTime(now.year, now.month, now.day);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadFiltros());
   }
 
   Future<void> _loadFiltros() async {
     final entidad = _entidad;
     if (entidad == null) return;
-    final locales = await CatalogoService.getLocalesByEntidad(entidad.id);
-    if (mounted) setState(() => _locales = locales);
+    final results = await Future.wait([
+      CatalogoService.getLocalesByEntidad(entidad.id),
+      AgendaService.getEstados(),
+    ]);
+    if (!mounted) return;
+    final estados = results[1] as List<EstadoAgenda>;
+    final reservado = estados.firstWhere(
+      (e) => e.nombre.toLowerCase() == 'reservado',
+      orElse: () => estados.isNotEmpty ? estados.first : EstadoAgenda(id: 1, nombre: 'reservado'),
+    );
+    setState(() {
+      _locales = results[0] as List<Local>;
+      _estados = estados;
+      _idEstadoFiltro = reservado.id;
+    });
     await _load();
   }
 
@@ -75,6 +102,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
         idEntidad: entidad.id,
         idLocal: _localFiltro?.id,
         idLocalServicio: _lsFiltro?.id,
+        idEstado: _idEstadoFiltro,
         desde: _desde,
         hasta: _hasta,
       );
@@ -90,7 +118,29 @@ class _VendedorScreenState extends State<VendedorScreen> {
     }
   }
 
+  void _irDia(int delta) {
+    if (_loading) return;
+    setState(() => _fecha = _fecha.add(Duration(days: delta)));
+    _load();
+  }
+
+  Future<void> _pickFecha() async {
+    if (_loading) return;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _fecha,
+      firstDate: DateTime(2024),
+      lastDate: DateTime(2028),
+    );
+    if (picked != null) {
+      setState(
+          () => _fecha = DateTime(picked.year, picked.month, picked.day));
+      _load();
+    }
+  }
+
   Future<void> _onLocalChange(Local? local) async {
+    if (_loading) return;
     setState(() {
       _localFiltro = local;
       _lsFiltro = null;
@@ -103,42 +153,25 @@ class _VendedorScreenState extends State<VendedorScreen> {
     _load();
   }
 
-  Future<void> _pickDesde() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _desde ?? DateTime.now(),
-      firstDate: DateTime(2024),
-      lastDate: DateTime(2028),
-    );
-    if (picked != null) {
-      setState(() =>
-          _desde = DateTime(picked.year, picked.month, picked.day));
-      _load();
-    }
-  }
-
-  Future<void> _pickHasta() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _hasta ?? DateTime.now(),
-      firstDate: DateTime(2024),
-      lastDate: DateTime(2028),
-    );
-    if (picked != null) {
-      setState(() => _hasta =
-          DateTime(picked.year, picked.month, picked.day, 23, 59, 59));
-      _load();
-    }
-  }
-
-  void _clearFiltros() {
+  void _irHoy() {
+    if (_loading) return;
     final now = DateTime.now();
+    setState(() => _fecha = DateTime(now.year, now.month, now.day));
+    _load();
+  }
+
+  void _resetFiltros() {
+    if (_loading) return;
+    final reservado = _estados.firstWhere(
+      (e) => e.nombre.toLowerCase() == 'reservado',
+      orElse: () => _estados.isNotEmpty ? _estados.first : EstadoAgenda(id: 1, nombre: 'reservado'),
+    );
     setState(() {
       _localFiltro = null;
       _lsFiltro = null;
       _localServicios = [];
-      _desde = DateTime(now.year, now.month, now.day);
-      _hasta = DateTime(now.year, now.month, now.day, 23, 59, 59);
+      _idEstadoFiltro = reservado.id;
+      _filtrosExpanded = false;
     });
     _load();
   }
@@ -189,8 +222,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
     if (_localFiltro != null) parts.add('Local: ${_localFiltro!.nombre}');
     if (_lsFiltro != null)
       parts.add('Servicio: ${_lsFiltro!.servicio?.nombre ?? ''}');
-    if (_desde != null) parts.add('Desde: ${_fmt.format(_desde!)}');
-    if (_hasta != null) parts.add('Hasta: ${_fmt.format(_hasta!)}');
+    parts.add('Fecha: ${_fmt.format(_fecha)}');
     return parts.join('  ·  ');
   }
 
@@ -362,208 +394,372 @@ class _VendedorScreenState extends State<VendedorScreen> {
       );
     }
 
-    return Scaffold(
-      backgroundColor: AppTheme.surface,
-      appBar: AppBar(
-        title: entidadProv.misEntidadesComoVendedor.length == 1
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Reservas'),
-                  Text(entidad.denominacion,
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w400)),
-                ],
-              )
-            : DropdownButtonHideUnderline(
-                child: DropdownButton<int>(
-                  value: entidad.id,
-                  icon: const Icon(Icons.expand_more,
-                      color: AppTheme.textPrimary),
-                  style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary),
-                  onChanged: (id) {
-                    if (id == null) return;
-                    entidadProv.seleccionarEntidadVendedor(
-                        entidadProv.misEntidadesComoVendedor
-                            .firstWhere((e) => e.id == id));
-                    setState(() {
-                      _localFiltro = null;
-                      _lsFiltro = null;
-                      _localServicios = [];
-                      _locales = [];
-                      _reservas = [];
-                    });
-                    _loadFiltros();
-                  },
-                  items: entidadProv.misEntidadesComoVendedor
-                      .map((e) => DropdownMenuItem(
-                            value: e.id,
-                            child: Text(e.denominacion,
-                                overflow: TextOverflow.ellipsis),
-                          ))
-                      .toList(),
+    return AbsorbPointer(
+      absorbing: _loading,
+      child: Scaffold(
+        backgroundColor: AppTheme.surface,
+        appBar: AppBar(
+          title: entidadProv.misEntidadesComoVendedor.length == 1
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Reservas'),
+                    Text(entidad.denominacion,
+                        style: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w400)),
+                  ],
+                )
+              : DropdownButtonHideUnderline(
+                  child: DropdownButton<int>(
+                    value: entidad.id,
+                    icon: const Icon(Icons.expand_more,
+                        color: AppTheme.textPrimary),
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary),
+                    onChanged: _loading
+                        ? null
+                        : (id) {
+                            if (id == null) return;
+                            entidadProv.seleccionarEntidadVendedor(
+                                entidadProv.misEntidadesComoVendedor
+                                    .firstWhere((e) => e.id == id));
+                            setState(() {
+                              _localFiltro = null;
+                              _lsFiltro = null;
+                              _localServicios = [];
+                              _locales = [];
+                              _reservas = [];
+                            });
+                            _loadFiltros();
+                          },
+                    items: entidadProv.misEntidadesComoVendedor
+                        .map((e) => DropdownMenuItem(
+                              value: e.id,
+                              child: Text(e.denominacion,
+                                  overflow: TextOverflow.ellipsis),
+                            ))
+                        .toList(),
+                  ),
                 ),
-              ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            tooltip: 'Exportar PDF',
-            onPressed: _reservas.isEmpty ? null : _exportPdf,
-          ),
-          IconButton(
-            icon: const Icon(Icons.table_chart_outlined),
-            tooltip: 'Exportar Excel',
-            onPressed: _reservas.isEmpty ? null : _exportExcel,
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _load,
-          ),
-        ],
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
-          child: Column(
-            children: [
-              _buildFiltros(),
-              const Divider(height: 1),
-              Expanded(
-                child: _loading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _reservas.isEmpty
-                        ? _buildEmpty()
-                        : RefreshIndicator(
-                            onRefresh: _load,
-                            child: _buildTabla(),
-                          ),
-              ),
-            ],
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              tooltip: 'Exportar PDF',
+              onPressed: _reservas.isEmpty || _loading ? null : _exportPdf,
+            ),
+            IconButton(
+              icon: const Icon(Icons.table_chart_outlined),
+              tooltip: 'Exportar Excel',
+              onPressed: _reservas.isEmpty || _loading ? null : _exportExcel,
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _loading ? null : _load,
+            ),
+          ],
+        ),
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 900),
+            child: Column(
+              children: [
+                _buildBarraFecha(),
+                _buildFiltrosColapsables(),
+                const Divider(height: 1),
+                Expanded(
+                  child: GestureDetector(
+                    onHorizontalDragEnd: (details) {
+                      if (_loading) return;
+                      final v = details.primaryVelocity ?? 0;
+                      if (v < -200) _irDia(1);
+                      if (v > 200) _irDia(-1);
+                    },
+                    child: _loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _reservas.isEmpty
+                            ? _buildEmpty()
+                            : RefreshIndicator(
+                                onRefresh: _load,
+                                child: _buildTabla(),
+                              ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildFiltros() {
+  Widget _buildBarraFecha() {
+    final diaSemana = _fmtDiaSemana.format(_fecha);
+    final diaCapitalizado =
+        diaSemana[0].toUpperCase() + diaSemana.substring(1);
+
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      child: Column(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<Local?>(
-                  value: _localFiltro,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Local',
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Todos')),
-                    ..._locales.map((l) => DropdownMenuItem(
-                        value: l,
-                        child: Text(l.nombre,
-                            overflow: TextOverflow.ellipsis))),
-                  ],
-                  onChanged: _onLocalChange,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonFormField<LocalServicio?>(
-                  value: _lsFiltro,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Servicio',
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Todos')),
-                    ..._localServicios.map((ls) => DropdownMenuItem(
-                        value: ls,
-                        child: Text(ls.servicio?.nombre ?? '',
-                            overflow: TextOverflow.ellipsis))),
-                  ],
-                  onChanged: (v) {
-                    setState(() => _lsFiltro = v);
-                    _load();
-                  },
-                ),
-              ),
-            ],
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            tooltip: 'Día anterior',
+            onPressed: _loading ? null : () => _irDia(-1),
+            color: AppTheme.primary,
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: InkWell(
-                  onTap: _pickDesde,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'Desde',
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      suffixIcon: Icon(Icons.calendar_today, size: 16),
+          Expanded(
+            child: InkWell(
+              onTap: _pickFecha,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Column(
+                  children: [
+                    Text(
+                      _fmt.format(_fecha),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: _loading
+                            ? AppTheme.textSecondary
+                            : AppTheme.textPrimary,
+                      ),
                     ),
-                    child: Text(
-                      _desde != null ? _fmt.format(_desde!) : '-',
-                      style: const TextStyle(fontSize: 13),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          diaCapitalizado,
+                          style: const TextStyle(
+                              fontSize: 12, color: AppTheme.textSecondary),
+                        ),
+                        if (_esHoy) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'Hoy',
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: AppTheme.primary,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                  ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: InkWell(
-                  onTap: _pickHasta,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'Hasta',
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      suffixIcon: Icon(Icons.calendar_today, size: 16),
-                    ),
-                    child: Text(
-                      _hasta != null ? _fmt.format(_hasta!) : '-',
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.clear, color: AppTheme.textSecondary),
-                tooltip: 'Limpiar filtros',
-                onPressed: _clearFiltros,
-              ),
-            ],
+            ),
           ),
-          if (_reservas.isNotEmpty)
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            tooltip: 'Día siguiente',
+            onPressed: _loading ? null : () => _irDia(1),
+            color: AppTheme.primary,
+          ),
+          if (!_esHoy)
+            TextButton(
+              onPressed: _loading ? null : _irHoy,
+              style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8)),
+              child: const Text('Hoy',
+                  style: TextStyle(fontSize: 12, color: AppTheme.primary)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFiltrosColapsables() {
+    final hayFiltrosActivos = _localFiltro != null || _lsFiltro != null || _idEstadoFiltro != null;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      color: Colors.white,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: _loading
+                ? null
+                : () =>
+                    setState(() => _filtrosExpanded = !_filtrosExpanded),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.filter_list,
+                    size: 16,
+                    color: hayFiltrosActivos
+                        ? AppTheme.primary
+                        : AppTheme.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      () {
+                        final parts = [
+                          if (_localFiltro != null) _localFiltro!.nombre,
+                          if (_lsFiltro != null) _lsFiltro!.servicio?.nombre ?? '',
+                          if (_idEstadoFiltro != null)
+                            _estados
+                                .firstWhere((e) => e.id == _idEstadoFiltro,
+                                    orElse: () => EstadoAgenda(id: 0, nombre: ''))
+                                .nombre,
+                        ].where((s) => s.isNotEmpty).join(' · ');
+                        return parts.isNotEmpty ? parts : 'Filtros';
+                      }(),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: hayFiltrosActivos
+                            ? AppTheme.primary
+                            : AppTheme.textSecondary,
+                        fontWeight: hayFiltrosActivos
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                  if (_reservas.isNotEmpty)
+                    Text(
+                      '${_reservas.length} reserva${_reservas.length == 1 ? '' : 's'}',
+                      style: const TextStyle(
+                          fontSize: 11, color: AppTheme.textSecondary),
+                    ),
+                  const SizedBox(width: 6),
+                  if (hayFiltrosActivos)
+                    GestureDetector(
+                      onTap: _loading ? null : _resetFiltros,
+                      child: const Icon(Icons.clear,
+                          size: 16, color: AppTheme.textSecondary),
+                    )
+                  else
+                    Icon(
+                      _filtrosExpanded
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                      size: 18,
+                      color: AppTheme.textSecondary,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (_filtrosExpanded)
             Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  '${_reservas.length} reserva${_reservas.length == 1 ? '' : 's'}',
-                  style: const TextStyle(
-                      fontSize: 12, color: AppTheme.textSecondary),
-                ),
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              child: Column(
+                children: [
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<Local?>(
+                          value: _localFiltro,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Local',
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            const DropdownMenuItem(
+                                value: null, child: Text('Todos')),
+                            ..._locales.map((l) => DropdownMenuItem(
+                                value: l,
+                                child: Text(l.nombre,
+                                    overflow: TextOverflow.ellipsis))),
+                          ],
+                          onChanged: _loading ? null : _onLocalChange,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<LocalServicio?>(
+                          value: _lsFiltro,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Servicio',
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            const DropdownMenuItem(
+                                value: null, child: Text('Todos')),
+                            ..._localServicios.map((ls) => DropdownMenuItem(
+                                value: ls,
+                                child: Text(ls.servicio?.nombre ?? '',
+                                    overflow: TextOverflow.ellipsis))),
+                          ],
+                          onChanged: _loading
+                              ? null
+                              : (v) {
+                                  setState(() {
+                                    _lsFiltro = v;
+                                    _filtrosExpanded = false;
+                                  });
+                                  _load();
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_estados.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        _EstadoChip(
+                          label: 'Todos',
+                          selected: _idEstadoFiltro == null,
+                          onTap: _loading
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _idEstadoFiltro = null;
+                                    _filtrosExpanded = false;
+                                  });
+                                  _load();
+                                },
+                        ),
+                        ..._estados.map((e) => _EstadoChip(
+                              label: e.nombre[0].toUpperCase() +
+                                  e.nombre.substring(1),
+                              selected: _idEstadoFiltro == e.id,
+                              onTap: _loading
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _idEstadoFiltro = e.id;
+                                        _filtrosExpanded = false;
+                                      });
+                                      _load();
+                                    },
+                            )),
+                      ],
+                    ),
+                  ],
+                ],
               ),
             ),
         ],
@@ -704,6 +900,43 @@ class _VendedorScreenState extends State<VendedorScreen> {
           const Text('Sin reservas para los filtros aplicados',
               style: TextStyle(color: AppTheme.textSecondary)),
         ],
+      ),
+    );
+  }
+}
+
+class _EstadoChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+  const _EstadoChip({required this.label, required this.selected, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppTheme.primary
+              : AppTheme.primary.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected
+                ? AppTheme.primary
+                : AppTheme.primary.withOpacity(0.2),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: selected ? Colors.white : AppTheme.primary,
+          ),
+        ),
       ),
     );
   }

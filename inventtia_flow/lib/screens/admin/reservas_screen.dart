@@ -20,6 +20,7 @@ import '../../services/agenda_admin_service.dart';
 import '../../services/agenda_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/notificacion_service.dart';
+import '../../widgets/datos_adicionales_form.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ReservasScreen extends StatefulWidget {
@@ -171,6 +172,23 @@ class _ReservasScreenState extends State<ReservasScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _editarReserva(Agenda reserva) async {
+    final camposAdicionales =
+        reserva.localServicio?.servicio?.camposAdicionales ?? const <CampoAdicional>[];
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _EditarReservaSheet(
+        reserva: reserva,
+        camposAdicionales: camposAdicionales,
+        onSaved: _load,
+      ),
+    );
   }
 
   Future<void> _onLocalChange(Local? local) async {
@@ -865,23 +883,41 @@ class _ReservasScreenState extends State<ReservasScreen> {
                                   ),
                                 )),
                             DataCell(
-                              puedeCancelar
-                                  ? IconButton(
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined,
+                                        color: AppTheme.primary, size: 18),
+                                    tooltip: 'Editar datos',
+                                    padding: EdgeInsets.zero,
+                                    constraints:
+                                        const BoxConstraints(minWidth: 28),
+                                    onPressed: () => _editarReserva(r),
+                                  ),
+                                  if (puedeCancelar)
+                                    IconButton(
                                       icon: const Icon(Icons.cancel_outlined,
-                                          color: AppTheme.error, size: 20),
+                                          color: AppTheme.error, size: 18),
                                       tooltip: 'Cancelar reserva',
                                       padding: EdgeInsets.zero,
                                       constraints:
-                                          const BoxConstraints(minWidth: 32),
+                                          const BoxConstraints(minWidth: 28),
                                       onPressed: () => _cancelarReserva(r),
                                     )
-                                  : const Text(
-                                      'Cancelada',
-                                      style: TextStyle(
-                                          fontSize: 10,
-                                          color: AppTheme.error,
-                                          fontStyle: FontStyle.italic),
+                                  else
+                                    const Padding(
+                                      padding: EdgeInsets.only(left: 4),
+                                      child: Text(
+                                        'Cancelada',
+                                        style: TextStyle(
+                                            fontSize: 10,
+                                            color: AppTheme.error,
+                                            fontStyle: FontStyle.italic),
+                                      ),
                                     ),
+                                ],
+                              ),
                             ),
                           ]);
                         }).toList(),
@@ -910,6 +946,294 @@ class _ReservasScreenState extends State<ReservasScreen> {
           const Text('Sin reservas para los filtros aplicados',
               style: TextStyle(color: AppTheme.textSecondary)),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bottom sheet para editar datos del cliente de una reserva
+// ─────────────────────────────────────────────────────────────────────────────
+class _EditarReservaSheet extends StatefulWidget {
+  final Agenda reserva;
+  final List<CampoAdicional> camposAdicionales;
+  final VoidCallback onSaved;
+  const _EditarReservaSheet({
+    required this.reserva,
+    required this.camposAdicionales,
+    required this.onSaved,
+  });
+
+  @override
+  State<_EditarReservaSheet> createState() => _EditarReservaSheetState();
+}
+
+class _EditarReservaSheetState extends State<_EditarReservaSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _datosAdicionalesKey = GlobalKey<DatosAdicionalesFormState>();
+
+  late final TextEditingController _ciCtrl;
+  late final TextEditingController _nombreCtrl;
+  late final TextEditingController _apellidosCtrl;
+  late final TextEditingController _telefonoCtrl;
+  late final TextEditingController _emailCtrl;
+  late final TextEditingController _notasCtrl;
+
+  Map<String, dynamic> _datosAdicionalesValores = {};
+  bool _saving = false;
+
+  String _dato(String clave) {
+    final v = widget.reserva.datosAdicionales?[clave];
+    if (v != null && v.toString().trim().isNotEmpty) return v.toString().trim();
+    final cli = widget.reserva.cliente;
+    return switch (clave) {
+      'nombre' => cli?.nombre ?? '',
+      'apellidos' => cli?.apellidos ?? '',
+      'ci' => cli?.ci ?? '',
+      'telefono' => cli?.telefono ?? '',
+      _ => '',
+    };
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _ciCtrl = TextEditingController(text: _dato('ci'));
+    _nombreCtrl = TextEditingController(text: _dato('nombre'));
+    _apellidosCtrl = TextEditingController(text: _dato('apellidos'));
+    _telefonoCtrl = TextEditingController(text: _dato('telefono'));
+    _emailCtrl = TextEditingController(
+        text: widget.reserva.datosAdicionales?['email']?.toString() ?? '');
+    _notasCtrl = TextEditingController(
+        text: widget.reserva.datosAdicionales?['notas']?.toString() ?? '');
+    // Valores iniciales de campos adicionales (para pre-poblar el form)
+    _datosAdicionalesValores = {
+      for (final c in widget.camposAdicionales)
+        if (widget.reserva.datosAdicionales?[c.clave] != null)
+          c.clave: widget.reserva.datosAdicionales![c.clave],
+    };
+  }
+
+  @override
+  void dispose() {
+    _ciCtrl.dispose();
+    _nombreCtrl.dispose();
+    _apellidosCtrl.dispose();
+    _telefonoCtrl.dispose();
+    _emailCtrl.dispose();
+    _notasCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _guardar() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (widget.camposAdicionales.isNotEmpty &&
+        _datosAdicionalesKey.currentState != null &&
+        !_datosAdicionalesKey.currentState!.validar()) return;
+
+    setState(() => _saving = true);
+    try {
+      final datos = <String, dynamic>{
+        ...?widget.reserva.datosAdicionales,
+        'ci': _ciCtrl.text.trim(),
+        'nombre': _nombreCtrl.text.trim(),
+        'apellidos': _apellidosCtrl.text.trim(),
+        'telefono': _telefonoCtrl.text.trim(),
+        'email': _emailCtrl.text.trim(),
+        'notas': _notasCtrl.text.trim(),
+      };
+      if (widget.camposAdicionales.isNotEmpty &&
+          _datosAdicionalesKey.currentState != null) {
+        datos.addAll(_datosAdicionalesKey.currentState!.valores);
+      }
+
+      await AgendaAdminService.actualizarDatosReserva(
+        idAgenda: widget.reserva.id,
+        datosAdicionales: datos,
+      );
+
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onSaved();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Datos actualizados'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Error al guardar'),
+            content: Text(e.toString().replaceFirst('Exception: ', '')),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Aceptar'),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Editar datos del cliente',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          'Reserva #${widget.reserva.id} · '
+                          '${widget.reserva.localServicio?.servicio?.nombre ?? ''}',
+                          style: const TextStyle(
+                              fontSize: 12, color: AppTheme.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.grey.shade100,
+                      foregroundColor: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              TextFormField(
+                controller: _ciCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'CI',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) =>
+                    v?.trim().isEmpty == true ? 'Ingresa el CI' : null,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _nombreCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) =>
+                    v?.trim().isEmpty == true ? 'Ingresa el nombre' : null,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _apellidosCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Apellidos',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) =>
+                    v?.trim().isEmpty == true ? 'Ingresa los apellidos' : null,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _telefonoCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Teléfono',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _emailCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Email',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _notasCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Notas',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+              if (widget.camposAdicionales.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Información adicional',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 12),
+                      DatosAdicionalesForm(
+                        key: _datosAdicionalesKey,
+                        campos: widget.camposAdicionales,
+                        initialValues: _datosAdicionalesValores,
+                        onChanged: (v) =>
+                            setState(() => _datosAdicionalesValores = v),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: _saving ? null : _guardar,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: _saving
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2))
+                    : const Text('Guardar cambios',
+                        style: TextStyle(fontSize: 16)),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

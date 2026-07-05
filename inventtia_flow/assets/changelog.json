@@ -1,8 +1,35 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.3.0",
-  "build": 4,
+  "current_version": "1.3.1",
+  "build": 5,
   "changelogs": [
+    {
+      "version": "1.3.1",
+      "date": "2026-07-05",
+      "title": "🗂️ Mejoras en la vista de reservas para trabajadores",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Filtro por fecha para trabajadores",
+          "description": "Los trabajadores pueden navegar entre días deslizando o usando las flechas, con la opción de volver al día de hoy con un toque."
+        },
+        {
+          "type": "feature",
+          "title": "Filtro por estado en reservas del trabajador",
+          "description": "La vista de reservas del trabajador muestra por defecto solo las reservas en estado Reservado, y permite filtrar por cualquier estado disponible."
+        },
+        {
+          "type": "feature",
+          "title": "Filtros por local y servicio para trabajadores",
+          "description": "Los trabajadores pueden filtrar las reservas de la entidad por local y servicio desde un panel colapsable."
+        },
+        {
+          "type": "improvement",
+          "title": "Datos del cliente reorganizados",
+          "description": "La sección de datos del cliente ahora muestra nombre, apellidos, CI, teléfono, email y notas de forma separada. Los datos adicionales del servicio se muestran en su propia sección."
+        }
+      ]
+    },
     {
       "version": "1.3.0",
       "date": "2026-07-03",

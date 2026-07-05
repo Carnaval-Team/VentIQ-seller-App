@@ -84,7 +84,7 @@ class AgendaService {
   }
 
   static Future<List<Agenda>> getMisTickets(String uuidUsuario,
-      {int? idEstado}) async {
+      {int? idEstado, DateTime? desde, DateTime? hasta}) async {
     try {
       final res = await _supabase.schema(_schema).rpc('cliente_obtener_agendas', params: {
         'p_uuid_usuario': uuidUsuario,
@@ -92,7 +92,18 @@ class AgendaService {
       });
       if (res == null) return [];
       final list = res as List;
-      return list.map((e) => Agenda.fromJson(e as Map<String, dynamic>)).toList();
+      var tickets = list.map((e) => Agenda.fromJson(e as Map<String, dynamic>)).toList();
+      if (desde != null) {
+        tickets = tickets
+            .where((t) => !t.fechaHoraReserva.isBefore(desde))
+            .toList();
+      }
+      if (hasta != null) {
+        tickets = tickets
+            .where((t) => !t.fechaHoraReserva.isAfter(hasta))
+            .toList();
+      }
+      return tickets;
     } catch (e) {
       throw handleSchemaPermissionError(Exception(e.toString()));
     }

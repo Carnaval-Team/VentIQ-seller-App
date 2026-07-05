@@ -58,6 +58,17 @@ class AgendaAdminService {
     }
   }
 
+  static Future<void> actualizarDatosReserva({
+    required int idAgenda,
+    required Map<String, dynamic> datosAdicionales,
+  }) async {
+    await _supabase
+        .schema(_schema)
+        .from('agenda')
+        .update({'datos_adicionales': datosAdicionales})
+        .eq('id', idAgenda);
+  }
+
   static Future<List<Agenda>> listarAgendasVendedor({
     required String uuidUsuario,
     int? idEntidad,

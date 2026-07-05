@@ -15,7 +15,8 @@ import '../models/campo_adicional.dart';
 class DatosAdicionalesForm extends StatefulWidget {
   final List<CampoAdicional> campos;
   final ValueChanged<Map<String, dynamic>>? onChanged;
-  const DatosAdicionalesForm({super.key, required this.campos, this.onChanged});
+  final Map<String, dynamic>? initialValues;
+  const DatosAdicionalesForm({super.key, required this.campos, this.onChanged, this.initialValues});
 
   @override
   State<DatosAdicionalesForm> createState() => DatosAdicionalesFormState();
@@ -30,10 +31,12 @@ class DatosAdicionalesFormState extends State<DatosAdicionalesForm> {
   void initState() {
     super.initState();
     for (final c in widget.campos) {
+      final initVal = widget.initialValues?[c.clave]?.toString();
       if (c.tipo == TipoCampo.select) {
-        _selects[c.clave] = null;
+        final opts = c.opciones;
+        _selects[c.clave] = (initVal != null && opts.contains(initVal)) ? initVal : null;
       } else {
-        final ctrl = TextEditingController();
+        final ctrl = TextEditingController(text: initVal ?? '');
         ctrl.addListener(_notifyChange);
         _ctrls[c.clave] = ctrl;
       }
