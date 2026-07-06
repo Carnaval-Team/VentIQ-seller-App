@@ -14,11 +14,11 @@
 -- ============================================================================
 
 create or replace function flow.admin_crear_reserva_directa(
-  p_uuid_admin        uuid,
   p_id_local_servicio integer,
   p_fecha             date,
   p_cantidad          integer default null,
-  p_datos_adicionales jsonb   default null
+  p_datos_adicionales jsonb   default null,
+  p_uuid_admin        uuid    default null
 )
 returns jsonb
 language plpgsql
@@ -37,9 +37,12 @@ declare
   v_nombre_servicio   text;
   v_nombre_local      text;
   v_cant              integer;
+  v_uuid_admin        uuid;
   v_es_admin          boolean;
 begin
-  if p_uuid_admin is null or p_id_local_servicio is null or p_fecha is null then
+  v_uuid_admin := coalesce(p_uuid_admin, auth.uid());
+
+  if v_uuid_admin is null or p_id_local_servicio is null or p_fecha is null then
     return jsonb_build_object('ok', false, 'error', 'parametros obligatorios faltantes');
   end if;
 
@@ -51,10 +54,10 @@ begin
     join flow.entidad e on e.id = l.id_entidad
     where ls.id = p_id_local_servicio
       and (
-        e.owner_uuid = p_uuid_admin
+        e.owner_uuid = v_uuid_admin
         or exists (
           select 1 from flow.entidad_admin ea
-          where ea.id_entidad = e.id and ea.uuid_usuario = p_uuid_admin
+          where ea.id_entidad = e.id and ea.uuid_usuario = v_uuid_admin
         )
       )
   ) into v_es_admin;
@@ -62,6 +65,7 @@ begin
   if not v_es_admin then
     return jsonb_build_object('ok', false, 'error', 'No tienes permisos de administrador sobre este servicio');
   end if;
+
 
   -- Serializa con la cola y el bot del MISMO servicio.
   perform pg_advisory_xact_lock(hashtext('flow.sala_espera'), p_id_local_servicio);
@@ -121,8 +125,8 @@ begin
     (uuid_usuario, id_local_servicio, id_estado, fecha_hora_reserva,
      cantidad, datos_adicionales, reservado_por)
   values
-    (p_uuid_admin, p_id_local_servicio, v_estado, v_fecha_ts,
-     v_cant, p_datos_adicionales, p_uuid_admin)
+    (v_uuid_admin, p_id_local_servicio, v_estado, v_fecha_ts,
+     v_cant, p_datos_adicionales, v_uuid_admin)
   returning id into v_id_agenda;
 
   update flow.plan_servicios
@@ -144,5 +148,5 @@ exception
 end;
 $$;
 
-revoke all on function flow.admin_crear_reserva_directa(uuid, integer, date, integer, jsonb) from public;
-grant execute on function flow.admin_crear_reserva_directa(uuid, integer, date, integer, jsonb) to authenticated;
+revoke all on function flow.admin_crear_reserva_directa(integer, date, integer, jsonb, uuid) from public;
+grant execute on function flow.admin_crear_reserva_directa(integer, date, integer, jsonb, uuid) to authenticated;

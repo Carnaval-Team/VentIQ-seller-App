@@ -2056,19 +2056,6 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
       return;
     }
 
-    final uuid = context.read<AuthProvider>().user?.id;
-    if (uuid == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No se pudo obtener el usuario autenticado'),
-            backgroundColor: AppTheme.error,
-          ),
-        );
-      }
-      return;
-    }
-
     setState(() => _saving = true);
     try {
       final datosAdicionales = <String, dynamic>{
@@ -2084,7 +2071,6 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
       }
 
       await AgendaAdminService.crearReservaDirecta(
-        uuidAdmin: uuid,
         idLocalServicio: _selectedLocalServicio!.id,
         fecha: widget.dia,
         cantidad: _cantidad,

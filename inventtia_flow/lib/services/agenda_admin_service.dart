@@ -31,21 +31,25 @@ class AgendaAdminService {
   }
 
   static Future<void> crearReservaDirecta({
-    required String uuidAdmin,
     required int idLocalServicio,
     required DateTime fecha,
     int? cantidad,
     Map<String, dynamic>? datosAdicionales,
   }) async {
     try {
+      String? uuid = _supabase.auth.currentUser?.id;
+      if (uuid == null) {
+        final resp = await _supabase.auth.getUser();
+        uuid = resp.user?.id;
+      }
       final res = await _supabase.schema(_schema).rpc(
         'admin_crear_reserva_directa',
         params: {
-          'p_uuid_admin': uuidAdmin,
           'p_id_local_servicio': idLocalServicio,
           'p_fecha': fecha.toIso8601String().substring(0, 10),
           if (cantidad != null) 'p_cantidad': cantidad,
           if (datosAdicionales != null) 'p_datos_adicionales': datosAdicionales,
+          if (uuid != null) 'p_uuid_admin': uuid,
         },
       );
       final json = res as Map<String, dynamic>;
