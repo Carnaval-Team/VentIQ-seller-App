@@ -57,23 +57,23 @@ function safeCaption(text: string): string {
 // Encabezados rotativos estilo marketing — se elige uno aleatorio por mensaje
 // para variar el tono entre productos (no spam-y).
 const MARKETING_HEADERS = [
-  "✨ *¡NUEVO EN LA TIENDA!* ✨",
-  "🔥 *OFERTA DEL DÍA* 🔥",
-  "🎁 *SORPRESA PARA TI*",
-  "⭐ *RECOMENDADO*",
-  "🛍️ *DESCÚBRELO HOY*",
-  "💎 *EXCLUSIVO*",
+  "✨ *NUEVO EN TIENDA* ✨",
+  "🔥 *OFERTA DE HOY* 🔥",
+  "⭐ *LO MÁS PEDIDO*",
+  "🛍️ *YA DISPONIBLE*",
+  "💎 *SELECCIÓN ESPECIAL*",
   "🚀 *RECIÉN LLEGADO*",
-  "🎉 *NO TE LO PUEDES PERDER*",
+  "🌟 *DESTACADO DE LA SEMANA*",
+  "🎉 *TE VA A ENCANTAR*",
 ];
 
 const MARKETING_CTAS = [
-  "👉 *¡Pídelo ahora!* Disponibilidad limitada.",
-  "📲 Escríbenos para hacer tu pedido.",
-  "🛒 *¡Apártalo antes que se agote!*",
-  "💬 Responde a este mensaje para reservarlo.",
-  "⚡ Stock limitado — *no esperes más.*",
-  "🎯 *Cómpralo hoy* y recíbelo pronto.",
+  "🏬 *Visítanos* y llévatelo hoy mismo.",
+  "📍 Te esperamos en la tienda.",
+  "🛒 Ven a verlo — *disponible en tienda.*",
+  "💬 Escríbenos si quieres más información.",
+  "🕒 Pásate por la tienda y compruébalo.",
+  "😊 *Te esperamos* — calidad garantizada.",
 ];
 
 function pick<T>(arr: T[], seed: number): T {
