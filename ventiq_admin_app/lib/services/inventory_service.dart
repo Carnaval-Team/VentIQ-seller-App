@@ -493,6 +493,91 @@ class InventoryService {
     }
   }
 
+  /// Get adjustment details for a whole session using multiple operation IDs.
+  /// Used as fallback when the embedded `detalles.items` is unavailable.
+  static Future<Map<String, dynamic>> getAdjustmentDetailsByIds(
+    List<int> operationIds,
+  ) async {
+    try {
+      if (operationIds.isEmpty) return {'details': []};
+
+      print('🔍 Obteniendo detalles de ajuste para ${operationIds.length} operaciones: $operationIds');
+
+      final response = await _supabase
+          .from('app_dat_ajuste_inventario')
+          .select('''
+            id,
+            id_producto,
+            id_variante,
+            id_ubicacion,
+            cantidad_anterior,
+            cantidad_nueva,
+            diferencia,
+            created_at,
+            app_dat_producto:id_producto (
+              id,
+              denominacion,
+              sku,
+              codigo_barras
+            )
+          ''')
+          .inFilter('id_operacion', operationIds)
+          .order('id', ascending: true);
+
+      print('✅ Detalles de ajuste (sesión) obtenidos: ${(response as List).length} registros');
+
+      final details = <Map<String, dynamic>>[];
+      for (final item in response as List) {
+        final producto = item['app_dat_producto'];
+        final idUbicacion = item['id_ubicacion'];
+
+        String ubicacionNombre = 'N/A';
+        String almacenNombre = 'N/A';
+        if (idUbicacion != null) {
+          try {
+            final locationResponse = await _supabase
+                .from('app_dat_layout_almacen')
+                .select('''
+                  denominacion,
+                  id_almacen,
+                  app_dat_almacen:id_almacen (
+                    denominacion
+                  )
+                ''')
+                .eq('id', idUbicacion)
+                .single();
+            ubicacionNombre = locationResponse['denominacion'] ?? 'N/A';
+            final almacen = locationResponse['app_dat_almacen'];
+            almacenNombre = almacen?['denominacion'] ?? 'N/A';
+          } catch (e) {
+            print('⚠️ No se pudo obtener ubicación $idUbicacion: $e');
+          }
+        }
+
+        details.add({
+          'id': item['id'],
+          'cantidad_anterior': item['cantidad_anterior'],
+          'cantidad_nueva': item['cantidad_nueva'],
+          'diferencia': item['diferencia'],
+          'producto_nombre': producto?['denominacion'] ?? 'Producto',
+          'producto': {
+            'denominacion': producto?['denominacion'] ?? 'Producto',
+            'codigo_barras': producto?['codigo_barras'],
+            'sku': producto?['sku'],
+          },
+          'ubicacion': ubicacionNombre,
+          'almacen': almacenNombre,
+          'created_at': item['created_at'],
+        });
+      }
+
+      return {'details': details};
+    } catch (e) {
+      print('❌ Error al obtener detalles de ajuste (multi-op): $e');
+      rethrow;
+    }
+  }
+
   /// Get inventory products using fn_listar_inventario_productos RPC with pagination
   static Future<InventoryResponse> getInventoryProducts({
     String? busqueda,
@@ -661,26 +746,25 @@ class InventoryService {
     }
   }
 
-  /// Unified transfer function between layouts
-  /// Creates extraction and reception operations to handle inventory movements
+  /// Transferencia atómica entre layouts vía RPC en Supabase.
+  /// Extracción + recepción + vínculo + cierre en una sola transacción.
   static Future<Map<String, dynamic>> transferBetweenLayouts({
     required int idLayoutOrigen,
     required int idLayoutDestino,
     required List<Map<String, dynamic>> productos,
     required String autorizadoPor,
     required String observaciones,
-    int estadoInicial = 1, // 1 = Pendiente, 2 = Confirmado
+    bool completarOperaciones = true,
+    @Deprecated('Usar completarOperaciones') int? estadoInicial,
   }) async {
     try {
-      print('🔄 Iniciando transferencia entre layouts...');
+      print('🔄 Transferencia atómica (fn_transferir_inventario_entre_layouts)...');
       print(
         '📦 Layout origen: $idLayoutOrigen → Layout destino: $idLayoutDestino',
       );
-      print('📦 Productos a transferir: ${productos.length}');
+      print('📦 Productos: ${productos.length}');
 
       final userUuid = await _prefsService.getUserId();
-
-      // Obtener ID de tienda desde usuario autenticado
       final userData = await _prefsService.getUserData();
       final idTiendaRaw = userData['idTienda'];
       final idTienda =
@@ -694,165 +778,79 @@ class InventoryService {
         );
       }
 
-      print('👤 Usuario UUID: $userUuid');
-      print('🏪 ID Tienda (desde usuario): $idTienda');
-
-      // Validate required fields in productos
-      for (var producto in productos) {
+      for (final producto in productos) {
         if (producto['id_producto'] == null || producto['cantidad'] == null) {
-          throw Exception('Cada producto debe tener: id_producto y cantidad');
+          throw Exception('Cada producto debe tener id_producto y cantidad');
         }
       }
 
-      // Step 1: Create extraction operation (ID 7 - salida de almacén origen)
-      print('📋 Paso 1: Creando operación de extracción (Tipo 7)...');
+      final completar =
+          estadoInicial != null ? estadoInicial == 2 : completarOperaciones;
 
-      final extractionProducts = await processProductsForExtraction(productos);
-
-      final extractionResult = await insertCompleteExtraction(
-        autorizadoPor: autorizadoPor,
-        estadoInicial: estadoInicial,
-        idMotivoOperacion:
-            7, // ID correcto para salida de almacén por transferencia
-        idTienda: idTienda,
-        observaciones: 'Extracción para transferencia: $observaciones',
-        productos: extractionProducts,
-        uuid: userUuid,
-      );
-
-      if (extractionResult['status'] != 'success') {
-        throw Exception('Error en extracción: ${extractionResult['message']}');
-      }
-
-      final idExtraccion = extractionResult['id_operacion'];
-      print('✅ Extracción creada con ID: $idExtraccion');
-
-      // Step 2: Create reception operation (ID 8 - entrada por transferencia)
-      print('📋 Paso 2: Creando operación de recepción (Tipo 8)...');
-
-      final receptionProducts = <Map<String, dynamic>>[];
-
-      for (final p in productos) {
-        // Obtener último precio de compra para este producto
-        final idProducto = p['id_producto'] as int;
-        final lastPurchasePrice = await _getLastPurchasePrice(idProducto);
-
-        print(
-          '💰 Producto $idProducto - Último precio de compra: $lastPurchasePrice',
-        );
-
-        receptionProducts.add({
+      final productosRpc = productos.map((p) {
+        final map = <String, dynamic>{
           'id_producto': p['id_producto'],
-          'id_variante': p['id_variante'],
-          'id_opcion_variante': p['id_opcion_variante'],
-          'id_presentacion': p['id_presentacion'],
           'cantidad': p['cantidad'],
-          'precio_unitario': lastPurchasePrice, // Usar último precio de compra
-          'id_ubicacion': idLayoutDestino,
-          'id_motivo_operacion':
-              2, // ID correcto para entrada por transferencia
-        });
-      }
+        };
+        if (p['id_variante'] != null) map['id_variante'] = p['id_variante'];
+        if (p['id_opcion_variante'] != null) {
+          map['id_opcion_variante'] = p['id_opcion_variante'];
+        }
+        if (p['id_presentacion'] != null) {
+          map['id_presentacion'] = p['id_presentacion'];
+        }
+        return map;
+      }).toList();
 
-      print('✅ Productos preparados para recepción con precios de compra');
-
-      final processedReceptionProducts = await processProductsForReception(
-        receptionProducts,
+      final response = await _supabase.rpc(
+        'fn_transferir_inventario_entre_layouts',
+        params: {
+          'p_id_layout_origen': idLayoutOrigen,
+          'p_id_layout_destino': idLayoutDestino,
+          'p_productos': productosRpc,
+          'p_autorizado_por': autorizadoPor,
+          'p_observaciones': observaciones,
+          'p_id_tienda': idTienda,
+          'p_uuid': userUuid,
+          'p_completar_operaciones': completar,
+          'p_moneda_factura': 'USD',
+        },
       );
 
-      final receptionResult = await insertInventoryReception(
-        entregadoPor: autorizadoPor,
-        idTienda: idTienda,
-        montoTotal: processedReceptionProducts.fold<double>(
-          0.0,
-          (sum, p) =>
-              sum +
-              ((p['cantidad'] as double) * (p['precio_unitario'] as double)),
-        ),
-        motivo: 2, // ID del motivo de recepción por transferencia
-        observaciones: 'Transferencia: $observaciones',
-        productos: processedReceptionProducts,
-        recibidoPor: autorizadoPor,
-        uuid: userUuid,
-        monedaFactura: 'USD',
-      );
+      print('📦 Respuesta RPC transferencia: $response');
 
-      if (receptionResult['status'] != 'success') {
-        throw Exception('Error en recepción: ${receptionResult['message']}');
+      if (response == null) {
+        throw Exception('Respuesta nula del servidor');
       }
 
-      final idRecepcion = receptionResult['id_operacion'];
-      print('✅ Recepción creada con ID: $idRecepcion');
+      final result = Map<String, dynamic>.from(response as Map);
 
-      // Step 3: If estadoInicial is 2 (confirmed), complete the operations immediately
-      if (estadoInicial == 2) {
-        print('📋 Paso 3: Confirmando transferencia automáticamente...');
-
-        // Complete extraction operation (accounting for inventory out)
-        print('📤 Contabilizando extracción...');
-        final completeExtractionResult = await completeOperation(
-          idOperacion: idExtraccion,
-          comentario:
-              'Extracción de transferencia completada automáticamente - $observaciones',
-          uuid: userUuid,
-        );
-
-        print(
-          '📋 Resultado completeOperation (extracción): $completeExtractionResult',
-        );
-
-        if (completeExtractionResult['status'] != 'success') {
-          print(
-            '⚠️ Error al completar extracción: ${completeExtractionResult['message']}',
-          );
-        } else {
-          print('✅ Extracción completada exitosamente');
-          print(
-            '📊 Productos afectados (extracción): ${completeExtractionResult['productos_afectados']}',
-          );
-        }
-
-        // Complete reception operation (accounting for inventory in)
-        print('📥 Contabilizando recepción...');
-        final completeReceptionResult = await completeOperation(
-          idOperacion: idRecepcion,
-          comentario:
-              'Recepción de transferencia completada automáticamente - $observaciones',
-          uuid: userUuid,
-        );
-
-        print(
-          '📋 Resultado completeOperation (recepción): $completeReceptionResult',
-        );
-
-        if (completeReceptionResult['status'] != 'success') {
-          print(
-            '⚠️ Error al completar recepción: ${completeReceptionResult['message']}',
-          );
-        } else {
-          print('✅ Recepción completada exitosamente');
-          print(
-            '📊 Productos afectados (recepción): ${completeReceptionResult['productos_afectados']}',
-          );
-        }
-
-        // Check if both operations completed successfully
-        if (completeExtractionResult['status'] != 'success' ||
-            completeReceptionResult['status'] != 'success') {
-          print(
-            '⚠️ Advertencia: Error al completar operaciones automáticamente',
-          );
-        }
+      if (result['status'] != 'success') {
+        return {
+          'status': 'error',
+          'message':
+              result['message']?.toString() ??
+              'Error en transferencia entre layouts',
+          ...result,
+        };
       }
 
-      print('✅ Transferencia completada exitosamente');
+      print('✅ Transferencia OK');
+      print('   - Extracción: ${result['id_extraccion']}');
+      print('   - Recepción: ${result['id_recepcion']}');
+      print('   - Op. transferencia: ${result['id_operacion_transferencia']}');
+
       return {
         'status': 'success',
-        'message': 'Transferencia entre layouts completada exitosamente',
-        'id_extraccion': idExtraccion,
-        'id_recepcion': idRecepcion,
-        'total_productos': productos.length,
-        'estado': estadoInicial == 2 ? 'confirmado' : 'pendiente',
+        'message':
+            result['message']?.toString() ??
+            'Transferencia entre layouts completada exitosamente',
+        'id_extraccion': result['id_extraccion'],
+        'id_recepcion': result['id_recepcion'],
+        'id_operacion_transferencia': result['id_operacion_transferencia'],
+        'total_productos':
+            result['total_productos'] ?? productos.length,
+        'estado': result['estado'] ?? (completar ? 'completado' : 'pendiente'),
       };
     } catch (e) {
       print('❌ Error en transferencia: $e');
@@ -2244,7 +2242,7 @@ class InventoryService {
       print('  - includeZero: $includeZero');
 
       final response = await _supabase.rpc(
-        'obtener_reporte_inventario_completo3',
+        'obtener_reporte_inventario_completo4',
         params: {
           'p_id_tienda': idTienda,
           'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
@@ -2283,6 +2281,66 @@ class InventoryService {
       return inventoryList;
     } catch (e) {
       print('❌ Error in getInventarioSimple: $e');
+      rethrow;
+    }
+  }
+
+  /// Obtiene inventario basado en movimientos (v5) para exportación
+  static Future<List<Map<String, dynamic>>> getInventarioMovimientos({
+    int? idAlmacen,
+    int? idTienda,
+    DateTime? fechaHasta,
+    DateTime? fechaDesde,
+    bool includeZero = false,
+  }) async {
+    try {
+      print('🔍 Calling obtener_reporte_inventario_completo5 with params:');
+      print('  - idAlmacen: $idAlmacen');
+      print('  - idTienda: $idTienda');
+      print('  - fechaDesde: ${fechaDesde?.toIso8601String().split('T')[0]}');
+      print('  - fechaHasta: ${fechaHasta != null ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59' : null}');
+      print('  - includeZero: $includeZero');
+
+      final response = await _supabase.rpc(
+        'obtener_reporte_inventario_completo5',
+        params: {
+          'p_id_tienda': idTienda,
+          'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
+          'p_fecha_hasta': fechaHasta != null
+              ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59'
+              : null,
+          'p_id_almacen': idAlmacen,
+          'p_include_zero': includeZero,
+        },
+      );
+
+      print('📦 Response received: ${response?.length ?? 0} items');
+      print(response);
+      print('Respuesta completa: $response');
+      print('Tipo: ${response.runtimeType}');
+      print('Es lista: ${response is List}');
+      print('Es mapa: ${response is Map}');
+      if (response == null) {
+        print('❌ Response is null');
+        return [];
+      }
+
+      if (response is! List) {
+        print('❌ Response is not a List, got: ${response.runtimeType}');
+        return [];
+      }
+
+      final List<Map<String, dynamic>> inventoryList = [];
+      for (final item in response) {
+        if (item is Map<String, dynamic>) {
+          inventoryList.add(item);
+        }
+      }
+
+      print('✅ Processed ${inventoryList.length} inventory items');
+      return inventoryList;
+    } catch (e) {
+      print('❌ Error in getInventarioMovimientos: $e');
       rethrow;
     }
   }
@@ -2778,7 +2836,6 @@ class InventoryService {
             'origen_cambio':      1, // 1 = recepción
             'id_recepcion':       idRP,
             'id_proveedor':       rp['id_proveedor'],
-            'created_at':         DateTime.now().toIso8601String(),
           });
           print('   ✅ Recepción: producto $idProducto  +$cantidad  (${cantidadInicial} → ${cantidadInicial + cantidad})');
         }
@@ -2835,7 +2892,6 @@ class InventoryService {
             'sku_ubicacion':      ep['sku_ubicacion'],
             'origen_cambio':      2, // 2 = extracción
             'id_extraccion':      idEP,
-            'created_at':         DateTime.now().toIso8601String(),
           });
           print('   ✅ Extracción: producto $idProducto  -$cantidad  (${cantidadInicial} → ${cantidadInicial - cantidad})');
         }
@@ -2944,14 +3000,27 @@ class InventoryService {
           esDevolucion = (envioRecepcion['tipo_envio'] as int?) == 2 || 
                         (movimientoEnvio != null && (movimientoEnvio['tipo_movimiento'] as int?) == 2);
         }
-        
-        if (esDevolucion) {
-          print('⚠️ Esta es una operación de DEVOLUCIÓN - NO se actualizarán los precios promedio');
+
+        // Verificar si esta recepción pertenece a una transferencia.
+        // motivo = 2 en app_dat_operacion_recepcion indica entrada por transferencia.
+        // Este valor se graba cuando se crea la recepción (antes de completeOperation),
+        // a diferencia de app_dat_operacion_transferencia que se inserta después desde la pantalla.
+        final recepcionDetalle = await _supabase
+            .from('app_dat_operacion_recepcion')
+            .select('motivo')
+            .eq('id_operacion', idOperacion)
+            .maybeSingle();
+        final esTransferencia = (recepcionDetalle?['motivo'] as int?) == 2;
+
+        if (esDevolucion || esTransferencia) {
+          final motivo = esDevolucion ? 'devolución' : 'transferencia';
+          print('⚠️ Esta es una operación de ${motivo.toUpperCase()} - NO se actualizarán los precios promedio');
           return {
             'success': true,
-            'message': 'Operación completada (devolución - precios no actualizados)',
+            'message': 'Operación completada ($motivo - precios no actualizados)',
             'operacion_completada': true,
-            'es_devolucion': true,
+            'es_devolucion': esDevolucion,
+            'es_transferencia': esTransferencia,
           };
         }
         
@@ -3648,6 +3717,20 @@ class InventoryService {
       print('📊 Actualizando precio promedio de productos...');
       print('   - ID Operación: $idOperacion');
       print('   - Productos a procesar: ${productos.length}');
+
+      final recepcionDetalle = await _supabase
+          .from('app_dat_operacion_recepcion')
+          .select('motivo')
+          .eq('id_operacion', idOperacion)
+          .maybeSingle();
+      if ((recepcionDetalle?['motivo'] as int?) == 2) {
+        print('⚠️ Recepción por transferencia — no se actualiza precio de costo');
+        return {
+          'status': 'success',
+          'message': 'Transferencia: precio de costo no actualizado',
+          'productos_actualizados': 0,
+        };
+      }
 
       // Convertir productos a formato JSON para enviar a la función
       final productosJson = productos.map((p) {

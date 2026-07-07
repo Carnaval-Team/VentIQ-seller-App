@@ -13,6 +13,7 @@ DECLARE
     v_ingrediente RECORD;
     v_cantidad_ingrediente_devolver NUMERIC;
     v_ultimo_inventario RECORD;
+    v_es_recepcion BOOLEAN := FALSE;
     v_response jsonb;
 BEGIN
     -- Inicializar respuesta
@@ -57,8 +58,17 @@ BEGIN
         NOW()
     );
 
-    -- Si es una devolución o cancelación, devolver productos al inventario
-    IF p_nuevo_estado IN (3, 4) THEN
+    -- Recepciones: al cancelar (4) o devolver (3) NO se retorna stock al inventario.
+    -- Cancelar una recepción revierte el hecho de haber recibido mercancía, no debe sumar existencias.
+    SELECT EXISTS (
+        SELECT 1
+        FROM app_dat_operacion_recepcion orp
+        WHERE orp.id_operacion = p_id_operacion
+    ) INTO v_es_recepcion;
+
+    -- Si es devolución o cancelación de una operación con EXTRACCIÓN, devolver stock.
+    -- Las recepciones solo cambian de estado; no insertan movimientos de inventario aquí.
+    IF p_nuevo_estado IN (3, 4) AND NOT v_es_recepcion THEN
         -- Recuperar los productos extraídos originalmente
         FOR v_productos_extraidos IN (
             SELECT 

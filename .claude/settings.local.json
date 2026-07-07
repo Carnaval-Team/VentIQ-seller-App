@@ -12,12 +12,18 @@
       "Bash(flutter pub:*)",
       "Bash(curl:*)",
       "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch:*)",
-      "WebSearch",
-      "WebFetch(domain:pub.dev)",
-      "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(xargs wc:*)",
+      "Bash(xargs -I {} basename {})",
+      "Bash(Get-ChildItem *)",
+      "Bash(dir .\\\\inventtia_muevete\\\\docs\\\\migrations\\\\ *)",
       "mcp__ide__getDiagnostics",
-      "Bash(awk END{print NR} *)"
+      "WebFetch(domain:vsieeihstajlrdvpuooh.supabase.co)",
+      "PowerShell(npx -y skills find \"flutter best practices\" 2>&1 | Select-Object -First 100)",
+      "WebFetch(domain:skills.sh)",
+      "Bash(command -v mkdir)"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "supabase"
+  ]
 }

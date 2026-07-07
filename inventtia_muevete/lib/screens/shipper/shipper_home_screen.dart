@@ -1,18 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_theme.dart';
 import '../../models/carga_model.dart';
+import '../../models/estado_carga_model.dart';
 import '../../models/oferta_carga_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/carga_provider.dart';
+import '../../providers/nomencladores_provider.dart';
+import '../../utils/peso_unidad_util.dart';
 import '../../providers/theme_provider.dart';
-import '../../widgets/map_widget.dart';
+import '../../widgets/carga_fechas_section.dart';
+import '../../widgets/carga_mercancia_equipo_section.dart';
+import '../../widgets/route_map_widget.dart';
 import 'cargo_location_picker_screen.dart';
 import 'carrier_directory_screen.dart';
+import '../common/unified_profile_screen.dart';
 
 class ShipperHomeScreen extends StatefulWidget {
   const ShipperHomeScreen({super.key});
@@ -68,11 +73,20 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen>
         ),
         actions: [
           IconButton(
+            icon: Icon(Icons.person_outline, color: textPrimary),
+            tooltip: 'Mi Perfil',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const UnifiedProfileScreen()),
+            ),
+          ),
+          IconButton(
             icon: Icon(Icons.logout, color: textPrimary),
             onPressed: () async {
               await context.read<AuthProvider>().signOut();
               if (context.mounted) {
-                Navigator.pushReplacementNamed(context, '/login');
+                Navigator.pushReplacementNamed(context, '/landing');
               }
             },
           ),
@@ -110,9 +124,111 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen>
 // Tab 1 – Mis Cargas
 // ──────────────────────────────────────────────────────────────────────────────
 
-class _MisCargasTab extends StatelessWidget {
+class _MisCargasTab extends StatefulWidget {
   final VoidCallback onTabSwitch;
   const _MisCargasTab({required this.onTabSwitch});
+
+  @override
+  State<_MisCargasTab> createState() => _MisCargasTabState();
+}
+
+class _MisCargasTabState extends State<_MisCargasTab> {
+  // ── Filter state ──────────────────────────────────────────────────────────
+  bool _showFilters = false;
+
+  // Estados excluidos por defecto
+  final Set<String> _estadosExcluidos = {'cancelada', 'entregada', 'completada'};
+
+  // Text filters
+  final _origenCtrl = TextEditingController();
+  final _destinoCtrl = TextEditingController();
+  final _mercanciaCtrl = TextEditingController();
+  String? _tipoSeleccionado;     // FTL / LTL
+  String? _prioridadSeleccionada;
+  String? _estadoSeleccionado;   // null = todos los no-excluidos
+  bool? _requiereRefrigeracion;
+  bool? _requiereSeguro;
+  bool? _destacada;
+
+  @override
+  void dispose() {
+    _origenCtrl.dispose();
+    _destinoCtrl.dispose();
+    _mercanciaCtrl.dispose();
+    super.dispose();
+  }
+
+  List<CargaModel> _applyFilters(List<CargaModel> all) {
+    return all.where((c) {
+      // Estado base: excluir cancelada/entregada/completada salvo filtro explícito
+      if (_estadoSeleccionado == null) {
+        if (_estadosExcluidos.contains(c.estado)) return false;
+      } else {
+        if (c.estado != _estadoSeleccionado) return false;
+      }
+      // Origen
+      final origen = _origenCtrl.text.trim().toLowerCase();
+      if (origen.isNotEmpty) {
+        final val = (c.ciudadOrigen ?? c.dirOrigen).toLowerCase();
+        if (!val.contains(origen)) return false;
+      }
+      // Destino
+      final destino = _destinoCtrl.text.trim().toLowerCase();
+      if (destino.isNotEmpty) {
+        final val = (c.ciudadDestino ?? c.dirDestino).toLowerCase();
+        if (!val.contains(destino)) return false;
+      }
+      // Mercancía
+      final merc = _mercanciaCtrl.text.trim().toLowerCase();
+      if (merc.isNotEmpty) {
+        final val = (c.tipoMercancia ?? '').toLowerCase();
+        if (!val.contains(merc)) return false;
+      }
+      // Tipo FTL/LTL
+      if (_tipoSeleccionado != null) {
+        if (_tipoSeleccionado == 'LTL' && !c.esLtl) return false;
+        if (_tipoSeleccionado == 'FTL' && c.esLtl) return false;
+      }
+      // Prioridad
+      if (_prioridadSeleccionada != null && c.prioridad != _prioridadSeleccionada) {
+        return false;
+      }
+      // Opcionales
+      if (_requiereRefrigeracion != null && c.requiereRefrigeracion != _requiereRefrigeracion) {
+        return false;
+      }
+      if (_requiereSeguro != null && c.requiereSeguro != _requiereSeguro) {
+        return false;
+      }
+      if (_destacada != null && c.destacada != _destacada) return false;
+      return true;
+    }).toList();
+  }
+
+  bool get _hasActiveFilters =>
+      _origenCtrl.text.trim().isNotEmpty ||
+      _destinoCtrl.text.trim().isNotEmpty ||
+      _mercanciaCtrl.text.trim().isNotEmpty ||
+      _tipoSeleccionado != null ||
+      _prioridadSeleccionada != null ||
+      _estadoSeleccionado != null ||
+      _requiereRefrigeracion != null ||
+      _requiereSeguro != null ||
+      _destacada != null;
+
+  void _clearFilters() {
+    setState(() {
+      _origenCtrl.clear();
+      _destinoCtrl.clear();
+      _mercanciaCtrl.clear();
+      _tipoSeleccionado = null;
+      _prioridadSeleccionada = null;
+      _estadoSeleccionado = null;
+      _requiereRefrigeracion = null;
+      _requiereSeguro = null;
+      _destacada = null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -127,44 +243,430 @@ class _MisCargasTab extends StatelessWidget {
       return _EmptyState(
         icon: Icons.inventory_2_outlined,
         title: 'Sin cargas publicadas',
-        subtitle:
-            'Publica tu primera carga para recibir ofertas de transportistas.',
+        subtitle: 'Publica tu primera carga para recibir ofertas de transportistas.',
         actionLabel: 'Publicar Carga',
-        onAction: onTabSwitch,
+        onAction: widget.onTabSwitch,
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: () {
-        final uid =
-            context.read<AuthProvider>().user?.id;
-        if (uid != null) {
-          return context.read<CargaProvider>().loadMisCargas(uid);
-        }
-        return Future.value();
-      },
-      child: ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemCount: provider.misCargas.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, i) {
-          final carga = provider.misCargas[i];
-          return _CargaCard(
-            carga: carga,
-            isDark: isDark,
-            onTap: () => _showDetalle(context, carga, isDark),
-          );
-        },
-      ),
+    final filtered = _applyFilters(provider.misCargas);
+
+    return Column(
+      children: [
+        // ── Filter toolbar ────────────────────────────────────────────────
+        Container(
+          color: isDark ? AppTheme.darkCard : Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${filtered.length} carga${filtered.length != 1 ? 's' : ''}',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white70 : Colors.grey[700],
+                  ),
+                ),
+              ),
+              if (_hasActiveFilters)
+                TextButton.icon(
+                  onPressed: _clearFilters,
+                  icon: const Icon(Icons.clear, size: 14),
+                  label: const Text('Limpiar', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.error,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              IconButton(
+                onPressed: () => setState(() => _showFilters = !_showFilters),
+                icon: Icon(
+                  _showFilters ? Icons.filter_list_off : Icons.filter_list,
+                  color: _hasActiveFilters ? AppTheme.primaryColor : (isDark ? Colors.white54 : Colors.grey[600]),
+                ),
+                tooltip: 'Filtros',
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        ),
+
+        // ── Filter panel ──────────────────────────────────────────────────
+        if (_showFilters)
+          Container(
+            color: isDark ? AppTheme.darkSurface : Colors.grey[50],
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Row 1: Origen / Destino
+                Row(
+                  children: [
+                    Expanded(child: _FilterField(ctrl: _origenCtrl, label: 'Origen', isDark: isDark, onChanged: () => setState(() {}))),
+                    const SizedBox(width: 8),
+                    Expanded(child: _FilterField(ctrl: _destinoCtrl, label: 'Destino', isDark: isDark, onChanged: () => setState(() {}))),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Row 2: Mercancía / Tipo
+                Row(
+                  children: [
+                    Expanded(child: _FilterField(ctrl: _mercanciaCtrl, label: 'Mercancía', isDark: isDark, onChanged: () => setState(() {}))),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _FilterDropdown<String>(
+                        label: 'Tipo',
+                        value: _tipoSeleccionado,
+                        items: const [
+                          DropdownMenuItem(value: 'FTL', child: Text('FTL – Completo')),
+                          DropdownMenuItem(value: 'LTL', child: Text('LTL – Parcial')),
+                        ],
+                        isDark: isDark,
+                        onChanged: (v) => setState(() => _tipoSeleccionado = v),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Row 3: Prioridad / Estado
+                Row(
+                  children: [
+                    Expanded(
+                      child: _FilterDropdown<String>(
+                        label: 'Prioridad',
+                        value: _prioridadSeleccionada,
+                        items: const [
+                          DropdownMenuItem(value: 'normal', child: Text('Normal')),
+                          DropdownMenuItem(value: 'alta', child: Text('Alta')),
+                          DropdownMenuItem(value: 'urgente', child: Text('Urgente')),
+                        ],
+                        isDark: isDark,
+                        onChanged: (v) => setState(() => _prioridadSeleccionada = v),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _FilterDropdown<String>(
+                        label: 'Estado',
+                        value: _estadoSeleccionado,
+                        items: const [
+                          DropdownMenuItem(value: 'publicada', child: Text('Publicada')),
+                          DropdownMenuItem(value: 'en_matching', child: Text('En Matching')),
+                          DropdownMenuItem(value: 'ofertada', child: Text('Con Ofertas')),
+                          DropdownMenuItem(value: 'aceptada', child: Text('Aceptada')),
+                          DropdownMenuItem(value: 'tomada', child: Text('Tomada')),
+                          DropdownMenuItem(value: 'en_transito', child: Text('En Tránsito')),
+                          DropdownMenuItem(value: 'completada_carrier', child: Text('Completada (Carrier)')),
+                          DropdownMenuItem(value: 'entregada', child: Text('Entregada')),
+                          DropdownMenuItem(value: 'completada', child: Text('Completada')),
+                          DropdownMenuItem(value: 'cancelada', child: Text('Cancelada')),
+                        ],
+                        isDark: isDark,
+                        onChanged: (v) => setState(() => _estadoSeleccionado = v),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Row 4: toggles
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    _FilterChip(
+                      label: 'Refrigeración',
+                      value: _requiereRefrigeracion,
+                      onChanged: (v) => setState(() => _requiereRefrigeracion = v),
+                      isDark: isDark,
+                    ),
+                    _FilterChip(
+                      label: 'Seguro',
+                      value: _requiereSeguro,
+                      onChanged: (v) => setState(() => _requiereSeguro = v),
+                      isDark: isDark,
+                    ),
+                    _FilterChip(
+                      label: 'Destacada',
+                      value: _destacada,
+                      onChanged: (v) => setState(() => _destacada = v),
+                      isDark: isDark,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+        // ── Table ─────────────────────────────────────────────────────────
+        Expanded(
+          child: filtered.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.search_off, size: 48, color: isDark ? Colors.white24 : Colors.grey[300]),
+                      const SizedBox(height: 12),
+                      Text('Sin resultados para los filtros aplicados',
+                          style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[500])),
+                    ],
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: () {
+                    final uid = context.read<AuthProvider>().user?.id;
+                    if (uid != null) return context.read<CargaProvider>().loadMisCargas(uid);
+                    return Future.value();
+                  },
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return SingleChildScrollView(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                            child: DataTable(
+                              showCheckboxColumn: false,
+                              columnSpacing: 10,
+                              horizontalMargin: 12,
+                              headingRowHeight: 38,
+                              dataRowMinHeight: 44,
+                              dataRowMaxHeight: 56,
+                              headingRowColor: WidgetStateProperty.all(
+                                isDark ? AppTheme.darkCard : Colors.grey[100],
+                              ),
+                              columns: [
+                                DataColumn(label: _hdr('Prioridad', isDark)),
+                                DataColumn(label: _hdr('Origen', isDark)),
+                                DataColumn(label: _hdr('Destino', isDark)),
+                                DataColumn(label: _hdr('Tipo', isDark)),
+                                DataColumn(label: _hdr('Equipo', isDark)),
+                                DataColumn(label: _hdr('Mercancía', isDark)),
+                                DataColumn(label: _hdr('Peso', isDark)),
+                                DataColumn(label: _hdr('Dist.', isDark)),
+                                DataColumn(label: _hdr('Precio', isDark)),
+                                DataColumn(label: _hdr('Recogida', isDark)),
+                                DataColumn(label: _hdr('Ofertas', isDark)),
+                                DataColumn(label: _hdr('Estado', isDark)),
+                              ],
+                              rows: filtered.map((c) {
+                                final now = DateTime.now();
+                                final vencida = c.fechaRecogida != null &&
+                                    c.fechaRecogida!.isBefore(DateTime(now.year, now.month, now.day)) &&
+                                    !['tomada', 'en_transito', 'completada_carrier', 'entregada', 'completada'].contains(c.estado);
+                                final peso = c.pesoDisplay ?? '—';
+                                final dist = c.distanciaKm != null
+                                    ? '${c.distanciaKm!.toStringAsFixed(0)} km'
+                                    : '—';
+                                final precio = c.precioOfertado != null
+                                    ? '\$${c.precioOfertado!.toStringAsFixed(0)} ${c.moneda}'
+                                    : '—';
+                                final recogida = c.fechaRecogida != null
+                                    ? '${c.fechaRecogida!.day.toString().padLeft(2, '0')}/'
+                                        '${c.fechaRecogida!.month.toString().padLeft(2, '0')}/'
+                                        '${c.fechaRecogida!.year}'
+                                    : '—';
+                                final ofertas = c.ofertasCount != null && c.ofertasCount! > 0
+                                    ? '${c.ofertasCount}'
+                                    : '—';
+                                return DataRow(
+                                  color: vencida
+                                      ? WidgetStateProperty.all(Colors.red.withValues(alpha: isDark ? 0.18 : 0.07))
+                                      : null,
+                                  onSelectChanged: (_) => _showDetalle(context, c, isDark),
+                                  cells: [
+                                    DataCell(_ShipperPrioridadBadge(prioridad: c.prioridad)),
+                                    DataCell(_cel(c.ciudadOrigen ?? c.dirOrigen, isDark, bold: true)),
+                                    DataCell(_cel(c.ciudadDestino ?? c.dirDestino, isDark, bold: true)),
+                                    DataCell(_EstadoBadge(estado: c.tipoLabel, color: AppTheme.primaryColor)),
+                                    DataCell(_cel(c.tipoEquipo?.toUpperCase() ?? '—', isDark)),
+                                    DataCell(_cel(c.tipoMercancia ?? '—', isDark)),
+                                    DataCell(_cel(peso, isDark)),
+                                    DataCell(_cel(dist, isDark)),
+                                    DataCell(Text(precio,
+                                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.primaryColor))),
+                                    DataCell(Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (vencida)
+                                          Padding(
+                                            padding: const EdgeInsets.only(right: 4),
+                                            child: Icon(Icons.warning_amber_rounded, size: 14, color: Colors.red[700]),
+                                          ),
+                                        Text(recogida,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: vencida ? Colors.red[700] : (isDark ? Colors.white : const Color(0xFF1A1D27)),
+                                              fontWeight: vencida ? FontWeight.w700 : FontWeight.normal,
+                                            )),
+                                      ],
+                                    )),
+                                    DataCell(ofertas == '—'
+                                        ? _cel('—', isDark)
+                                        : _EstadoBadge(estado: '$ofertas oferta(s)', color: Colors.amber[800]!)),
+                                    DataCell(_EstadoBadge(estado: c.estadoLabel)),
+                                  ],
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+        ),
+      ],
     );
   }
 
-  void _showDetalle(
-      BuildContext context, CargaModel carga, bool isDark) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => _DetalleCargaScreen(carga: carga),
+  static Widget _hdr(String t, bool isDark) => Text(t,
+      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: isDark ? Colors.white70 : Colors.grey[700]));
+
+  static Widget _cel(String? t, bool isDark, {bool bold = false}) => Text(
+        t ?? '—',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: bold ? FontWeight.w600 : FontWeight.normal,
+          color: isDark ? Colors.white : const Color(0xFF1A1D27),
+        ),
+      );
+
+  void _showDetalle(BuildContext context, CargaModel carga, bool isDark) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => _DetalleCargaScreen(carga: carga)));
+  }
+}
+
+// ── Filter helpers ─────────────────────────────────────────────────────────────
+
+class _FilterField extends StatelessWidget {
+  final TextEditingController ctrl;
+  final String label;
+  final bool isDark;
+  final VoidCallback onChanged;
+  const _FilterField({required this.ctrl, required this.label, required this.isDark, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: ctrl,
+      onChanged: (_) => onChanged(),
+      style: TextStyle(fontSize: 13, color: isDark ? Colors.white : Colors.black87),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600]),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        suffixIcon: ctrl.text.isNotEmpty
+            ? IconButton(
+                icon: const Icon(Icons.clear, size: 14),
+                onPressed: () { ctrl.clear(); onChanged(); },
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+              )
+            : null,
+        filled: true,
+        fillColor: isDark ? AppTheme.darkCard : Colors.white,
+      ),
+    );
+  }
+}
+
+class _FilterDropdown<T> extends StatelessWidget {
+  final String label;
+  final T? value;
+  final List<DropdownMenuItem<T>> items;
+  final bool isDark;
+  final ValueChanged<T?> onChanged;
+  const _FilterDropdown({required this.label, required this.value, required this.items, required this.isDark, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600]),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        filled: true,
+        fillColor: isDark ? AppTheme.darkCard : Colors.white,
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: value,
+          isDense: true,
+          isExpanded: true,
+          hint: Text('Todos', style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.grey[400])),
+          dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
+          style: TextStyle(fontSize: 12, color: isDark ? Colors.white : Colors.black87),
+          items: [
+            DropdownMenuItem<T>(value: null, child: Text('Todos', style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600]))),
+            ...items,
+          ],
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool? value;
+  final ValueChanged<bool?> onChanged;
+  final bool isDark;
+  const _FilterChip({required this.label, required this.value, required this.onChanged, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final active = value != null;
+    return GestureDetector(
+      onTap: () {
+        if (value == null) onChanged(true);
+        else if (value == true) onChanged(false);
+        else onChanged(null);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: value == true
+              ? AppTheme.primaryColor.withValues(alpha: 0.15)
+              : value == false
+                  ? Colors.red.withValues(alpha: 0.12)
+                  : (isDark ? AppTheme.darkCard : Colors.white),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: value == true
+                ? AppTheme.primaryColor
+                : value == false
+                    ? Colors.red
+                    : (isDark ? AppTheme.darkBorder : Colors.grey[300]!),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (active)
+              Icon(value == true ? Icons.check : Icons.close,
+                  size: 12,
+                  color: value == true ? AppTheme.primaryColor : Colors.red),
+            if (active) const SizedBox(width: 4),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+                    color: value == true
+                        ? AppTheme.primaryColor
+                        : value == false
+                            ? Colors.red
+                            : (isDark ? Colors.white54 : Colors.grey[600]))),
+          ],
+        ),
       ),
     );
   }
@@ -193,49 +695,102 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
 
   final _descripcionCtrl = TextEditingController();
   final _pesoCtrl = TextEditingController();
+  final _largoCtrl = TextEditingController();
+  final _anchoCtrl = TextEditingController();
+  final _altoCtrl = TextEditingController();
   final _precioCtrl = TextEditingController();
   final _instruccionesCtrl = TextEditingController();
   final _horasCargaCtrl = TextEditingController();
   final _horasDescargaCtrl = TextEditingController();
 
+  // Nuevos campos Truckstop — ubicación detallada
+  final _nombreUbicOrigenCtrl = TextEditingController();
+  final _cpOrigenCtrl = TextEditingController();
+  final _contactoOrigenNombreCtrl = TextEditingController();
+  final _contactoOrigenTelCtrl = TextEditingController();
+  final _nombreUbicDestinoCtrl = TextEditingController();
+  final _cpDestinoCtrl = TextEditingController();
+  final _contactoDestinoNombreCtrl = TextEditingController();
+  final _contactoDestinoTelCtrl = TextEditingController();
+
+  // Nuevos campos Truckstop — comercial / equipo
+  final _refNumCtrl = TextEditingController();
+  int? _commodityNomId;
+  final List<int> _opcionesEquipoSelIds = [];
+  bool _esPrivada = false;
+  int? _horasAnticipacionPublica;
+
+  // Horarios de ventana (formato 'HH:mm')
+  String? _ventanaRecogidaDesde;
+  String? _ventanaRecogidaHasta;
+  String? _ventanaEntregaDesde;
+  String? _ventanaEntregaHasta;
+
   String _tipo = 'ftl';
-  String _unidadPeso = 'kg';
+  int? _unidadPesoId;
   double? _distanciaKm;
-  String? _tipoMercancia;
-  String? _tipoEquipo;
+  int? _tipoMercanciaId;
+  int? _tipoEquipoId;
   bool _requiereRefrigeracion = false;
   bool _requiereSeguro = false;
   DateTime? _fechaRecogida;
   DateTime? _fechaEntrega;
+  String _prioridad = 'normal';
 
-  static const _mercanciaOpciones = [
-    'General',
-    'Refrigerada',
-    'Peligrosa',
-    'Sobredimensionada',
-    'Vehículos',
-    'Electrónica',
-    'Otros',
-  ];
-
-  static const _equipoOpciones = [
-    'flatbed',
-    'van',
-    'reefer',
-    'dryvan',
-    'tanker',
-    'curtain',
-  ];
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final noms = context.read<NomencladoresProvider>();
+      await noms.cargar();
+      if (mounted && _unidadPesoId == null) {
+        setState(() => _unidadPesoId = noms.unidadPesoKg?.id);
+      }
+    });
+  }
 
   @override
   void dispose() {
     _descripcionCtrl.dispose();
     _pesoCtrl.dispose();
+    _largoCtrl.dispose();
+    _anchoCtrl.dispose();
+    _altoCtrl.dispose();
     _precioCtrl.dispose();
     _instruccionesCtrl.dispose();
     _horasCargaCtrl.dispose();
     _horasDescargaCtrl.dispose();
+    _nombreUbicOrigenCtrl.dispose();
+    _cpOrigenCtrl.dispose();
+    _contactoOrigenNombreCtrl.dispose();
+    _contactoOrigenTelCtrl.dispose();
+    _nombreUbicDestinoCtrl.dispose();
+    _cpDestinoCtrl.dispose();
+    _contactoDestinoNombreCtrl.dispose();
+    _contactoDestinoTelCtrl.dispose();
+    _refNumCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickHora(bool esRecogida, bool esDesde) async {
+    final inicial = TimeOfDay.now();
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: inicial,
+      helpText: esRecogida
+          ? (esDesde ? 'Hora inicio recogida' : 'Hora fin recogida')
+          : (esDesde ? 'Hora inicio entrega' : 'Hora fin entrega'),
+    );
+    if (picked != null && mounted) {
+      final str =
+          '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+      setState(() {
+        if (esRecogida && esDesde) _ventanaRecogidaDesde = str;
+        if (esRecogida && !esDesde) _ventanaRecogidaHasta = str;
+        if (!esRecogida && esDesde) _ventanaEntregaDesde = str;
+        if (!esRecogida && !esDesde) _ventanaEntregaHasta = str;
+      });
+    }
   }
 
   Future<void> _openPicker() async {
@@ -305,10 +860,26 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
     final uid = auth.user?.id;
     if (uid == null) return;
 
+    // IDs nomenclador: 1=FTL, 2=LTL (seed migración 022)
+    final tipoCargaId = _tipo == 'ltl' ? 2 : 1;
+
+    double? parseNum(String txt) {
+      final v = double.tryParse(txt.replaceAll(',', '.'));
+      return v == null || v <= 0 ? null : v;
+    }
+
+    final noms = context.read<NomencladoresProvider>();
+    final unidadPeso = noms.unidadPesoPorId(_unidadPesoId) ?? noms.unidadPesoKg;
+    final pesoIngresado = () {
+      final cleaned = _pesoCtrl.text.replaceAll(',', '.');
+      final v = double.tryParse(cleaned);
+      return v == null || v <= 0 ? null : v;
+    }();
+
     final carga = CargaModel(
       id: 0,
       shipperId: uid,
-      tipo: _tipo,
+      tipoCargaId: tipoCargaId,
       estado: 'publicada',
       dirOrigen: _dirOrigen!,
       latOrigen: _latOrigen ?? 0,
@@ -321,13 +892,17 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
       descripcion: _descripcionCtrl.text.trim().isEmpty
           ? null
           : _descripcionCtrl.text.trim(),
-      tipoMercancia: _tipoMercancia,
-      pesoKg: () {
-        final cleaned = _pesoCtrl.text.replaceAll(',', '.');
-        final v = double.tryParse(cleaned);
-        return v == null ? null : (_unidadPeso == 'tonelada' ? v * 1000 : v);
-      }(),
-      unidadPeso: _unidadPeso,
+      tipoMercanciaId: _tipoMercanciaId,
+      commodityNomId: _commodityNomId,
+      pesoValor: pesoIngresado,
+      unidadPesoId: unidadPeso?.id,
+      pesoKg: pesoIngresado != null && unidadPeso != null
+          ? PesoUnidadUtil.aKilogramos(pesoIngresado, unidadPeso.factorAKg)
+          : null,
+      longitudM: parseNum(_largoCtrl.text),
+      anchoM: parseNum(_anchoCtrl.text),
+      altoM: parseNum(_altoCtrl.text),
+      unidadPeso: unidadPeso?.simbolo ?? 'kg',
       horasCarga: double.tryParse(_horasCargaCtrl.text.replaceAll(',', '.')),
       horasDescarga:
           double.tryParse(_horasDescargaCtrl.text.replaceAll(',', '.')),
@@ -337,10 +912,32 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
       instrucciones: _instruccionesCtrl.text.trim().isEmpty
           ? null
           : _instruccionesCtrl.text.trim(),
-      tipoEquipo: _tipoEquipo,
+      tipoEquipoId: _tipoEquipoId,
+      opcionesEquipoManejo: _opcionesEquipoSelIds,
       fechaRecogida: _fechaRecogida,
       fechaEntrega: _fechaEntrega,
+      ventanaRecogidaDesde: _ventanaRecogidaDesde,
+      ventanaRecogidaHasta: _ventanaRecogidaHasta,
+      ventanaEntregaDesde: _ventanaEntregaDesde,
+      ventanaEntregaHasta: _ventanaEntregaHasta,
       precioOfertado: double.tryParse(_precioCtrl.text),
+      // Ubicación detallada
+      nombreUbicacionOrigen: _nombreUbicOrigenCtrl.text.trim().isEmpty ? null : _nombreUbicOrigenCtrl.text.trim(),
+      cpOrigen: _cpOrigenCtrl.text.trim().isEmpty ? null : _cpOrigenCtrl.text.trim(),
+      contactoOrigenNombre: _contactoOrigenNombreCtrl.text.trim().isEmpty ? null : _contactoOrigenNombreCtrl.text.trim(),
+      contactoOrigenTel: _contactoOrigenTelCtrl.text.trim().isEmpty ? null : _contactoOrigenTelCtrl.text.trim(),
+      nombreUbicacionDestino: _nombreUbicDestinoCtrl.text.trim().isEmpty ? null : _nombreUbicDestinoCtrl.text.trim(),
+      cpDestino: _cpDestinoCtrl.text.trim().isEmpty ? null : _cpDestinoCtrl.text.trim(),
+      contactoDestinoNombre: _contactoDestinoNombreCtrl.text.trim().isEmpty ? null : _contactoDestinoNombreCtrl.text.trim(),
+      contactoDestinoTel: _contactoDestinoTelCtrl.text.trim().isEmpty ? null : _contactoDestinoTelCtrl.text.trim(),
+      // Comercial
+      numerosReferencia: _refNumCtrl.text.trim().isEmpty
+          ? []
+          : _refNumCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList(),
+      // Privacidad
+      esPrivada: _esPrivada,
+      horasAnticipacionPublica: _horasAnticipacionPublica,
+      prioridad: _prioridad,
       createdAt: DateTime.now(),
     );
 
@@ -357,21 +954,42 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
       _formKey.currentState!.reset();
       setState(() {
         _tipo = 'ftl';
-        _tipoMercancia = null;
-        _tipoEquipo = null;
+        _tipoMercanciaId = null;
+        _tipoEquipoId = null;
         _requiereRefrigeracion = false;
         _requiereSeguro = false;
         _fechaRecogida = null;
         _fechaEntrega = null;
-        _unidadPeso = 'kg';
+        _ventanaRecogidaDesde = null;
+        _ventanaRecogidaHasta = null;
+        _ventanaEntregaDesde = null;
+        _ventanaEntregaHasta = null;
+        _unidadPesoId = context.read<NomencladoresProvider>().unidadPesoKg?.id;
         _distanciaKm = null;
         _latOrigen = null; _lonOrigen = null; _dirOrigen = null;
         _ciudadOrigen = null; _provinciaOrigen = null; _paisOrigen = null;
         _latDestino = null; _lonDestino = null; _dirDestino = null;
         _ciudadDestino = null; _provinciaDestino = null; _paisDestino = null;
+        _commodityNomId = null;
+        _opcionesEquipoSelIds.clear();
+        _esPrivada = false;
+        _horasAnticipacionPublica = null;
+        _prioridad = 'normal';
       });
+      _largoCtrl.clear();
+      _anchoCtrl.clear();
+      _altoCtrl.clear();
       _horasCargaCtrl.clear();
       _horasDescargaCtrl.clear();
+      _nombreUbicOrigenCtrl.clear();
+      _cpOrigenCtrl.clear();
+      _contactoOrigenNombreCtrl.clear();
+      _contactoOrigenTelCtrl.clear();
+      _nombreUbicDestinoCtrl.clear();
+      _cpDestinoCtrl.clear();
+      _contactoDestinoNombreCtrl.clear();
+      _contactoDestinoTelCtrl.clear();
+      _refNumCtrl.clear();
       widget.onPublished();
     } else {
       final err = context.read<CargaProvider>().error ?? 'Error desconocido';
@@ -387,6 +1005,7 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
   Widget build(BuildContext context) {
     final isDark = context.watch<ThemeProvider>().isDark;
     final provider = context.watch<CargaProvider>();
+    final noms = context.watch<NomencladoresProvider>();
     final textPrimary =
         isDark ? Colors.white : const Color(0xFF1A1D27);
 
@@ -397,6 +1016,52 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Prioridad
+            _SectionLabel('Prioridad de la Carga', isDark),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                for (final op in [
+                  ('normal', 'Normal', Colors.blueGrey),
+                  ('alta', 'Alta', Colors.orange),
+                  ('urgente', 'Urgente', Colors.red),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _prioridad = op.$1),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: _prioridad == op.$1
+                              ? op.$3.withValues(alpha: 0.15)
+                              : (isDark ? AppTheme.darkCard : Colors.grey[100]),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _prioridad == op.$1
+                                ? op.$3
+                                : (isDark ? AppTheme.darkBorder : Colors.grey[300]!),
+                            width: _prioridad == op.$1 ? 1.5 : 1,
+                          ),
+                        ),
+                        child: Text(
+                          op.$2,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: _prioridad == op.$1
+                                ? op.$3
+                                : (isDark ? Colors.white60 : Colors.grey[600]),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
             // Tipo FTL / LTL
             _SectionLabel('Tipo de Carga', isDark),
             const SizedBox(height: 8),
@@ -446,14 +1111,35 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
               maxLines: 2,
             ),
             const SizedBox(height: 10),
-            // Tipo mercancia dropdown
-            _Dropdown(
-              value: _tipoMercancia,
-              hint: 'Tipo de mercancía',
-              items: _mercanciaOpciones,
-              isDark: isDark,
-              onChanged: (v) => setState(() => _tipoMercancia = v),
-            ),
+            // Tipo mercancia dropdown — desde BD
+            noms.loading
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: LinearProgressIndicator(),
+                  )
+                : DropdownButtonFormField<int>(
+                    value: _tipoMercanciaId,
+                    dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
+                    style: TextStyle(
+                        color: isDark ? Colors.white : const Color(0xFF1A1D27),
+                        fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Tipo de mercancía',
+                      prefixIcon:
+                          const Icon(Icons.category_outlined, size: 18),
+                      hintStyle: TextStyle(
+                          color:
+                              isDark ? Colors.white38 : Colors.grey[500]),
+                    ),
+                    items: noms.tiposMercancia
+                        .map((m) => DropdownMenuItem<int>(
+                              value: m.id,
+                              child: Text(m.nombre),
+                            ))
+                        .toList(),
+                    onChanged: (v) =>
+                        setState(() => _tipoMercanciaId = v),
+                  ),
             const SizedBox(height: 10),
             Row(
               children: [
@@ -471,13 +1157,75 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
                 const SizedBox(width: 8),
                 Expanded(
                   flex: 2,
-                  child: _Dropdown(
-                    value: _unidadPeso,
-                    hint: 'Unidad',
-                    items: const ['kg', 'tonelada'],
+                  child: noms.unidadesPeso.isEmpty
+                      ? const SizedBox(
+                          height: 48,
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        )
+                      : DropdownButtonFormField<int>(
+                          value: _unidadPesoId,
+                          dropdownColor:
+                              isDark ? AppTheme.darkCard : Colors.white,
+                          style: TextStyle(color: textPrimary, fontSize: 14),
+                          decoration:
+                              const InputDecoration(hintText: 'Unidad'),
+                          items: noms.unidadesPeso
+                              .map((u) => DropdownMenuItem(
+                                    value: u.id,
+                                    child: Text(
+                                      '${u.nombre} (${u.simbolo})',
+                                      style: TextStyle(color: textPrimary),
+                                    ),
+                                  ))
+                              .toList(),
+                          onChanged: (v) =>
+                              setState(() => _unidadPesoId = v),
+                        ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // Medidas (largo × ancho × alto)
+            _SectionLabel('Medidas (m)', isDark),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _Field(
+                    controller: _largoCtrl,
+                    hint: 'Largo',
+                    icon: Icons.straighten_outlined,
                     isDark: isDark,
-                    onChanged: (v) =>
-                        setState(() => _unidadPeso = v ?? 'kg'),
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _Field(
+                    controller: _anchoCtrl,
+                    hint: 'Ancho',
+                    icon: Icons.width_normal_outlined,
+                    isDark: isDark,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _Field(
+                    controller: _altoCtrl,
+                    hint: 'Alto',
+                    icon: Icons.height_outlined,
+                    isDark: isDark,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
                   ),
                 ),
               ],
@@ -544,16 +1292,39 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
             const SizedBox(height: 20),
             _SectionLabel('Equipo Requerido', isDark),
             const SizedBox(height: 8),
-            _Dropdown(
-              value: _tipoEquipo,
-              hint: 'Tipo de carrocería / equipo',
-              items: _equipoOpciones,
-              isDark: isDark,
-              onChanged: (v) => setState(() => _tipoEquipo = v),
-            ),
+            // Tipo equipo dropdown — desde BD
+            noms.loading
+                ? const SizedBox(
+                    height: 4,
+                    child: LinearProgressIndicator(),
+                  )
+                : DropdownButtonFormField<int>(
+                    value: _tipoEquipoId,
+                    dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
+                    style: TextStyle(
+                        color: isDark ? Colors.white : const Color(0xFF1A1D27),
+                        fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Tipo de carrocería / equipo',
+                      prefixIcon: const Icon(
+                          Icons.local_shipping_outlined,
+                          size: 18),
+                      hintStyle: TextStyle(
+                          color:
+                              isDark ? Colors.white38 : Colors.grey[500]),
+                    ),
+                    items: noms.tiposEquipo
+                        .map((e) => DropdownMenuItem<int>(
+                              value: e.id,
+                              child: Text(e.nombre),
+                            ))
+                        .toList(),
+                    onChanged: (v) =>
+                        setState(() => _tipoEquipoId = v),
+                  ),
 
             const SizedBox(height: 20),
-            _SectionLabel('Fechas', isDark),
+            _SectionLabel('Recogida', isDark),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -567,7 +1338,83 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
                     onTap: () => _pickFecha(true),
                   ),
                 ),
-                const SizedBox(width: 10),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _DateButton(
+                    label: _ventanaRecogidaDesde == null
+                        ? 'Desde (hora)'
+                        : _ventanaRecogidaDesde!,
+                    icon: Icons.access_time_outlined,
+                    isDark: isDark,
+                    onTap: () => _pickHora(true, true),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _DateButton(
+                    label: _ventanaRecogidaHasta == null
+                        ? 'Hasta (hora)'
+                        : _ventanaRecogidaHasta!,
+                    icon: Icons.access_time_filled_outlined,
+                    isDark: isDark,
+                    onTap: () => _pickHora(true, false),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _Field(
+              controller: _nombreUbicOrigenCtrl,
+              hint: 'Nombre del lugar (ej: Almacén Central)',
+              icon: Icons.business_outlined,
+              isDark: isDark,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _Field(
+                    controller: _cpOrigenCtrl,
+                    hint: 'Código postal',
+                    icon: Icons.markunread_mailbox_outlined,
+                    isDark: isDark,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _Field(
+                    controller: _contactoOrigenNombreCtrl,
+                    hint: 'Contacto (nombre)',
+                    icon: Icons.person_outline,
+                    isDark: isDark,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _Field(
+                    controller: _contactoOrigenTelCtrl,
+                    hint: 'Teléfono',
+                    icon: Icons.phone_outlined,
+                    isDark: isDark,
+                    keyboardType: TextInputType.phone,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+            _SectionLabel('Entrega', isDark),
+            const SizedBox(height: 8),
+            Row(
+              children: [
                 Expanded(
                   child: _DateButton(
                     label: _fechaEntrega == null
@@ -580,13 +1427,82 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _DateButton(
+                    label: _ventanaEntregaDesde == null
+                        ? 'Desde (hora)'
+                        : _ventanaEntregaDesde!,
+                    icon: Icons.access_time_outlined,
+                    isDark: isDark,
+                    onTap: () => _pickHora(false, true),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _DateButton(
+                    label: _ventanaEntregaHasta == null
+                        ? 'Hasta (hora)'
+                        : _ventanaEntregaHasta!,
+                    icon: Icons.access_time_filled_outlined,
+                    isDark: isDark,
+                    onTap: () => _pickHora(false, false),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _Field(
+              controller: _nombreUbicDestinoCtrl,
+              hint: 'Nombre del lugar (ej: Centro de Distribución)',
+              icon: Icons.business_outlined,
+              isDark: isDark,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _Field(
+                    controller: _cpDestinoCtrl,
+                    hint: 'Código postal',
+                    icon: Icons.markunread_mailbox_outlined,
+                    isDark: isDark,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _Field(
+                    controller: _contactoDestinoNombreCtrl,
+                    hint: 'Contacto (nombre)',
+                    icon: Icons.person_outline,
+                    isDark: isDark,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _Field(
+                    controller: _contactoDestinoTelCtrl,
+                    hint: 'Teléfono',
+                    icon: Icons.phone_outlined,
+                    isDark: isDark,
+                    keyboardType: TextInputType.phone,
+                  ),
+                ),
+              ],
+            ),
 
             const SizedBox(height: 20),
-            _SectionLabel('Precio Ofertado (USD)', isDark),
+            _SectionLabel('Precio Ofertado', isDark),
             const SizedBox(height: 8),
             _Field(
               controller: _precioCtrl,
-              hint: 'Ej: 1500.00',
+              hint: 'Ej: 15000.00',
               icon: Icons.attach_money_outlined,
               isDark: isDark,
               keyboardType: TextInputType.number,
@@ -600,6 +1516,146 @@ class _PublicarCargaTabState extends State<_PublicarCargaTab> {
               isDark: isDark,
               maxLines: 3,
             ),
+
+            // ── Ubicación detallada ──────────────────────────────────────
+            
+
+            
+
+            // ── Opciones de equipo — desde BD ────────────────────────────
+            const SizedBox(height: 24),
+            _SectionLabel('Opciones de Equipo', isDark),
+            const SizedBox(height: 8),
+            noms.loading
+                ? const SizedBox(
+                    height: 4,
+                    child: LinearProgressIndicator(),
+                  )
+                : Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: noms.opcionesEquipoManejo.map((op) {
+                      final sel = _opcionesEquipoSelIds.contains(op.id);
+                      return FilterChip(
+                        label: Text(op.nombre,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: sel
+                                    ? Colors.white
+                                    : (isDark
+                                        ? Colors.white70
+                                        : Colors.grey[700]))),
+                        selected: sel,
+                        selectedColor: AppTheme.primaryColor,
+                        backgroundColor: isDark
+                            ? Colors.white.withValues(alpha: 0.06)
+                            : Colors.grey.withValues(alpha: 0.1),
+                        checkmarkColor: Colors.white,
+                        onSelected: (v) => setState(() {
+                          if (v) {
+                            _opcionesEquipoSelIds.add(op.id);
+                          } else {
+                            _opcionesEquipoSelIds.remove(op.id);
+                          }
+                        }),
+                      );
+                    }).toList(),
+                  ),
+
+            // ── Clasificación de mercancía (Commodity) — desde BD ────────
+            const SizedBox(height: 24),
+            _SectionLabel('Clasificación de Mercancía', isDark),
+            const SizedBox(height: 8),
+            noms.loading
+                ? const SizedBox(
+                    height: 4,
+                    child: LinearProgressIndicator(),
+                  )
+                : DropdownButtonFormField<int>(
+                    value: _commodityNomId,
+                    decoration: InputDecoration(
+                      hintText: 'Tipo de producto (commodity)',
+                      prefixIcon:
+                          const Icon(Icons.inventory_2_outlined, size: 18),
+                      hintStyle: TextStyle(
+                          color:
+                              isDark ? Colors.white38 : Colors.grey[500]),
+                    ),
+                    dropdownColor:
+                        isDark ? const Color(0xFF2A2D3E) : Colors.white,
+                    style: TextStyle(
+                        color: isDark
+                            ? Colors.white
+                            : const Color(0xFF1A1D27),
+                        fontSize: 14),
+                    items: noms.commodities
+                        .map((c) => DropdownMenuItem<int>(
+                              value: c.id,
+                              child: Text(c.nombre),
+                            ))
+                        .toList(),
+                    onChanged: (v) =>
+                        setState(() => _commodityNomId = v),
+                  ),
+
+            // ── Números de referencia ────────────────────────────────────
+            const SizedBox(height: 24),
+            _SectionLabel('Números de Referencia', isDark),
+            const SizedBox(height: 8),
+            _Field(
+              controller: _refNumCtrl,
+              hint: 'Ej: REF-001, PO-4521 (separados por coma)',
+              icon: Icons.tag_outlined,
+              isDark: isDark,
+            ),
+
+            // ── Privacidad ───────────────────────────────────────────────
+            const SizedBox(height: 24),
+            _SectionLabel('Visibilidad de la Carga', isDark),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              value: _esPrivada,
+              onChanged: (v) => setState(() {
+                _esPrivada = v;
+                if (!v) _horasAnticipacionPublica = null;
+              }),
+              title: Text('Carga privada',
+                  style: TextStyle(color: textPrimary, fontSize: 14)),
+              subtitle: Text(
+                'Solo visible para carriers de tu red',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white38 : Colors.grey[500]),
+              ),
+              activeColor: AppTheme.primaryColor,
+              contentPadding: EdgeInsets.zero,
+            ),
+            if (_esPrivada) ...
+              [
+                const SizedBox(height: 8),
+                DropdownButtonFormField<int>(
+                  value: _horasAnticipacionPublica,
+                  decoration: InputDecoration(
+                    hintText: 'Horas antes de hacer pública automáticamente',
+                    prefixIcon: const Icon(Icons.timer_outlined, size: 18),
+                    hintStyle: TextStyle(
+                        color: isDark ? Colors.white38 : Colors.grey[500]),
+                  ),
+                  dropdownColor:
+                      isDark ? const Color(0xFF2A2D3E) : Colors.white,
+                  style: TextStyle(
+                      color: isDark ? Colors.white : const Color(0xFF1A1D27),
+                      fontSize: 14),
+                  items: const [
+                    DropdownMenuItem(value: 24, child: Text('24 horas')),
+                    DropdownMenuItem(value: 48, child: Text('48 horas')),
+                    DropdownMenuItem(value: 72, child: Text('72 horas')),
+                    DropdownMenuItem(value: 0,  child: Text('Siempre privada')),
+                  ],
+                  onChanged: (v) =>
+                      setState(() => _horasAnticipacionPublica = v),
+                ),
+              ],
 
             const SizedBox(height: 28),
             ElevatedButton(
@@ -653,31 +1709,14 @@ class _DetalleCargaScreen extends StatefulWidget {
 }
 
 class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
-  final MapController _mapController = MapController();
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<CargaProvider>().loadOfertasCarga(widget.carga.id);
-      _fitMapToRoute();
+      final p = context.read<CargaProvider>();
+      p.loadOfertasCarga(widget.carga.id);
+      p.loadHistorialEstados(widget.carga.id);
     });
-  }
-
-  void _fitMapToRoute() {
-    final c = widget.carga;
-    if (c.latOrigen == 0 && c.latDestino == 0) return;
-    try {
-      _mapController.fitCamera(
-        CameraFit.bounds(
-          bounds: LatLngBounds.fromPoints([
-            LatLng(c.latOrigen, c.lonOrigen),
-            LatLng(c.latDestino, c.lonDestino),
-          ]),
-          padding: const EdgeInsets.all(40),
-        ),
-      );
-    } catch (_) {}
   }
 
   @override
@@ -707,59 +1746,13 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
       body: ListView(
         padding: EdgeInsets.zero,
         children: [
-          // Route map
-          SizedBox(
-            height: 200,
-            child: MapWidget(
-              isDark: isDark,
-              mapController: _mapController,
-              center: LatLng(
-                (carga.latOrigen + carga.latDestino) / 2,
-                (carga.lonOrigen + carga.lonDestino) / 2,
-              ),
-              zoom: 7.0,
-              markers: [
-                if (carga.latOrigen != 0)
-                  Marker(
-                    point: LatLng(carga.latOrigen, carga.lonOrigen),
-                    width: 36,
-                    height: 36,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppTheme.success,
-                        border:
-                            Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: const Icon(Icons.local_shipping,
-                          color: Colors.white, size: 18),
-                    ),
-                  ),
-                if (carga.latDestino != 0)
-                  Marker(
-                    point: LatLng(carga.latDestino, carga.lonDestino),
-                    width: 36,
-                    height: 44,
-                    alignment: Alignment.topCenter,
-                    child: Icon(Icons.location_on,
-                        color: AppTheme.error, size: 32),
-                  ),
-              ],
-              polylines: (
-                      carga.latOrigen != 0 && carga.latDestino != 0)
-                  ? [
-                      Polyline(
-                        points: [
-                          LatLng(carga.latOrigen, carga.lonOrigen),
-                          LatLng(carga.latDestino, carga.lonDestino),
-                        ],
-                        color: AppTheme.primaryColor
-                            .withValues(alpha: 0.65),
-                        strokeWidth: 2.5,
-                      )
-                    ]
-                  : const [],
-            ),
+          RouteMapWidget(
+            isDark: isDark,
+            latOrigen: carga.latOrigen,
+            lonOrigen: carga.lonOrigen,
+            latDestino: carga.latDestino,
+            lonDestino: carga.lonDestino,
+            height: 220,
           ),
           Padding(
             padding: const EdgeInsets.all(16),
@@ -774,6 +1767,8 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
               _EstadoBadge(
                   estado: carga.tipoLabel,
                   color: AppTheme.primaryColor),
+              const SizedBox(width: 8),
+              _ShipperPrioridadBadge(prioridad: carga.prioridad),
               if (carga.destacada) ...
                 [
                   const SizedBox(width: 8),
@@ -812,67 +1807,136 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
           ),
 
           const SizedBox(height: 12),
-          // Detalles mercancía
-          _InfoCard(
+          CargaMercanciaEquipoSection(
+            carga: carga,
             isDark: isDark,
-            children: [
-              if (carga.descripcion != null)
+            textPrimary: textPrimary,
+            textSecondary: textSecondary,
+            precioLabel: 'Precio ofertado',
+          ),
+
+          // ── Contacto en origen ─────────────────────────────────────────
+          if (carga.nombreUbicacionOrigen != null ||
+              carga.cpOrigen != null ||
+              carga.contactoOrigenNombre != null ||
+              carga.contactoOrigenTel != null) ...[
+            const SizedBox(height: 12),
+            _InfoCard(
+              isDark: isDark,
+              children: [
                 _InfoRow(
-                  icon: Icons.description_outlined,
-                  label: 'Descripción',
-                  value: carga.descripcion!,
+                  icon: Icons.location_city_outlined,
+                  label: 'Lugar de origen',
+                  value: [
+                    if (carga.nombreUbicacionOrigen != null)
+                      carga.nombreUbicacionOrigen!,
+                    if (carga.cpOrigen != null) 'CP: ${carga.cpOrigen}',
+                  ].join(' · '),
                   textPrimary: textPrimary,
                   textSecondary: textSecondary,
                 ),
-              if (carga.tipoMercancia != null) ...
-                [
+                if (carga.contactoOrigenNombre != null) ...[
                   const Divider(height: 1),
                   _InfoRow(
-                    icon: Icons.category_outlined,
-                    label: 'Mercancía',
-                    value: carga.tipoMercancia!,
+                    icon: Icons.person_outline,
+                    label: 'Contacto origen',
+                    value: [
+                      carga.contactoOrigenNombre!,
+                      if (carga.contactoOrigenTel != null)
+                        carga.contactoOrigenTel!,
+                    ].join(' · '),
                     textPrimary: textPrimary,
                     textSecondary: textSecondary,
                   ),
                 ],
-              if (carga.pesoKg != null) ...
-                [
-                  const Divider(height: 1),
-                  _InfoRow(
-                    icon: Icons.scale_outlined,
-                    label: 'Peso',
-                    value: '${carga.pesoKg!.toStringAsFixed(1)} kg',
-                    textPrimary: textPrimary,
-                    textSecondary: textSecondary,
-                  ),
-                ],
-              if (carga.precioOfertado != null) ...
-                [
-                  const Divider(height: 1),
-                  _InfoRow(
-                    icon: Icons.attach_money_outlined,
-                    label: 'Precio ofertado',
-                    value:
-                        '\$${carga.precioOfertado!.toStringAsFixed(2)} ${carga.moneda}',
-                    textPrimary: textPrimary,
-                    textSecondary: textSecondary,
-                  ),
-                ],
-              if (carga.tipoEquipo != null) ...
-                [
-                  const Divider(height: 1),
-                  _InfoRow(
-                    icon: Icons.local_shipping_outlined,
-                    label: 'Equipo',
-                    value: carga.tipoEquipo!.toUpperCase(),
-                    textPrimary: textPrimary,
-                    textSecondary: textSecondary,
-                  ),
-                ],
-            ],
-          ),
+              ],
+            ),
+          ],
 
-          const SizedBox(height: 20),
+          // ── Contacto en destino ────────────────────────────────────────
+          if (carga.nombreUbicacionDestino != null ||
+              carga.cpDestino != null ||
+              carga.contactoDestinoNombre != null ||
+              carga.contactoDestinoTel != null) ...[
+            const SizedBox(height: 12),
+            _InfoCard(
+              isDark: isDark,
+              children: [
+                _InfoRow(
+                  icon: Icons.location_city_outlined,
+                  label: 'Lugar de destino',
+                  value: [
+                    if (carga.nombreUbicacionDestino != null)
+                      carga.nombreUbicacionDestino!,
+                    if (carga.cpDestino != null) 'CP: ${carga.cpDestino}',
+                  ].join(' · '),
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                ),
+                if (carga.contactoDestinoNombre != null) ...[
+                  const Divider(height: 1),
+                  _InfoRow(
+                    icon: Icons.person_outline,
+                    label: 'Contacto destino',
+                    value: [
+                      carga.contactoDestinoNombre!,
+                      if (carga.contactoDestinoTel != null)
+                        carga.contactoDestinoTel!,
+                    ].join(' · '),
+                    textPrimary: textPrimary,
+                    textSecondary: textSecondary,
+                  ),
+                ],
+              ],
+            ),
+          ],
+
+          if (carga.fechaRecogida != null ||
+              carga.fechaEntrega != null ||
+              carga.ventanaRecogidaDisplay != null ||
+              carga.ventanaEntregaDisplay != null) ...[
+            const SizedBox(height: 12),
+            CargaFechasSection(
+              carga: carga,
+              isDark: isDark,
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
+            ),
+          ],
+
+          // ── Referencia y privacidad ────────────────────────────────────
+          if (carga.numerosReferencia.isNotEmpty || carga.esPrivada) ...[
+            const SizedBox(height: 12),
+            _InfoCard(
+              isDark: isDark,
+              children: [
+                if (carga.numerosReferencia.isNotEmpty)
+                  _InfoRow(
+                    icon: Icons.tag_outlined,
+                    label: 'Referencia',
+                    value: carga.numerosReferencia.join(', '),
+                    textPrimary: textPrimary,
+                    textSecondary: textSecondary,
+                  ),
+                if (carga.esPrivada) ...[
+                  if (carga.numerosReferencia.isNotEmpty)
+                    const Divider(height: 1),
+                  _InfoRow(
+                    icon: Icons.lock_outline,
+                    label: 'Visibilidad',
+                    value: carga.horasAnticipacionPublica != null &&
+                            carga.horasAnticipacionPublica! > 0
+                        ? 'Privada · pública en ${carga.horasAnticipacionPublica}h'
+                        : 'Privada (solo red)',
+                    textPrimary: textPrimary,
+                    textSecondary: textSecondary,
+                  ),
+                ],
+              ],
+            ),
+          ],
+
+          /* const SizedBox(height: 20),
           Text(
             'Ofertas recibidas',
             style: GoogleFonts.plusJakartaSans(
@@ -880,8 +1944,8 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
               fontWeight: FontWeight.w700,
               color: textPrimary,
             ),
-          ),
-          const SizedBox(height: 10),
+          ), */
+          /* const SizedBox(height: 10),
 
           if (provider.loadingOfertas)
             const Center(child: CircularProgressIndicator())
@@ -905,23 +1969,85 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
               ),
             ),
 
-          const SizedBox(height: 24),
+           */const SizedBox(height: 24),
+
+          // ── Acciones del shipper ────────────────────────────────────────
           if (carga.estado == 'publicada' ||
-              carga.estado == 'ofertada')
-            OutlinedButton.icon(
+              carga.estado == 'ofertada') ...
+            [
+              ElevatedButton.icon(
+                onPressed: provider.actionLoading
+                    ? null
+                    : () => _marcarComoTomada(context, carga),
+                icon: const Icon(Icons.how_to_reg_outlined),
+                label: const Text('Marcar como Tomada'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: provider.actionLoading
+                    ? null
+                    : () => _cancelarCarga(context, carga.id),
+                icon: const Icon(Icons.cancel_outlined),
+                label: const Text('Cancelar Carga'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.error,
+                  side: BorderSide(color: AppTheme.error),
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          if (carga.estado == 'completada_carrier')
+            ElevatedButton.icon(
               onPressed: provider.actionLoading
                   ? null
-                  : () => _cancelarCarga(context, carga.id),
-              icon: const Icon(Icons.cancel_outlined),
-              label: const Text('Cancelar Carga'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.error,
-                side: BorderSide(color: AppTheme.error),
-                padding:
-                    const EdgeInsets.symmetric(vertical: 14),
+                  : () => _confirmarCompletada(context, carga.id),
+              icon: const Icon(Icons.check_circle_outlined),
+              label: const Text('Confirmar Completada'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green[700],
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(48),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
               ),
+            ),
+
+          // ── Historial de estados ───────────────────────────────────────
+          const SizedBox(height: 24),
+          Text(
+            'Historial de estados',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (provider.loadingHistorial)
+            const Center(child: CircularProgressIndicator())
+          else if (provider.historialEstados.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                'Sin historial registrado.',
+                style: TextStyle(color: textSecondary),
+              ),
+            )
+          else
+            _HistorialTimeline(
+              historial: provider.historialEstados,
+              isDark: isDark,
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
             ),
           const SizedBox(height: 32),
               ],
@@ -957,12 +2083,65 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
       'El carrier será notificado del rechazo.',
     );
     if (!confirmed || !mounted) return;
-    // Use service directly for reject
     try {
       await context
           .read<CargaProvider>()
           .loadOfertasCarga(oferta.cargaId);
     } catch (_) {}
+  }
+
+  Future<void> _marcarComoTomada(
+      BuildContext context, CargaModel carga) async {
+    final carrier = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => _SeleccionarCarrierDialog(isDark:
+          context.read<ThemeProvider>().isDark),
+    );
+    if (carrier == null || !mounted) return;
+    final driverId = carrier['id'] as int?;
+    final carrierUuid = carrier['uuid'] as String?;
+    if (driverId == null || carrierUuid == null) {
+      _snack('Carrier no válido: sin id o uuid', false);
+      return;
+    }
+    final confirmed = await _confirm(
+      context,
+      '¿Marcar carga como Tomada?',
+      'Se asignará a ${carrier['name'] ?? 'el carrier seleccionado'} y quedará oculta del listado público.',
+    );
+    if (!confirmed || !mounted) return;
+    final shipperUuid =
+        context.read<AuthProvider>().user?.id;
+    final ok = await context.read<CargaProvider>().marcarComoTomada(
+          carga.id,
+          carrierDriverId: driverId,
+          carrierUuid: carrierUuid,
+          shipperUuid: shipperUuid,
+        );
+    if (!mounted) return;
+    _snack(
+        ok ? 'Carga marcada como Tomada' : context.read<CargaProvider>().error,
+        ok);
+    if (ok) Navigator.pop(context);
+  }
+
+  Future<void> _confirmarCompletada(
+      BuildContext context, int cargaId) async {
+    final confirmed = await _confirm(
+      context,
+      '¿Confirmar carga Completada?',
+      'Esto cerrará el ciclo de la carga definitivamente.',
+    );
+    if (!confirmed || !mounted) return;
+    final shipperUuid =
+        context.read<AuthProvider>().user?.id;
+    final ok = await context
+        .read<CargaProvider>()
+        .completarCargaShipper(cargaId, shipperUuid: shipperUuid);
+    if (!mounted) return;
+    _snack(
+        ok ? 'Carga completada' : context.read<CargaProvider>().error, ok);
+    if (ok) Navigator.pop(context);
   }
 
   Future<void> _cancelarCarga(
@@ -973,8 +2152,9 @@ class _DetalleCargaScreenState extends State<_DetalleCargaScreen> {
       'Esta acción no se puede deshacer.',
     );
     if (!confirmed || !mounted) return;
-    final ok =
-        await context.read<CargaProvider>().cancelarCarga(cargaId);
+    final uuid = context.read<AuthProvider>().user?.id;
+    final ok = await context.read<CargaProvider>().cancelarCarga(
+        cargaId, usuarioUuid: uuid);
     if (!mounted) return;
     _snack(
         ok ? 'Carga cancelada' : context.read<CargaProvider>().error,
@@ -1026,100 +2206,6 @@ Future<bool> _confirm(
 // ──────────────────────────────────────────────────────────────────────────────
 // Shared small widgets
 // ──────────────────────────────────────────────────────────────────────────────
-
-class _CargaCard extends StatelessWidget {
-  final CargaModel carga;
-  final bool isDark;
-  final VoidCallback onTap;
-  const _CargaCard(
-      {required this.carga,
-      required this.isDark,
-      required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final cardColor = isDark ? AppTheme.darkCard : Colors.white;
-    final textPrimary =
-        isDark ? Colors.white : const Color(0xFF1A1D27);
-    final textSecondary =
-        isDark ? Colors.white60 : Colors.grey[600]!;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: isDark
-                  ? AppTheme.darkBorder
-                  : Colors.grey[200]!),
-        ),
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    carga.rutaCorta,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                      color: textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _EstadoBadge(estado: carga.estadoLabel),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Icon(Icons.local_shipping_outlined,
-                    size: 14, color: textSecondary),
-                const SizedBox(width: 4),
-                Text(
-                  carga.tipoLabel,
-                  style: TextStyle(
-                      fontSize: 12, color: textSecondary),
-                ),
-                if (carga.pesoKg != null) ...
-                  [
-                    const SizedBox(width: 12),
-                    Icon(Icons.scale_outlined,
-                        size: 14, color: textSecondary),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${carga.pesoKg!.toStringAsFixed(0)} kg',
-                      style: TextStyle(
-                          fontSize: 12, color: textSecondary),
-                    ),
-                  ],
-                if (carga.precioOfertado != null) ...
-                  [
-                    const SizedBox(width: 12),
-                    Icon(Icons.attach_money_outlined,
-                        size: 14, color: textSecondary),
-                    Text(
-                      '\$${carga.precioOfertado!.toStringAsFixed(0)}',
-                      style: TextStyle(
-                          fontSize: 12, color: textSecondary),
-                    ),
-                  ],
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _OfertaCard extends StatelessWidget {
   final OfertaCargaModel oferta;
@@ -1303,6 +2389,46 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+class _ShipperPrioridadBadge extends StatelessWidget {
+  final String prioridad;
+  const _ShipperPrioridadBadge({required this.prioridad});
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color;
+    final String label;
+    switch (prioridad) {
+      case 'urgente':
+        color = Colors.red;
+        label = 'Urgente';
+        break;
+      case 'alta':
+        color = Colors.orange;
+        label = 'Alta';
+        break;
+      default:
+        color = Colors.blueGrey;
+        label = 'Normal';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
 class _EstadoBadge extends StatelessWidget {
   final String estado;
   final Color? color;
@@ -1318,11 +2444,14 @@ class _EstadoBadge extends StatelessWidget {
       case 'aceptada':
       case 'en_transito':
         return Colors.green;
+      case 'tomada':
+        return Colors.indigo;
+      case 'completada_carrier':
+        return Colors.cyan;
       case 'entregada':
       case 'completada':
         return Colors.teal;
       case 'cancelada':
-      case 'disputa':
         return Colors.red;
       default:
         return Colors.grey;
@@ -1588,8 +2717,307 @@ class _TipoChip extends StatelessWidget {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Location picker tile (replaces manual address fields)
+// Historial de estados – timeline widget
 // ──────────────────────────────────────────────────────────────────────────────
+
+class _HistorialTimeline extends StatelessWidget {
+  final List<EstadoCargaModel> historial;
+  final bool isDark;
+  final Color textPrimary;
+  final Color textSecondary;
+
+  const _HistorialTimeline({
+    required this.historial,
+    required this.isDark,
+    required this.textPrimary,
+    required this.textSecondary,
+  });
+
+  static Color _colorFor(String codigo) {
+    switch (codigo) {
+      case 'publicada':          return Colors.blue;
+      case 'en_matching':        return Colors.orange;
+      case 'ofertada':           return Colors.amber[700]!;
+      case 'aceptada':           return Colors.green;
+      case 'tomada':             return Colors.indigo;
+      case 'en_transito':        return Colors.teal;
+      case 'completada_carrier': return Colors.cyan[700]!;
+      case 'entregada':          return Colors.green[700]!;
+      case 'completada':         return Colors.green[900]!;
+      case 'cancelada':          return Colors.red;
+      default:                   return Colors.grey;
+    }
+  }
+
+  String _fmt(DateTime dt) {
+    final d = dt.toLocal();
+    return '${d.day.toString().padLeft(2,'0')}/${d.month.toString().padLeft(2,'0')}/${d.year}  '
+        '${d.hour.toString().padLeft(2,'0')}:${d.minute.toString().padLeft(2,'0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: List.generate(historial.length, (i) {
+        final e = historial[i];
+        final isLast = i == historial.length - 1;
+        final color = _colorFor(e.estadoCodigo);
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 28,
+                child: Column(
+                  children: [
+                    Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    if (!isLast)
+                      Expanded(
+                        child: Container(
+                          width: 2,
+                          color: isDark
+                              ? Colors.white12
+                              : Colors.grey[300],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        e.estadoNombre ?? e.estadoCodigo,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _fmt(e.createdAt),
+                        style: TextStyle(fontSize: 11, color: textSecondary),
+                      ),
+                      if (e.motivo != null && e.motivo!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            e.motivo!,
+                            style:
+                                TextStyle(fontSize: 11, color: textSecondary),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Seleccionar Carrier Dialog – lista de carriers del directorio
+// ──────────────────────────────────────────────────────────────────────────────
+
+class _SeleccionarCarrierDialog extends StatefulWidget {
+  final bool isDark;
+  const _SeleccionarCarrierDialog({required this.isDark});
+
+  @override
+  State<_SeleccionarCarrierDialog> createState() =>
+      _SeleccionarCarrierDialogState();
+}
+
+class _SeleccionarCarrierDialogState
+    extends State<_SeleccionarCarrierDialog> {
+  final _supabase = Supabase.instance.client;
+  List<Map<String, dynamic>> _carriers = [];
+  List<Map<String, dynamic>> _filtered = [];
+  bool _loading = true;
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _searchCtrl.addListener(_filter);
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.removeListener(_filter);
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await _supabase
+          .schema('muevete')
+          .from('drivers')
+          .select('id, uuid, name, telefono, categoria, kyc, pais, province')
+          .eq('tipo_usuario', 'carrier_carga')
+          .order('name', ascending: true);
+      if (mounted) {
+        setState(() {
+          _carriers = List<Map<String, dynamic>>.from(data as List);
+          _filtered = _carriers;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _filter() {
+    final q = _searchCtrl.text.trim().toLowerCase();
+    setState(() {
+      _filtered = q.isEmpty
+          ? _carriers
+          : _carriers
+              .where((c) =>
+                  (c['name'] as String? ?? '').toLowerCase().contains(q))
+              .toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = widget.isDark;
+    final bg = isDark ? AppTheme.darkCard : Colors.white;
+    final textPrimary = isDark ? Colors.white : const Color(0xFF1A1D27);
+    final textSecondary = isDark ? Colors.white60 : Colors.grey[600]!;
+
+    return Dialog(
+      backgroundColor: bg,
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 520, maxWidth: 420),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+              child: Text(
+                'Seleccionar Carrier',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: textPrimary),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TextField(
+                controller: _searchCtrl,
+                style: TextStyle(color: textPrimary, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Buscar por nombre...',
+                  prefixIcon:
+                      const Icon(Icons.search, size: 18),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                      vertical: 10, horizontal: 12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _filtered.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            'No se encontraron carriers.',
+                            style: TextStyle(color: textSecondary),
+                            textAlign: TextAlign.center,
+                          ),
+                        )
+                      : ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: _filtered.length,
+                          separatorBuilder: (_, __) =>
+                              Divider(height: 1, color:
+                                  isDark ? AppTheme.darkBorder : Colors.grey[200]),
+                          itemBuilder: (_, i) {
+                            final c = _filtered[i];
+                            final hasUuid = c['uuid'] != null;
+                            return ListTile(
+                              dense: true,
+                              leading: CircleAvatar(
+                                backgroundColor:
+                                    AppTheme.primaryColor.withValues(alpha: 0.12),
+                                radius: 18,
+                                child: Text(
+                                  (c['name'] as String? ?? '?')
+                                      .substring(0, 1)
+                                      .toUpperCase(),
+                                  style: TextStyle(
+                                      color: AppTheme.primaryColor,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                              title: Text(
+                                c['name'] as String? ?? '—',
+                                style: TextStyle(
+                                    color: textPrimary,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13),
+                              ),
+                              subtitle: Text(
+                                [
+                                  if (c['categoria'] != null)
+                                    c['categoria'] as String,
+                                  if (c['pais'] != null)
+                                    c['pais'] as String,
+                                  if (!hasUuid) '⚠ sin UUID',
+                                ].join(' · '),
+                                style: TextStyle(
+                                    color: textSecondary, fontSize: 11),
+                              ),
+                              trailing: c['kyc'] == true
+                                  ? const Icon(Icons.verified,
+                                      color: Colors.green, size: 16)
+                                  : null,
+                              onTap: hasUuid
+                                  ? () => Navigator.pop(context, c)
+                                  : null,
+                              enabled: hasUuid,
+                            );
+                          },
+                        ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _LocationPickerTile extends StatelessWidget {
   final bool isDark;

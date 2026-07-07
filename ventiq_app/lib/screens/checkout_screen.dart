@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'checkout_web_screen.dart';
 import '../models/order.dart';
+import '../models/mesa.dart';
 import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/currency_service.dart';
+import '../services/mesa_service.dart';
+import '../services/mesa_cuenta_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/promotion_rules.dart';
+import '../utils/uuid_generator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
@@ -37,6 +41,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _isProcessing = false;
   bool _configLoading = true;
   bool _noSolicitarCliente = false; // Valor por defecto mientras se carga
+  bool _modoRestaurante = false;     // Si true, pedimos mesa en lugar de cliente
+  Mesa? _mesaSeleccionada;            // Mesa elegida en modo restaurante
+  List<Mesa> _mesasDisponibles = [];  // Cache de mesas activas para el selector
   Map<int, List<Map<String, dynamic>>> _productPromotions =
       {}; // productId -> promotions
   Map<String, dynamic>? _globalPromotionData;
@@ -102,8 +109,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         if (config != null) {
           // Usar configuración del cache
           _noSolicitarCliente = config['no_solicitar_cliente'] ?? false;
+          _modoRestaurante = config['modo_restaurante'] ?? false;
           print(
-            '✅ Configuración cargada desde cache - No solicitar cliente: $_noSolicitarCliente',
+            '✅ Configuración cargada desde cache - No solicitar cliente: $_noSolicitarCliente, Modo restaurante: $_modoRestaurante',
           );
         } else {
           // Fallback: cargar desde Supabase si no está en cache
@@ -114,13 +122,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             storeId,
           );
           _noSolicitarCliente = noSolicitar;
+          _modoRestaurante = await StoreConfigService.getModoRestaurante(storeId);
           print(
-            '✅ Configuración cargada desde Supabase - No solicitar cliente: $_noSolicitarCliente',
+            '✅ Configuración cargada desde Supabase - No solicitar cliente: $_noSolicitarCliente, Modo restaurante: $_modoRestaurante',
           );
         }
 
-        // Si no se solicita cliente, establecer nombre automáticamente
-        if (_noSolicitarCliente) {
+        // En modo restaurante NO pedimos cliente; el "buyer" se llena con etiqueta de mesa
+        // En modo no-restaurante, si la tienda dice no_solicitar_cliente, ponemos "Cliente"
+        if (_modoRestaurante) {
+          // El nombre real se setea al elegir mesa (ver _seleccionarMesa).
+          _buyerNameController.text = 'Mesa';
+          // Si OrderService ya tiene una mesa activa (porque venimos del flujo
+          // MesaDetailScreen → categorías → checkout), la preseleccionamos.
+          final activeId = _orderService.activeMesaId;
+          if (activeId != null) {
+            await _precargarMesaActiva(activeId);
+          }
+          // Y disparamos la carga de mesas disponibles para el selector.
+          _cargarMesasDisponibles();
+        } else if (_noSolicitarCliente) {
           _buyerNameController.text = 'Cliente';
         }
 
@@ -135,11 +156,48 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       print('❌ Error cargando configuración: $e');
       // Usar valor por defecto en caso de error
       _noSolicitarCliente = false;
+      _modoRestaurante = false;
       if (mounted) {
         setState(() {
           _configLoading = false;
         });
       }
+    }
+  }
+
+  /// Carga las mesas activas en background para el selector.
+  Future<void> _cargarMesasDisponibles() async {
+    try {
+      final mesas = await MesaService().listMesasWithStats();
+      if (mounted) {
+        setState(() {
+          _mesasDisponibles = mesas.where((m) => m.activa).toList();
+        });
+      }
+    } catch (e) {
+      print('⚠️ No se pudieron cargar mesas para el selector: $e');
+    }
+  }
+
+  /// Si OrderService.activeMesaId está seteado, busca la mesa correspondiente.
+  Future<void> _precargarMesaActiva(int idMesa) async {
+    try {
+      final mesas = await MesaService().listMesasWithStats();
+      Mesa? found;
+      for (final m in mesas) {
+        if (m.id == idMesa) {
+          found = m;
+          break;
+        }
+      }
+      if (found != null && mounted) {
+        setState(() {
+          _mesaSeleccionada = found;
+          _buyerNameController.text = 'Mesa ${found!.numero}';
+        });
+      }
+    } catch (e) {
+      print('⚠️ Error precargando mesa activa $idMesa: $e');
     }
   }
 
@@ -333,7 +391,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               const SizedBox(height: 20),
               _buildPaymentBreakdownSection(),
               const SizedBox(height: 20),
-              _buildBuyerInfoSection(),
+              if (_modoRestaurante)
+                _buildMesaSelectorSection()
+              else
+                _buildBuyerInfoSection(),
               const SizedBox(height: 20),
               // _buildExtraContactsSection(),
               const SizedBox(height: 30),
@@ -596,6 +657,186 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (lowerName.contains('transferencia') || lowerName.contains('transfer'))
       return '🏦';
     return '💰';
+  }
+
+  // ====================== MODO RESTAURANTE: SELECTOR DE MESA ======================
+
+  Widget _buildMesaSelectorSection() {
+    final mesa = _mesaSeleccionada;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: mesa == null
+              ? Colors.orange.shade300
+              : const Color(0xFF4A90E2).withOpacity(0.4),
+          width: mesa == null ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.table_restaurant,
+                  color: Color(0xFFE65100), size: 22),
+              const SizedBox(width: 8),
+              const Text(
+                'Mesa de la cuenta',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE65100).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  'Modo Restaurante',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFE65100),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (mesa == null) ...[
+            Text(
+              'Selecciona una mesa para asociar esta cuenta',
+              style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _abrirSelectorMesas,
+                icon: const Icon(Icons.search),
+                label: const Text('Seleccionar mesa'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF4A90E2),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: const BorderSide(color: Color(0xFF4A90E2)),
+                ),
+              ),
+            ),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4A90E2).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: const Color(0xFF4A90E2).withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4A90E2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      mesa.numero,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Mesa ${mesa.numero}',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            if (mesa.zona != null && mesa.zona!.isNotEmpty) ...[
+                              Icon(Icons.location_on_outlined,
+                                  size: 12, color: Colors.grey[600]),
+                              const SizedBox(width: 2),
+                              Text(
+                                mesa.zona!,
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.grey[600]),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            Icon(Icons.people_alt_outlined,
+                                size: 12, color: Colors.grey[600]),
+                            const SizedBox(width: 2),
+                            Text(
+                              'Cap: ${mesa.capacidad}',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey[600]),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.swap_horiz),
+                    color: const Color(0xFF4A90E2),
+                    tooltip: 'Cambiar mesa',
+                    onPressed: _abrirSelectorMesas,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _abrirSelectorMesas() async {
+    // Si la lista está vacía, intentar cargar
+    if (_mesasDisponibles.isEmpty) {
+      await _cargarMesasDisponibles();
+    }
+
+    if (!mounted) return;
+
+    final selected = await showModalBottomSheet<Mesa>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _MesaPickerSheet(mesas: _mesasDisponibles),
+    );
+
+    if (selected != null) {
+      setState(() {
+        _mesaSeleccionada = selected;
+        _buyerNameController.text = 'Mesa ${selected.numero}';
+      });
+      // También guardar como mesa activa en el servicio (por consistencia).
+      _orderService.setActiveMesa(idMesa: selected.id, numero: selected.numero);
+    }
   }
 
   Widget _buildBuyerInfoSection() {
@@ -941,9 +1182,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   void _createOrder({bool fromWeb = false}) async {
-    // Si viene de web, no validamos el formulario local de CheckoutScreen
-    // ya que CheckoutWebScreen ya validó su propio formulario
-    if (!fromWeb && !_formKey.currentState!.validate()) {
+    // Validar el formulario local sólo si:
+    //  - NO viene de web (CheckoutWebScreen ya validó su propio formulario), y
+    //  - NO estamos en modo restaurante (ahí el form del comprador está oculto).
+    if (!fromWeb && !_modoRestaurante && !_formKey.currentState!.validate()) {
+      return;
+    }
+
+    // En modo restaurante, exigir mesa seleccionada
+    if (_modoRestaurante && _mesaSeleccionada == null) {
+      _showErrorMessage('Debes seleccionar una mesa antes de crear la cuenta');
       return;
     }
 
@@ -998,8 +1246,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final idTpv = await _userPreferencesService.getIdTpv();
       final idSeller = await _userPreferencesService.getIdSeller();
 
-      // Generar ID único para la orden offline
+      // Generar ID único para la orden offline (para la UI) y un client_uuid
+      // estable para idempotencia al sincronizar (evita ventas duplicadas).
       final offlineOrderId = '${DateTime.now().millisecondsSinceEpoch}';
+      final clientUuid = UuidGenerator.v4();
 
       // Calcular totales
       double subtotal = 0.0;
@@ -1044,6 +1294,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // Crear estructura de orden virtual con datos del cliente
       final orderData = {
         'id': offlineOrderId,
+        'client_uuid': clientUuid,
         'id_tienda': idTienda,
         'id_tpv': idTpv,
         'id_vendedor': idSeller,
@@ -1053,14 +1304,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'total_descuentos': totalDescuentos,
         'total': total,
         'estado': 'pendiente_sincronizacion',
+        // Estado de negocio con el que debe quedar la orden tras sincronizar.
+        // Una venta de checkout es 'completada'. Se usa al subir (para aplicar
+        // el cambio de estado en el servidor) y al marcar la orden sincronizada
+        // (para reescribir el estado local y poder purgarla).
+        'estado_final': 'completada',
         'is_pending_sync': true,
         'created_offline_at': DateTime.now().toIso8601String(),
-        // DATOS DEL CLIENTE CAPTURADOS
+        // DATOS DEL CLIENTE / MESA CAPTURADOS
         'buyer_name': buyerName,
         'buyer_phone': buyerPhone,
         'extra_contacts': _extraContactsController.text.trim(),
         'promo_code': _promoApplied ? _promoCodeController.text.trim() : null,
         'promo_discount': _promoDiscount,
+        'id_mesa': _mesaSeleccionada?.id,
+        'mesa_numero': _mesaSeleccionada?.numero,
         'items':
             widget.order.items.map((item) {
               final itemTotal =
@@ -1105,6 +1363,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       // Actualizar inventario en cache
       for (final item in widget.order.items) {
+        // 🚫 No rebajar stock local de productos elaborados ni servicios.
+        // En el flujo online el backend descuenta los ingredientes en lugar
+        // del producto elaborado; al sincronizarse ocurrirá lo mismo. Si lo
+        // descontáramos aquí, el cache offline se quedaría sin stock (porque
+        // el "stock" de un elaborado se calcula dinámicamente a partir de
+        // sus ingredientes) y la cantidad se restaría dos veces.
+        if (item.producto.esElaborado || item.producto.esServicio) {
+          print(
+            '⏭️ OFFLINE - Omitiendo rebaja de stock local para '
+            '${item.producto.esElaborado ? "elaborado" : "servicio"}: '
+            '${item.producto.denominacion} (id=${item.producto.id})',
+          );
+          continue;
+        }
+
         final inventoryMetadata = item.inventoryData;
 
         if (inventoryMetadata != null) {
@@ -1154,11 +1427,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       });
       print('📦 Inventario actualizado en cache');
 
-      // Navegar a órdenes con el ID para abrir detalle automáticamente
-      Navigator.pushNamedAndRemoveUntil(
-        context, '/orders', (route) => false,
-        arguments: {'openOrderId': offlineOrderId},
-      );
+      // Si era flujo de mesa, volvemos a la pantalla de la mesa.
+      final idMesaOffline = _mesaSeleccionada?.id;
+      _orderService.clearActiveMesa();
+      // En offline no pasamos por finalizeOrderWithDetails (donde
+      // OrderService llama a marcarCerrada + clearActive), así que limpiamos
+      // aquí la cuenta activa para que NavigationHelper.goHome regrese a
+      // /mesas en vez de a /categories.
+      MesaCuentaService().clearActive();
+      if (_modoRestaurante && idMesaOffline != null) {
+        // Flujo restaurante: volver a la pantalla de la mesa.
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/mesa-detail',
+          (route) => route.settings.name == '/mesas',
+          arguments: idMesaOffline,
+        );
+      } else {
+        // Flujo normal: navegar a órdenes con el ID para abrir detalle automáticamente.
+        Navigator.pushNamedAndRemoveUntil(
+          context, '/orders', (route) => false,
+          arguments: {'openOrderId': offlineOrderId},
+        );
+      }
     } catch (e) {
       print('❌ Error creando orden offline: $e');
       _showErrorMessage('Error al crear la orden offline: $e');
@@ -1173,11 +1464,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   ) async {
     try {
       // 1. Primero registrar el cliente en Supabase si tenemos datos
+      // En modo restaurante NO registramos cliente — la cuenta se asocia a una mesa.
       int? idCliente;
 
-      if (buyerName.isNotEmpty) {
+      if (!_modoRestaurante && buyerName.isNotEmpty) {
         idCliente = await _registerClientInSupabase(buyerName, buyerPhone);
         print('📝 ID Cliente capturado: $idCliente');
+      } else if (_modoRestaurante) {
+        print('🍽️ Modo restaurante: omitiendo registro de cliente (mesa ${_mesaSeleccionada?.numero})');
       }
 
       // 2. Create order with all the collected information
@@ -1192,6 +1486,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'finalTotal': finalTotal,
         'originalTotal': subtotal,
         'idCliente': idCliente, // Agregar ID del cliente al orderData
+        'idMesa': _mesaSeleccionada?.id, // ID de mesa en modo restaurante
         'paymentBreakdown': breakdown, // Add payment breakdown
       };
 
@@ -1206,6 +1501,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ? _extraContactsController.text.trim()
                 : null,
         paymentMethod: 'Múltiples métodos',
+        idMesa: _mesaSeleccionada?.id,
+        mesaNumero: _mesaSeleccionada?.numero,
       );
 
       // Finalize the order
@@ -1224,13 +1521,31 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           _showSuccessMessage('¡Orden registrada exitosamente!');
         }
 
-        // Navigate back to orders screen, auto-open the created order
-        final opId = result['operationId'];
-        final orderIdToOpen = opId != null ? 'ORD-$opId' : updatedOrder.id;
-        Navigator.pushNamedAndRemoveUntil(
-          context, '/orders', (route) => false,
-          arguments: {'openOrderId': orderIdToOpen},
-        );
+        final idMesa = _mesaSeleccionada?.id;
+        _orderService.clearActiveMesa();
+        // Belt-and-suspenders: OrderService.finalizeOrderWithDetails ya hace
+        // clearActive() tras marcarCerrada, pero si esa rama no se ejecutó
+        // por alguna razón (cuenta no asociada, error silencioso), aquí lo
+        // garantizamos para que el Home vuelva a /mesas.
+        MesaCuentaService().clearActive();
+        if (_modoRestaurante && idMesa != null) {
+          // Flujo restaurante: volver a la pantalla de la mesa
+          // (más natural que ir a /orders global).
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/mesa-detail',
+            (route) => route.settings.name == '/mesas',
+            arguments: idMesa,
+          );
+        } else {
+          // Flujo normal: navegar a órdenes y auto-abrir la orden creada.
+          final opId = result['operationId'];
+          final orderIdToOpen = opId != null ? 'ORD-$opId' : updatedOrder.id;
+          Navigator.pushNamedAndRemoveUntil(
+            context, '/orders', (route) => false,
+            arguments: {'openOrderId': orderIdToOpen},
+          );
+        }
       } else {
         _showErrorMessage('Error al registrar la venta: ${result['error']}');
       }
@@ -1293,6 +1608,270 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   void _showErrorMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+}
+
+/// Bottom sheet con grilla de mesas activas para asociar al checkout.
+/// Devuelve la mesa elegida vía Navigator.pop.
+class _MesaPickerSheet extends StatefulWidget {
+  final List<Mesa> mesas;
+  const _MesaPickerSheet({required this.mesas});
+
+  @override
+  State<_MesaPickerSheet> createState() => _MesaPickerSheetState();
+}
+
+class _MesaPickerSheetState extends State<_MesaPickerSheet> {
+  String _busqueda = '';
+  String? _zonaFiltro;
+
+  List<String> get _zonas {
+    final s = <String>{};
+    for (final m in widget.mesas) {
+      final z = m.zona?.trim();
+      if (z != null && z.isNotEmpty) s.add(z);
+    }
+    return s.toList()..sort();
+  }
+
+  List<Mesa> get _filtradas {
+    return widget.mesas.where((m) {
+      if (_zonaFiltro != null && m.zona != _zonaFiltro) return false;
+      if (_busqueda.trim().isNotEmpty) {
+        final q = _busqueda.trim().toLowerCase();
+        if (!m.numero.toLowerCase().contains(q) &&
+            !(m.zona?.toLowerCase().contains(q) ?? false)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.7,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (ctx, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.table_restaurant,
+                        color: Color(0xFFE65100)),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Seleccionar Mesa',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Buscar mesa...',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onChanged: (v) => setState(() => _busqueda = v),
+                ),
+              ),
+              if (_zonas.isNotEmpty)
+                SizedBox(
+                  height: 44,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6, top: 8),
+                        child: ChoiceChip(
+                          label: const Text('Todas',
+                              style: TextStyle(fontSize: 12)),
+                          selected: _zonaFiltro == null,
+                          onSelected: (_) =>
+                              setState(() => _zonaFiltro = null),
+                        ),
+                      ),
+                      for (final z in _zonas)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6, top: 8),
+                          child: ChoiceChip(
+                            label: Text(z,
+                                style: const TextStyle(fontSize: 12)),
+                            selected: _zonaFiltro == z,
+                            onSelected: (_) => setState(() => _zonaFiltro = z),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              Expanded(
+                child: _filtradas.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.search_off,
+                                  size: 56, color: Colors.grey[400]),
+                              const SizedBox(height: 12),
+                              Text(
+                                widget.mesas.isEmpty
+                                    ? 'No hay mesas activas creadas.\nVe a "Mesas y Comensales" para crear una.'
+                                    : 'No hay mesas que coincidan con los filtros',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.grey[700]),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : GridView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.all(16),
+                        gridDelegate:
+                            const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 150,
+                          mainAxisSpacing: 10,
+                          crossAxisSpacing: 10,
+                          childAspectRatio: 1,
+                        ),
+                        itemCount: _filtradas.length,
+                        itemBuilder: (_, i) {
+                          final m = _filtradas[i];
+                          Color border;
+                          Color bg;
+                          if (m.ordenesAbiertas == 0) {
+                            border = Colors.green.shade300;
+                            bg = Colors.green.shade50;
+                          } else if (m.ordenesAbiertas == 1) {
+                            border = Colors.orange.shade300;
+                            bg = Colors.orange.shade50;
+                          } else {
+                            border = Colors.red.shade300;
+                            bg = Colors.red.shade50;
+                          }
+                          return Material(
+                            color: bg,
+                            borderRadius: BorderRadius.circular(12),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () => Navigator.pop(context, m),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: border, width: 1.5),
+                                ),
+                                padding: const EdgeInsets.all(10),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      m.numero,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF1F2937),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    if (m.zona != null && m.zona!.isNotEmpty)
+                                      Text(
+                                        m.zona!,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey[700],
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    const Spacer(),
+                                    Row(
+                                      children: [
+                                        Icon(Icons.people_alt_outlined,
+                                            size: 13, color: Colors.grey[700]),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          '${m.capacidad}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                        const Spacer(),
+                                        if (m.ordenesAbiertas > 0)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 5,
+                                              vertical: 1,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: border,
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              '${m.ordenesAbiertas}',
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

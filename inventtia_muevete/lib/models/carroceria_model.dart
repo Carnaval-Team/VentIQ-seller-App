@@ -10,8 +10,11 @@ class CarroceriaModel {
   final bool seguroVigente;
   final DateTime? seguroVence;
   final String? seguroUrl;
-  final String? mcNumber;
-  final String? dotNumber;
+  final String? licCirculacionFrenteUrl;
+  final String? licCirculacionDorsoUrl;
+  final String? licOperativaFrenteUrl;
+  final String? licOperativaDorsoUrl;
+  final String? vehiclePhotoUrl;  // Foto opcional del vehículo
   final bool activo;
   final DateTime? createdAt;
 
@@ -27,8 +30,11 @@ class CarroceriaModel {
     this.seguroVigente = false,
     this.seguroVence,
     this.seguroUrl,
-    this.mcNumber,
-    this.dotNumber,
+    this.licCirculacionFrenteUrl,
+    this.licCirculacionDorsoUrl,
+    this.licOperativaFrenteUrl,
+    this.licOperativaDorsoUrl,
+    this.vehiclePhotoUrl,  // Foto opcional del vehículo
     this.activo = true,
     this.createdAt,
   });
@@ -52,8 +58,11 @@ class CarroceriaModel {
           ? DateTime.tryParse(json['seguro_vence'] as String)
           : null,
       seguroUrl: json['seguro_url'] as String?,
-      mcNumber: json['mc_number'] as String?,
-      dotNumber: json['dot_number'] as String?,
+      licCirculacionFrenteUrl: json['lic_circulacion_frente_url'] as String?,
+      licCirculacionDorsoUrl: json['lic_circulacion_dorso_url'] as String?,
+      licOperativaFrenteUrl: json['lic_operativa_frente_url'] as String?,
+      licOperativaDorsoUrl: json['lic_operativa_dorso_url'] as String?,
+      vehiclePhotoUrl: json['vehicle_photo_url'] as String?,  // Foto opcional del vehículo
       activo: json['activo'] as bool? ?? true,
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'] as String)
@@ -73,8 +82,16 @@ class CarroceriaModel {
         if (seguroVence != null)
           'seguro_vence': seguroVence!.toIso8601String().substring(0, 10),
         if (seguroUrl != null) 'seguro_url': seguroUrl,
-        if (mcNumber != null && mcNumber!.isNotEmpty) 'mc_number': mcNumber,
-        if (dotNumber != null && dotNumber!.isNotEmpty) 'dot_number': dotNumber,
+        if (licCirculacionFrenteUrl != null && licCirculacionFrenteUrl!.isNotEmpty)
+          'lic_circulacion_frente_url': licCirculacionFrenteUrl,
+        if (licCirculacionDorsoUrl != null && licCirculacionDorsoUrl!.isNotEmpty)
+          'lic_circulacion_dorso_url': licCirculacionDorsoUrl,
+        if (licOperativaFrenteUrl != null && licOperativaFrenteUrl!.isNotEmpty)
+          'lic_operativa_frente_url': licOperativaFrenteUrl,
+        if (licOperativaDorsoUrl != null && licOperativaDorsoUrl!.isNotEmpty)
+          'lic_operativa_dorso_url': licOperativaDorsoUrl,
+        if (vehiclePhotoUrl != null && vehiclePhotoUrl!.isNotEmpty)
+          'vehicle_photo_url': vehiclePhotoUrl,
         'activo': activo,
       };
 
@@ -90,8 +107,11 @@ class CarroceriaModel {
     bool? seguroVigente,
     DateTime? seguroVence,
     String? seguroUrl,
-    String? mcNumber,
-    String? dotNumber,
+    String? licCirculacionFrenteUrl,
+    String? licCirculacionDorsoUrl,
+    String? licOperativaFrenteUrl,
+    String? licOperativaDorsoUrl,
+    String? vehiclePhotoUrl,
     bool? activo,
     DateTime? createdAt,
   }) {
@@ -107,8 +127,14 @@ class CarroceriaModel {
       seguroVigente: seguroVigente ?? this.seguroVigente,
       seguroVence: seguroVence ?? this.seguroVence,
       seguroUrl: seguroUrl ?? this.seguroUrl,
-      mcNumber: mcNumber ?? this.mcNumber,
-      dotNumber: dotNumber ?? this.dotNumber,
+      licCirculacionFrenteUrl:
+          licCirculacionFrenteUrl ?? this.licCirculacionFrenteUrl,
+      licCirculacionDorsoUrl:
+          licCirculacionDorsoUrl ?? this.licCirculacionDorsoUrl,
+      licOperativaFrenteUrl:
+          licOperativaFrenteUrl ?? this.licOperativaFrenteUrl,
+      licOperativaDorsoUrl: licOperativaDorsoUrl ?? this.licOperativaDorsoUrl,
+      vehiclePhotoUrl: vehiclePhotoUrl ?? this.vehiclePhotoUrl,
       activo: activo ?? this.activo,
       createdAt: createdAt ?? this.createdAt,
     );

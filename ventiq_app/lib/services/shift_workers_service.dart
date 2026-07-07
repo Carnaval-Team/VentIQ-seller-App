@@ -405,46 +405,72 @@ class ShiftWorkersService {
   }
 
   /// Sincronizar operaciones pendientes (llamado por AutoSyncService)
+  ///
+  /// Solo se REMUEVEN de pending_operations las operaciones de trabajador que
+  /// se sincronizaron con éxito; las que fallan se conservan para el próximo
+  /// intento (no se pierden) y, lo más importante, NO se vuelven a procesar en
+  /// cada ciclo de sync (antes se re-insertaban cada 1 min → filas duplicadas).
+  /// La inserción usa upsert idempotente sobre el índice único
+  /// (id_turno, id_trabajador).
   static Future<int> syncPendingOperations() async {
     try {
       print('🔄 Sincronizando operaciones de trabajadores de turno...');
-      
+
       final pendingOps = await _userPrefs.getPendingOperations();
       int syncedCount = 0;
+      // Operaciones que se conservan: todas las que NO son de trabajador, más
+      // las de trabajador que fallaron en este intento.
+      final List<Map<String, dynamic>> remaining = [];
 
       for (final op in pendingOps) {
-        final type = op['type'] as String;
-        
+        final type = op['type'] as String?;
+
         if (type == 'add_shift_worker') {
           final data = op['data'] as Map<String, dynamic>;
-          
           try {
-            await _supabase.from('app_dat_turno_trabajadores').insert({
+            // Upsert idempotente: si ya existe (id_turno, id_trabajador), no
+            // duplica. Requiere el índice único app_dat_turno_trabajadores_unique_active.
+            await _supabase.from('app_dat_turno_trabajadores').upsert({
               'id_turno': data['id_turno'],
               'id_trabajador': data['id_trabajador'],
               'hora_entrada': data['hora_entrada'],
-            });
-            
+            }, onConflict: 'id_turno,id_trabajador', ignoreDuplicates: true);
+
             syncedCount++;
-            print('  ✅ Trabajador agregado sincronizado');
+            print('  ✅ Trabajador agregado sincronizado (idempotente)');
           } catch (e) {
             print('  ❌ Error sincronizando trabajador: $e');
+            remaining.add(op); // conservar para reintento
           }
         } else if (type == 'register_worker_exit') {
           final data = op['data'] as Map<String, dynamic>;
-          
           try {
+            // Update por id_registro: idempotente por naturaleza.
             await _supabase
                 .from('app_dat_turno_trabajadores')
                 .update({'hora_salida': data['hora_salida']})
                 .eq('id', data['id_registro']);
-            
+
             syncedCount++;
             print('  ✅ Salida de trabajador sincronizada');
           } catch (e) {
             print('  ❌ Error sincronizando salida: $e');
+            remaining.add(op); // conservar para reintento
           }
+        } else {
+          // Otros tipos (apertura/cierre/cambio estado) NO los gestiona este
+          // servicio: conservarlos intactos.
+          remaining.add(op);
         }
+      }
+
+      // Persistir la lista resultante solo si cambió el número de operaciones
+      // de trabajador procesadas con éxito.
+      if (remaining.length != pendingOps.length) {
+        await _userPrefs.savePendingOperations(remaining);
+        print(
+          '  🔖 Operaciones de trabajador sincronizadas removidas de pendientes',
+        );
       }
 
       if (syncedCount > 0) {

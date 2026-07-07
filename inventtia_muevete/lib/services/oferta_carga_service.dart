@@ -20,13 +20,21 @@ class OfertaCargaService {
           .insert(oferta.toInsertJson())
           .select()
           .single();
-      // Mark the carga as 'ofertada' if it was still 'publicada'
-      await _supabase
+      // Cambiar estado de la carga a 'ofertada' via bitácora (solo si estaba publicada)
+      final cargaData = await _supabase
           .schema('muevete')
           .from('cargas')
-          .update({'estado': 'ofertada', 'updated_at': DateTime.now().toIso8601String()})
+          .select('estado')
           .eq('id', oferta.cargaId)
-          .eq('estado', 'publicada');
+          .single();
+      if (cargaData['estado'] == 'publicada') {
+        await _supabase.schema('muevete').rpc('fn_cambiar_estado_carga', params: {
+          'p_carga_id':      oferta.cargaId,
+          'p_estado_codigo': 'ofertada',
+          'p_driver_id':     oferta.driverId,
+          'p_motivo':        'Primera oferta recibida',
+        });
+      }
       debugPrint('[OfertaCargaService] Oferta enviada id=${data['id']}');
       return OfertaCargaModel.fromJson(data);
     } catch (e) {
@@ -107,13 +115,18 @@ class OfertaCargaService {
           .eq('carga_id', cargaId)
           .eq('estado', 'pendiente')
           .neq('id', ofertaId);
-      // 3. Assign carrier to carga
+      // 3. Assign carrier + registrar estado 'aceptada' en bitácora
       await _supabase.schema('muevete').from('cargas').update({
         'carrier_driver_id': driverId,
         'oferta_aceptada_id': ofertaId,
-        'estado': 'aceptada',
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', cargaId);
+      await _supabase.schema('muevete').rpc('fn_cambiar_estado_carga', params: {
+        'p_carga_id':      cargaId,
+        'p_estado_codigo': 'aceptada',
+        'p_driver_id':     driverId,
+        'p_motivo':        'Oferta aceptada por shipper',
+      });
       debugPrint('[OfertaCargaService] Oferta $ofertaId aceptada OK');
     } catch (e) {
       debugPrint('[OfertaCargaService] Error aceptarOferta: $e');

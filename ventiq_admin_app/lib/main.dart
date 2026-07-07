@@ -61,6 +61,7 @@ import 'screens/subscription_detail_screen.dart';
 import 'screens/store_selection_screen.dart';
 import 'screens/wifi_printers_screen.dart';
 import 'screens/consignacion_screen.dart';
+import 'screens/wapi_notifications_screen.dart';
 import 'screens/interacciones_clientes_screen.dart';
 import 'screens/precios_productos_screen.dart';
 import 'screens/carnaval_orders_screen.dart';
@@ -69,6 +70,8 @@ import 'screens/hr/hr_checkin_screen.dart';
 import 'screens/hr/hr_checkout_screen.dart';
 import 'screens/hr/hr_salary_report_screen.dart';
 import 'screens/hr/hr_worker_config_screen.dart';
+import 'screens/importadora/importadora_facturas_screen.dart';
+import 'screens/importadora/estados_factura_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -236,6 +239,7 @@ class MyApp extends StatelessWidget {
             (context) => const InventoryExtractionBySaleScreen(),
         '/subscription-detail': (context) => const SubscriptionDetailScreen(),
         '/consignacion': (context) => const ConsignacionScreen(),
+        '/wapi-notifications': (context) => const WapiNotificationsScreen(),
         '/wifi-printers': (context) => const WiFiPrintersScreen(),
         '/interacciones-clientes': (context) => const InteraccionesClientesScreen(),
         '/carnaval-orders': (context) => const CarnavalOrdersScreen(),
@@ -244,6 +248,8 @@ class MyApp extends StatelessWidget {
         '/hr-checkout': (context) => const HRCheckoutScreen(),
         '/hr-salary-report': (context) => const HRSalaryReportScreen(),
         '/hr-worker-config': (context) => const HRWorkerConfigScreen(),
+        '/importadora-facturas': (context) => const ImportadoraFacturasScreen(),
+        '/importadora-estados': (context) => const EstadosFacturaScreen(),
       },
     );
   }

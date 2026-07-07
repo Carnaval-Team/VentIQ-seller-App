@@ -15,7 +15,19 @@
       "Bash(sed -n '/^CREATE TABLE public.app_dat_categoria[^_]/,/^\\);$/p' VentiQ.sql)",
       "Bash(flutter pub *)",
       "Bash(dart analyze *)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(sales)",
+      "Bash(order)",
+      "Bash(paquet\")",
+      "WebFetch(domain:pub.dev)",
+      "Bash(git log *)",
+      "Bash(findstr /I marketplace)",
+      "WebSearch",
+      "Bash(deno check *)",
+      "Bash(deno --version)"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "supabase"
+  ]
 }

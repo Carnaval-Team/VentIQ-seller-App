@@ -1,10 +1,18 @@
+import '../utils/peso_unidad_util.dart';
+
 class CargaModel {
   final int id;
   final String shipperId;
-  final String tipo; // 'ftl' | 'ltl'
+
+  // Tipo de carga — FK a app_nom_tipo_carga
+  final int tipoCargaId;
+  final String? tipoCargaNombre;      // enriquecido por JOIN
+  final String? tipoCargaAbreviacion; // enriquecido por JOIN (e.g. 'FTL', 'LTL')
+
+  // Estado — campo de cache (fuente autoritativa: app_dat_estado_carga)
   final String estado;
   // estados: 'publicada','en_matching','ofertada','aceptada',
-  //          'en_transito','entregada','completada','cancelada','disputa'
+  //          'en_transito','entregada','completada','cancelada','disputa','tomada','completada_carrier'
 
   // Origen
   final String dirOrigen;
@@ -13,6 +21,10 @@ class CargaModel {
   final String? ciudadOrigen;
   final String? estadoOrigen;
   final String? paisOrigen;
+  final String? nombreUbicacionOrigen;
+  final String? cpOrigen;
+  final String? contactoOrigenNombre;
+  final String? contactoOrigenTel;
 
   // Destino
   final String dirDestino;
@@ -21,11 +33,32 @@ class CargaModel {
   final String? ciudadDestino;
   final String? estadoDestino;
   final String? paisDestino;
+  final String? nombreUbicacionDestino;
+  final String? cpDestino;
+  final String? contactoDestinoNombre;
+  final String? contactoDestinoTel;
 
   // Mercancía
   final String? descripcion;
-  final String? tipoMercancia;
+
+  // Tipo de mercancía — FK a app_nom_tipo_mercancia
+  final int? tipoMercanciaId;
+  final String? tipoMercanciaNombre;      // enriquecido por JOIN
+  final String? tipoMercanciaCodigo;      // enriquecido por JOIN (ej: 'DRY_GOODS')
+  final String? tipoMercanciaNmfc;        // código NMFC, si aplica
+
+  // Commodity — FK a app_nom_commodity
+  final int? commodityNomId;
+  final String? commodityNomNombre;       // enriquecido por JOIN
+  final String? commodityNomCodigo;       // enriquecido por JOIN
+
   final double? pesoKg;
+  /// Valor ingresado en la unidad seleccionada (no convertir al mostrar).
+  final double? pesoValor;
+  final int? unidadPesoId;
+  final String? unidadPesoNombre;
+  final String? unidadPesoSimbolo;
+  final double? unidadPesoFactorKg;
   final double? volumenM3;
   final double? longitudM;
   final double? anchoM;
@@ -37,8 +70,17 @@ class CargaModel {
   final bool requiereSeguro;
   final String? instrucciones;
 
-  // Equipo
-  final String? tipoEquipo;
+  // Opciones de manejo/equipo adicional — M:N con app_nom_equipo_manejo_carga
+  final List<int> opcionesEquipoManejo;          // IDs de la tabla pivot
+  final List<String> opcionesEquipoManejoNombres; // enriquecido por JOIN
+  final List<String> opcionesEquipoManejoCodigos; // enriquecido por JOIN
+
+  // Tipo de equipo — FK a app_nom_tipo_equipo (compartido con vehiculos)
+  final int? tipoEquipoId;
+  final String? tipoEquipoNombre;      // enriquecido por JOIN
+  final String? tipoEquipoAbreviacion; // enriquecido por JOIN
+
+  // Tipo de vehículo requerido — FK a muevete.vehicle_type
   final int? idTipoVehiculo;
 
   // Fechas
@@ -54,10 +96,15 @@ class CargaModel {
   final double? precioFinal;
   final String moneda;
 
+  // Comercial
+  final List<String> numerosReferencia;
+
   // Visibilidad
   final bool destacada;
   final DateTime? destacadaHasta;
   final DateTime? exclusivaHasta;
+  final bool esPrivada;
+  final int? horasAnticipacionPublica;
 
   // Distancia
   final double? distanciaKm;
@@ -72,6 +119,7 @@ class CargaModel {
 
   // Carrier asignado
   final int? carrierDriverId;
+  final String? carrierUuid;     // UUID directo del carrier (asignado por shipper)
   final int? ofertaAceptadaId;
 
   // Tracking
@@ -79,13 +127,16 @@ class CargaModel {
   final double? ultimaLon;
   final DateTime? ultimaUbicacionAt;
 
+  // Prioridad asignada por el shipper
+  final String prioridad; // 'normal' | 'alta' | 'urgente'
+
   // Metadata
   final DateTime createdAt;
   final DateTime? updatedAt;
   final DateTime? expiresAt;
 
-  // Peso + horas
-  final String unidadPeso;   // 'kg' | 'tonelada'
+  // Peso + horas (unidadPeso legacy text; preferir nomenclador)
+  final String unidadPeso;
   final double? horasCarga;
   final double? horasDescarga;
 
@@ -97,7 +148,9 @@ class CargaModel {
   const CargaModel({
     required this.id,
     required this.shipperId,
-    required this.tipo,
+    required this.tipoCargaId,
+    this.tipoCargaNombre,
+    this.tipoCargaAbreviacion,
     required this.estado,
     required this.dirOrigen,
     required this.latOrigen,
@@ -112,8 +165,19 @@ class CargaModel {
     this.estadoDestino,
     this.paisDestino,
     this.descripcion,
-    this.tipoMercancia,
+    this.tipoMercanciaId,
+    this.tipoMercanciaNombre,
+    this.tipoMercanciaCodigo,
+    this.tipoMercanciaNmfc,
+    this.commodityNomId,
+    this.commodityNomNombre,
+    this.commodityNomCodigo,
     this.pesoKg,
+    this.pesoValor,
+    this.unidadPesoId,
+    this.unidadPesoNombre,
+    this.unidadPesoSimbolo,
+    this.unidadPesoFactorKg,
     this.volumenM3,
     this.longitudM,
     this.anchoM,
@@ -124,7 +188,21 @@ class CargaModel {
     this.temperaturaMax,
     this.requiereSeguro = false,
     this.instrucciones,
-    this.tipoEquipo,
+    this.nombreUbicacionOrigen,
+    this.cpOrigen,
+    this.contactoOrigenNombre,
+    this.contactoOrigenTel,
+    this.nombreUbicacionDestino,
+    this.cpDestino,
+    this.contactoDestinoNombre,
+    this.contactoDestinoTel,
+    this.opcionesEquipoManejo = const [],
+    this.opcionesEquipoManejoNombres = const [],
+    this.opcionesEquipoManejoCodigos = const [],
+    this.numerosReferencia = const [],
+    this.tipoEquipoId,
+    this.tipoEquipoNombre,
+    this.tipoEquipoAbreviacion,
     this.idTipoVehiculo,
     this.fechaRecogida,
     this.fechaEntrega,
@@ -138,12 +216,15 @@ class CargaModel {
     this.destacada = false,
     this.destacadaHasta,
     this.exclusivaHasta,
+    this.esPrivada = false,
+    this.horasAnticipacionPublica,
     this.distanciaKm,
     this.distanciaMillas,
     this.esLtl = false,
     this.ltlEspacioOcupado,
     this.esRecurrente = false,
     this.carrierDriverId,
+    this.carrierUuid,
     this.ofertaAceptadaId,
     this.ultimaLat,
     this.ultimaLon,
@@ -157,14 +238,17 @@ class CargaModel {
     this.shipperNombre,
     this.carrierNombre,
     this.ofertasCount,
+    this.prioridad = 'normal',
   });
 
   factory CargaModel.fromJson(Map<String, dynamic> json) {
     return CargaModel(
       id: json['id'] as int,
       shipperId: json['shipper_id'] as String,
-      tipo: json['tipo'] as String? ?? 'ftl',
-      estado: json['estado'] as String? ?? 'publicada',
+      tipoCargaId: json['tipo_carga_id'] as int? ?? 1,
+      tipoCargaNombre: json['tipo_carga_nombre'] as String?,
+      tipoCargaAbreviacion: json['tipo_carga_abreviacion'] as String?,
+      estado: (json['estado_actual'] ?? json['estado']) as String? ?? 'publicada',
       dirOrigen: json['dir_origen'] as String? ?? '',
       latOrigen: (json['lat_origen'] as num?)?.toDouble() ?? 0,
       lonOrigen: (json['lon_origen'] as num?)?.toDouble() ?? 0,
@@ -178,8 +262,19 @@ class CargaModel {
       estadoDestino: json['estado_destino'] as String?,
       paisDestino: json['pais_destino'] as String?,
       descripcion: json['descripcion'] as String?,
-      tipoMercancia: json['tipo_mercancia'] as String?,
+      tipoMercanciaId: json['tipo_mercancia_id'] as int?,
+      tipoMercanciaNombre: json['tipo_mercancia_nombre'] as String?,
+      tipoMercanciaCodigo: json['tipo_mercancia_codigo'] as String?,
+      tipoMercanciaNmfc: json['tipo_mercancia_nmfc'] as String?,
+      commodityNomId: json['commodity_nom_id'] as int?,
+      commodityNomNombre: json['commodity_nom_nombre'] as String?,
+      commodityNomCodigo: json['commodity_nom_codigo'] as String?,
       pesoKg: (json['peso_kg'] as num?)?.toDouble(),
+      pesoValor: (json['peso_valor'] as num?)?.toDouble(),
+      unidadPesoId: json['unidad_peso_id'] as int?,
+      unidadPesoNombre: json['unidad_peso_nombre'] as String?,
+      unidadPesoSimbolo: json['unidad_peso_simbolo'] as String?,
+      unidadPesoFactorKg: (json['unidad_peso_factor_kg'] as num?)?.toDouble(),
       volumenM3: (json['volumen_m3'] as num?)?.toDouble(),
       longitudM: (json['longitud_m'] as num?)?.toDouble(),
       anchoM: (json['ancho_m'] as num?)?.toDouble(),
@@ -191,7 +286,21 @@ class CargaModel {
       temperaturaMax: (json['temperatura_max'] as num?)?.toDouble(),
       requiereSeguro: json['requiere_seguro'] as bool? ?? false,
       instrucciones: json['instrucciones'] as String?,
-      tipoEquipo: json['tipo_equipo'] as String?,
+      nombreUbicacionOrigen: json['nombre_ubicacion_origen'] as String?,
+      cpOrigen: json['cp_origen'] as String?,
+      contactoOrigenNombre: json['contacto_origen_nombre'] as String?,
+      contactoOrigenTel: json['contacto_origen_tel'] as String?,
+      nombreUbicacionDestino: json['nombre_ubicacion_destino'] as String?,
+      cpDestino: json['cp_destino'] as String?,
+      contactoDestinoNombre: json['contacto_destino_nombre'] as String?,
+      contactoDestinoTel: json['contacto_destino_tel'] as String?,
+      opcionesEquipoManejo: (json['opciones_equipo_manejo_ids'] as List<dynamic>?)?.cast<int>() ?? [],
+      opcionesEquipoManejoNombres: (json['opciones_equipo_manejo_nombres'] as List<dynamic>?)?.cast<String>() ?? [],
+      opcionesEquipoManejoCodigos: (json['opciones_equipo_manejo_codigos'] as List<dynamic>?)?.cast<String>() ?? [],
+      numerosReferencia: (json['numeros_referencia'] as List<dynamic>?)?.cast<String>() ?? [],
+      tipoEquipoId: json['tipo_equipo_id'] as int?,
+      tipoEquipoNombre: json['tipo_equipo_nombre'] as String?,
+      tipoEquipoAbreviacion: json['tipo_equipo_abreviacion'] as String?,
       idTipoVehiculo: json['id_tipo_vehiculo'] as int?,
       fechaRecogida: json['fecha_recogida'] != null
           ? DateTime.tryParse(json['fecha_recogida'] as String)
@@ -213,12 +322,15 @@ class CargaModel {
       exclusivaHasta: json['exclusiva_hasta'] != null
           ? DateTime.tryParse(json['exclusiva_hasta'] as String)
           : null,
+      esPrivada: json['es_privada'] as bool? ?? false,
+      horasAnticipacionPublica: json['horas_anticipacion_publica'] as int?,
       distanciaKm: (json['distancia_km'] as num?)?.toDouble(),
       distanciaMillas: (json['distancia_millas'] as num?)?.toDouble(),
       esLtl: json['es_ltl'] as bool? ?? false,
       ltlEspacioOcupado: (json['ltl_espacio_ocupado'] as num?)?.toDouble(),
       esRecurrente: json['es_recurrente'] as bool? ?? false,
       carrierDriverId: json['carrier_driver_id'] as int?,
+      carrierUuid: json['carrier_uuid'] as String?,
       ofertaAceptadaId: json['oferta_aceptada_id'] as int?,
       ultimaLat: (json['ultima_lat'] as num?)?.toDouble(),
       ultimaLon: (json['ultima_lon'] as num?)?.toDouble(),
@@ -238,14 +350,14 @@ class CargaModel {
       shipperNombre: json['shipper_nombre'] as String?,
       carrierNombre: json['carrier_nombre'] as String?,
       ofertasCount: json['ofertas_count'] as int?,
+      prioridad: json['prioridad'] as String? ?? 'normal',
     );
   }
 
   Map<String, dynamic> toInsertJson() {
     return {
       'shipper_id': shipperId,
-      'tipo': tipo,
-      'estado': estado,
+      'tipo_carga_id': tipoCargaId,
       'dir_origen': dirOrigen,
       'lat_origen': latOrigen,
       'lon_origen': lonOrigen,
@@ -259,7 +371,10 @@ class CargaModel {
       if (estadoDestino != null) 'estado_destino': estadoDestino,
       if (paisDestino != null) 'pais_destino': paisDestino,
       if (descripcion != null) 'descripcion': descripcion,
-      if (tipoMercancia != null) 'tipo_mercancia': tipoMercancia,
+      if (tipoMercanciaId != null) 'tipo_mercancia_id': tipoMercanciaId,
+      if (commodityNomId != null) 'commodity_nom_id': commodityNomId,
+      if (pesoValor != null) 'peso_valor': pesoValor,
+      if (unidadPesoId != null) 'unidad_peso_id': unidadPesoId,
       if (pesoKg != null) 'peso_kg': pesoKg,
       if (volumenM3 != null) 'volumen_m3': volumenM3,
       if (longitudM != null) 'longitud_m': longitudM,
@@ -271,7 +386,19 @@ class CargaModel {
       if (temperaturaMax != null) 'temperatura_max': temperaturaMax,
       'requiere_seguro': requiereSeguro,
       if (instrucciones != null) 'instrucciones': instrucciones,
-      if (tipoEquipo != null) 'tipo_equipo': tipoEquipo,
+      if (nombreUbicacionOrigen != null) 'nombre_ubicacion_origen': nombreUbicacionOrigen,
+      if (cpOrigen != null) 'cp_origen': cpOrigen,
+      if (contactoOrigenNombre != null) 'contacto_origen_nombre': contactoOrigenNombre,
+      if (contactoOrigenTel != null) 'contacto_origen_tel': contactoOrigenTel,
+      if (nombreUbicacionDestino != null) 'nombre_ubicacion_destino': nombreUbicacionDestino,
+      if (cpDestino != null) 'cp_destino': cpDestino,
+      if (contactoDestinoNombre != null) 'contacto_destino_nombre': contactoDestinoNombre,
+      if (contactoDestinoTel != null) 'contacto_destino_tel': contactoDestinoTel,
+      // opcionesEquipoManejo se inserta en la tabla pivot cargas_equipo_manejo — NO va aquí
+      if (numerosReferencia.isNotEmpty) 'numeros_referencia': numerosReferencia,
+      'es_privada': esPrivada,
+      if (horasAnticipacionPublica != null) 'horas_anticipacion_publica': horasAnticipacionPublica,
+      if (tipoEquipoId != null) 'tipo_equipo_id': tipoEquipoId,
       if (idTipoVehiculo != null) 'id_tipo_vehiculo': idTipoVehiculo,
       if (fechaRecogida != null)
         'fecha_recogida': fechaRecogida!.toIso8601String().split('T').first,
@@ -294,25 +421,138 @@ class CargaModel {
       if (horasCarga != null) 'horas_carga': horasCarga,
       if (horasDescarga != null) 'horas_descarga': horasDescarga,
       if (distanciaKm != null) 'distancia_km': distanciaKm,
+      'prioridad': prioridad,
     };
   }
 
   String get estadoLabel {
     const labels = {
-      'publicada': 'Publicada',
-      'en_matching': 'En Matching',
-      'ofertada': 'Con Ofertas',
-      'aceptada': 'Aceptada',
-      'en_transito': 'En Tránsito',
-      'entregada': 'Entregada',
-      'completada': 'Completada',
-      'cancelada': 'Cancelada',
-      'disputa': 'En Disputa',
+      'publicada':            'Publicada',
+      'en_matching':          'En Matching',
+      'ofertada':             'Con Ofertas',
+      'aceptada':             'Aceptada',
+      'tomada':               'Tomada',
+      'en_transito':          'En Tránsito',
+      'completada_carrier':   'Completada (Carrier)',
+      'entregada':            'Entregada',
+      'completada':           'Completada',
+      'cancelada':            'Cancelada',
     };
     return labels[estado] ?? estado;
   }
 
-  String get tipoLabel => tipo == 'ftl' ? 'FTL' : 'LTL';
+  /// Etiqueta legible para el tipo de carga
+  String get tipoLabel {
+    final abr = (tipoCargaAbreviacion ?? '').toUpperCase();
+    if (abr == 'FTL') return 'Camión Completo';
+    if (abr == 'LTL') return 'Parcial';
+    final nom = tipoCargaNombre ?? '';
+    if (nom.isNotEmpty) return nom;
+    return esLtl ? 'Parcial' : 'Camión Completo';
+  }
+
+  /// Compatibilidad retroactiva — devuelve la abreviación en minúsculas ('ftl'/'ltl')
+  String get tipo => (tipoCargaAbreviacion ?? (esLtl ? 'LTL' : 'FTL')).toLowerCase();
+
+  /// Compatibilidad retroactiva — devuelve el nombre del tipo de equipo
+  String? get tipoEquipo => tipoEquipoNombre ?? tipoEquipoAbreviacion;
+
+  /// Compatibilidad retroactiva — devuelve el nombre del tipo de mercancía
+  String? get tipoMercancia => tipoMercanciaNombre;
+
+  /// Compatibilidad retroactiva — devuelve el nombre del commodity
+  String? get commodityNombre => commodityNomNombre;
+
+  /// Compatibilidad retroactiva — devuelve los códigos de opciones de manejo
+  List<String> get opcionesEquipo => opcionesEquipoManejoCodigos;
+
+  /// Texto para UI: tipo de mercancía con NMFC si aplica
+  String? get tipoMercanciaDisplay {
+    final nombre = tipoMercanciaNombre;
+    if (nombre == null) return null;
+    final nmfc = tipoMercanciaNmfc;
+    if (nmfc != null && nmfc.isNotEmpty) {
+      return '$nombre (NMFC: $nmfc)';
+    }
+    return nombre;
+  }
+
+  /// Texto para UI: tipo de equipo con abreviación si aplica
+  String? get tipoEquipoDisplay {
+    final nombre = tipoEquipoNombre;
+    final abrev = tipoEquipoAbreviacion;
+    if (nombre != null && abrev != null) {
+      return '$nombre (${abrev.toUpperCase()})';
+    }
+    return nombre ?? abrev?.toUpperCase();
+  }
+
+  /// Texto para UI: opciones de manejo (prefiere nombres del nomenclador)
+  String get opcionesEquipoDisplay => opcionesEquipoManejoNombres.isNotEmpty
+      ? opcionesEquipoManejoNombres.join(', ')
+      : opcionesEquipoManejoCodigos.join(', ');
+
+  /// Peso para mostrar: usa [pesoValor] + símbolo del nomenclador (sin doble conversión).
+  String? get pesoDisplay {
+    final simbolo = unidadPesoSimbolo ??
+        (unidadPeso == 'tonelada' ? 't' : unidadPeso);
+    if (pesoValor != null) {
+      return PesoUnidadUtil.formatear(
+        valor: pesoValor!,
+        simbolo: simbolo,
+      );
+    }
+    if (pesoKg != null) {
+      final factor = unidadPesoFactorKg ??
+          (unidadPeso == 'tonelada' ? 1000.0 : 1.0);
+      final valor = PesoUnidadUtil.desdeKilogramos(pesoKg, factor);
+      if (valor != null) {
+        return PesoUnidadUtil.formatear(valor: valor, simbolo: simbolo);
+      }
+      return PesoUnidadUtil.formatear(valor: pesoKg!, simbolo: 'kg');
+    }
+    return null;
+  }
+
+  /// Peso en kg para filtros y comparaciones.
+  double? get pesoEnKg {
+    if (pesoKg != null) return pesoKg;
+    if (pesoValor != null && unidadPesoFactorKg != null) {
+      return PesoUnidadUtil.aKilogramos(pesoValor, unidadPesoFactorKg!);
+    }
+    return null;
+  }
+
+  /// Medidas L × A × H en metros
+  String? get medidasDisplay {
+    if (longitudM == null && anchoM == null && altoM == null) return null;
+    String part(double? v) =>
+        v != null ? '${v.toStringAsFixed(2)} m' : '—';
+    return '${part(longitudM)} × ${part(anchoM)} × ${part(altoM)}';
+  }
+
+  /// Ventana horaria de recogida (horario de carga)
+  String? get ventanaRecogidaDisplay {
+    final desde = ventanaRecogidaDesde;
+    final hasta = ventanaRecogidaHasta;
+    if (desde == null && hasta == null) return null;
+    if (desde != null && hasta != null) return '$desde – $hasta';
+    return desde ?? hasta;
+  }
+
+  /// Ventana horaria de entrega (horario de descarga)
+  String? get ventanaEntregaDisplay {
+    final desde = ventanaEntregaDesde;
+    final hasta = ventanaEntregaHasta;
+    if (desde == null && hasta == null) return null;
+    if (desde != null && hasta != null) return '$desde – $hasta';
+    return desde ?? hasta;
+  }
+
+  String get prioridadLabel {
+    const labels = {'normal': 'Normal', 'alta': 'Alta', 'urgente': 'Urgente'};
+    return labels[prioridad] ?? prioridad;
+  }
 
   String get rutaCorta {
     final origen = ciudadOrigen ?? dirOrigen;

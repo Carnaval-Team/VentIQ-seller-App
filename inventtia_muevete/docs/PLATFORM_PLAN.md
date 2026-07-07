@@ -16,7 +16,7 @@
 | `valoraciones_viaje` | Rating único por viaje (1 dimensión) |
 | `suscription_plan/user` | Wallet de recarga, sin planes reales |
 | `transacciones_wallet` | Pagos de viaje + recargas |
-| Escrow | **No existe** |
+| Escrow | **Fuera de scope permanente** |
 | Matching automático | **No existe** |
 | Carga (FTL/LTL) | **No existe** |
 | Verificación MC/DOT | **No existe** |
@@ -74,8 +74,6 @@ Este aislamiento se implementa a nivel de:
 - **Carga (load)**: lo que el shipper publica (FTL o LTL)
 - **Oferta de carrier**: respuesta al load publicado
 - **Matching score**: algoritmo de compatibilidad carga↔carrier
-- **Escrow**: custodia de pago hasta entrega confirmada
-- **Liquidación**: liberación de fondos del escrow al carrier
 - **Suscripción real**: plan con límites funcionales según tipo de usuario
 - **Reputación multidimensional**: 4 categorías × 5 estrellas por lado
 - **Dispatcher**: gestor de flota que opera cargas para múltiples choferes registrados
@@ -266,7 +264,7 @@ Los clientes de taxi no tienen planes. Acceden directamente con su wallet. Esta 
 | **Cargas/mes** | 5 | 30 | Ilimitadas |
 | **Contactos/mes** | 10 | Ilimitados | Ilimitados |
 | **Matching automático** | No | Sí (5/día) | Sí (ilimitado) |
-| **Escrow incluido** | No (comisión 3%) | Sí (comisión 2%) | Sí (comisión 1.5%) |
+| **Comisión plataforma** | 3% | 2% | 1.5% |
 | **Ventana exclusiva** | No | 2h antes | 6h antes |
 | **Cargas destacadas** | No | 2/mes | 10/mes |
 | **Dashboard analítico** | No | Básico | Avanzado |
@@ -280,7 +278,7 @@ Los clientes de taxi no tienen planes. Acceden directamente con su wallet. Esta 
 | **Ofertas/mes** | 10 | Ilimitadas | |
 | **Matching recibido** | Aleatorio | Priorizado | |
 | **Verificación MC/DOT** | No | Incluida | |
-| **Escrow disponible** | No | Sí | |
+| **Prioridad en listado** | Normal | Alta | |
 | **GPS tracking avanzado** | No | Sí | |
 | **Dashboard ingresos** | Básico | Avanzado | |
 | **Alertas de carga** | 1 alerta | Ilimitadas | |
@@ -318,7 +316,7 @@ class PlanesScreen extends StatelessWidget {
   //    - Botón "Gestionar" en plan actual
   
   // 4. Preguntas frecuentes: distintas por tipo
-  //    - shipper: "¿Qué es el escrow?", "¿Puedo cancelar en cualquier momento?"
+  //    - shipper: "¿Cuántas cargas puedo publicar?", "¿Puedo cancelar en cualquier momento?"
   //    - carrier:  "¿Cómo funciona la verificación MC/DOT?"
   //    - dispatcher: "¿Cómo invito a mis choferes?"
 }
@@ -431,8 +429,6 @@ ALTER TABLE muevete.solicitudes_transporte ADD COLUMN IF NOT EXISTS
   ventana_recogida_hasta time,
   ventana_entrega_desde  time,
   ventana_entrega_hasta  time,
-  -- Escrow
-  escrow_id            bigint REFERENCES muevete.escrow_transacciones(id),
   -- Visibilidad (ventana exclusiva plan Profesional/Dispatcher)
   exclusiva_hasta      timestamptz,
   -- LTL
@@ -467,12 +463,37 @@ ALTER TABLE muevete.ofertas_chofer ADD COLUMN IF NOT EXISTS
 #### `muevete.transacciones_wallet` — ampliar tipos
 ```sql
 -- Agregar nuevos tipos al CHECK constraint:
--- 'escrow_deposito', 'escrow_liberacion', 'escrow_devolucion',
--- 'escrow_comision', 'factoraje_adelanto', 'factoraje_devolucion',
+-- 'factoraje_adelanto', 'factoraje_devolucion',
 -- 'suscripcion', 'seguro_prima', 'carga_destacada'
 ```
 
 ### 3.2 Tablas NUEVAS a crear
+
+#### `muevete.app_nom_tipo_carga` ✅ (migración 022)
+```sql
+CREATE TABLE muevete.app_nom_tipo_carga (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  nombre      text NOT NULL,
+  descripcion text,
+  abreviacion text NOT NULL UNIQUE,  -- 'FTL', 'LTL'
+  activo      boolean NOT NULL DEFAULT true,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+-- Seed: FTL (Full Truckload), LTL (Less Than Truckload)
+```
+
+#### `muevete.app_nom_tipo_equipo` ✅ (migración 022) — compartido cargas ↔ vehículos
+```sql
+CREATE TABLE muevete.app_nom_tipo_equipo (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  nombre      text NOT NULL,
+  descripcion text,
+  abreviacion text NOT NULL UNIQUE,  -- 'DRY_VAN','FLATBED','REEFER','TANKER','CURTAIN','TIPPER','LOWBOY','AUTOTRANSPORTER'
+  activo      boolean NOT NULL DEFAULT true,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+```
+> Este nomenclador es la fuente única para `cargas.tipo_equipo_id` Y `vehiculos.tipo_equipo_id`, lo que permite hacer matching por tipo de equipo entre envíos y vehículos.
 
 #### `muevete.planes`
 ```sql
@@ -527,9 +548,13 @@ CREATE TABLE muevete.cargas (
   id                    bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   shipper_id            uuid NOT NULL REFERENCES auth.users(id),
   tipo                  text NOT NULL DEFAULT 'ftl', -- 'ftl','ltl'
+  tipo_carga_id         bigint NOT NULL REFERENCES muevete.app_nom_tipo_carga(id),
+  -- reemplaza columna tipo text ('ftl'/'ltl') — ver migración 022
+
   estado                text NOT NULL DEFAULT 'publicada',
+  -- DEPRECATED como fuente autoritativa; gestionado por app_dat_estado_carga
   -- 'publicada','en_matching','ofertada','aceptada','en_transito',
-  -- 'entregada','completada','cancelada','disputa'
+  -- 'entregada','completada','cancelada','disputa','tomada','completada_carrier'
   
   -- Origen
   dir_origen            text NOT NULL,
@@ -563,8 +588,10 @@ CREATE TABLE muevete.cargas (
   instrucciones         text,
   
   -- Tipo de equipo requerido
-  tipo_equipo           text, -- 'flatbed','van','reefer','dryvan','tanker'
+  tipo_equipo_id        bigint REFERENCES muevete.app_nom_tipo_equipo(id),
+  -- reemplaza columna tipo_equipo text — compartido con vehiculos.tipo_equipo_id para matching
   id_tipo_vehiculo      bigint REFERENCES muevete.vehicle_type(id),
+  -- FK corregida: apunta a vehicle_type, NO a vehiculos (igual que vehiculos.id_tipo_vehiculo)
   
   -- Fechas
   fecha_recogida        date,
@@ -597,9 +624,6 @@ CREATE TABLE muevete.cargas (
   es_recurrente         boolean DEFAULT false,
   recurrencia_patron    jsonb,
   contrato_id           bigint,           -- FK a muevete.contratos_carga
-  
-  -- Escrow
-  escrow_id             bigint,           -- FK a muevete.escrow_transacciones
   
   -- Matching
   matching_score_max    numeric DEFAULT 0,
@@ -641,49 +665,6 @@ CREATE TABLE muevete.ofertas_carga (
   created_at          timestamptz DEFAULT now(),
   updated_at          timestamptz DEFAULT now(),
   CONSTRAINT uq_oferta_carga_driver UNIQUE (carga_id, driver_id)
-);
-```
-
-#### `muevete.escrow_transacciones`
-```sql
-CREATE TABLE muevete.escrow_transacciones (
-  id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  carga_id            bigint NOT NULL,   -- FK cargas
-  shipper_uuid        uuid NOT NULL REFERENCES auth.users(id),
-  carrier_driver_id   bigint NOT NULL REFERENCES muevete.drivers(id),
-  monto_total         numeric NOT NULL,
-  comision_plataforma numeric NOT NULL,
-  monto_carrier       numeric NOT NULL,  -- monto_total - comision_plataforma
-  moneda              text DEFAULT 'USD',
-  estado              text DEFAULT 'pendiente',
-  -- 'pendiente','depositado','liberado','devuelto','disputa','congelado'
-  
-  -- Depósito
-  depositado_at       timestamptz,
-  metodo_pago         text,
-  referencia_pago     text,
-  
-  -- Confirmación de entrega
-  geocerca_confirmada  boolean DEFAULT false,
-  geocerca_confirmada_at timestamptz,
-  pod_url              text,             -- Proof of Delivery (imagen/PDF)
-  qr_token             text,             -- token para escaneo QR
-  entrega_confirmada_at timestamptz,
-  shipper_confirmo     boolean DEFAULT false,
-  shipper_confirmo_at  timestamptz,
-  
-  -- Liberación automática
-  liberar_auto_at      timestamptz,     -- si shipper no confirma en 48-72h
-  liberado_at          timestamptz,
-  
-  -- Disputa
-  disputa_abierta      boolean DEFAULT false,
-  disputa_motivo       text,
-  disputa_evidencias   jsonb DEFAULT '[]',
-  disputa_resolucion   text,
-  disputa_resuelta_at  timestamptz,
-  
-  created_at           timestamptz DEFAULT now()
 );
 ```
 
@@ -989,7 +970,6 @@ CREATE TABLE muevete.facturas_plataforma (
 |---|---|
 | `models/carga_model.dart` | Carga FTL/LTL completa |
 | `models/oferta_carga_model.dart` | Oferta de carrier para una carga |
-| `models/escrow_model.dart` | Transacción de escrow |
 | `models/tracking_carga_model.dart` | Punto de rastreo GPS/ELD |
 | `models/valoracion_carga_model.dart` | Valoración multidimensional |
 | `models/chat_conversacion_model.dart` | Conversación de chat |
@@ -1022,8 +1002,6 @@ CREATE TABLE muevete.facturas_plataforma (
 
 #### `wallet_service.dart`
 - Agregar soporte para nuevos tipos de transacción
-- `holdClientFunds()`: usar para depósito en escrow también
-- Agregar: `depositarEscrow()`, `liberarEscrow()`, `devolverEscrow()`
 
 #### `auth_service.dart`
 - `isDriver()`: mantener lógica
@@ -1035,7 +1013,6 @@ CREATE TABLE muevete.facturas_plataforma (
 |---|---|---|
 | `services/carga_service.dart` | CRUD de cargas | `publicarCarga()`, `getCargasShipper()`, `getCargasDisponibles()`, `actualizarEstado()`, `buscarCarriers()`, `destacarCarga()` |
 | `services/oferta_carga_service.dart` | Ofertas de carga | `hacerOferta()`, `aceptarOferta()`, `rechazarOferta()`, `getOfertasCarga()`, `getOfertasCarrier()` |
-| `services/escrow_service.dart` | Escrow completo | `crearEscrow()`, `depositarFondos()`, `confirmarEntrega()`, `liberarFondos()`, `abrirDisputa()`, `resolverDisputa()`, `programarLiberacionAuto()` |
 | `services/tracking_service.dart` | Rastreo GPS/ELD | `enviarUbicacion()`, `getHistorialTracking()`, `verificarGeocerca()`, `getUltimaUbicacion()`, `conectarELD()` |
 | `services/matching_service.dart` | Motor de matching | `calcularScore()`, `getSugerenciasCarrier()`, `getSugerenciasShipper()`, `ejecutarMatchingBatch()` |
 | `services/chat_service.dart` | Chat interno | `crearConversacion()`, `enviarMensaje()`, `getConversaciones()`, `getMensajes()`, `marcarLeido()`, `suscribirMensajes()` |
@@ -1066,14 +1043,12 @@ CREATE TABLE muevete.facturas_plataforma (
 
 #### `wallet_provider.dart`
 - Agregar soporte para nuevos tipos de transacción
-- Agregar: `getEscrowActivo()`, `getSaldo()`
 
 ### 6.2 Providers NUEVOS a crear
 
 | Archivo | Descripción |
 |---|---|
 | `providers/carga_provider.dart` | Estado global de publicación y búsqueda de cargas, ofertas activas, filtros |
-| `providers/escrow_provider.dart` | Estado del escrow activo, flujo de confirmación |
 | `providers/tracking_provider.dart` | Estado del tracking en tiempo real, suscripción a canales Realtime |
 | `providers/chat_provider.dart` | Lista de conversaciones, mensajes no leídos, suscripción Realtime |
 | `providers/plan_provider.dart` | Plan activo, límites disponibles, verificación de features |
@@ -1188,13 +1163,11 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
 |---|---|
 | `screens/common/chat_screen.dart` | Chat interno por carga |
 | `screens/common/chat_lista_screen.dart` | Lista de todas las conversaciones |
-| `screens/common/escrow_detalle_screen.dart` | Estado del escrow: depósito, entrega, liberación |
 | `screens/common/tracking_mapa_screen.dart` | Mapa en tiempo real de la carga |
 | `screens/common/valorar_carga_screen.dart` | Formulario de valoración multidimensional (4 dimensiones × tipo de evaluador) |
 | `screens/common/planes_screen.dart` | Comparativo de planes — renderizado distinto según `tipo_usuario` (shipper/carrier/dispatcher) |
 | `screens/common/mis_alertas_screen.dart` | Crear/editar/eliminar alertas personalizadas |
 | `screens/common/kyc_flow_screen.dart` | Flujo guiado de verificación de identidad |
-| `screens/common/disputa_screen.dart` | Abrir y seguir disputas de escrow |
 
 ---
 
@@ -1251,90 +1224,222 @@ El formulario actual se convierte en un formulario **multi-paso adaptativo**:
 
 ## 9. PRIORIZACIÓN POR FASES (Roadmap)
 
-### FASE 1 – MVP de Carga (≈ 6 semanas)
+> **Leyenda**: ✅ Implementado | ⚠️ Parcial / pendiente completar | ❌ No implementado
+
+### FASE 1 – MVP de Carga (≈ 6 semanas) — ✅ COMPLETADA
 **Objetivo**: Publicar cargas FTL y recibir ofertas. Sin escrow ni matching.
 
 **Schema**: 
-- `planes` (básico), `cargas`, `ofertas_carga`, `valoraciones_carga`, `kyc_documentos`
+- ✅ `planes` — migración SQL creada (`docs/migrations/013_planes.sql`) con seed de 7 planes + RLS
+- ✅ `cargas` — **confirmado en Supabase** (`muevete.cargas`)
+  - ✅ Campos Truckstop agregados (`docs/migrations/014_cargas_truckstop_fields.sql`): `nombre_ubicacion_origen/destino`, `cp_origen/destino`, `contacto_origen/destino_nombre/tel`, `commodity_id`, `opciones_equipo[]`, `numeros_referencia[]`, `es_privada`, `horas_anticipacion_publica`
+  - 🚫 **Paradas intermedias (`carga_paradas`) — fuera de scope**. Solo se soportan origen + destino en Fase 1 y 2. Paradas múltiples diferidas a integración con Truckstop API (Fase 3+).
+- ✅ `ofertas_carga` — **confirmado en Supabase** (`muevete.ofertas_carga`)
+- ✅ `app_nom_estado` + `app_dat_estado_carga` — **nuevo sistema de estados auditado** (`docs/migrations/015_estados_carga_nomenclador.sql`)
+  - ✅ Catálogo de estados con `codigo`, `nombre`, `orden`, `activo`
+  - ✅ Bitácora de cambios: quién (`usuario_uuid`, `driver_id`), cuándo, motivo, metadata
+  - ✅ Vista `v_cargas_estado_actual` — estado vigente por carga
+  - ✅ Función RPC `fn_cambiar_estado_carga` — toda transición pasa por aquí y sincroniza `cargas.estado`
+  - ✅ RLS: lectura para participantes (shipper + carrier asignado por `drivers.uuid`), escritura solo `service_role`
+- ✅ `suscripciones` — creada (migración 018) con RLS + `fn_crear_suscripcion_gratis` + `fn_proximo_dia_2`
+- ✅ `solicitudes_plan` — creada (migración 019) con flujo de evidencia de pago y aprobación admin
+- ✅ `cargas.estado` CHECK constraint — actualizado para incluir `tomada` y `completada_carrier`
+- ❌ `valoraciones_carga` — diferida a Fase 2
+- ❌ `kyc_documentos` — diferida a Fase 2
 
 **Modelos**: 
-- `CargaModel`, `OfertaCargaModel`, `ValoracionCargaModel`, `PlanModel`
+- ✅ `CargaModel` → `lib/models/carga_model.dart` — incluye campos Truckstop: contactos, CP, `commodityId`, `opcionesEquipo`, `numerosReferencia`, `esPrivada`, `horasAnticipacionPublica`; lee campo `estado` sincronizado por RPC
+- ✅ `OfertaCargaModel` → `lib/models/oferta_carga_model.dart`
+- ✅ `PlanModel` → `lib/models/plan_model.dart`
+- ✅ `EstadoCargaModel` + `NomEstadoModel` → `lib/models/estado_carga_model.dart` — fila de bitácora y entrada del nomenclador
+- ✅ `SuscripcionModel` → `lib/models/suscripcion_model.dart` — con getters `estaActiva`, `esGratis`, `diasRestantes`, `estaPorVencer`, `estaVencida`
+- ✅ `SolicitudPlanModel` → `lib/models/solicitud_plan_model.dart` — flujo de evidencia + aprobación admin
+- ✅ `VehicleModel` → `lib/models/vehicle_model.dart` — **ya incluye** `tipoCarroceria`, `capacidadTon`, `tieneGps`, `tieneEld`, `seguroVigente`, `seguroVence`, `inspeccionVence`, `numEjes`, `longitudM`
+- ✅ `UserModel` → `lib/models/user_model.dart` — ya incluye `tipoUsuario`, `tipoCuenta`, `empresaNombre`, `empresaRut`, getters `isShipper`, `isClientePasajero`
+- ✅ `DriverModel` → `lib/models/driver_model.dart` — ya incluye `tipoUsuario`, `dispatcherId`, `mcNumber`, `dotNumber`, `tipoCarroceria`, `capacidadTon`, getters `isCarrierCarga`, `isDispatcher`
+- 🔜 `ValoracionCargaModel` — diferido a Fase 2
 
 **Servicios**: 
-- `CargaService` (CRUD básico), `OfertaCargaService`, `ValoracionCargaService`, `PlanService`
+- ✅ `CargaService` → `lib/services/carga_service.dart`
+  - ✅ `publicarCarga()`, `getCargasShipper()`, `getCargasDisponibles()`, `getCargaById()`
+  - ✅ `cancelarCarga()`, `actualizarEstado()`, `confirmarRecogida()`, `confirmarEntrega()`, `asignarCargaACarrier()` — todos vía RPC `fn_cambiar_estado_carga`
+  - ✅ `getHistorialEstados()` — bitácora completa con JOIN a nomenclador
+  - ✅ `getNomEstados()` — catálogo de estados activos
+- ✅ `OfertaCargaService` → `lib/services/oferta_carga_service.dart`
+  - ✅ `hacerOferta()` — cambia estado a `ofertada` vía RPC
+  - ✅ `aceptarOferta()` — asigna carrier y cambia estado a `aceptada` vía RPC
+  - ✅ `rechazarOferta()`, `retirarOferta()`, `getOfertasCarga()`, `getOfertasCarrier()`
+- ❌ `ValoracionCargaService` — diferido a Fase 2
+- ✅ `PlanService` → `lib/services/plan_service.dart` (`getPlanes`, `getTodosLosPlanes`, `getPlanPorCodigo`)
+- ✅ `SuscripcionService` → `lib/services/suscripcion_service.dart` — `getSuscripcionActiva()`, `crearSuscripcionGratis()`, `cambiarPlan()`, `solicitarCambioPlan()`, `getMisSolicitudes()`, `getSolicitudPendiente()`
+- ✅ `CargaService.marcarComoTomada()` — vía RPC `fn_marcar_carga_tomada`
+- ✅ `CargaService.completarCargaCarrier()` + `completarCargaShipper()` — flujo E2E completo
 
 **Providers**: 
-- `CargaProvider`, `PlanProvider`
+- ✅ `CargaProvider` → `lib/providers/carga_provider.dart`
+  - ✅ `loadHistorialEstados()`, getters `historialEstados`, `nomEstados`, `loadingHistorial`
+  - ✅ `cancelarCarga(usuarioUuid)`, `confirmarRecogida(driverId)`, `confirmarEntrega(driverId)`, `asignarCargaACarrier(usuarioUuid)` — propagan contexto del actor al RPC
+  - ✅ `marcarComoTomada()`, `completarCargaCarrier()`, `completarCargaShipper()` — flujo E2E completo
+- ✅ `PlanProvider` → `lib/providers/plan_provider.dart`
+- ✅ `SuscripcionProvider` → `lib/providers/suscripcion_provider.dart` — `cargarSuscripcion()`, `cambiarPlan()`, `solicitarCambioPlan()`
 
 **Pantallas**: 
-- `PublicarCargaScreen`, `MisCargasScreen`, `DetalleCargaScreen` (sin tracking)
-- `CargasDisponiblesScreen`, `DetalleCargaCarrierScreen` (sin matching)
-- `PlanesScreen`
-- Modificar `RegisterScreen` para tipo shipper/carrier
-- Modificar `ProfileScreen` y `DriverProfileScreen` básico
+- ✅ `PublicarCargaScreen` → tab `_PublicarCargaTab` dentro de `shipper_home_screen.dart` — incluye campos Truckstop
+- ✅ `MisCargasScreen` → tab `_MisCargasTab` dentro de `shipper_home_screen.dart` — tabla responsiva con todos los campos
+- ✅ `DetalleCargaScreen` → `_DetalleCargaScreen` dentro de `shipper_home_screen.dart` — mapa OSRM, campos Truckstop, gestión de ofertas (aceptar/rechazar/cancelar)
+- ✅ `CargasDisponiblesScreen` → `lib/screens/carrier/carrier_home_screen.dart` — tabla responsiva con filtros avanzados
+- ✅ `DetalleCargaCarrierScreen` → `_DetalleCargaCarrierScreen` dentro de `carrier_home_screen.dart` — mapa OSRM, campos Truckstop, envío de oferta
+- ✅ `PlanesScreen` → `lib/screens/common/planes_screen.dart`
+- ✅ `RegisterScreen` modificado → `lib/screens/register_screen.dart`
+- ✅ `ShipperProfileScreen` → `lib/screens/shipper/shipper_profile_screen.dart` — incluye tabs Personal, Empresa, Mi Plan (con `PlanSuscripcionTile`)
+- ✅ `CarrierCargaProfileScreen` → `lib/screens/carrier/carrier_carga_profile_screen.dart` — incluye tabs Personal, Vehículos, Mi Plan (con `PlanSuscripcionTile`)
+- ⚠️ `ProfileScreen` (cliente_pasajero) → existe pero sin plan/KYC
+- ⚠️ `DriverProfileScreen` (conductor_pasajeros) → existe pero sin MC/DOT ni plan
+
+**Extras FASE 1 ya implementados (por delante del plan):**
+- ✅ `DispatcherService` → `lib/services/dispatcher_service.dart`
+- ✅ `DispatcherHomeScreen` → `lib/screens/dispatcher/dispatcher_home_screen.dart` — tabs: Mi Flota, Asignar, En Curso, Mi Plan
+- ✅ `CarrierDirectoryScreen` → `lib/screens/shipper/carrier_directory_screen.dart`
+- ✅ `CargoLocationPickerScreen` → `lib/screens/shipper/cargo_location_picker_screen.dart`
+- ✅ `RouteMapWidget` → `lib/widgets/route_map_widget.dart` — mapa de ruta OSRM reutilizable
+- ✅ `PlanSuscripcionWidget` → `lib/widgets/plan_suscripcion_widget.dart` — tile completo con upload de evidencia de pago, alerta de vencimiento, botón contratar
+- ✅ `SuscripcionService` + `SuscripcionProvider` — flujo completo de suscripciones con planes gratuitos y de pago
+- ✅ `SuscripcionModel` + `SolicitudPlanModel` — modelos completos con getters de estado
+- ✅ `AuthProvider` con 5 tipos de usuario y rutas diferenciadas
+- ✅ `LoginScreen` redirige a ruta correcta según `tipo_usuario`
+- ✅ `LandingScreen` redirige a `homeRoute` si el usuario ya está autenticado
+- ✅ Modelos `UserModel` y `DriverModel` extendidos con `tipoUsuario`, campos shipper/carrier/dispatcher
+- ✅ `VehicleModel` extendido con todos los campos de camión de carga
+
+**Todo completado — FASE 1 CERRADA ✅**
+- ✅ Migraciones 013–021 ejecutadas en Supabase
+- ✅ `VehicleModel` actualizado con campos de camión de carga
+- ✅ Historial de estados en `DetalleCargaScreen` y `DetalleCargaCarrierScreen` con `_HistorialTimeline`
+- ✅ `app_nom_estado` con estados `tomada` y `completada_carrier` (migración 016)
+- ✅ CHECK constraint `cargas.estado` actualizado para incluir `tomada` y `completada_carrier`
+- ✅ `marcarComoTomada()` en `CargaService` + `CargaProvider`
+- ✅ `completarCargaCarrier()` y `completarCargaShipper()` implementados
+- ✅ Flujo E2E completo: publicada → tomada → en_transito → completada_carrier → completada
+
+**Diferido a Fase 2:**
+- 🔜 `ValoracionCargaModel` + `ValoracionCargaService`
+- 🔜 `kyc_documentos` — tabla y flujo KYC
+- 🔜 `WalletTransactionModel` — nuevos tipos de transacción
+- 🔜 Verificación de límites de plan en `publicarCarga()`
+- 🔜 `MisOfertasScreen` — pantalla de ofertas enviadas por el carrier
+
+**Fuera de scope permanente (decisión de diseño):**
+- 🚫 **Escrow / custodia de pagos** — no se implementará en ninguna fase. El flujo de pago es externo a la plataforma.
+- 🚫 **Sistema de disputas** — depende del escrow, también fuera de scope.
+
+**Fuera de scope permanente (decisión de diseño):**
+- 🚫 **Paradas intermedias (`carga_paradas`)** — el sistema solo soporta origen + destino. La gestión de rutas multi-parada es responsabilidad de la integración con Truckstop/broker externo (Fase 3+) y no será implementada en la app.
 
 ---
 
-### FASE 2 – Escrow + Matching básico (≈ 6 semanas)
-**Objetivo**: Pagos seguros y sugerencias automáticas.
+### FASE 2 – Valoraciones + Matching básico + KYC (≈ 6 semanas) — 🟡 PARCIALMENTE ADELANTADA
+**Objetivo**: Reputación multidimensional, matching automático y verificación de identidad.
 
 **Schema**: 
-- `escrow_transacciones`, `matching_scores`, `suscripciones_usuario`, `alertas_usuario`
+- ✅ `suscripciones` — completado en Fase 1 (migración 018)
+- ✅ `solicitudes_plan` — completado en Fase 1 (migración 019)
+- ❌ `matching_scores` — pendiente
+- ❌ `alertas_usuario` — pendiente
+- ❌ `valoraciones_carga` — pendiente
+- ❌ `kyc_documentos` — pendiente
 
 **Modelos**: 
-- `EscrowModel`, `MatchingScoreModel`, `SuscripcionModel`, `AlertaUsuarioModel`
+- ✅ `SuscripcionModel` → `lib/models/suscripcion_model.dart` — adelantado en Fase 1
+- ✅ `SolicitudPlanModel` → `lib/models/solicitud_plan_model.dart` — adelantado en Fase 1
+- ❌ `MatchingScoreModel` — pendiente
+- ❌ `AlertaUsuarioModel` — pendiente
+- ❌ `ValoracionCargaModel` — pendiente
+- ❌ `KycDocumentoModel` — pendiente
 
 **Servicios**: 
-- `EscrowService`, `MatchingService`, `AlertaService`
+- ✅ `SuscripcionService` → `lib/services/suscripcion_service.dart` — adelantado en Fase 1
+- ❌ `MatchingService` — pendiente
+- ❌ `AlertaService` — pendiente
+- ❌ `ValoracionCargaService` — pendiente
+- ❌ `KycService` — pendiente
 
 **Providers**: 
-- `EscrowProvider`, `MatchingProvider`
+- ✅ `SuscripcionProvider` → `lib/providers/suscripcion_provider.dart` — adelantado en Fase 1
+- ❌ `MatchingProvider` — pendiente
 
 **Pantallas**: 
-- `EscrowDetalleScreen`, `DisputaScreen`
-- `MisAlertasScreen`
-- Modificar `DetalleCargaScreen` para incluir escrow
+- ✅ `PlanSuscripcionTile` widget — en `ShipperProfileScreen` y `CarrierCargaProfileScreen`
+- ❌ `MisAlertasScreen` — pendiente
+- ❌ `KycFlowScreen` — pendiente
+- ❌ `ValorarCargaScreen` — pendiente
+- ❌ `MisOfertasScreen` (carrier) — pendiente
 
 ---
 
-### FASE 3 – Tracking GPS + Chat + LTL (≈ 6 semanas)
+### FASE 3 – Tracking GPS + Chat + LTL (≈ 6 semanas) — ❌ NO INICIADA
 **Objetivo**: Rastreo en tiempo real, comunicación interna y consolidación de cargas.
 
 **Schema**: 
-- `tracking_carga`, `geocercas`, `chat_conversaciones`, `chat_mensajes`, `consolidaciones_ltl`
+- ❌ `tracking_carga`
+- ❌ `geocercas`
+- ❌ `chat_conversaciones`
+- ❌ `chat_mensajes`
+- ❌ `consolidaciones_ltl`
 
 **Modelos**: 
-- `TrackingCargaModel`, `ChatConversacionModel`, `ChatMensajeModel`, `ConsolidacionLtlModel`
+- ❌ `TrackingCargaModel`
+- ❌ `ChatConversacionModel`
+- ❌ `ChatMensajeModel`
+- ❌ `ConsolidacionLtlModel`
 
 **Servicios**: 
-- `TrackingService`, `ChatService`, `ConsolidacionLtlService`
+- ❌ `TrackingService`
+- ❌ `ChatService`
+- ❌ `ConsolidacionLtlService`
 
 **Providers**: 
-- `TrackingProvider`, `ChatProvider`
+- ❌ `TrackingProvider`
+- ❌ `ChatProvider`
 
 **Pantallas**: 
-- `TrackingMapaScreen`, `ChatScreen`, `ChatListaScreen`
-- `CargaActivaScreen` (carrier)
-- Modificar `DetalleCargaScreen` para incluir tracking
+- ❌ `TrackingMapaScreen`
+- ❌ `ChatScreen`
+- ❌ `ChatListaScreen`
+- ❌ `CargaActivaScreen` (carrier)
+- ❌ Modificar `DetalleCargaScreen` para incluir tracking
 
 ---
 
-### FASE 4 – Multi-usuario + Contratos + Antifraude (≈ 6 semanas)
+### FASE 4 – Multi-usuario + Contratos + Antifraude (≈ 6 semanas) — 🟡 PARCIALMENTE ADELANTADA
 **Objetivo**: Dispatcher con múltiples choferes, contratos recurrentes, seguridad avanzada.
 
 **Schema**: 
-- `sub_usuarios`, `contratos_carga`, `antifraude_eventos`, `facturas_plataforma`
+- ✅ `sub_usuarios` — tabla presente en DB (creada en migraciones iniciales)
+- ❌ `contratos_carga` — pendiente
+- ❌ `antifraude_eventos` — pendiente
+- ❌ `facturas_plataforma` — pendiente
 
 **Modelos**: 
-- `SubUsuarioModel`, `ContratoCargaModel`, `AntiFraudeEventoModel`, `FacturaPlatformaModel`
+- ❌ `SubUsuarioModel` — pendiente (tabla existe, modelo no)
+- ❌ `ContratoCargaModel` — pendiente
+- ❌ `AntiFraudeEventoModel` — pendiente
+- ❌ `FacturaPlatformaModel` — pendiente
 
 **Servicios**: 
-- `SubUsuarioService`, `ContratoCargaService`, `AntiFraudeService`
+- ✅ `DispatcherService` → `lib/services/dispatcher_service.dart` (adelantado desde Fase 1)
+- ❌ `SubUsuarioService` — pendiente
+- ❌ `ContratoCargaService` — pendiente
+- ❌ `AntiFraudeService` — pendiente
 
 **Pantallas**: 
-- `GestionarChoferesScreen`, `CargasRecurrentesScreen`
-- `DashboardCarrierScreen`, `DashboardAnaliticoScreen` (shipper)
-- `BuscarCarriersScreen`, `PerfilCarrierScreen`, `PerfilShipperScreen`
+- ✅ `DispatcherHomeScreen` → `lib/screens/dispatcher/dispatcher_home_screen.dart` — tabs: Mi Flota, Asignar, En Curso, Mi Plan
+- ❌ `GestionarChoferesScreen` — pendiente (tab Mi Flota es básico, sin edición)
+- ❌ `CargasRecurrentesScreen` — pendiente
+- ❌ `DashboardCarrierScreen` — pendiente
+- ❌ `DashboardAnaliticoScreen` (shipper) — pendiente
+- ✅ `BuscarCarriersScreen` → `lib/screens/shipper/carrier_directory_screen.dart` (adelantado)
+- ❌ `PerfilCarrierScreen` — pendiente
+- ❌ `PerfilShipperScreen` — pendiente
 
 ---
 
@@ -1362,21 +1467,21 @@ if (plan.cargasMesMax != null) {
 }
 ```
 
-### 10.4 Escrow - Flujo de fondos
+### 10.4 Flujo de carga simplificado
 ```
-Shipper deposita → escrow.estado='depositado'
+Shipper publica → carga.estado='publicada'
   ↓
-Carrier confirma recogida → tracking INSERT
+Carriers y dispatchers ven la carga en su pantalla de disponibles
   ↓
-GPS entra en geocerca destino → geocerca.disparada_at SET
+Shipper selecciona un carrier del directorio y marca como tomada
+  → carga.estado='tomada', carrier_driver_id SET, oculta de disponibles
   ↓
-Carrier confirma entrega (QR/manual) → escrow.qr_token verificado
+Carrier marca la carga como completada
+  → carga.estado='completada_carrier'
   ↓
-Shipper tiene 1h para objetar → timer programado
-  ↓
-Sin objeción → escrow.liberado_at SET, fondos → wallet_drivers
-  ↓
-Si disputa → escrow.estado='disputa', fondos congelados
+Shipper confirma finalización
+  → carga.estado='completada'
+  (ciclo cerrado)
 ```
 
 ### 10.5 Matching Score - Implementación simplificada (servidor)
@@ -1396,100 +1501,126 @@ Si disputa → escrow.estado='disputa', fondos congelados
 
 ## 11. RESUMEN DE ARCHIVOS A CREAR/MODIFICAR
 
-### Nuevos archivos SQL (migraciones)
+### Archivos SQL (migraciones) — estado real
 ```
 docs/migrations/
-  013_planes_suscripciones.sql
-  014_cargas_y_ofertas.sql
-  015_escrow.sql
-  016_tracking_geocercas.sql
-  017_chat.sql
-  018_valoraciones_carga.sql
-  019_matching_scores.sql
-  020_consolidacion_ltl.sql
-  021_contratos_alertas.sql
-  022_kyc_antifraude.sql
-  023_sub_usuarios_facturas.sql
-  024_alter_users_drivers_vehicles.sql
+  013_planes.sql                        ✅ ejecutado — planes con seed
+  014_cargas_truckstop_fields.sql       ✅ ejecutado — campos Truckstop en cargas
+  015_estados_carga_nomenclador.sql     ✅ ejecutado — app_nom_estado + app_dat_estado_carga + RPC
+  016_nuevo_flujo_carga.sql             ✅ ejecutado — estados tomada/completada_carrier + fn_marcar_carga_tomada
+  017_shipper_entity_fields.sql         ✅ ejecutado — campos empresa en muevete.users
+  018_prioridad_planes_suscripciones.sql ✅ ejecutado — prioridad en cargas + tabla suscripciones + fn_crear_suscripcion_gratis
+  019_solicitudes_plan.sql              ✅ ejecutado — tabla solicitudes_plan con RLS
+  020_fix_solicitudes_plan_rls.sql      ✅ ejecutado — fix de políticas RLS
+  021_aprobar_solicitud_con_fecha.sql   ✅ ejecutado — función de aprobación con fecha
+  -- Pendiente Fase 2:
+  valoraciones_carga.sql                ❌ pendiente Fase 2
+  matching_scores.sql                   ❌ pendiente Fase 2
+  kyc_antifraude.sql                    ❌ pendiente Fase 2
+  alertas_usuario.sql                   ❌ pendiente Fase 2
+  -- Pendiente Fase 3:
+  tracking_geocercas.sql                ❌ pendiente Fase 3
+  chat.sql                              ❌ pendiente Fase 3
+  consolidacion_ltl.sql                 ❌ pendiente Fase 3
+  -- Pendiente Fase 4:
+  contratos_alertas.sql                 ❌ pendiente Fase 4
+  sub_usuarios_facturas.sql             ❌ pendiente Fase 4
 ```
 
-### Nuevos modelos (14)
+### Modelos — estado real
 ```
 lib/models/
-  carga_model.dart
-  oferta_carga_model.dart
-  escrow_model.dart
-  tracking_carga_model.dart
-  valoracion_carga_model.dart
-  chat_conversacion_model.dart
-  chat_mensaje_model.dart
-  matching_score_model.dart
-  consolidacion_ltl_model.dart
-  contrato_carga_model.dart
-  plan_model.dart
-  suscripcion_model.dart
-  alerta_usuario_model.dart
-  kyc_documento_model.dart
+  carga_model.dart              ✅ completo + campos Truckstop
+  oferta_carga_model.dart       ✅ completo
+  plan_model.dart               ✅ completo
+  estado_carga_model.dart       ✅ completo — EstadoCargaModel + NomEstadoModel
+  suscripcion_model.dart        ✅ completo — adelantado (Fase 1)
+  solicitud_plan_model.dart     ✅ completo — adelantado (Fase 1)
+  vehicle_model.dart            ✅ completo — incluye todos los campos de camión de carga
+  user_model.dart               ✅ completo — tipoUsuario, campos shipper, getters
+  driver_model.dart             ✅ completo — tipoUsuario, dispatcherId, mcNumber, dotNumber, getters
+  escrow_model.dart             🚫 fuera de scope permanente
+  tracking_carga_model.dart     ❌ pendiente Fase 3
+  valoracion_carga_model.dart   ❌ pendiente Fase 2
+  chat_conversacion_model.dart  ❌ pendiente Fase 3
+  chat_mensaje_model.dart       ❌ pendiente Fase 3
+  matching_score_model.dart     ❌ pendiente Fase 2
+  consolidacion_ltl_model.dart  ❌ pendiente Fase 3
+  contrato_carga_model.dart     ❌ pendiente Fase 4
+  alerta_usuario_model.dart     ❌ pendiente Fase 2
+  kyc_documento_model.dart      ❌ pendiente Fase 2
+  sub_usuario_model.dart        ❌ pendiente Fase 4 (tabla existe, modelo no)
+  factura_plataforma_model.dart ❌ pendiente Fase 4
 ```
 
-### Nuevos servicios (13)
+### Servicios — estado real
 ```
 lib/services/
-  carga_service.dart
-  oferta_carga_service.dart
-  escrow_service.dart
-  tracking_service.dart
-  matching_service.dart
-  chat_service.dart
-  valoracion_carga_service.dart
-  plan_service.dart
-  alerta_service.dart
-  kyc_service.dart
-  consolidacion_ltl_service.dart
-  contrato_carga_service.dart
-  antifraude_service.dart
+  carga_service.dart              ✅ completo — CRUD + cambios de estado vía RPC + historial + marcarComoTomada + completar
+  oferta_carga_service.dart       ✅ completo — hacer/aceptar/rechazar/retirar ofertas
+  plan_service.dart               ✅ completo — getPlanes, getTodosLosPlanes, getPlanPorCodigo
+  suscripcion_service.dart        ✅ completo — adelantado (Fase 1): getSuscripcionActiva, crearGratis, cambiarPlan, solicitarCambio
+  dispatcher_service.dart         ✅ completo (adelantado desde Fase 4)
+  escrow_service.dart             🚫 fuera de scope permanente
+  tracking_service.dart           ❌ pendiente Fase 3
+  matching_service.dart           ❌ pendiente Fase 2
+  chat_service.dart               ❌ pendiente Fase 3
+  valoracion_carga_service.dart   ❌ pendiente Fase 2
+  alerta_service.dart             ❌ pendiente Fase 2
+  kyc_service.dart                ❌ pendiente Fase 2
+  consolidacion_ltl_service.dart  ❌ pendiente Fase 3
+  contrato_carga_service.dart     ❌ pendiente Fase 4
+  antifraude_service.dart         ❌ pendiente Fase 4
 ```
 
-### Nuevos providers (6)
+### Providers — estado real
 ```
 lib/providers/
-  carga_provider.dart
-  escrow_provider.dart
-  tracking_provider.dart
-  chat_provider.dart
-  plan_provider.dart
-  matching_provider.dart
+  carga_provider.dart         ✅ completo — misCargas, cargasDisponibles, historialEstados, nomEstados, marcarComoTomada, completar
+  plan_provider.dart          ✅ completo
+  suscripcion_provider.dart   ✅ completo — adelantado (Fase 1): cargarSuscripcion, cambiarPlan, solicitarCambioPlan
+  escrow_provider.dart        🚫 fuera de scope permanente
+  tracking_provider.dart      ❌ pendiente Fase 3
+  chat_provider.dart          ❌ pendiente Fase 3
+  matching_provider.dart      ❌ pendiente Fase 2
 ```
 
-### Nuevas pantallas (22)
+### Pantallas — estado real
 ```
 lib/screens/
   shipper/
-    publicar_carga_screen.dart
-    mis_cargas_screen.dart
-    detalle_carga_screen.dart
-    buscar_carriers_screen.dart
-    perfil_carrier_screen.dart
-    dashboard_analitico_screen.dart
-    cargas_recurrentes_screen.dart
+    shipper_home_screen.dart            ✅ completo — tabs: publicar, mis cargas (tabla), detalle+ofertas+historial+marcarTomada+completar
+    shipper_profile_screen.dart         ✅ completo — tabs: Personal, Empresa, Mi Plan (PlanSuscripcionTile)
+    cargo_location_picker_screen.dart   ✅ completo — mapa OSRM para selección de ruta
+    carrier_directory_screen.dart       ✅ completo (adelantado)
+    perfil_carrier_screen.dart          ❌ pendiente Fase 4
+    dashboard_analitico_screen.dart     ❌ pendiente Fase 4
+    cargas_recurrentes_screen.dart      ❌ pendiente Fase 4
   carrier/
-    cargas_disponibles_screen.dart
-    detalle_carga_carrier_screen.dart
-    mis_ofertas_screen.dart
-    carga_activa_screen.dart
-    dashboard_carrier_screen.dart
-    gestionar_choferes_screen.dart
-    perfil_shipper_screen.dart
+    carrier_home_screen.dart            ✅ completo — tabla responsiva + filtros + detalle + oferta + historial + completarCarrier
+    carrier_carga_profile_screen.dart   ✅ completo — tabs: Personal, Vehículos, Mi Plan (PlanSuscripcionTile)
+    mis_ofertas_screen.dart             ❌ pendiente Fase 2 (diferido)
+    carga_activa_screen.dart            ❌ pendiente Fase 3
+    dashboard_carrier_screen.dart       ❌ pendiente Fase 4
+    perfil_shipper_screen.dart          ❌ pendiente Fase 4
+  dispatcher/
+    dispatcher_home_screen.dart         ✅ completo — tabs: Mi Flota, Asignar, En Curso, Mi Plan
+    gestionar_choferes_screen.dart      ❌ pendiente Fase 4
+    asignar_carga_screen.dart           ❌ pendiente Fase 4 (tab Asignar es básico)
+    flota_mapa_screen.dart              ❌ pendiente Fase 4
   common/
-    chat_screen.dart
-    chat_lista_screen.dart
-    escrow_detalle_screen.dart
-    tracking_mapa_screen.dart
-    valorar_carga_screen.dart
-    planes_screen.dart
-    mis_alertas_screen.dart
-    kyc_flow_screen.dart
-    disputa_screen.dart
+    planes_screen.dart                  ✅ completo
+    chat_screen.dart                    ❌ pendiente Fase 3
+    chat_lista_screen.dart              ❌ pendiente Fase 3
+    escrow_detalle_screen.dart          🚫 fuera de scope permanente
+    tracking_mapa_screen.dart           ❌ pendiente Fase 3
+    valorar_carga_screen.dart           ❌ pendiente Fase 2
+    mis_alertas_screen.dart             ❌ pendiente Fase 2
+    kyc_flow_screen.dart                ❌ pendiente Fase 2
+    disputa_screen.dart                 🚫 fuera de scope permanente
+  widgets/
+    route_map_widget.dart               ✅ completo — mapa OSRM reutilizable (carrier + shipper)
+    plan_suscripcion_widget.dart        ✅ completo — tile plan activo + upload evidencia + contratar
 ```
 
 ### Archivos modificados

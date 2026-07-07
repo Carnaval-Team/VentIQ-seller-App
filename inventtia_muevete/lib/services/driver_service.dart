@@ -234,6 +234,15 @@ class DriverService {
     return vehicleRow;
   }
 
+  /// Updates fields of an existing vehicle in muevete.vehiculos.
+  Future<void> updateVehicle(int vehicleId, Map<String, dynamic> data) async {
+    await _supabase
+        .schema('muevete')
+        .from('vehiculos')
+        .update(data)
+        .eq('id', vehicleId);
+  }
+
   /// Upserts the driver location into muevete.place.
   /// If no place row exists for this driver, inserts one.
   Future<void> upsertDriverLocation({

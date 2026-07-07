@@ -167,33 +167,7 @@ class PromotionService {
         final promotions = <Map<String, dynamic>>[];
 
         for (final promo in rpcResponse) {
-          final tipoPromocionNombre = promo['tipo_promocion'] as String?;
-          final idTipoPromocion = (promo['id_tipo_promocion'] as num?)?.toInt();
-          final tipoDescuento =
-              PromotionRules.resolveTipoDescuentoFromPromotionTypeId(
-                idTipoPromocion,
-              ) ??
-              _getTipoDescuentoFromNombre(tipoPromocionNombre);
-
-          final promotion = {
-            'id_promocion': promo['id'] as int,
-            'codigo_promocion': promo['codigo_promocion'] as String?,
-            'nombre': promo['nombre'] as String?,
-            'descripcion': promo['descripcion'] as String?,
-            'valor_descuento':
-                double.tryParse(promo['valor_descuento'].toString()) ?? 0.0,
-            'tipo_promocion_nombre': tipoPromocionNombre,
-            'tipo_descuento': tipoDescuento,
-            'id_tipo_promocion': idTipoPromocion,
-            'min_compra': _parseMinCompraValue(promo['min_compra']),
-            'aplica_todo': promo['aplica_todo'] as bool? ?? false,
-            'precio_base':
-                double.tryParse(promo['precio_base'].toString()) ?? 0.0,
-            'es_recargo': promo['es_recargo'] as bool? ?? false,
-            'requiere_medio_pago':
-                promo['requiere_medio_pago'] as bool? ?? false,
-            'id_medio_pago_requerido': promo['id_medio_pago_requerido'] as int?,
-          };
+          final promotion = _mapPromotionRow(promo);
 
           promotions.add(promotion);
 
@@ -219,6 +193,80 @@ class PromotionService {
       print('❌ Error obteniendo promociones de producto: $e');
       return [];
     }
+  }
+
+  /// Mapea una fila cruda de promoción (de fn_listar_promociones_producto_nueva
+  /// o de su versión batch) al formato interno usado por la app.
+  Map<String, dynamic> _mapPromotionRow(dynamic promo) {
+    final tipoPromocionNombre = promo['tipo_promocion'] as String?;
+    final idTipoPromocion = (promo['id_tipo_promocion'] as num?)?.toInt();
+    final tipoDescuento =
+        PromotionRules.resolveTipoDescuentoFromPromotionTypeId(
+          idTipoPromocion,
+        ) ??
+        _getTipoDescuentoFromNombre(tipoPromocionNombre);
+
+    return {
+      'id_promocion': promo['id'] as int,
+      'codigo_promocion': promo['codigo_promocion'] as String?,
+      'nombre': promo['nombre'] as String?,
+      'descripcion': promo['descripcion'] as String?,
+      'valor_descuento':
+          double.tryParse(promo['valor_descuento'].toString()) ?? 0.0,
+      'tipo_promocion_nombre': tipoPromocionNombre,
+      'tipo_descuento': tipoDescuento,
+      'id_tipo_promocion': idTipoPromocion,
+      'min_compra': _parseMinCompraValue(promo['min_compra']),
+      'aplica_todo': promo['aplica_todo'] as bool? ?? false,
+      'precio_base': double.tryParse(promo['precio_base'].toString()) ?? 0.0,
+      'es_recargo': promo['es_recargo'] as bool? ?? false,
+      'requiere_medio_pago': promo['requiere_medio_pago'] as bool? ?? false,
+      'id_medio_pago_requerido': promo['id_medio_pago_requerido'] as int?,
+    };
+  }
+
+  /// Obtiene las promociones de MÚLTIPLES productos en UNA sola llamada
+  /// (RPC batch fn_listar_promociones_productos_batch). Elimina el N+1 al
+  /// sincronizar promociones por producto.
+  ///
+  /// Devuelve { id_producto : [promociones...] }. Si el RPC batch no existe
+  /// (no se ha subido el .sql), hace fallback a llamadas individuales.
+  Future<Map<int, List<Map<String, dynamic>>>> getProductPromotionsBatch(
+    List<int> productIds,
+  ) async {
+    final Map<int, List<Map<String, dynamic>>> result = {};
+    if (productIds.isEmpty) return result;
+
+    try {
+      final rpcResponse = await _supabase.rpc(
+        'fn_listar_promociones_productos_batch',
+        params: {'ids_param': productIds},
+      );
+
+      if (rpcResponse is List) {
+        for (final row in rpcResponse) {
+          final idProducto = (row['id_producto'] as num?)?.toInt();
+          if (idProducto == null) continue;
+          result.putIfAbsent(idProducto, () => []).add(_mapPromotionRow(row));
+        }
+        print(
+          '✅ Promociones batch: ${result.length} productos con promos en 1 RPC',
+        );
+        return result;
+      }
+    } catch (e) {
+      print(
+        '⚠️ RPC batch fn_listar_promociones_productos_batch no disponible ($e). '
+        'Fallback a llamadas individuales.',
+      );
+    }
+
+    // Fallback: una llamada por producto (comportamiento previo).
+    for (final id in productIds) {
+      final promos = await getProductPromotions(id);
+      if (promos.isNotEmpty) result[id] = promos;
+    }
+    return result;
   }
 
   /// Verifica si una promoción aplica según el método de pago

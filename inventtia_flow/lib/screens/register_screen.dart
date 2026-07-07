@@ -1,0 +1,211 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../config/app_theme.dart';
+import '../providers/auth_provider.dart';
+import '../widgets/brand_title.dart';
+
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
+
+  @override
+  State<RegisterScreen> createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  final _confirmCtrl = TextEditingController();
+  bool _obscure = true;
+  bool _obscureConfirm = true;
+
+  @override
+  void dispose() {
+    _emailCtrl.dispose();
+    _passCtrl.dispose();
+    _confirmCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    final auth = context.read<AuthProvider>();
+    final ok = await auth.signUp(_emailCtrl.text.trim(), _passCtrl.text);
+    if (!mounted) return;
+    if (ok) {
+      Navigator.pushReplacementNamed(context, '/perfil-setup');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(auth.error ?? 'Error al registrarse'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppTheme.primaryDark,
+              AppTheme.primary,
+              AppTheme.primaryLight,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              Align(
+                alignment: Alignment.topLeft,
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+              Center(
+                child: SingleChildScrollView(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: _buildCard(auth),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCard(AuthProvider auth) {
+    return Container(
+      padding: const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        color: AppTheme.cardBg,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.20),
+            blurRadius: 40,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Image.asset(
+                'assets/images/logonew_nobg.png',
+                width: 140,
+                height: 140,
+                fit: BoxFit.contain,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const BrandTitle(
+              eyebrow: 'Crea tu cuenta en',
+              subtitle: 'Completa los datos para registrarte',
+            ),
+            const SizedBox(height: 28),
+            TextFormField(
+              controller: _emailCtrl,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'Correo electrónico',
+                prefixIcon: Icon(Icons.email_outlined),
+              ),
+              validator: (v) => (v == null || !v.contains('@'))
+                  ? 'Ingresa un correo válido'
+                  : null,
+            ),
+            const SizedBox(height: 18),
+            TextFormField(
+              controller: _passCtrl,
+              obscureText: _obscure,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                labelText: 'Contraseña',
+                prefixIcon: const Icon(Icons.lock_outlined),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                      _obscure ? Icons.visibility_off : Icons.visibility),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+              validator: (v) =>
+                  (v == null || v.length < 6) ? 'Mínimo 6 caracteres' : null,
+            ),
+            const SizedBox(height: 18),
+            TextFormField(
+              controller: _confirmCtrl,
+              obscureText: _obscureConfirm,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => auth.isLoading ? null : _submit(),
+              decoration: InputDecoration(
+                labelText: 'Confirmar contraseña',
+                prefixIcon: const Icon(Icons.lock_outlined),
+                suffixIcon: IconButton(
+                  icon: Icon(_obscureConfirm
+                      ? Icons.visibility_off
+                      : Icons.visibility),
+                  onPressed: () =>
+                      setState(() => _obscureConfirm = !_obscureConfirm),
+                ),
+              ),
+              validator: (v) => v != _passCtrl.text
+                  ? 'Las contraseñas no coinciden'
+                  : null,
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              height: 52,
+              child: ElevatedButton(
+                onPressed: auth.isLoading ? null : _submit,
+                child: auth.isLoading
+                    ? const SizedBox(
+                        height: 22,
+                        width: 22,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.5,
+                        ),
+                      )
+                    : const Text(
+                        'Registrarme',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('¿Ya tienes cuenta?',
+                    style: TextStyle(color: AppTheme.textSecondary)),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Inicia Sesión'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

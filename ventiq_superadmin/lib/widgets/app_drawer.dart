@@ -66,6 +66,16 @@ class AppDrawer extends StatelessWidget {
                       route: '/pago-proveedores',
                     ),
                     _DrawerItem(
+                      icon: Icons.account_balance,
+                      title: 'Pago a Inventtia',
+                      route: '/pago-inventtia',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.payment,
+                      title: 'Pago a Referidos',
+                      route: '/referral-payments',
+                    ),
+                    _DrawerItem(
                       icon: Icons.delete,
                       title: 'Eliminacion de tiendas',
                       route: '/eliminacion-tiendas',
@@ -129,6 +139,11 @@ class AppDrawer extends StatelessWidget {
                       title: 'Control de Flota',
                       route: '/control-flota',
                     ),
+                    _DrawerItem(
+                      icon: Icons.swap_vert,
+                      title: 'Movimientos en tiempo real',
+                      route: '/movimientos',
+                    ),
                   ],
                 ),
                 _buildMenuSection(
@@ -174,6 +189,16 @@ class AppDrawer extends StatelessWidget {
                       icon: Icons.verified_user,
                       title: 'Verificación KYC',
                       route: '/muevete/kyc',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.workspace_premium_rounded,
+                      title: 'Solicitudes de Plan',
+                      route: '/muevete/planes',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.local_shipping_outlined,
+                      title: 'Gestión de Cargas',
+                      route: '/muevete/cargas',
                     ),
                   ],
                 ),
@@ -338,11 +363,14 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/trabajadores' ||
                 item.route == '/licencias' ||
                 item.route == '/renovaciones' ||
+                item.route == '/referral-payments' ||
                 item.route == '/configuracion' ||
                 item.route == '/carnaval-tiendas' ||
                 item.route == '/productos-carnaval-inventtia' ||
                 item.route == '/pago-proveedores' ||
+                item.route == '/pago-inventtia' ||
                 item.route == '/control-flota' ||
+                item.route == '/movimientos' ||
                 item.route.startsWith('/muevete/') ||
                 item.route == '/agentes' ||
                 item.route == '/ingresos-distribucion' ||

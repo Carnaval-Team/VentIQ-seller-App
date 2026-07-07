@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -186,16 +185,19 @@ class _ClientDrawerState extends State<ClientDrawer> {
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
-                  if (kIsWeb)
+                  if (authProvider.isShipper ||
+                      authProvider.isCarrierCarga ||
+                      authProvider.isDispatcher)
                     _DrawerItem(
                       icon: Icons.inventory_2_outlined,
-                      label: 'Ir a cargas',
-                      subtitle: 'Ver planes y servicios',
+                      label: 'Mis Cargas',
+                      subtitle: 'Gestiona tus cargas',
                       isDark: isDark,
                       cardColor: cardColor,
                       onTap: () {
                         Navigator.pop(context);
-                        Navigator.pushNamed(context, '/landing');
+                        Navigator.pushReplacementNamed(
+                            context, authProvider.homeRoute);
                       },
                     ),
                   _DrawerItem(
@@ -292,7 +294,7 @@ class _ClientDrawerState extends State<ClientDrawer> {
                 if (context.mounted) {
                   Navigator.pushNamedAndRemoveUntil(
                     context,
-                    kIsWeb ? '/landing' : '/login',
+                    '/landing',
                     (_) => false,
                   );
                 }

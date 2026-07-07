@@ -53,6 +53,24 @@ class _LoginScreenState extends State<LoginScreen> {
       print('✅ Valid session found, auto-logging in...');
       // Agregar pequeño delay para asegurar que la UI se renderice primero
       await Future.delayed(const Duration(milliseconds: 100));
+      if (!mounted) return;
+
+      // Verificar rol para redirigir correctamente
+      try {
+        final role = await _permissionsService.getUserRole();
+        if (role == UserRole.recursosHumanos && mounted) {
+          print('✅ Usuario HR detectado en auto-login, navegando a HR dashboard...');
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/hr-dashboard',
+            (route) => false,
+          );
+          return;
+        }
+      } catch (e) {
+        print('⚠️ Error verificando rol en auto-login: $e');
+      }
+
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(
           context,

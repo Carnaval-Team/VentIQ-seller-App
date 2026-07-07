@@ -20,11 +20,17 @@ import 'screens/venta_total_web_screen.dart';
 import 'screens/cierre_screen.dart';
 import 'screens/cierre_web_screen.dart';
 import 'screens/shift_workers_screen.dart';
+import 'screens/offline_data_viewer_screen.dart';
 import 'screens/subscription_detail_screen.dart';
 import 'screens/wifi_printers_screen.dart';
 import 'models/product.dart';
+import 'screens/default_order_items_screen.dart';
+import 'screens/mesas_screen.dart';
+import 'screens/mesa_detail_screen.dart';
+import 'screens/cuenta_mesa_screen.dart';
 import 'services/auth_service.dart';
 import 'services/user_preferences_service.dart';
+import 'services/store_config_service.dart';
 import 'utils/platform_utils.dart';
 import 'utils/global_navigator.dart';
 import 'widgets/sync_blocking_overlay.dart';
@@ -134,6 +140,10 @@ void main() async {
   // Pre-cargar preferencias de usuario en caché para acceso sincrónico
   await UserPreferencesService().isShowSkuEnabled();
 
+  // Pre-cargar el flag modo_restaurante en cache sincrónico para que el
+  // NavigationHelper pueda decidir el destino del botón Home sin Future.
+  await StoreConfigService.primeModoRestauranteCache();
+
   runApp(const MyApp());
 }
 
@@ -175,7 +185,14 @@ class MyApp extends StatelessWidget {
                 _shouldUseWebLayout(context)
                     ? const PreorderWebScreen()
                     : const PreorderScreen(),
-        '/orders': (context) => const OrdersScreen(),
+        '/orders': (context) {
+          // Soporta opcional autoOpenOrderId vía Navigator.pushNamed(arguments: ...)
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is String) {
+            return OrdersScreen(autoOpenOrderId: args);
+          }
+          return const OrdersScreen();
+        },
         '/settings': (context) => const SettingsScreen(),
         '/apertura':
             (context) =>
@@ -194,8 +211,27 @@ class MyApp extends StatelessWidget {
                     ? const CierreWebScreen()
                     : const CierreScreen(),
         '/shift-workers': (context) => const ShiftWorkersScreen(),
+        '/offline-data-viewer': (context) => const OfflineDataViewerScreen(),
         '/subscription-detail': (context) => const SubscriptionDetailScreen(),
         '/wifi-printers': (context) => const WiFiPrintersScreen(),
+        '/default-order-items': (context) =>
+            const DefaultOrderItemsScreen(),
+        '/mesas': (context) => const MesasScreen(),
+        '/mesa-detail': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is int) {
+            return MesaDetailScreen(idMesa: args);
+          }
+          // Sin id → volver atrás
+          return const _MesasFallback();
+        },
+        '/cuenta-mesa': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is int) {
+            return CuentaMesaScreen(idCuenta: args);
+          }
+          return const _MesasFallback();
+        },
       },
     );
   }
@@ -213,6 +249,20 @@ class PlatformAwareLoginScreen extends StatelessWidget {
     } else {
       return const LoginScreen();
     }
+  }
+}
+
+/// Fallback cuando se navega a /mesa-detail sin id (no debería pasar).
+class _MesasFallback extends StatelessWidget {
+  const _MesasFallback();
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Navigator.pushReplacementNamed(context, '/mesas');
+    });
+    return const Scaffold(
+      body: Center(child: CircularProgressIndicator()),
+    );
   }
 }
 

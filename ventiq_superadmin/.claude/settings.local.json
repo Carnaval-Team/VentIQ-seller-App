@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(flutter pub:*)"
+      "Bash(flutter pub:*)",
+      "Bash(xargs grep *)",
+      "Bash(flutter analyze *)",
+      "mcp__ide__getDiagnostics",
+      "Bash(flutter *)"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "supabase"
+  ]
 }

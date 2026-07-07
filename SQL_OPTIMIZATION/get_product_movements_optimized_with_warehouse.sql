@@ -91,18 +91,20 @@ BEGIN
   LEFT JOIN app_dat_layout_almacen la ON COALESCE(rp.id_ubicacion, ep.id_ubicacion, cp.id_ubicacion) = la.id
   LEFT JOIN app_dat_almacen alm ON la.id_almacen = alm.id
   LEFT JOIN app_dat_proveedor prov ON COALESCE(rp.id_proveedor, inv.id_proveedor) = prov.id
+  LEFT JOIN app_dat_operacion_venta ov ON op.id = ov.id_operacion
+  LEFT JOIN app_dat_tpv tpv ON ov.id_tpv = tpv.id
   LEFT JOIN LATERAL (
     SELECT estado
     FROM app_dat_estado_operacion
     WHERE app_dat_estado_operacion.id_operacion = op.id
-    ORDER BY created_at DESC
+    ORDER BY id DESC
     LIMIT 1
   ) eo ON TRUE
   WHERE inv.id_producto = p_id_producto
     AND (p_fecha_desde IS NULL OR inv.created_at::DATE >= p_fecha_desde)
     AND (p_fecha_hasta IS NULL OR inv.created_at::DATE <= p_fecha_hasta)
     AND (p_tipo_operacion_id IS NULL OR op.id_tipo_operacion = p_tipo_operacion_id)
-    AND (p_id_almacen IS NULL OR la.id_almacen = p_id_almacen)
+    AND (p_id_almacen IS NULL OR la.id_almacen = p_id_almacen OR tpv.id_almacen = p_id_almacen)
   ORDER BY COALESCE(rp.created_at, ep.created_at, cp.created_at) DESC
   LIMIT p_limit
   OFFSET p_offset;

@@ -15,6 +15,7 @@ import 'package:excel/excel.dart' as excel;
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
+import '../widgets/paqueteria_tab.dart';
 import '../models/sales.dart';
 import '../models/sales_analyst_models.dart';
 import '../services/sales_service.dart';
@@ -51,6 +52,9 @@ class _SalesScreenState extends State<SalesScreen>
   bool _isGeneratingPdf = false;
   bool _isPdfFabExpanded = false;
   String _selectedTPV = 'Todos';
+  // Tab TPVs: si es true, el reporte de vendedores se extiende hasta el cierre
+  // del turno cuando este cerró después de la fecha_hasta (o hasta ahora si sigue abierto).
+  bool _tpvHastaCierreTurno = false;
   double _totalSales = 0.0;
   int _totalProductsSold = 0;
   bool _isLoadingMetrics = false;
@@ -181,7 +185,8 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Widget _buildGeneratePdfFab() {
-    if (_tabController.index == 5) { // 5 is now Analyst
+    if (_tabController.index == 5 || _tabController.index == 6) {
+      // 5 = Paquetería, 6 = Analista — sin FAB.
       return const SizedBox.shrink();
     }
     // Un solo botón con opciones según el tab activo
@@ -191,9 +196,9 @@ class _SalesScreenState extends State<SalesScreen>
     IconData icon = Icons.more_vert;
     Future<void> Function()? action;
 
-    debugPrint(
+    /* debugPrint(
       '🔍 FAB: Tab ${_tabController.index}, SupplierReports: ${_supplierReports.length}',
-    );
+    ); */
 
     switch (_tabController.index) {
       case 0: // Tiempo Real
@@ -235,9 +240,9 @@ class _SalesScreenState extends State<SalesScreen>
         break;
 
       case 2: // Proveedores
-        debugPrint(
+        /* debugPrint(
           '🔍 FAB: En tab Proveedores, _supplierReports.isNotEmpty: ${_supplierReports.isNotEmpty}',
-        );
+        ); */
         isLoading = _isExportingPDF;
         label = _isExportingPDF ? 'Exportando...' : 'Exportar Resumen';
         icon = Icons.download_outlined;
@@ -287,9 +292,9 @@ class _SalesScreenState extends State<SalesScreen>
       }
     }
 
-    debugPrint(
+    /* debugPrint(
       '🔍 FAB: onPressed=$onPressed, isLoading=$isLoading, label=$label',
-    );
+    ); */
 
     final isDisabled = onPressed == null && !isLoading;
     final backgroundColor = isDisabled ? Colors.grey : AppColors.primary;
@@ -426,14 +431,17 @@ class _SalesScreenState extends State<SalesScreen>
         }
       }
 
-      final costoTotal = productReports.fold<double>(
+      // Calcular en CUP puro con fallback: si precioCostoCup == 0 usar precioCosto * valorUsd
+      final costoTotal = productReports.fold<double>(0.0, (sum, p) {
+        final cu = p.precioCostoCup > 0 ? p.precioCostoCup : p.precioCosto * p.valorUsd;
+        return sum + cu * p.totalVendido;
+      });
+      // Ingresos CUP = precioVentaCup * totalVendido (para consistencia con la tabla)
+      final ventaTotalCup = productReports.fold<double>(
         0.0,
-        (sum, p) => sum + p.costoTotalVendido,
+        (sum, p) => sum + p.precioVentaCup * p.totalVendido,
       );
-      final gananciaTotal = productReports.fold<double>(
-        0.0,
-        (sum, p) => sum + p.gananciaTotal,
-      );
+      final gananciaTotal = ventaTotalCup - costoTotal;
       final gananciasReales = (ventaTotal - descuentoTotal) - costoTotal;
 
       final pdf = pw.Document();
@@ -536,6 +544,454 @@ class _SalesScreenState extends State<SalesScreen>
         setState(() => _isGeneratingPdf = false);
       }
     }
+  }
+
+  bool _isVendorOrderCompleted(VendorOrder order) {
+    if (order.estado == 2) return true;
+    final estado = order.estadoNombre.toLowerCase();
+    return estado.contains('completad');
+  }
+
+  ({double efectivoOferta, double efectivoRegular, double transferencias})
+  _calculateVendorPaymentTotals(List<VendorOrder> orders) {
+    double totalEfectivoOferta = 0.0;
+    double totalEfectivoRegular = 0.0;
+    double totalTransferencias = 0.0;
+
+    for (final order in orders) {
+      if (order.detalles['pagos'] == null) continue;
+      final pagos = order.detalles['pagos'] as List;
+      for (final pago in pagos) {
+        final metodoPago = pago['medio_pago']?.toString().toLowerCase() ?? '';
+        final total = (pago['total'] ?? 0.0).toDouble();
+        final esEfectivo = pago['es_efectivo'] ?? false;
+        final tipoPago = pago['tipo_pago'] ?? 1;
+
+        if (esEfectivo && metodoPago.contains('efectivo')) {
+          if (tipoPago == 1) {
+            totalEfectivoOferta += total;
+          } else if (tipoPago == 2) {
+            totalEfectivoRegular += total;
+          }
+        } else if (metodoPago.contains('transferencia')) {
+          totalTransferencias += total;
+        }
+      }
+    }
+
+    return (
+      efectivoOferta: totalEfectivoOferta,
+      efectivoRegular: totalEfectivoRegular,
+      transferencias: totalTransferencias,
+    );
+  }
+
+  Future<void> _exportVendorOrdersToPdf({
+    required SalesVendorReport vendor,
+    required List<VendorOrder> orders,
+  }) async {
+    if (orders.isEmpty) return;
+
+    final completedOrders =
+        orders.where(_isVendorOrderCompleted).toList();
+    final paymentTotals = _calculateVendorPaymentTotals(completedOrders);
+
+    final dateRange = _getDateRange();
+    final start = dateRange['start']!;
+    final end = dateRange['end']!;
+
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      Map<String, dynamic>? storeData;
+      if (storeId != null) {
+        storeData =
+            await Supabase.instance.client
+                .from('app_dat_tienda')
+                .select('denominacion, direccion, ubicacion, phone, imagen_url')
+                .eq('id', storeId)
+                .maybeSingle();
+      }
+
+      final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+      final storeAddress = storeData?['direccion'] as String? ?? '';
+      final storeLocation = storeData?['ubicacion'] as String? ?? '';
+      final storePhone = storeData?['phone'] as String? ?? '';
+      final storeLogoUrl = storeData?['imagen_url'] as String?;
+      final logoBytes = await _downloadImageBytes(storeLogoUrl);
+
+      final dateLabel =
+          '${_formatDateForPdf(start)} - ${_formatDateForPdf(end)}';
+      final totalVentas = completedOrders.fold<double>(
+        0.0,
+        (sum, o) {
+          final summary = _calculateDiscountSummary(o);
+          return sum + (summary['cobrado'] ?? o.totalOperacion);
+        },
+      );
+
+      final pdf = pw.Document();
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          build:
+              (context) => [
+                _buildPdfHeader(
+                  logoBytes: logoBytes,
+                  storeName: storeName,
+                  storeAddress: storeAddress,
+                  storeLocation: storeLocation,
+                  storePhone: storePhone,
+                  dateLabel: dateLabel,
+                  reportTitle: 'Reporte de Órdenes',
+                  extraLines: ['Vendedor: ${vendor.nombreCompleto}'],
+                ),
+                pw.SizedBox(height: 16),
+                _buildVendorOrdersPdfSummary(
+                  orderCount: orders.length,
+                  totalVentas: totalVentas,
+                  totalEfectivoOferta: paymentTotals.efectivoOferta,
+                  totalEfectivoRegular: paymentTotals.efectivoRegular,
+                  totalTransferencias: paymentTotals.transferencias,
+                ),
+                pw.SizedBox(height: 16),
+                pw.Text(
+                  'Detalle de órdenes',
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('#0F172A'),
+                  ),
+                ),
+                pw.SizedBox(height: 8),
+                ...orders.map(
+                  (order) => pw.Container(
+                    margin: const pw.EdgeInsets.only(bottom: 12),
+                    padding: const pw.EdgeInsets.all(12),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColor.fromHex('#F8FAFC'),
+                      borderRadius: pw.BorderRadius.circular(10),
+                      border: pw.Border.all(
+                        color: PdfColors.grey300,
+                        width: 0.8,
+                      ),
+                    ),
+                    child: _buildVendorOrderPdfDetailSection(order),
+                  ),
+                ),
+              ],
+        ),
+      );
+
+      final safeVendorName = vendor.nombreCompleto
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .trim()
+          .replaceAll(RegExp(r'\s+'), '_');
+      final fileName =
+          'ordenes_${safeVendorName}_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.pdf';
+      final pdfBytes = await pdf.save();
+
+      if (kIsWeb) {
+        await Printing.sharePdf(bytes: pdfBytes, filename: fileName);
+      } else {
+        final output = await getTemporaryDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(pdfBytes);
+        await Share.shareXFiles(
+          [XFile(file.path, mimeType: 'application/pdf')],
+          text: 'Órdenes de ${vendor.nombreCompleto} · $dateLabel',
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PDF generado correctamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  pw.Widget _buildVendorOrdersPdfSummary({
+    required int orderCount,
+    required double totalVentas,
+    required double totalEfectivoOferta,
+    required double totalEfectivoRegular,
+    required double totalTransferencias,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        color: PdfColor.fromHex('#F1F5F9'),
+        borderRadius: pw.BorderRadius.circular(12),
+        border: pw.Border.all(color: PdfColors.grey300, width: 1),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Resumen',
+            style: pw.TextStyle(
+              fontSize: 13,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColor.fromHex('#0F172A'),
+            ),
+          ),
+          pw.SizedBox(height: 8),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text(
+                'Total órdenes',
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  color: PdfColor.fromHex('#475569'),
+                ),
+              ),
+              pw.Text(
+                '$orderCount',
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromHex('#0F172A'),
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            'Totales de ventas y métodos de pago: solo órdenes completadas',
+            style: pw.TextStyle(
+              fontSize: 9,
+              fontStyle: pw.FontStyle.italic,
+              color: PdfColor.fromHex('#64748B'),
+            ),
+          ),
+          pw.SizedBox(height: 4),
+          _pdfSummaryRow('Total ventas', totalVentas),
+          if (totalEfectivoOferta > 0 ||
+              totalEfectivoRegular > 0 ||
+              totalTransferencias > 0)
+            pw.SizedBox(height: 4),
+          if (totalEfectivoOferta > 0)
+            _pdfSummaryRow('Efectivo (Oferta)', totalEfectivoOferta),
+          if (totalEfectivoRegular > 0)
+            _pdfSummaryRow('Efectivo (Regular)', totalEfectivoRegular),
+          if (totalTransferencias > 0)
+            _pdfSummaryRow('Transferencias', totalTransferencias),
+        ],
+      ),
+    );
+  }
+
+  List<dynamic> _filterUniqueOrderItems(List<dynamic> items) {
+    final seenProductIds = <dynamic>{};
+    return items.where((item) {
+      final precioUnitario =
+          (item['precio_unitario'] ?? 0.0).toDouble();
+      if (precioUnitario == 0.0) return false;
+      final productId =
+          item['id_producto'] ?? item['producto_id'] ?? item['id'];
+      if (seenProductIds.contains(productId)) return false;
+      seenProductIds.add(productId);
+      return true;
+    }).toList();
+  }
+
+  String _paymentLabelForPdf(Map<String, dynamic> payment) {
+    var metodoPago = payment['medio_pago']?.toString() ?? 'N/A';
+    final esEfectivo = payment['es_efectivo'] ?? false;
+    final tipoPago = payment['tipo_pago'] ?? 1;
+
+    if (esEfectivo && metodoPago.toLowerCase().contains('efectivo')) {
+      if (tipoPago == 1) return 'Pago Oferta (Efectivo)';
+      if (tipoPago == 2) return 'Pago Regular (Efectivo)';
+    }
+    return metodoPago;
+  }
+
+  pw.Widget _buildVendorOrderPdfDetailSection(VendorOrder order) {
+    final summary = _calculateDiscountSummary(order);
+    final cobrado = summary['cobrado'] ?? order.totalOperacion;
+    final descuento = summary['descuento'] ?? 0.0;
+    final original = summary['original'] ?? order.totalOperacion;
+
+    final cliente = order.detalles['cliente'] as Map<String, dynamic>?;
+    final clienteNombre =
+        cliente != null
+            ? (cliente['nombre_completo'] ?? 'N/A').toString()
+            : null;
+    final pagos = (order.detalles['pagos'] as List?) ?? [];
+    final rawItems = (order.detalles['items'] as List?) ?? [];
+    final items = _filterUniqueOrderItems(rawItems);
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              'Orden #${order.idOperacion}',
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#0F172A'),
+              ),
+            ),
+            pw.Text(
+              order.estadoNombre,
+              style: pw.TextStyle(
+                fontSize: 10,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#475569'),
+              ),
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 4),
+        pw.Text(
+          '${_formatOrderDate(order.fechaOperacion)} · ${order.tpvNombre}',
+          style: pw.TextStyle(fontSize: 10, color: PdfColor.fromHex('#475569')),
+        ),
+        if (clienteNombre != null) ...[
+          pw.SizedBox(height: 4),
+          pw.Text(
+            'Cliente: $clienteNombre',
+            style: pw.TextStyle(
+              fontSize: 10,
+              color: PdfColor.fromHex('#334155'),
+            ),
+          ),
+        ],
+        if (items.isNotEmpty) ...[
+          pw.SizedBox(height: 8),
+          pw.Table(
+            border: pw.TableBorder(
+              horizontalInside: pw.BorderSide(
+                color: PdfColors.grey300,
+                width: 0.3,
+              ),
+              bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5),
+            ),
+            columnWidths: {
+              0: const pw.FlexColumnWidth(4),
+              1: const pw.FlexColumnWidth(1),
+              2: const pw.FlexColumnWidth(1.5),
+            },
+            children: [
+              pw.TableRow(
+                children: [
+                  _pdfHeaderCell('Producto'),
+                  _pdfHeaderCell('Cant.'),
+                  _pdfHeaderCell('Importe'),
+                ],
+              ),
+              ...items.map((item) {
+                final nombre =
+                    item['producto_nombre']?.toString() ??
+                    item['nombre']?.toString() ??
+                    'Producto';
+                final cantidad = _formatCantidadDecimal(item['cantidad']);
+                final importe = _toDoubleSafe(item['importe']).toStringAsFixed(
+                  2,
+                );
+                return pw.TableRow(
+                  children: [
+                    _pdfBodyCell(nombre),
+                    _pdfBodyCell(cantidad),
+                    _pdfBodyCell('\$$importe', isBold: true),
+                  ],
+                );
+              }),
+            ],
+          ),
+        ],
+        if (pagos.isNotEmpty) ...[
+          pw.SizedBox(height: 8),
+          pw.Text(
+            'Desglose de pagos',
+            style: pw.TextStyle(
+              fontSize: 11,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColor.fromHex('#0F172A'),
+            ),
+          ),
+          pw.SizedBox(height: 4),
+          ...pagos.map((pago) {
+            final pagoMap =
+                pago is Map<String, dynamic>
+                    ? pago
+                    : Map<String, dynamic>.from(pago as Map);
+            return pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 4),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(
+                    _paymentLabelForPdf(pagoMap),
+                    style: pw.TextStyle(
+                      fontSize: 10,
+                      color: PdfColor.fromHex('#334155'),
+                    ),
+                  ),
+                  pw.Text(
+                    '\$${_toDoubleSafe(pagoMap['total']).toStringAsFixed(2)}',
+                    style: pw.TextStyle(
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColor.fromHex('#0F172A'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+        pw.SizedBox(height: 6),
+        pw.Container(
+          padding: const pw.EdgeInsets.all(8),
+          decoration: pw.BoxDecoration(
+            color: PdfColor.fromHex('#EEF2FF'),
+            borderRadius: pw.BorderRadius.circular(8),
+            border: pw.Border.all(
+              color: PdfColor.fromHex('#CBD5E1'),
+              width: 0.8,
+            ),
+          ),
+          child: pw.Column(
+            children: [
+              if (descuento > 0) ...[
+                _pdfSummaryRow('Subtotal', original, fontSize: 10),
+                _pdfSummaryRow('Descuento', -descuento, fontSize: 10),
+              ],
+              _pdfSummaryRow('Total orden', cobrado, isBold: true, fontSize: 11),
+            ],
+          ),
+        ),
+        if (order.observaciones != null && order.observaciones!.isNotEmpty) ...[
+          pw.SizedBox(height: 6),
+          pw.Text(
+            'Observaciones: ${order.observaciones}',
+            style: pw.TextStyle(
+              fontSize: 9,
+              color: PdfColor.fromHex('#64748B'),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 
   Future<List<VendorOrder>> _fetchOrdersForPdf({
@@ -658,6 +1114,8 @@ class _SalesScreenState extends State<SalesScreen>
     required String storeLocation,
     required String storePhone,
     required String dateLabel,
+    String reportTitle = 'Reporte de Facturas',
+    List<String> extraLines = const [],
   }) {
     return pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -708,6 +1166,15 @@ class _SalesScreenState extends State<SalesScreen>
                     color: PdfColor.fromHex('#475569'),
                   ),
                 ),
+              ...extraLines.map(
+                (line) => pw.Text(
+                  line,
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    color: PdfColor.fromHex('#475569'),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -715,7 +1182,7 @@ class _SalesScreenState extends State<SalesScreen>
           crossAxisAlignment: pw.CrossAxisAlignment.end,
           children: [
             pw.Text(
-              'Reporte de Facturas',
+              reportTitle,
               style: pw.TextStyle(
                 fontSize: 14,
                 fontWeight: pw.FontWeight.bold,
@@ -834,9 +1301,7 @@ class _SalesScreenState extends State<SalesScreen>
         ...items
             .map((item) {
               final nombre = item['producto_nombre']?.toString() ?? 'Producto';
-              final cantidad = _toDoubleSafe(
-                item['cantidad'],
-              ).toStringAsFixed(0);
+              final cantidad = _formatCantidadDecimal(item['cantidad']);
               final precio = _toDoubleSafe(
                 item['precio_unitario'],
               ).toStringAsFixed(2);
@@ -1032,10 +1497,11 @@ class _SalesScreenState extends State<SalesScreen>
         ),
       );
 
-    final totalGanancia = sorted.fold<double>(
-      0.0,
-      (sum, p) => sum + p.gananciaTotal,
-    );
+    // Ganancia en CUP puro con fallback: si precioCostoCup == 0 usar precioCosto * valorUsd
+    final totalGanancia = sorted.fold<double>(0.0, (sum, p) {
+      final cu = p.precioCostoCup > 0 ? p.precioCostoCup : p.precioCosto * p.valorUsd;
+      return sum + (p.precioVentaCup - cu) * p.totalVendido;
+    });
     final totalGananciaColor =
         totalGanancia < 0
             ? PdfColor.fromHex('#DC2626')
@@ -1064,10 +1530,13 @@ class _SalesScreenState extends State<SalesScreen>
           ],
         ),
         ...sorted.map((p) {
+          final costoUnitPdf = p.precioCostoCup > 0 ? p.precioCostoCup : p.precioCosto * p.valorUsd;
+          final gananciaLinea =
+              (p.precioVentaCup - costoUnitPdf) * p.totalVendido;
           final gananciaColor =
-              p.gananciaTotal < 0
+              gananciaLinea < 0
                   ? PdfColor.fromHex('#DC2626')
-                  : p.gananciaTotal > 0
+                  : gananciaLinea > 0
                   ? PdfColor.fromHex('#15803D')
                   : PdfColor.fromHex('#334155');
           return pw.TableRow(
@@ -1077,7 +1546,7 @@ class _SalesScreenState extends State<SalesScreen>
               _pdfBodyCell('\$${p.precioVentaCup.toStringAsFixed(2)}'),
               _pdfBodyCell('\$${p.precioCostoCup.toStringAsFixed(2)}'),
               _pdfBodyCell(
-                '\$${p.gananciaTotal.toStringAsFixed(2)}',
+                '\$${gananciaLinea.toStringAsFixed(2)}',
                 isBold: true,
                 color: gananciaColor,
               ),
@@ -1258,7 +1727,7 @@ class _SalesScreenState extends State<SalesScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _tabController.addListener(_onTabChanged);
     _analystController = SalesAnalystController();
     _analystController.addListener(_handleAnalystUpdates);
@@ -1284,7 +1753,7 @@ class _SalesScreenState extends State<SalesScreen>
 
       switch (_tabController.index) {
         case 2: // Suppliers
-          _loadSupplierReports();
+          // _loadSupplierReports se ejecuta automáticamente tras _loadProductSalesData
           break;
         case 3: // Desglose ventas
           if (_salesBreakdownFuture == null) {
@@ -1296,14 +1765,14 @@ class _SalesScreenState extends State<SalesScreen>
         case 4: // Analysis
           _loadProductAnalysis();
           break;
-        case 5: // Analyst
+        case 5: // Paquetería
+          break;
+        case 6: // Analyst
           if (_hasAdvancedPlan) {
             if (!_isLoadingAnalysis && _productAnalysis.isEmpty) {
               _loadProductAnalysis();
             }
-            if (!_isLoadingSuppliers && _supplierReports.isEmpty) {
-              _loadSupplierReports();
-            }
+            // _loadSupplierReports se ejecuta automáticamente tras _loadProductSalesData
           }
           break;
       }
@@ -1423,6 +1892,9 @@ class _SalesScreenState extends State<SalesScreen>
         _isLoadingProducts = false;
         _isLoadingMetrics = false;
       });
+
+      // Siempre recalcular proveedores desde los mismos datos
+      await _loadSupplierReports();
     } catch (e) {
       setState(() {
         _isLoadingProducts = false;
@@ -1441,6 +1913,7 @@ class _SalesScreenState extends State<SalesScreen>
       final reports = await SalesService.getSalesVendorReport(
         fechaDesde: _startDate,
         fechaHasta: _endDate,
+        hastaCierreTurno: _tpvHastaCierreTurno,
       );
 
       // Load egresos for each vendor
@@ -1531,35 +2004,38 @@ class _SalesScreenState extends State<SalesScreen>
     if (!mounted) return;
     setState(() => _isLoadingSuppliers = true);
     try {
-      final detailedSales = await SalesService.getProductSalesWithSupplier(
-        fechaDesde: _startDate,
-        fechaHasta: _endDate,
-        idAlmacen: _selectedWarehouseId,
-      );
-
-      // Agrupación local por proveedor
+      // Usar _productSalesReports (misma fuente de datos que el tab de productos)
+      // para garantizar totales idénticos entre ambos tabs.
       final Map<int, SupplierSalesReport> groupedReports = {};
 
-      for (var sale in detailedSales) {
-        if (groupedReports.containsKey(sale.idProveedor)) {
-          final current = groupedReports[sale.idProveedor]!;
-          groupedReports[sale.idProveedor] = SupplierSalesReport(
+      for (final report in _productSalesReports) {
+        final ingresos = (report.precioVentaCup.round() * report.totalVendido).roundToDouble();
+        final costo = (report.precioCostoCup.round() * report.totalVendido).roundToDouble();
+        final ganancia = ingresos - costo;
+        final cantidad = report.totalVendido;
+
+        final idProv = report.idProveedor;
+        final nomProv = report.nombreProveedor;
+
+        if (groupedReports.containsKey(idProv)) {
+          final current = groupedReports[idProv]!;
+          groupedReports[idProv] = SupplierSalesReport(
             idProveedor: current.idProveedor,
             nombreProveedor: current.nombreProveedor,
-            totalVentas: current.totalVentas + sale.ingresosTotales,
-            totalCosto: current.totalCosto + sale.costoTotalVendido,
-            totalGanancia: current.totalGanancia + sale.gananciaTotal,
-            cantidadProductos: current.cantidadProductos + sale.totalVendido,
+            totalVentas: current.totalVentas + ingresos,
+            totalCosto: current.totalCosto + costo,
+            totalGanancia: current.totalGanancia + ganancia,
+            cantidadProductos: current.cantidadProductos + cantidad,
             margenPorcentaje: 0,
           );
         } else {
-          groupedReports[sale.idProveedor] = SupplierSalesReport(
-            idProveedor: sale.idProveedor,
-            nombreProveedor: sale.nombreProveedor,
-            totalVentas: sale.ingresosTotales,
-            totalCosto: sale.costoTotalVendido,
-            totalGanancia: sale.gananciaTotal,
-            cantidadProductos: sale.totalVendido,
+          groupedReports[idProv] = SupplierSalesReport(
+            idProveedor: idProv,
+            nombreProveedor: nomProv,
+            totalVentas: ingresos,
+            totalCosto: costo,
+            totalGanancia: ganancia,
+            cantidadProductos: cantidad,
             margenPorcentaje: 0,
           );
         }
@@ -1568,10 +2044,9 @@ class _SalesScreenState extends State<SalesScreen>
       // Calcular márgenes finales y convertir a lista
       final List<SupplierSalesReport> reports =
           groupedReports.values.map((item) {
-            double margen = 0;
-            if (item.totalVentas > 0) {
-              margen = (item.totalGanancia / item.totalVentas) * 100;
-            }
+            final margen = item.totalVentas > 0
+                ? (item.totalGanancia / item.totalVentas) * 100
+                : 0.0;
             return SupplierSalesReport(
               idProveedor: item.idProveedor,
               nombreProveedor: item.nombreProveedor,
@@ -1583,7 +2058,6 @@ class _SalesScreenState extends State<SalesScreen>
             );
           }).toList();
 
-      // Ordenar por total ventas descendente
       reports.sort((a, b) => b.totalVentas.compareTo(a.totalVentas));
 
       if (mounted) {
@@ -1654,6 +2128,10 @@ class _SalesScreenState extends State<SalesScreen>
               icon: Icon(Icons.receipt_long, size: 18),
             ),
             const Tab(text: 'Análisis', icon: Icon(Icons.analytics, size: 18)),
+            const Tab(
+              text: 'Paquetería',
+              icon: Icon(Icons.local_shipping_outlined, size: 18),
+            ),
             Tab(
               text: 'Analista',
               icon: Icon(Icons.smart_toy, size: 18),
@@ -1672,6 +2150,7 @@ class _SalesScreenState extends State<SalesScreen>
                   _buildSuppliersTab(),
                   _buildSalesBreakdownTab(),
                   _buildAnalyticsTab(),
+                  const PaqueteriaTab(),
                   _buildAnalystGateTab(),
                 ],
               ),
@@ -1853,7 +2332,8 @@ class _SalesScreenState extends State<SalesScreen>
                                       )['denominacion']
                                       : null;
                             });
-                            _loadSupplierReports();
+                            // Recargar productos (encadena _loadSupplierReports internamente)
+                            _loadProductSalesData();
                           },
                         ),
               ),
@@ -2264,6 +2744,10 @@ class _SalesScreenState extends State<SalesScreen>
               final fecha = orden['created_at'] != null ? DateFormat('dd/MM/yy HH:mm').format(DateTime.parse(orden['created_at'])) : '';
               final vendedor = orden['vendedor'] != null ? orden['vendedor']['nombre_completo'] : 'N/A';
               
+              final tieneItemsSinInventario = razonesList.contains('SIN_INVENTARIO_EN_ITEMS');
+              final items = (orden['items'] as List?) ?? [];
+              final itemsSinInv = items.where((it) => (it as Map)['inventario'] == null).toList();
+
               return ExpansionTile(
                 leading: CircleAvatar(
                   backgroundColor: AppColors.error.withOpacity(0.1),
@@ -2279,7 +2763,23 @@ class _SalesScreenState extends State<SalesScreen>
                 ),
                 trailing: Text('\$${total is num ? total.toStringAsFixed(2) : total}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 children: [
-                  _buildOrderDetailsContent(orden)
+                  _buildOrderDetailsContent(orden),
+                  if (tieneItemsSinInventario && itemsSinInv.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _reinyectarInventarioOrden(orden),
+                          icon: const Icon(Icons.healing, size: 18),
+                          label: Text('Reinyectar inventario (${itemsSinInv.length} items)'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.warning,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               );
             },
@@ -2436,7 +2936,7 @@ class _SalesScreenState extends State<SalesScreen>
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('${item['cantidad']}x ', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Text('${_formatCantidadDecimal(item['cantidad'])}x ', style: const TextStyle(fontWeight: FontWeight.bold)),
                         Expanded(child: Text('${item['producto_nombre'] ?? 'Producto'}', style: const TextStyle(fontWeight: FontWeight.w600))),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
@@ -2484,6 +2984,152 @@ class _SalesScreenState extends State<SalesScreen>
         ],
       ),
     );
+  }
+
+  Future<void> _reinyectarInventarioOrden(Map orden) async {
+    final supabase = Supabase.instance.client;
+    final idOperacion = orden['id_operacion'];
+    final items = (orden['items'] as List?) ?? [];
+    final itemsSinInv = items.where((it) => (it as Map)['inventario'] == null).toList();
+
+    if (itemsSinInv.isEmpty) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reinyectar inventario'),
+        content: Text(
+          'Se insertarán ${itemsSinInv.length} registro(s) de inventario para la orden #$idOperacion. ¿Continuar?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.warning, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reinyectar'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
+    );
+
+    int exitos = 0;
+    final List<String> errores = [];
+
+    try {
+      for (final item in itemsSinInv) {
+        final idExtraccion = (item as Map)['id_extraccion'];
+        if (idExtraccion == null) {
+          errores.add('Item sin id_extraccion');
+          continue;
+        }
+        try {
+          // 1. Cargar la extracción completa
+          final extRows = await supabase
+              .from('app_dat_extraccion_productos')
+              .select('id, id_operacion, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad, sku_producto, sku_ubicacion')
+              .eq('id', idExtraccion)
+              .limit(1);
+          if ((extRows as List).isEmpty) {
+            errores.add('Extracción $idExtraccion no encontrada');
+            continue;
+          }
+          final ext = Map<String, dynamic>.from(extRows.first);
+          final idProducto = ext['id_producto'];
+          final idVariante = ext['id_variante'];
+          final idOpcionVariante = ext['id_opcion_variante'];
+          final idPresentacion = ext['id_presentacion'];
+          var idUbicacion = ext['id_ubicacion'];
+          final cantidadExt = (ext['cantidad'] as num?)?.toDouble() ?? 0.0;
+
+          // 2. Buscar última fila de inventario que coincida (id desc limit 1)
+          var invQuery = supabase
+              .from('app_dat_inventario_productos')
+              .select('id, id_ubicacion, cantidad_final, sku_producto, sku_ubicacion')
+              .eq('id_producto', idProducto);
+          if (idVariante != null) {
+            invQuery = invQuery.eq('id_variante', idVariante);
+          } else {
+            invQuery = invQuery.isFilter('id_variante', null);
+          }
+          if (idOpcionVariante != null) {
+            invQuery = invQuery.eq('id_opcion_variante', idOpcionVariante);
+          } else {
+            invQuery = invQuery.isFilter('id_opcion_variante', null);
+          }
+          if (idPresentacion != null) {
+            invQuery = invQuery.eq('id_presentacion', idPresentacion);
+          }
+
+          final invRows = await invQuery.order('id', ascending: false).limit(1);
+
+          double cantidadFinalUltima = 0.0;
+          int? idUbicacionInventario;
+          String? skuProductoInv;
+          String? skuUbicacionInv;
+          if ((invRows as List).isNotEmpty) {
+            final lastInv = Map<String, dynamic>.from(invRows.first);
+            cantidadFinalUltima = (lastInv['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+            idUbicacionInventario = lastInv['id_ubicacion'];
+            skuProductoInv = lastInv['sku_producto'];
+            skuUbicacionInv = lastInv['sku_ubicacion'];
+          }
+
+          // 3. Si la extracción no tiene id_ubicacion (o difiere) y el inventario sí lo tiene, actualizamos la extracción
+          if (idUbicacionInventario != null && idUbicacion != idUbicacionInventario) {
+            await supabase
+                .from('app_dat_extraccion_productos')
+                .update({'id_ubicacion': idUbicacionInventario})
+                .eq('id', idExtraccion);
+            idUbicacion = idUbicacionInventario;
+          }
+
+          // 4. Calcular cantidades para nueva fila
+          final double nuevaInicial = cantidadFinalUltima;
+          final double nuevaFinal = cantidadFinalUltima == 0.0
+              ? 0.0
+              : cantidadFinalUltima - cantidadExt;
+
+          await supabase.from('app_dat_inventario_productos').insert({
+            'id_producto': idProducto,
+            'id_variante': idVariante,
+            'id_opcion_variante': idOpcionVariante,
+            'id_ubicacion': idUbicacion,
+            'id_presentacion': idPresentacion,
+            'cantidad_inicial': nuevaInicial,
+            'cantidad_final': nuevaFinal,
+            'sku_producto': ext['sku_producto'] ?? skuProductoInv,
+            'sku_ubicacion': ext['sku_ubicacion'] ?? skuUbicacionInv,
+            'origen_cambio': 2,
+            'id_extraccion': idExtraccion,
+          });
+          exitos++;
+        } catch (e) {
+          errores.add('Extracción $idExtraccion: $e');
+        }
+      }
+    } finally {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    if (!mounted) return;
+
+    final msg = errores.isEmpty
+        ? '✅ Reinyectados $exitos registro(s) de inventario.'
+        : '⚠️ $exitos OK, ${errores.length} error(es): ${errores.take(2).join(' | ')}';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: errores.isEmpty ? AppColors.success : AppColors.warning),
+    );
+
+    setState(() {
+      _salesBreakdownFuture = _fetchSalesBreakdown();
+    });
   }
 
   Widget _buildAnalyticsTab() {
@@ -3686,10 +4332,11 @@ class _SalesScreenState extends State<SalesScreen>
                         b.nombreProducto.toLowerCase(),
                       ),
                     )).map((report) {
-                    // Calculate total cost CUP and profit
-                    final totalCostoCup =
-                        report.precioCostoCup * report.totalVendido;
-                    final ganancias = report.ingresosTotales - totalCostoCup;
+                    final precioVentaInt = report.precioVentaCup.round();
+                    final costoUnitarioCup = report.precioCostoCup.round();
+                    final ingresosCup = precioVentaInt * report.totalVendido;
+                    final totalCostoCup = costoUnitarioCup * report.totalVendido;
+                    final ganancias = ingresosCup - totalCostoCup;
 
                     return DataRow(
                       cells: [
@@ -3710,19 +4357,19 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                         DataCell(
                           Text(
-                            '\$${report.precioVentaCup.toStringAsFixed(0)}',
+                            '\$$precioVentaInt',
                             style: const TextStyle(color: AppColors.info),
                           ),
                         ),
                         DataCell(
                           Text(
-                            '${report.totalVendido.toStringAsFixed(0)}',
+                            _formatCantidadDecimal(report.totalVendido),
                             style: const TextStyle(color: AppColors.primary),
                           ),
                         ),
                         DataCell(
                           Text(
-                            '\$${report.ingresosTotales.toStringAsFixed(0)}',
+                            '\$${ingresosCup.toStringAsFixed(0)}',
                             style: const TextStyle(
                               color: AppColors.success,
                               fontWeight: FontWeight.bold,
@@ -3731,13 +4378,13 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                         DataCell(
                           Text(
-                            '\$${report.precioCostoCup.toStringAsFixed(0)}',
+                            '\$${costoUnitarioCup.toStringAsFixed(0)}',
                             style: const TextStyle(color: AppColors.warning),
                           ),
                         ),
                         DataCell(
                           Text(
-                            '\$${totalCostoCup.toStringAsFixed(0)}',
+                            '\$${totalCostoCup.toStringAsFixed(2)}',
                             style: const TextStyle(
                               color: AppColors.warning,
                               fontWeight: FontWeight.w500,
@@ -3746,7 +4393,7 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                         DataCell(
                           Text(
-                            '\$${ganancias.toStringAsFixed(0)}',
+                            '\$${ganancias.toStringAsFixed(2)}',
                             style: TextStyle(
                               color:
                                   ganancias >= 0
@@ -3778,7 +4425,7 @@ class _SalesScreenState extends State<SalesScreen>
                         const DataCell(Text('-')), // No average price
                         DataCell(
                           Text(
-                            '${_productSalesReports.fold(0.0, (sum, report) => sum + report.totalVendido).toStringAsFixed(0)}',
+                            _formatCantidadDecimal(_productSalesReports.fold(0.0, (sum, report) => sum + report.totalVendido)),
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.primary,
@@ -3787,7 +4434,7 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                         DataCell(
                           Text(
-                            '\$${_productSalesReports.fold(0.0, (sum, report) => sum + report.ingresosTotales).toStringAsFixed(0)}',
+                            '\$${_productSalesReports.fold(0.0, (sum, r) => sum + r.precioVentaCup.round() * r.totalVendido).toStringAsFixed(0)}',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.success,
@@ -3797,7 +4444,7 @@ class _SalesScreenState extends State<SalesScreen>
                         const DataCell(Text('-')), // No average cost
                         DataCell(
                           Text(
-                            '\$${_productSalesReports.fold(0.0, (sum, report) => sum + (report.precioCostoCup * report.totalVendido)).toStringAsFixed(0)}',
+                            '\$${_productSalesReports.fold(0.0, (sum, r) => sum + r.precioCostoCup.round() * r.totalVendido).toStringAsFixed(0)}',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.warning,
@@ -3805,29 +4452,16 @@ class _SalesScreenState extends State<SalesScreen>
                           ),
                         ),
                         DataCell(
-                          Text(
-                            '\$${(_productSalesReports.fold(0.0, (sum, report) => sum + report.ingresosTotales) - _productSalesReports.fold(0.0, (sum, report) => sum + (report.precioCostoCup * report.totalVendido))).toStringAsFixed(0)}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color:
-                                  (_productSalesReports.fold(
-                                                0.0,
-                                                (sum, report) =>
-                                                    sum +
-                                                    report.ingresosTotales,
-                                              ) -
-                                              _productSalesReports.fold(
-                                                0.0,
-                                                (sum, report) =>
-                                                    sum +
-                                                    (report.precioCostoCup *
-                                                        report.totalVendido),
-                                              )) >=
-                                          0
-                                      ? AppColors.success
-                                      : AppColors.error,
-                            ),
-                          ),
+                          Builder(builder: (context) {
+                            final totalGan = _productSalesReports.fold(0.0, (sum, r) => sum + (r.precioVentaCup.round() - r.precioCostoCup.round()) * r.totalVendido);
+                            return Text(
+                              '\$${totalGan.toStringAsFixed(0)}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: totalGan >= 0 ? AppColors.success : AppColors.error,
+                              ),
+                            );
+                          }),
                         ),
                       ],
                     ),
@@ -4406,12 +5040,48 @@ class _SalesScreenState extends State<SalesScreen>
         );
       });
 
+      // Solo en el tab de TPVs (índice 1) preguntamos si se debe mostrar
+      // hasta el cierre del turno. En cualquier otro tab se mantiene el
+      // comportamiento actual (false).
+      if (_tabController.index == 1) {
+        final mostrarHastaCierre = await _askMostrarHastaCierreTurno();
+        _tpvHastaCierreTurno = mostrarHastaCierre;
+      } else {
+        _tpvHastaCierreTurno = false;
+      }
+
       // Reload data with new date range
-      _loadProductSalesData();
+      _loadProductSalesData(); // encadena _loadSupplierReports internamente
       _loadVendorReports();
-      _loadSupplierReports();
       _loadProductAnalysis();
     }
+  }
+
+  /// Muestra un diálogo Sí/No preguntando si el reporte de TPVs debe extenderse
+  /// hasta el cierre del turno. Devuelve true si el usuario elige "Sí".
+  Future<bool> _askMostrarHastaCierreTurno() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Mostrar hasta el cierre de turno'),
+        content: const Text(
+          '¿Desea incluir las ventas hasta el cierre del turno cuando este '
+          'cerró después de la fecha final seleccionada (o hasta ahora si el '
+          'turno sigue abierto)?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('No'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Sí'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   void _showVendorEgresosDetail(SalesVendorReport vendor) async {
@@ -4537,34 +5207,12 @@ class _SalesScreenState extends State<SalesScreen>
 
       if (!mounted) return;
 
-      // Calcular totales separados por tipo de pago
-      double totalEfectivoOferta = 0.0; // tipo_pago = 1
-      double totalEfectivoRegular = 0.0; // tipo_pago = 2
-      double totalTransferencias = 0.0;
-
-      for (final order in orders) {
-        if (order.detalles['pagos'] != null) {
-          final pagos = order.detalles['pagos'] as List;
-          for (final pago in pagos) {
-            final metodoPago =
-                pago['medio_pago']?.toString().toLowerCase() ?? '';
-            final total = (pago['total'] ?? 0.0).toDouble();
-            final esEfectivo = pago['es_efectivo'] ?? false;
-            final tipoPago = pago['tipo_pago'] ?? 1;
-
-            if (esEfectivo && metodoPago.contains('efectivo')) {
-              // Separar efectivo por tipo_pago
-              if (tipoPago == 1) {
-                totalEfectivoOferta += total;
-              } else if (tipoPago == 2) {
-                totalEfectivoRegular += total;
-              }
-            } else if (metodoPago.contains('transferencia')) {
-              totalTransferencias += total;
-            }
-          }
-        }
-      }
+      final completedOrders =
+          orders.where(_isVendorOrderCompleted).toList();
+      final paymentTotals = _calculateVendorPaymentTotals(completedOrders);
+      final totalEfectivoOferta = paymentTotals.efectivoOferta;
+      final totalEfectivoRegular = paymentTotals.efectivoRegular;
+      final totalTransferencias = paymentTotals.transferencias;
 
       showModalBottomSheet(
         context: context,
@@ -4742,6 +5390,20 @@ class _SalesScreenState extends State<SalesScreen>
                                       ],
                                     ),
                                   ],
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Exportar PDF',
+                                onPressed:
+                                    orders.isEmpty
+                                        ? null
+                                        : () => _exportVendorOrdersToPdf(
+                                          vendor: vendor,
+                                          orders: orders,
+                                        ),
+                                icon: const Icon(
+                                  Icons.picture_as_pdf_outlined,
+                                  color: Colors.red,
                                 ),
                               ),
                               IconButton(
@@ -5137,7 +5799,7 @@ class _SalesScreenState extends State<SalesScreen>
                                                                   Expanded(
                                                                     flex: 1,
                                                                     child: Text(
-                                                                      'x${item['cantidad']}',
+                                                                      'x${_formatCantidadDecimal(item['cantidad'])}',
                                                                       textAlign:
                                                                           TextAlign
                                                                               .center,
@@ -5823,6 +6485,17 @@ class _SalesScreenState extends State<SalesScreen>
       return double.tryParse(value) ?? 0.0;
     }
     return 0.0;
+  }
+
+  /// Formatea una cantidad que puede ser entera o decimal:
+  /// - Entera (10.0) -> "10"
+  /// - Fraccionaria (10.2) -> "10.2"
+  /// - Trim ceros sobrantes (10.20 -> "10.2")
+  String _formatCantidadDecimal(dynamic value) {
+    final d = _toDoubleSafe(value);
+    if (d == d.truncateToDouble()) return d.toInt().toString();
+    final s = d.toStringAsFixed(2);
+    return s.endsWith('0') ? s.substring(0, s.length - 1) : s;
   }
 
   int? _toIntSafe(dynamic value) {
@@ -6630,7 +7303,7 @@ class _SalesScreenState extends State<SalesScreen>
                             ),
                             child: Center(
                               child: Text(
-                                cantidad.toInt().toString(),
+                                _formatCantidadDecimal(cantidad),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
@@ -7397,6 +8070,13 @@ class _SalesScreenState extends State<SalesScreen>
     final descripcion = paqueteMap['descripcion']?.toString() ??
         order.detalles['paqueteria']?['descripcion']?.toString();
     final fotoUrl = paqueteMap['foto_url']?.toString();
+    final fotosExtrasRaw = paqueteMap['fotos_extras'];
+    final List<String> fotosExtras = fotosExtrasRaw is List
+        ? fotosExtrasRaw
+            .map((e) => e?.toString() ?? '')
+            .where((e) => e.trim().isNotEmpty)
+            .toList()
+        : <String>[];
     final remitente = info['remitente'] is Map
         ? Map<String, dynamic>.from(info['remitente'] as Map)
         : null;
@@ -7445,28 +8125,77 @@ class _SalesScreenState extends State<SalesScreen>
             const SizedBox(height: 8),
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                fotoUrl,
-                width: double.infinity,
-                height: 160,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 100,
-                  color: Colors.grey[100],
-                  alignment: Alignment.center,
-                  child: Icon(Icons.broken_image_outlined,
-                      color: Colors.grey[400], size: 36),
-                ),
-                loadingBuilder: (_, child, progress) {
-                  if (progress == null) return child;
-                  return Container(
+              child: GestureDetector(
+                onTap: () => _showVendorPackagePhoto(fotoUrl),
+                child: Image.network(
+                  fotoUrl,
+                  width: double.infinity,
+                  height: 160,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
                     height: 100,
                     color: Colors.grey[100],
                     alignment: Alignment.center,
-                    child: const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                    child: Icon(Icons.broken_image_outlined,
+                        color: Colors.grey[400], size: 36),
+                  ),
+                  loadingBuilder: (_, child, progress) {
+                    if (progress == null) return child;
+                    return Container(
+                      height: 100,
+                      color: Colors.grey[100],
+                      alignment: Alignment.center,
+                      child: const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+          if (fotosExtras.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Fotos adicionales (${fotosExtras.length})',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[700],
+              ),
+            ),
+            const SizedBox(height: 4),
+            SizedBox(
+              height: 72,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: fotosExtras.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 6),
+                itemBuilder: (_, i) {
+                  final url = fotosExtras[i];
+                  return GestureDetector(
+                    onTap: () => _showVendorPackagePhoto(url),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: Image.network(
+                        url,
+                        width: 72,
+                        height: 72,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 72,
+                          height: 72,
+                          color: Colors.grey[100],
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: Colors.grey[400],
+                            size: 22,
+                          ),
+                        ),
+                      ),
                     ),
                   );
                 },
@@ -7499,6 +8228,22 @@ class _SalesScreenState extends State<SalesScreen>
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  void _showVendorPackagePhoto(String url) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(12),
+        child: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: InteractiveViewer(
+            child: Image.network(url, fit: BoxFit.contain),
+          ),
+        ),
       ),
     );
   }

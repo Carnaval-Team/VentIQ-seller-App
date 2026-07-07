@@ -129,76 +129,79 @@ class _AdminDrawerState extends State<AdminDrawer> {
   @override
   Widget build(BuildContext context) {
     return Drawer(
-      child: Column(
-        children: [
-          // Header
-          Container(
-            decoration: const BoxDecoration(
-              gradient: AppColors.primaryGradient,
-            ),
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 12.0),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    const CircleAvatar(
-                      radius: 26,
-                      backgroundColor: Colors.white24,
-                      child: Icon(
-                        Icons.admin_panel_settings,
-                        size: 30,
-                        color: Colors.white,
+      child: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            // Header
+            Container(
+              decoration: const BoxDecoration(
+                gradient: AppColors.primaryGradient,
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 12.0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const CircleAvatar(
+                        radius: 26,
+                        backgroundColor: Colors.white24,
+                        child: Icon(
+                          Icons.admin_panel_settings,
+                          size: 30,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _isLoading ? 'Cargando...' : _userName,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _isLoading ? 'Cargando...' : _userName,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _isLoading ? 'Cargando...' : _userEmail,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
+                            const SizedBox(height: 2),
+                            Text(
+                              _isLoading ? 'Cargando...' : _userEmail,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'Panel de Administración',
-                            style: TextStyle(
-                              color: Colors.white60,
-                              fontSize: 10,
-                              fontStyle: FontStyle.italic,
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Panel de Administración',
+                              style: TextStyle(
+                                color: Colors.white60,
+                                fontSize: 10,
+                                fontStyle: FontStyle.italic,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          // Opciones del menú
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              children: [
+            // Opciones del menú
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                children: [
                 _buildDrawerItem(
                   context,
                   icon: Icons.dashboard,
@@ -467,6 +470,21 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 ),
                 const Divider(height: 1),
 
+                // Notificación a Clientes — Difusión WhatsApp.
+                // Visible para todos los clientes; el acceso real se valida
+                // dentro de la pantalla contra la licencia WAPI específica.
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.campaign,
+                  title: 'Notificación a Clientes',
+                  subtitle: 'Difusión por WhatsApp',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/wapi-notifications');
+                  },
+                ),
+                const Divider(height: 1),
+
                 // Órdenes Carnaval (solo si admin_carnaval = true)
                 FutureBuilder<bool>(
                   future: _isCarnavalStore(),
@@ -524,6 +542,19 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
 
+                // Pagos a Importadora
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.import_export,
+                  title: 'Pagos a Importadora',
+                  subtitle: 'Facturas y saldo importadora',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/importadora-facturas');
+                  },
+                ),
+                const Divider(height: 1),
+
                 // Configuración (solo Gerente)
                 FutureBuilder<bool>(
                   future: NavigationGuard.canNavigate(
@@ -564,10 +595,8 @@ class _AdminDrawerState extends State<AdminDrawer> {
             ),
           ),
 
-          // Footer
-          SafeArea(
-            top: false,
-            child: Container(
+            // Footer
+            Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 border: Border(top: BorderSide(color: Colors.grey[300]!)),
@@ -624,8 +653,8 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -772,6 +801,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
   Future<void> _performLogout() async {
     try {
       print('🔐 Iniciando logout...');
+      SubscriptionService().invalidateCache();
       final authService = AuthService();
 
       // Usar AuthService.signOut() que limpia TODO correctamente

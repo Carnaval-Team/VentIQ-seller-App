@@ -566,7 +566,7 @@ class CarnavalService {
       // 1. Obtener productos locales con imagen
       final localProductsResponse = await _supabase
           .from('app_dat_producto')
-          .select('id, denominacion, imagen')
+          .select('id, denominacion, imagen, sku, descripcion')
           .eq('id_tienda', storeId)
           .neq('imagen', ''); // No debe estar vacía
 
@@ -598,12 +598,119 @@ class CarnavalService {
     }
   }
 
+  /// Valida la integridad de una tupla (producto local, ubicación, tienda local,
+  /// proveedor Carnaval) antes de cualquier insert/update sobre
+  /// `relation_products_carnaval`. Esto evita que la app guarde relaciones
+  /// "cruzadas" donde, por bug en la UI, edición posterior o datos legacy,
+  /// el producto/ubicación pertenezcan a una tienda distinta a la activa.
+  ///
+  /// El trigger `crear_orden_desde_carnaval.sql` ya tiene guardas defensivas
+  /// equivalentes, pero ese es un parche curativo. Esta función ataca el
+  /// origen.
+  ///
+  /// Lanza Exception con mensaje específico si algo no cuadra. Devuelve un
+  /// Map con datos útiles (producto, ubicación) si pasa.
+  static Future<Map<String, dynamic>> _validateRelationIntegrity({
+    required int localProductId,
+    required int idUbicacion,
+    required int expectedStoreId,
+    required int expectedCarnavalStoreId,
+  }) async {
+    // (a) Producto local existe y pertenece a la tienda esperada
+    final product = await _supabase
+        .from('app_dat_producto')
+        .select('id, id_tienda, denominacion, id_vendedor_app')
+        .eq('id', localProductId)
+        .maybeSingle();
+
+    if (product == null) {
+      throw Exception(
+        'Producto local $localProductId no existe en app_dat_producto',
+      );
+    }
+    if (product['id_tienda'] != expectedStoreId) {
+      throw Exception(
+        'Producto $localProductId (${product['denominacion']}) pertenece a '
+        'tienda ${product['id_tienda']}, no a la tienda activa '
+        '$expectedStoreId. No se puede sincronizar bajo una tienda ajena.',
+      );
+    }
+
+    // (b) Ubicación existe y su almacén pertenece a la misma tienda.
+    // Hacemos dos queries en lugar de un join anidado para evitar
+    // ambigüedades del cliente Supabase Dart con relaciones explícitas.
+    final layout = await _supabase
+        .from('app_dat_layout_almacen')
+        .select('id, id_almacen')
+        .eq('id', idUbicacion)
+        .maybeSingle();
+
+    if (layout == null) {
+      throw Exception(
+        'Ubicación $idUbicacion no existe en app_dat_layout_almacen',
+      );
+    }
+
+    final almacen = await _supabase
+        .from('app_dat_almacen')
+        .select('id, id_tienda, denominacion')
+        .eq('id', layout['id_almacen'])
+        .maybeSingle();
+
+    if (almacen == null) {
+      throw Exception(
+        'Almacén ${layout['id_almacen']} (referenciado por ubicación '
+        '$idUbicacion) no existe',
+      );
+    }
+    if (almacen['id_tienda'] != expectedStoreId) {
+      throw Exception(
+        'Ubicación $idUbicacion pertenece al almacén "${almacen['denominacion']}" '
+        'de la tienda ${almacen['id_tienda']}, no a la tienda activa '
+        '$expectedStoreId. Esto provocaría productos cruzados entre proveedores.',
+      );
+    }
+
+    // (c) Tienda local está vinculada a Carnaval y al proveedor esperado
+    final tienda = await _supabase
+        .from('app_dat_tienda')
+        .select('id, id_tienda_carnaval, admin_carnaval')
+        .eq('id', expectedStoreId)
+        .maybeSingle();
+
+    if (tienda == null) {
+      throw Exception('Tienda $expectedStoreId no existe');
+    }
+    if (tienda['admin_carnaval'] != true) {
+      throw Exception(
+        'Tienda $expectedStoreId no está sincronizada con Carnaval '
+        '(admin_carnaval=${tienda['admin_carnaval']}). '
+        'Sincroniza la tienda antes de añadir productos.',
+      );
+    }
+    if (tienda['id_tienda_carnaval'] != expectedCarnavalStoreId) {
+      throw Exception(
+        'Tienda $expectedStoreId está mapeada al proveedor Carnaval '
+        '${tienda['id_tienda_carnaval']}, no a $expectedCarnavalStoreId. '
+        'Recarga la pantalla para refrescar el ID de proveedor.',
+      );
+    }
+
+    return {
+      'product': product,
+      'layout': layout,
+      'almacen': almacen,
+      'tienda': tienda,
+    };
+  }
+
   /// Sincroniza un producto local con Carnaval App
   static Future<bool> syncProductToCarnaval({
     required int localProductId,
     required int carnavalCategoryId,
     required int carnavalStoreId,
     required int idUbicacion,
+    required int storeId,
   }) async {
     try {
       print('comenzando');
@@ -619,6 +726,16 @@ class CarnavalService {
         print('⚠️ Producto $localProductId ya está sincronizado en Carnaval');
         return false;
       }
+
+      // 0.1 Validación de integridad de la tupla
+      // (producto local <-> ubicación <-> tienda <-> proveedor Carnaval).
+      // Si algo no cuadra, abortar antes de tocar ninguna tabla.
+      await _validateRelationIntegrity(
+        localProductId: localProductId,
+        idUbicacion: idUbicacion,
+        expectedStoreId: storeId,
+        expectedCarnavalStoreId: carnavalStoreId,
+      );
 
       // 1. Obtener datos del producto local
       final productData =
@@ -728,7 +845,10 @@ class CarnavalService {
     } catch (e, stackTrace) {
       print('❌ Error al sincronizar producto: $e');
       print(stackTrace);
-      return false;
+      // Re-lanzar la excepción para que el caller pueda mostrar el motivo
+      // exacto al usuario (especialmente los mensajes de
+      // _validateRelationIntegrity). El caller decide cómo reportar.
+      rethrow;
     }
   }
 
@@ -992,11 +1112,45 @@ class CarnavalService {
     required int carnavalProductId,
     required int newLocationId,
     required int localProductId,
+    required int storeId,
+    required int carnavalStoreId,
   }) async {
     try {
       print(
         '🔧 Actualizando ubicación del producto Carnaval ID: $carnavalProductId a ubicación ID: $newLocationId',
       );
+
+      // 0. Validación de integridad de la tupla
+      // (producto local <-> nueva ubicación <-> tienda <-> proveedor Carnaval).
+      await _validateRelationIntegrity(
+        localProductId: localProductId,
+        idUbicacion: newLocationId,
+        expectedStoreId: storeId,
+        expectedCarnavalStoreId: carnavalStoreId,
+      );
+
+      // 0.1 Verificar que el producto Carnaval pertenece al proveedor esperado.
+      // Esto detecta el caso de que un id_vendedor_app local apunte a un
+      // Producto de otro proveedor (datos cruzados).
+      final carnavalProd = await _supabase
+          .schema('carnavalapp')
+          .from('Productos')
+          .select('id, proveedor')
+          .eq('id', carnavalProductId)
+          .maybeSingle();
+
+      if (carnavalProd == null) {
+        throw Exception(
+          'Producto Carnaval $carnavalProductId no existe en carnavalapp.Productos',
+        );
+      }
+      if (carnavalProd['proveedor'] != carnavalStoreId) {
+        throw Exception(
+          'Producto Carnaval $carnavalProductId pertenece al proveedor '
+          '${carnavalProd['proveedor']}, no a $carnavalStoreId. '
+          'Esto indica datos cruzados — re-sincroniza el producto.',
+        );
+      }
 
       // 1. Obtener nuevo stock de la ubicación
       final stockData =
@@ -1109,6 +1263,8 @@ class CarnavalService {
     int pageSize = 20,
     String? statusFilter,
     int? orderIdFilter,
+    DateTime? dateFrom,
+    DateTime? dateTo,
   }) async {
     try {
       final from = page * pageSize;
@@ -1133,6 +1289,15 @@ class CarnavalService {
 
       if (orderIdFilter != null) {
         query = query.eq('id', orderIdFilter);
+      }
+
+      if (dateFrom != null) {
+        query = query.gte('created_at', dateFrom.toIso8601String().split('T')[0]);
+      }
+
+      if (dateTo != null) {
+        final end = DateTime(dateTo.year, dateTo.month, dateTo.day, 23, 59, 59);
+        query = query.lte('created_at', end.toIso8601String());
       }
 
       final response = await query
@@ -1305,6 +1470,253 @@ class CarnavalService {
     }
   }
 
+  /// Crea un nuevo repartidor: registra usuario en Supabase Auth (para que pueda
+  /// loguearse en la app de repartidor) y luego inserta el registro en
+  /// `carnavalapp.repartidores` con su UUID. Si el email ya existe, intenta
+  /// reusar la cuenta autenticando con la contraseña provista.
+  ///
+  /// Retorna `{'repartidor': Map, 'userAlreadyExisted': bool}` en éxito o
+  /// `{'error': String}` con el mensaje cuando falla.
+  static Future<Map<String, dynamic>> addRepartidor({
+    required String nombre,
+    required String correo,
+    required String password,
+    required String telefono,
+    String? chatId,
+  }) async {
+    try {
+      String? userUuid;
+      bool userAlreadyExisted = false;
+
+      try {
+        final authResponse = await _supabase.auth.signUp(
+          email: correo,
+          password: password,
+          data: {
+            'nombre': nombre,
+            'rol': 'repartidor',
+          },
+        );
+        if (authResponse.user == null) {
+          return {'error': 'No se pudo registrar el usuario en Supabase Auth.'};
+        }
+        userUuid = authResponse.user!.id;
+        print('✅ Repartidor: usuario registrado con UUID: $userUuid');
+      } catch (signUpError) {
+        final msg = signUpError.toString();
+        if (msg.contains('user_already_exists') ||
+            msg.contains('User already registered')) {
+          try {
+            final loginResponse = await _supabase.auth.signInWithPassword(
+              email: correo,
+              password: password,
+            );
+            if (loginResponse.user == null) {
+              return {
+                'error':
+                    'El email ya existe pero la contraseña proporcionada es incorrecta.'
+              };
+            }
+            userUuid = loginResponse.user!.id;
+            userAlreadyExisted = true;
+            print('✅ Repartidor: usuario existente reutilizado UUID: $userUuid');
+          } catch (loginError) {
+            return {
+              'error':
+                  'El email ya está registrado y no se pudo autenticar (verifica la contraseña).'
+            };
+          }
+        } else {
+          return {'error': 'Error en signUp: $msg'};
+        }
+      }
+
+      // Insertar en carnavalapp.repartidores con UUID.
+      final telefonoNum = num.tryParse(telefono.replaceAll(RegExp(r'\D'), ''));
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('repartidores')
+          .insert({
+            'nombre': nombre,
+            'correo': correo,
+            'telefono': telefonoNum,
+            'uuid': userUuid,
+            'status': true,
+            if (chatId != null && chatId.isNotEmpty) 'chat_id': chatId,
+          })
+          .select()
+          .single();
+
+      // Insertar/actualizar también en carnavalapp.Usuarios con rol 'Repartidor'
+      // y el mismo uuid del auth para que ambas tablas queden vinculadas.
+      try {
+        final existing = await _supabase
+            .schema('carnavalapp')
+            .from('Usuarios')
+            .select('id')
+            .eq('uuid', userUuid!)
+            .maybeSingle();
+        if (existing == null) {
+          await _supabase.schema('carnavalapp').from('Usuarios').insert({
+            'email': correo,
+            'uuid': userUuid,
+            'name': nombre,
+            'telefono': telefono,
+            'rol': 'Repartidor',
+            'email_confirmacion': true,
+          });
+          print('✅ Repartidor: Usuarios creado para uuid $userUuid');
+        } else {
+          await _supabase
+              .schema('carnavalapp')
+              .from('Usuarios')
+              .update({
+                'name': nombre,
+                'telefono': telefono,
+                'rol': 'Repartidor',
+              })
+              .eq('uuid', userUuid);
+          print('✅ Repartidor: Usuarios actualizado a rol Repartidor');
+        }
+      } catch (uErr) {
+        print('⚠️ No se pudo sincronizar Usuarios: $uErr');
+      }
+
+      return {
+        'repartidor': Map<String, dynamic>.from(response),
+        'userAlreadyExisted': userAlreadyExisted,
+      };
+    } catch (e) {
+      print('❌ Error al crear repartidor: $e');
+      return {'error': 'Error al guardar repartidor: $e'};
+    }
+  }
+
+  /// Lista órdenes de paquetería filtradas por id_tienda (operaciones VentIQ).
+  /// Usa la tabla puente `paqueteria_ordenes` para encontrar las órdenes
+  /// Carnaval asociadas a operaciones VentIQ de la tienda dada en el rango
+  /// de fechas indicado.
+  static Future<List<Map<String, dynamic>>> getPaqueteriaOrdersByTienda({
+    required int idTienda,
+    required DateTime from,
+    required DateTime to,
+    int page = 0,
+    int pageSize = 20,
+    String? statusFilter,
+    int? orderIdFilter,
+  }) async {
+    try {
+      // 1. Obtener IDs de operaciones de la tienda en el rango.
+      final opsResponse = await _supabase
+          .from('app_dat_operaciones')
+          .select('id')
+          .eq('id_tienda', idTienda)
+          .gte('created_at', from.toIso8601String())
+          .lte('created_at', to.toIso8601String());
+
+      final operacionIds = (opsResponse as List)
+          .map((o) => o['id'] as int)
+          .toList();
+      print('🔍 paqueteria: ops encontradas tienda=$idTienda '
+          'rango=${from.toIso8601String()}..${to.toIso8601String()} '
+          '=> ${operacionIds.length}');
+      if (operacionIds.isEmpty) return [];
+
+      // 2. Obtener órdenes carnaval asociadas a esas operaciones via paqueteria_ordenes.
+      // Nota: si esta tabla tiene RLS restrictiva la respuesta vendrá vacía.
+      final paqResponse = await _supabase
+          .from('paqueteria_ordenes')
+          .select('id_orden_carnaval, id_operacion, numero_paquete, descripcion')
+          .inFilter('id_operacion', operacionIds);
+
+      print('🔍 paqueteria: filas paqueteria_ordenes => '
+          '${(paqResponse as List).length}');
+
+      final ordenIdToOpId = <int, int>{};
+      for (final row in paqResponse) {
+        final ordenId = row['id_orden_carnaval'] as int?;
+        final opId = row['id_operacion'] as int?;
+        if (ordenId != null && opId != null) {
+          ordenIdToOpId[ordenId] = opId;
+        }
+      }
+      // Fallback: si paqueteria_ordenes no devolvió nada (posible RLS) pero la
+      // orden Carnaval ya guarda su `paqueteria` JSONB y su `observaciones`
+      // VentIQ apunta a la operación, podemos resolver vía observaciones.
+      if (ordenIdToOpId.isEmpty) {
+        print('⚠️ paqueteria_ordenes vacío. Intentando fallback por '
+            'observaciones de operaciones.');
+        final opsObs = await _supabase
+            .from('app_dat_operaciones')
+            .select('id, observaciones')
+            .inFilter('id', operacionIds)
+            .ilike('observaciones', '%Venta desde orden %');
+        final regex = RegExp(r'Venta desde orden\s+(\d+)');
+        for (final row in opsObs as List) {
+          final obs = row['observaciones']?.toString() ?? '';
+          final match = regex.firstMatch(obs);
+          if (match != null) {
+            final ordenId = int.tryParse(match.group(1)!);
+            final opId = row['id'] as int?;
+            if (ordenId != null && opId != null) {
+              ordenIdToOpId[ordenId] = opId;
+            }
+          }
+        }
+        print('🔁 fallback: órdenes derivadas = ${ordenIdToOpId.length}');
+        if (ordenIdToOpId.isEmpty) return [];
+      }
+
+      final ordenIds = ordenIdToOpId.keys.toList();
+
+      // 3. Cargar las órdenes desde carnavalapp.Orders.
+      var query = _supabase
+          .schema('carnavalapp')
+          .from('Orders')
+          .select('*, Usuarios:user_id(name, telefono)')
+          .inFilter('id', ordenIds);
+
+      if (statusFilter != null) {
+        if (statusFilter == 'Nuevo') {
+          query = query.inFilter(
+              'status', ['Nuevo', 'En Revision', 'Pendiente de Pago']);
+        } else {
+          query = query.eq('status', statusFilter);
+        }
+      }
+      if (orderIdFilter != null) {
+        query = query.eq('id', orderIdFilter);
+      }
+
+      final from0 = page * pageSize;
+      final to0 = from0 + pageSize - 1;
+
+      final ordersResponse = await query
+          .order('id', ascending: false)
+          .order('created_at', ascending: false)
+          .range(from0, to0);
+
+      final orders = List<Map<String, dynamic>>.from(ordersResponse);
+      // 4. Adjuntar id_operacion y filtrar solo las que efectivamente son paquetería.
+      final filtered = <Map<String, dynamic>>[];
+      for (final o in orders) {
+        final opId = ordenIdToOpId[o['id'] as int?];
+        if (opId != null) {
+          o['_ventiq_operacion_id'] = opId;
+        }
+        final paq = o['paqueteria'];
+        final isPaq = paq is Map && paq.isNotEmpty;
+        if (isPaq) filtered.add(o);
+      }
+      print('✅ paqueteria: órdenes finales = ${filtered.length} '
+          '(de ${orders.length} en rango)');
+      return filtered;
+    } catch (e) {
+      print('❌ Error al obtener órdenes de paquetería por tienda: $e');
+      return [];
+    }
+  }
+
   /// Actualiza la cantidad de un detalle de orden
   static Future<bool> updateOrderDetailQuantity(
     int detailId,
@@ -1418,7 +1830,7 @@ class CarnavalService {
             .select('municipio')
             .eq('id', municipioId)
             .maybeSingle();
-        result['municipio_nombre'] = mun?['nombre'];
+        result['municipio_nombre'] = mun?['municipio'];
       }
 
       return result;

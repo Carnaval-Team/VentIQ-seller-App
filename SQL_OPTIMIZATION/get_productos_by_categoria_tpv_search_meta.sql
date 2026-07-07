@@ -183,7 +183,6 @@ BEGIN
         app_dat_tpv tpv ON tpv.id = id_tpv_param AND tpv.id_tienda = id_tienda_param
     WHERE 
         p.id_tienda = id_tienda_param AND
-        p.es_vendible = true AND
         (pri.id is NULL or p.id in (5316)) AND
         (id_categoria_param IS NULL OR c.id = id_categoria_param) AND
 		(

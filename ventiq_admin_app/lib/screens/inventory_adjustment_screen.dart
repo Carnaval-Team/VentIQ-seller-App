@@ -8,6 +8,7 @@ import '../services/warehouse_service.dart';
 import '../services/user_preferences_service.dart';
 import '../widgets/product_selector_widget.dart';
 import '../services/product_search_service.dart';
+import '../widgets/presentacion_equivalencia_widget.dart';
 
 class InventoryAdjustmentScreen extends StatefulWidget {
   final int operationType; // 3 para faltante (sumar), 4 para exceso (restar)
@@ -156,6 +157,7 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
         if (!mounted) return;
         
         await _showAdjustmentDialog(
+          productId: productId,
           productName: inv.nombreProducto.isNotEmpty ? inv.nombreProducto : product['denominacion']?.toString() ?? 'Producto',
           presentationName: inv.presentacion.isNotEmpty ? inv.presentacion : 'Sin presentación',
           currentStock: inv.cantidadFinal,
@@ -186,6 +188,7 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
   }
 
   Future<void> _showAdjustmentDialog({
+    required int productId,
     required String productName,
     required String presentationName,
     required double currentStock,
@@ -211,6 +214,8 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
                 children: [
                   Text('Presentación: $presentationName',
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 12),
+                  PresentacionEquivalenciaBanner(productId: productId),
                   const SizedBox(height: 16),
                   Container(
                     padding: const EdgeInsets.all(12),

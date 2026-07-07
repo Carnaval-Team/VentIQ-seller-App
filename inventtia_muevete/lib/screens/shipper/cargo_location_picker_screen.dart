@@ -80,6 +80,8 @@ class _CargoLocationPickerScreenState
   final MapController _mapController = MapController();
   final TextEditingController _origenCtrl = TextEditingController();
   final TextEditingController _destinoCtrl = TextEditingController();
+  final FocusNode _origenFocus = FocusNode();
+  final FocusNode _destinoFocus = FocusNode();
 
   // 'origin' | 'dest'
   String _activeField = 'origin';
@@ -111,7 +113,20 @@ class _CargoLocationPickerScreenState
     _mapController.dispose();
     _origenCtrl.dispose();
     _destinoCtrl.dispose();
+    _origenFocus.dispose();
+    _destinoFocus.dispose();
     super.dispose();
+  }
+
+  /// Tras fijar el origen, activa el campo de entrega y le da foco.
+  void _focusCampoDestino() {
+    setState(() {
+      _activeField = 'dest';
+      _suggestions = [];
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _destinoFocus.requestFocus();
+    });
   }
 
   // ── Map helpers ────────────────────────────────────────────────────────────
@@ -211,9 +226,10 @@ class _CargoLocationPickerScreenState
     final geo = await _reverseGeocode(point);
 
     if (!mounted) return;
+    final eraOrigen = _activeField == 'origin';
     setState(() {
       _resolving = false;
-      if (_activeField == 'origin') {
+      if (eraOrigen) {
         _origenGeo = geo;
         _origenCtrl.text = geo?.displayName ??
             '${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)}';
@@ -221,10 +237,12 @@ class _CargoLocationPickerScreenState
         _destinoGeo = geo;
         _destinoCtrl.text = geo?.displayName ??
             '${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)}';
-        // After setting destination, switch focus back to origin if not set
         if (_origenPoint == null) _activeField = 'origin';
       }
     });
+    if (eraOrigen && _destinoPoint == null) {
+      _focusCampoDestino();
+    }
     _fitMap();
     _calcRoute();
   }
@@ -283,7 +301,11 @@ class _CargoLocationPickerScreenState
         _origenPoint = point;
         _origenGeo = geo;
         _origenCtrl.text = result.shortName;
-        _activeField = 'dest'; // advance to destination
+        if (_destinoPoint == null) {
+          _focusCampoDestino();
+        } else {
+          _activeField = 'dest';
+        }
       } else {
         _destinoPoint = point;
         _destinoGeo = geo;
@@ -448,6 +470,7 @@ class _CargoLocationPickerScreenState
               children: [
                 _LocationField(
                   controller: _origenCtrl,
+                  focusNode: _origenFocus,
                   hint: 'Punto de recogida',
                   icon: Icons.local_shipping_outlined,
                   iconColor: AppTheme.success,
@@ -464,6 +487,7 @@ class _CargoLocationPickerScreenState
                 const SizedBox(height: 8),
                 _LocationField(
                   controller: _destinoCtrl,
+                  focusNode: _destinoFocus,
                   hint: 'Punto de entrega',
                   icon: Icons.flag_outlined,
                   iconColor: AppTheme.error,
@@ -774,6 +798,7 @@ String _isoCode(String country) {
 
 class _LocationField extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final String hint;
   final IconData icon;
   final Color iconColor;
@@ -784,6 +809,7 @@ class _LocationField extends StatelessWidget {
 
   const _LocationField({
     required this.controller,
+    this.focusNode,
     required this.hint,
     required this.icon,
     required this.iconColor,
@@ -817,6 +843,7 @@ class _LocationField extends StatelessWidget {
             Expanded(
               child: TextField(
                 controller: controller,
+                focusNode: focusNode,
                 onTap: onTap,
                 onChanged: onChanged,
                 style: GoogleFonts.plusJakartaSans(

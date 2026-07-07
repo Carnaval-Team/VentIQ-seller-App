@@ -239,11 +239,11 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       return true;
     }).toList();
 
-    // Ordenar por fecha ascendente (más antiguos primero)
+    // Ordenar por id ascendente (más viejos primero)
     _filteredMovements.sort((a, b) {
-      final dateA = DateTime.tryParse(a['fecha'] as String? ?? '') ?? DateTime(2000);
-      final dateB = DateTime.tryParse(b['fecha'] as String? ?? '') ?? DateTime(2000);
-      return dateA.compareTo(dateB);
+      final idA = (a['id'] as num?)?.toInt() ?? 0;
+      final idB = (b['id'] as num?)?.toInt() ?? 0;
+      return idA.compareTo(idB);
     });
 
     setState(() {});
@@ -277,7 +277,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       lastDate: DateTime.now(),
     );
     if (picked != null) {
-      setState(() => _dateTo = picked);
+      setState(() => _dateTo = DateTime(picked.year, picked.month, picked.day, 23, 59, 59));
       _loadData();
     }
   }
@@ -328,6 +328,10 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         return Colors.orange;
       case 'Control':
         return Colors.blue;
+      case 'Reajuste':
+        return Colors.purple;
+      case 'Ajuste':
+        return Colors.teal;
       default:
         return Colors.grey;
     }
@@ -341,6 +345,10 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         return Icons.arrow_upward;
       case 'Control':
         return Icons.assignment_turned_in;
+      case 'Reajuste':
+        return Icons.swap_horiz;
+      case 'Ajuste':
+        return Icons.tune;
       default:
         return Icons.info;
     }
@@ -618,28 +626,42 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       final movimientosExport = _displayMovements;
 
       // Totales calculados sobre los datos a exportar
+      // Reajuste y Ajuste con cantidad positiva son entradas, con negativa son salidas
       final totalRecepciones = movimientosExport
-          .where((m) => m['tipo_movimiento'] == 'Recepción')
+          .where((m) {
+            final tipo = m['tipo_movimiento'] as String? ?? '';
+            final cant = (m['cantidad'] as num?)?.toDouble() ?? 0;
+            return tipo == 'Recepción' ||
+                ((tipo == 'Reajuste' || tipo == 'Ajuste') && cant > 0);
+          })
           .fold<double>(
             0,
-            (s, m) => s + ((m['cantidad'] as num?)?.toDouble() ?? 0),
+            (s, m) => s + ((m['cantidad'] as num?)?.toDouble().abs() ?? 0),
           );
       final totalExtracciones = movimientosExport
-          .where((m) => m['tipo_movimiento'] == 'Extracción')
+          .where((m) {
+            final tipo = m['tipo_movimiento'] as String? ?? '';
+            final cant = (m['cantidad'] as num?)?.toDouble() ?? 0;
+            return tipo == 'Extracción' ||
+                ((tipo == 'Reajuste' || tipo == 'Ajuste') && cant < 0);
+          })
           .fold<double>(
             0,
-            (s, m) => s + ((m['cantidad'] as num?)?.toDouble() ?? 0),
+            (s, m) => s + ((m['cantidad'] as num?)?.toDouble().abs() ?? 0),
           );
 
-      // Anchos de columna: Fecha, Almacén, N° Op., Tipo, Entrada, Salida, Saldo
+      // Anchos de columna: Fecha, Almacén, N° Op., Tipo Mov., Tipo Op., Estado, Entrada, Salida, Saldo, Observaciones
       final colWidths = {
-        0: const pw.FixedColumnWidth(68),
-        1: const pw.FlexColumnWidth(1.5),
-        2: const pw.FixedColumnWidth(44),
-        3: const pw.FixedColumnWidth(62),
-        4: const pw.FixedColumnWidth(52),
-        5: const pw.FixedColumnWidth(52),
-        6: const pw.FixedColumnWidth(52),
+        0: const pw.FixedColumnWidth(58),
+        1: const pw.FlexColumnWidth(1.2),
+        2: const pw.FixedColumnWidth(36),
+        3: const pw.FixedColumnWidth(48),
+        4: const pw.FlexColumnWidth(1.0),
+        5: const pw.FixedColumnWidth(54),
+        6: const pw.FixedColumnWidth(44),
+        7: const pw.FixedColumnWidth(44),
+        8: const pw.FixedColumnWidth(44),
+        9: const pw.FlexColumnWidth(1.5),
       };
 
       pw.Widget headerCell(String text) => pw.Container(
@@ -817,10 +839,13 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                     headerCell('Fecha'),
                     headerCell('Almacén'),
                     headerCell('N° Op.'),
-                    headerCell('Tipo'),
+                    headerCell('Tipo Mov.'),
+                    headerCell('Tipo Operación'),
+                    headerCell('Estado'),
                     headerCell('Entrada'),
                     headerCell('Salida'),
                     headerCell('Saldo'),
+                    headerCell('Observaciones'),
                   ],
                 ),
                 // Filas de datos
@@ -833,21 +858,48 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                   final tipoMov = m['tipo_movimiento'] as String? ?? '';
                   final almacenVal = m['almacen'] as String? ?? '-';
                   final nOp = m['id_operacion']?.toString() ?? '-';
-                  final cantidad = (m['cantidad'] as num?)?.toStringAsFixed(2) ?? '-';
+                  final tipoOpVal = m['tipo_operacion'] as String? ?? '-';
+                  final estadoVal = m['estado_operacion_nombre'] as String? ?? 'Completada';
                   final cantFinal = (m['cantidad_final'] as num?)?.toStringAsFixed(2) ?? '-';
+                  final observaciones = (m['observaciones'] as String?)?.trim() ?? '';
                   final fechaStr = m['fecha'] as String? ?? '';
                   String fechaFmt = '-';
                   try {
                     fechaFmt = DateFormat('dd/MM/yy\nHH:mm').format(DateTime.parse(fechaStr));
                   } catch (_) {}
 
-                  final isEntrada = tipoMov == 'Recepción';
+                  final cantidadNum = (m['cantidad'] as num?)?.toDouble() ?? 0;
+                  final isReajuste = tipoMov == 'Reajuste' || tipoMov == 'Ajuste';
+                  final isEntrada = tipoMov == 'Recepción' || (isReajuste && cantidadNum > 0);
                   final isControl = tipoMov == 'Control';
 
                   PdfColor tipoColor = PdfColors.black;
                   if (tipoMov == 'Recepción') tipoColor = PdfColors.green800;
                   if (tipoMov == 'Extracción') tipoColor = PdfColors.orange800;
                   if (isControl) tipoColor = PdfColors.blue800;
+                  if (tipoMov == 'Reajuste') tipoColor = cantidadNum > 0 ? PdfColors.green700 : PdfColors.red700;
+                  if (tipoMov == 'Ajuste') tipoColor = cantidadNum > 0 ? PdfColors.teal : PdfColors.deepOrange800;
+
+                  PdfColor estadoColor = PdfColors.grey700;
+                  PdfColor estadoBgPdf = PdfColors.grey100;
+                  switch (estadoVal.toLowerCase()) {
+                    case 'completada':
+                      estadoColor = PdfColors.green800;
+                      estadoBgPdf = PdfColors.green50;
+                      break;
+                    case 'pendiente':
+                      estadoColor = PdfColors.orange800;
+                      estadoBgPdf = PdfColors.orange50;
+                      break;
+                    case 'devuelta':
+                      estadoColor = PdfColors.blue800;
+                      estadoBgPdf = PdfColors.lightBlue50;
+                      break;
+                    case 'cancelada':
+                      estadoColor = PdfColors.red800;
+                      estadoBgPdf = PdfColors.red50;
+                      break;
+                  }
 
                   return pw.TableRow(
                     decoration: pw.BoxDecoration(color: rowBg),
@@ -869,19 +921,50 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                           textAlign: pw.TextAlign.center,
                         ),
                       ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                        child: pw.Text(
+                          tipoOpVal,
+                          style: pw.TextStyle(font: regularFont, fontSize: 7, color: PdfColors.grey800),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+                        child: pw.Center(
+                          child: pw.Container(
+                            padding: const pw.EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+                            decoration: pw.BoxDecoration(
+                              color: estadoBgPdf,
+                              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(3)),
+                            ),
+                            child: pw.Text(
+                              estadoVal,
+                              style: pw.TextStyle(font: boldFont, fontSize: 6, color: estadoColor),
+                              textAlign: pw.TextAlign.center,
+                            ),
+                          ),
+                        ),
+                      ),
                       dataCell(
-                        isEntrada ? cantidad : '',
+                        isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
                         bold: true,
                         color: isEntrada ? PdfColors.green800 : PdfColors.white,
                       ),
                       dataCell(
-                        !isEntrada ? cantidad : '',
+                        !isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
                         bold: true,
                         color: !isEntrada
-                            ? (isControl ? PdfColors.blue800 : PdfColors.orange800)
+                            ? (isControl ? PdfColors.blue800 : (isReajuste ? PdfColors.red700 : PdfColors.orange800))
                             : PdfColors.white,
                       ),
                       dataCell(cantFinal, bold: true),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                        child: pw.Text(
+                          observaciones,
+                          style: pw.TextStyle(font: regularFont, fontSize: 7, color: PdfColors.grey800),
+                        ),
+                      ),
                     ],
                   );
                 }),
@@ -1238,12 +1321,14 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       child: Row(
         children: [
           const SizedBox(width: 4),
-          Expanded(flex: 24, child: _headerCell('Fecha')),
-          Expanded(flex: 22, child: _headerCell('Almacén')),
-          Expanded(flex: 15, child: _headerCell('N° Op.')),
-          Expanded(flex: 17, child: _headerCell('Entrada', right: true)),
-          Expanded(flex: 17, child: _headerCell('Salida', right: true)),
-          Expanded(flex: 18, child: _headerCell('Saldo', right: true)),
+          Expanded(flex: 18, child: _headerCell('Fecha')),
+          Expanded(flex: 20, child: _headerCell('Almacén')),
+          Expanded(flex: 12, child: _headerCell('N° Op.')),
+          Expanded(flex: 20, child: _headerCell('Tipo Op.')),
+          Expanded(flex: 15, child: _headerCell('Estado')),
+          Expanded(flex: 14, child: _headerCell('Entrada', right: true)),
+          Expanded(flex: 14, child: _headerCell('Salida', right: true)),
+          Expanded(flex: 14, child: _headerCell('Saldo', right: true)),
           const SizedBox(width: 8),
         ],
       ),
@@ -1278,15 +1363,41 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     }
 
     final nOp = movement['id_operacion']?.toString() ?? '-';
-    final cantidad =
-        (movement['cantidad'] as num?)?.toStringAsFixed(2) ?? '';
     final cantFinal =
         (movement['cantidad_final'] as num?)?.toStringAsFixed(2) ?? '-';
 
-    final isEntrada = tipoMovimiento == 'Recepción';
+    final cantidadNum = (movement['cantidad'] as num?)?.toDouble() ?? 0;
+    final isReajuste = tipoMovimiento == 'Reajuste' || tipoMovimiento == 'Ajuste';
+    final isEntrada = tipoMovimiento == 'Recepción' || (isReajuste && cantidadNum > 0);
     final isControl = tipoMovimiento == 'Control';
 
     final almacen = movement['almacen'] as String? ?? '-';
+    final tipoOperacion = movement['tipo_operacion'] as String? ?? '-';
+    final estadoNombre = movement['estado_operacion_nombre'] as String? ?? 'Completada';
+
+    Color estadoColor;
+    Color estadoBg;
+    switch (estadoNombre.toLowerCase()) {
+      case 'completada':
+        estadoColor = Colors.green.shade700;
+        estadoBg = Colors.green.shade50;
+        break;
+      case 'pendiente':
+        estadoColor = Colors.orange.shade700;
+        estadoBg = Colors.orange.shade50;
+        break;
+      case 'devuelta':
+        estadoColor = Colors.blue.shade700;
+        estadoBg = Colors.blue.shade50;
+        break;
+      case 'cancelada':
+        estadoColor = Colors.red.shade700;
+        estadoBg = Colors.red.shade50;
+        break;
+      default:
+        estadoColor = Colors.grey.shade600;
+        estadoBg = Colors.grey.shade100;
+    }
 
     return InkWell(
       onTap: () => _showMovementDetail(movement),
@@ -1303,7 +1414,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
             children: [
               Container(width: 4, color: color),
               Expanded(
-                flex: 24,
+                flex: 18,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 6, vertical: 6),
@@ -1314,7 +1425,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                 ),
               ),
               Expanded(
-                flex: 22,
+                flex: 20,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 4, vertical: 6),
@@ -1328,7 +1439,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                 ),
               ),
               Expanded(
-                flex: 15,
+                flex: 12,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 4, vertical: 8),
@@ -1340,12 +1451,51 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                 ),
               ),
               Expanded(
-                flex: 17,
+                flex: 20,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 4, vertical: 6),
+                  child: Text(
+                    tipoOperacion,
+                    style: TextStyle(
+                        fontSize: 9, color: Colors.grey.shade800),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 2,
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 15,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 4, vertical: 7),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: estadoBg,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      estadoNombre,
+                      style: TextStyle(
+                        fontSize: 8,
+                        fontWeight: FontWeight.w600,
+                        color: estadoColor,
+                      ),
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 14,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 4, vertical: 8),
                   child: Text(
-                    isEntrada ? cantidad : '',
+                    isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
                     style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -1356,23 +1506,23 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                 ),
               ),
               Expanded(
-                flex: 17,
+                flex: 14,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 4, vertical: 8),
                   child: Text(
-                    !isEntrada ? cantidad : '',
+                    !isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: isControl ? Colors.blue : Colors.orange,
+                      color: isControl ? Colors.blue : (isReajuste ? Colors.red : Colors.orange),
                     ),
                     textAlign: TextAlign.right,
                   ),
                 ),
               ),
               Expanded(
-                flex: 18,
+                flex: 14,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 4, vertical: 8),
@@ -1540,51 +1690,69 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
               if (movement['importe_real'] != null)
                 _buildDetailRow('Importe Real',
                     '\$${(movement['importe_real'] as num).toStringAsFixed(2)}'),
-              if (tipoMovimiento == 'Recepción') ...[
-                if (movement['entregado_por'] != null)
-                  _buildDetailRow(
-                      'Entregado Por', movement['entregado_por'] as String),
-                if (movement['recibido_por'] != null)
-                  _buildDetailRow(
-                      'Recibido Por', movement['recibido_por'] as String),
-              ],
-              if (tipoMovimiento == 'Extracción' &&
-                  movement['autorizado_por'] != null)
+              if (_hasText(movement['entregado_por']))
                 _buildDetailRow(
-                    'Autorizado Por', movement['autorizado_por'] as String),
+                    'Entregado por', movement['entregado_por'] as String),
+              if (_hasText(movement['recibido_por']))
+                _buildDetailRow(
+                    'Recibido por', movement['recibido_por'] as String),
+              if (_hasText(movement['autorizado_por']))
+                _buildDetailRow(
+                    'Autorizado por', movement['autorizado_por'] as String),
+              if (_hasText(movement['motivo']))
+                _buildDetailRow('Motivo', movement['motivo'] as String),
               if (movement['almacen'] != null)
                 _buildDetailRow('Almacén', movement['almacen'] as String),
               if (movement['zona'] != null)
                 _buildDetailRow('Zona', movement['zona'] as String),
               if (movement['proveedor'] != null)
                 _buildDetailRow('Proveedor', movement['proveedor'] as String),
+              if (_hasText(movement['observaciones']))
+                _buildDetailTextBlock(
+                    'Observaciones', movement['observaciones'] as String),
+              if (_hasText(movement['observaciones_extraccion']))
+                _buildDetailTextBlock(
+                    'Observaciones de extracción',
+                    movement['observaciones_extraccion'] as String),
+              if (_hasText(movement['comentario_completado']))
+                _buildDetailTextBlock(
+                    'Comentario al completar',
+                    movement['comentario_completado'] as String),
             ],
           ),
         ),
-        if (movement['observaciones'] != null &&
-            (movement['observaciones'] as String).isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Observaciones',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade700),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  movement['observaciones'] as String,
-                  style:
-                      TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ],
+      ],
+    );
+  }
+
+  bool _hasText(dynamic value) {
+    if (value == null) return false;
+    return value.toString().trim().isNotEmpty;
+  }
+
+  Widget _buildDetailTextBlock(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(height: 1),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade600,
             ),
           ),
-      ],
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1601,12 +1769,15 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
               color: Colors.grey.shade600,
             ),
           ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: color ?? Colors.black,
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: color ?? Colors.black,
+              ),
             ),
           ),
         ],

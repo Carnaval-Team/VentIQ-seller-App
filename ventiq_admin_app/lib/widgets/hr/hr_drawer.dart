@@ -19,6 +19,9 @@ class _HRDrawerState extends State<HRDrawer> {
   String _userEmail = '';
   bool _isLoading = true;
   String _appVersion = 'v1.0.0';
+  List<Map<String, dynamic>> _userStores = [];
+  int? _currentStoreId;
+  String _currentStoreName = '';
 
   @override
   void initState() {
@@ -33,10 +36,19 @@ class _HRDrawerState extends State<HRDrawer> {
       final adminProfile = await userPrefs.getAdminProfile();
       final name = adminProfile['name'] as String?;
       final email = adminProfile['email'] as String?;
+      final stores = await userPrefs.getUserStores();
+      final currentStoreId = await userPrefs.getIdTienda();
 
       setState(() {
         _userName = name ?? 'Recursos Humanos';
         _userEmail = email ?? 'rrhh@inventtia.com';
+        _userStores = stores ?? [];
+        _currentStoreId = currentStoreId;
+        _currentStoreName = _userStores
+            .firstWhere(
+              (s) => s['id_tienda'] == currentStoreId,
+              orElse: () => {'denominacion': 'Tienda $_currentStoreId'},
+            )['denominacion'] as String? ?? 'Tienda $currentStoreId';
         _isLoading = false;
       });
     } catch (e) {
@@ -198,6 +210,36 @@ class _HRDrawerState extends State<HRDrawer> {
                   },
                 ),
                 const Divider(height: 1),
+
+                // Cambiar tienda (solo si tiene acceso a múltiples tiendas)
+                if (_userStores.length > 1) ...[
+                  const Divider(height: 1),
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.store_outlined,
+                    title: 'Cambiar Tienda',
+                    subtitle: _currentStoreName.isNotEmpty
+                        ? 'Ahora: $_currentStoreName'
+                        : 'Seleccionar tienda',
+                    onTap: () {
+                      Navigator.pop(context);
+                      // StoreSelectionScreen expects stores in the format:
+                      // {'id_tienda': int, 'app_dat_tienda': {'denominacion': string}}
+                      final storesForScreen = _userStores.map((s) => {
+                        'id_tienda': s['id_tienda'],
+                        'app_dat_tienda': {'denominacion': s['denominacion'] ?? 'Tienda ${s['id_tienda']}'},
+                      }).toList();
+                      Navigator.pushReplacementNamed(
+                        context,
+                        '/store-selection',
+                        arguments: {
+                          'stores': storesForScreen,
+                          'defaultStoreId': _currentStoreId ?? _userStores.first['id_tienda'],
+                        },
+                      );
+                    },
+                  ),
+                ],
 
                 // Opcion para gerente: ir a administracion
                 if (widget.isFromGerente) ...[

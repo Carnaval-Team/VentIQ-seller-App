@@ -20,7 +20,6 @@ class OfertaCargaModel {
   final String? driverNombre;
   final String? driverTipoUsuario;
   final double? driverRating;
-  final bool? driverMcDotVerificado;
   final String? vehiculoDescripcion;
 
   const OfertaCargaModel({
@@ -42,7 +41,6 @@ class OfertaCargaModel {
     this.driverNombre,
     this.driverTipoUsuario,
     this.driverRating,
-    this.driverMcDotVerificado,
     this.vehiculoDescripcion,
   });
 
@@ -72,7 +70,6 @@ class OfertaCargaModel {
       driverNombre: json['driver_nombre'] as String?,
       driverTipoUsuario: json['driver_tipo_usuario'] as String?,
       driverRating: (json['driver_rating'] as num?)?.toDouble(),
-      driverMcDotVerificado: json['driver_mc_dot_verificado'] as bool?,
       vehiculoDescripcion: json['vehiculo_descripcion'] as String?,
     );
   }

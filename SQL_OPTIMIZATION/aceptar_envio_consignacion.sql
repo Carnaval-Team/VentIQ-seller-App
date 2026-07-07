@@ -135,6 +135,7 @@ BEGIN
       cep.id_producto, 
       cep.cantidad_propuesta,
       COALESCE((precio_data->>'precio_venta_cup')::NUMERIC, cep.precio_venta_cup) AS precio_venta_cup,
+      (precio_data->>'precio_venta_usd')::NUMERIC AS precio_venta_usd,
       COALESCE((precio_data->>'precio_costo_usd')::NUMERIC, 0) AS precio_costo_usd
     FROM app_dat_consignacion_envio_producto cep
     LEFT JOIN LATERAL jsonb_array_elements(p_precios_productos) AS precio_data 
@@ -187,11 +188,13 @@ BEGIN
     INSERT INTO app_dat_precio_venta (
       id_producto,
       precio_venta_cup,
+      precio_venta_usd,
       fecha_desde,
       created_at
     ) VALUES (
       v_id_producto_destino,
       v_producto.precio_venta_cup,
+      v_producto.precio_venta_usd,
       CURRENT_DATE,
       CURRENT_TIMESTAMP
     );

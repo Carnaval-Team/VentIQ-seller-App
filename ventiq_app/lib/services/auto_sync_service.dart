@@ -9,6 +9,8 @@ import 'reauthentication_service.dart';
 import 'store_config_service.dart';
 import 'shift_workers_service.dart';
 import 'promotion_service.dart';
+import 'product_detail_service.dart';
+import '../utils/uuid_generator.dart';
 
 /// Servicio para sincronización automática periódica de datos
 /// Se ejecuta cuando el modo offline NO está activado para mantener datos actualizados
@@ -21,10 +23,12 @@ class AutoSyncService {
       UserPreferencesService();
   final ReauthenticationService _reauthService = ReauthenticationService();
   final PromotionService _promotionService = PromotionService();
+  final ProductDetailService _productDetailService = ProductDetailService();
 
   Timer? _syncTimer;
   bool _isRunning = false;
   bool _isSyncing = false;
+  bool _pendingSyncRequested = false;
   DateTime? _lastSyncTime;
   int _syncCount = 0;
 
@@ -120,6 +124,12 @@ class AutoSyncService {
     print('🛑 Deteniendo sincronización automática...');
     _isRunning = false;
 
+    // ⚠️ Limpiar cualquier pase encolado: si una sincronización está corriendo
+    // y dejó pendiente otra pasada (ver finally de _performSync), NO debe
+    // relanzarse después de detener el servicio (p. ej. al activar modo
+    // offline), porque sobrescribiría el estado offline con datos del servidor.
+    _pendingSyncRequested = false;
+
     _syncTimer?.cancel();
     _syncTimer = null;
 
@@ -136,8 +146,22 @@ class AutoSyncService {
 
   /// Realizar una sincronización completa
   Future<void> _performSync() async {
+    // Guarda defensiva: si el modo offline ya está activado, no sincronizar.
+    // Evita que un pase relanzado (o forzado) pise el estado offline tras
+    // haber cambiado de modo. Existe un chequeo equivalente en el timer
+    // periódico y en performImmediateSync.
+    if (await _userPreferencesService.isOfflineModeEnabled()) {
+      print('🔌 Modo offline activado - Omitiendo _performSync');
+      _pendingSyncRequested = false;
+      return;
+    }
+
     if (_isSyncing) {
-      print('⏳ Sincronización ya en progreso, omitiendo...');
+      // En vez de descartar la sincronización (lo que dejaba categorías/
+      // productos sin actualizar cuando una pasada tardaba >1 min), se marca
+      // que hay una pasada pendiente para ejecutarla al terminar la actual.
+      _pendingSyncRequested = true;
+      print('⏳ Sincronización en progreso; se encola una nueva al terminar');
       return;
     }
 
@@ -444,6 +468,16 @@ class AutoSyncService {
       );
     } finally {
       _isSyncing = false;
+
+      // Si llegaron peticiones de sincronización mientras corría esta, ejecutar
+      // UNA pasada adicional para no perder actualizaciones (sin recursión
+      // ilimitada: se consume el flag antes de relanzar).
+      if (_pendingSyncRequested) {
+        _pendingSyncRequested = false;
+        print('🔁 Ejecutando sincronización encolada...');
+        // Sin await para no encadenar el finally; se ejecuta a continuación.
+        unawaited(_performSync());
+      }
     }
   }
 
@@ -559,6 +593,8 @@ class AutoSyncService {
       );
       final List<Map<String, dynamic>> allProducts = [];
 
+      // 1) Aplanar todas las subcategorías a una sola lista de productos de la
+      //    categoría (sin pedir detalles todavía), conservando 'subcategoria'.
       for (var entry in productsMap.entries) {
         final subcategory = entry.key;
         final products = entry.value;
@@ -567,78 +603,44 @@ class AutoSyncService {
           '    📦 Subcategoría "$subcategory": ${products.length} productos',
         );
 
-        // 🚀 PROCESAMIENTO CONCURRENTE: Procesar productos en lotes de 5
-        const batchSize = 5;
-        for (var i = 0; i < products.length; i += batchSize) {
-          final endIndex =
-              (i + batchSize < products.length)
-                  ? i + batchSize
-                  : products.length;
-          final batch = products.sublist(i, endIndex);
+        for (var prod in products) {
+          allProducts.add(<String, dynamic>{
+            'id': prod.id,
+            'denominacion': prod.denominacion,
+            'precio': prod.precio,
+            'foto': prod.foto,
+            'categoria': prod.categoria,
+            'descripcion': prod.descripcion,
+            'cantidad': prod.cantidad,
+            'subcategoria': subcategory,
+          });
+        }
+      }
 
+      // 2) 🚀 BATCH POR CATEGORÍA: obtener los detalles completos de TODOS los
+      //    productos de la categoría en UNA sola llamada (antes era 1 RPC por
+      //    subcategoría; igualamos el patrón ya usado para presentaciones).
+      if (allProducts.isNotEmpty) {
+        final productIds = allProducts.map((p) => p['id'] as int).toList();
+        Map<int, dynamic> detallesPorId = {};
+        try {
+          detallesPorId = await _productDetailService.getProductDetailsBatch(
+            productIds,
+          );
           print(
-            '      🔄 Procesando lote ${(i ~/ batchSize) + 1} (${batch.length} productos)...',
+            '    ✅ Detalles batch (categoría): ${detallesPorId.length}/${productIds.length}',
           );
+        } catch (e) {
+          print('    ⚠️ Error obteniendo detalles batch de categoría: $e');
+        }
 
-          // Procesar todos los productos del lote en paralelo
-          final batchResults = await Future.wait(
-            batch.map((prod) async {
-              try {
-                // Obtener detalles completos usando RPC
-                final detailResponse = await Supabase.instance.client.rpc(
-                  'get_detalle_producto',
-                  params: {'id_producto_param': prod.id},
-                );
-
-                print(
-                  '      ✅ ${prod.denominacion} (ID: ${prod.id}) - Detalles obtenidos',
-                );
-
-                return {
-                  'success': true,
-                  'data': {
-                    'id': prod.id,
-                    'denominacion': prod.denominacion,
-                    'precio': prod.precio,
-                    'foto': prod.foto,
-                    'categoria': prod.categoria,
-                    'descripcion': prod.descripcion,
-                    'cantidad': prod.cantidad,
-                    'subcategoria': subcategory,
-                    'detalles_completos': detailResponse,
-                  },
-                };
-              } catch (e) {
-                // En caso de error, retornar solo datos básicos
-                print(
-                  '      ⚠️ ${prod.denominacion} (ID: ${prod.id}) - Solo datos básicos: $e',
-                );
-
-                return {
-                  'success': false,
-                  'data': {
-                    'id': prod.id,
-                    'denominacion': prod.denominacion,
-                    'precio': prod.precio,
-                    'foto': prod.foto,
-                    'categoria': prod.categoria,
-                    'descripcion': prod.descripcion,
-                    'cantidad': prod.cantidad,
-                    'subcategoria': subcategory,
-                  },
-                };
-              }
-            }),
-          );
-
-          // Agregar todos los resultados del lote a la lista
-          for (var result in batchResults) {
-            allProducts.add(result['data'] as Map<String, dynamic>);
+        // Solo añadir detalles_completos si vinieron del servidor; si no, el
+        // producto queda con datos básicos (igual que el fallback previo).
+        for (var product in allProducts) {
+          final detalle = detallesPorId[product['id'] as int];
+          if (detalle != null) {
+            product['detalles_completos'] = detalle;
           }
-
-          print(
-            '      ✅ Lote completado: ${batchResults.length} productos procesados',
-          );
         }
       }
 
@@ -727,37 +729,25 @@ class AutoSyncService {
     );
 
     int productsWithPromotions = 0;
-    const batchSize = 5;
 
-    for (var i = 0; i < productIds.length; i += batchSize) {
-      final endIndex =
-          (i + batchSize < productIds.length)
-              ? i + batchSize
-              : productIds.length;
-      final batch = productIds.sublist(i, endIndex);
+    // 🚀 BATCH: todas las promociones de todos los productos en UNA llamada.
+    final promosPorProducto = await _promotionService.getProductPromotionsBatch(
+      productIds,
+    );
 
-      final batchResults = await Future.wait(
-        batch.map((productId) async {
-          try {
-            final promotions = await _promotionService.getProductPromotions(
-              productId,
-            );
-            await _userPreferencesService.saveProductPromotions(
-              productId,
-              promotions,
-            );
-            return promotions.isNotEmpty;
-          } catch (e) {
-            print(
-              '  ❌ Error sincronizando promociones del producto $productId: $e',
-            );
-            return false;
-          }
-        }),
-      );
-
-      productsWithPromotions +=
-          batchResults.where((result) => result == true).length;
+    // Persistir por producto. Para los que no tienen promos, guardar lista
+    // vacía para limpiar promos viejas que ya no apliquen.
+    for (final productId in productIds) {
+      final promotions = promosPorProducto[productId] ?? const [];
+      try {
+        await _userPreferencesService.saveProductPromotions(
+          productId,
+          List<Map<String, dynamic>>.from(promotions),
+        );
+        if (promotions.isNotEmpty) productsWithPromotions++;
+      } catch (e) {
+        print('  ❌ Error guardando promociones del producto $productId: $e');
+      }
     }
 
     return productsWithPromotions;
@@ -890,17 +880,61 @@ class AutoSyncService {
     final productos =
         productosRaw.map((item) => item as Map<String, dynamic>).toList();
 
-    final result = await TurnoService.registrarAperturaTurno(
-      efectivoInicial: efectivoInicial,
-      idTpv: idTpv,
-      idVendedor: idVendedor,
-      usuario: usuario,
-      manejaInventario: manejaInventario,
-      productos: productos.isEmpty ? null : productos,
-      observaciones: observaciones,
-    );
+    // client_uuid de idempotencia: estable por apertura. Si la apertura offline
+    // se creó antes de esta mejora y no lo tiene, se genera y se persiste.
+    var clientUuid = aperturaData['client_uuid']?.toString();
+    if (clientUuid == null || clientUuid.isEmpty) {
+      clientUuid = UuidGenerator.v4();
+      aperturaData['client_uuid'] = clientUuid;
+    }
 
-    if (result['success'] == true) {
+    bool aperturaOk = false;
+
+    // 1) Preferir el wrapper idempotente fn_apertura_turno_offline (evita
+    //    crear turnos duplicados si la sincronización se reintenta).
+    try {
+      final resp = await Supabase.instance.client.rpc(
+        'fn_apertura_turno_offline',
+        params: {
+          'p_client_uuid': clientUuid,
+          'p_efectivo_inicial': efectivoInicial,
+          'p_id_tpv': idTpv,
+          'p_id_vendedor': idVendedor,
+          'p_usuario': usuario,
+          'p_maneja_inventario': manejaInventario,
+          'p_productos': productos,
+          'p_observaciones': observaciones,
+        },
+      );
+      if (resp is Map && resp['status'] == 'success') {
+        aperturaOk = true;
+        if (resp['idempotent'] == true) {
+          print('  ♻️ Apertura idempotente (turno ya existía): ${resp['id_turno']}');
+        } else {
+          print('  ✅ Turno abierto vía wrapper idempotente: ${resp['id_turno']}');
+        }
+      }
+    } catch (e) {
+      // 2) Fallback: RPC idempotente no disponible (no se subió el .sql).
+      print(
+        '  ⚠️ fn_apertura_turno_offline no disponible ($e). Usando registrarAperturaTurno.',
+      );
+      final result = await TurnoService.registrarAperturaTurno(
+        efectivoInicial: efectivoInicial,
+        idTpv: idTpv,
+        idVendedor: idVendedor,
+        usuario: usuario,
+        manejaInventario: manejaInventario,
+        productos: productos.isEmpty ? null : productos,
+        observaciones: observaciones,
+      );
+      aperturaOk = result['success'] == true;
+      if (!aperturaOk) {
+        print('  ❌ Error creando turno offline: ${result['message']}');
+      }
+    }
+
+    if (aperturaOk) {
       final turnoOnline = await _getOnlineOpenShift(
         idTpv: idTpv,
         idVendedor: idVendedor,
@@ -915,7 +949,6 @@ class AutoSyncService {
       return true;
     }
 
-    print('  ❌ Error creando turno offline: ${result['message']}');
     return false;
   }
 
@@ -1020,10 +1053,15 @@ class AutoSyncService {
 
     print('  🔄 Sincronizando ${egresosOffline.length} egresos offline...');
     int syncedCount = 0;
+    // Solo se removerán de pendientes los egresos REALMENTE sincronizados; los
+    // que fallen quedan para el próximo intento (no se pierden).
+    final syncedOfflineIds = <String>[];
+    final userId = await _userPreferencesService.getUserId();
 
     for (var egresoData in egresosOffline) {
+      final offlineId = egresoData['offline_id']?.toString();
       try {
-        print('    - Procesando egreso offline: ${egresoData['offline_id']}');
+        print('    - Procesando egreso offline: $offlineId');
 
         // Extraer datos del egreso offline
         final idTurno = egresoData['id_turno'] as int;
@@ -1033,34 +1071,69 @@ class AutoSyncService {
         final nombreRecibe = egresoData['nombre_recibe'] as String;
         final idMedioPago = egresoData['id_medio_pago'] as int?;
 
-        // Llamar al método real de TurnoService para registrar egreso
-        final result = await TurnoService.registrarEgresoParcial(
-          idTurno: idTurno,
-          montoEntrega: montoEntrega,
-          motivoEntrega: motivoEntrega,
-          nombreAutoriza: nombreAutoriza,
-          nombreRecibe: nombreRecibe,
-          idMedioPago: idMedioPago,
-        );
+        // 🔑 IDEMPOTENCIA: client_uuid estable por egreso. Si la creación
+        // offline se hizo antes de esta mejora y no lo tiene, se genera.
+        var clientUuid = egresoData['client_uuid']?.toString();
+        if (clientUuid == null || clientUuid.isEmpty) {
+          clientUuid = UuidGenerator.v4();
+          egresoData['client_uuid'] = clientUuid;
+        }
 
-        if (result['success'] == true) {
+        Map<String, dynamic>? result;
+        try {
+          // Preferir el wrapper idempotente fn_registrar_egreso_offline.
+          final resp = await Supabase.instance.client.rpc(
+            'fn_registrar_egreso_offline',
+            params: {
+              'p_client_uuid': clientUuid,
+              'p_id_turno': idTurno,
+              'p_monto_entrega': montoEntrega,
+              'p_nombre_recibe': nombreRecibe,
+              'p_nombre_autoriza': nombreAutoriza,
+              'p_motivo_entrega': motivoEntrega,
+              'p_id_medio_pago': idMedioPago,
+              'p_uuid_usuario': userId,
+            },
+          );
+          if (resp is Map) {
+            result = Map<String, dynamic>.from(resp);
+          }
+        } catch (e) {
+          // Fallback: wrapper idempotente no disponible (no se subió el .sql).
+          // NOTA: sin idempotencia del servidor, el control de duplicados
+          // depende del marcado local (removeEgresosOfflineByIds).
+          print(
+            '    ⚠️ fn_registrar_egreso_offline no disponible ($e). Usando registrarEgresoParcial.',
+          );
+          result = await TurnoService.registrarEgresoParcial(
+            idTurno: idTurno,
+            montoEntrega: montoEntrega,
+            motivoEntrega: motivoEntrega,
+            nombreAutoriza: nombreAutoriza,
+            nombreRecibe: nombreRecibe,
+            idMedioPago: idMedioPago,
+          );
+        }
+
+        if (result != null && result['success'] == true) {
           syncedCount++;
-          print('    ✅ Egreso offline sincronizado: ${result['egreso_id']}');
+          if (offlineId != null) syncedOfflineIds.add(offlineId);
+          print(
+            '    ✅ Egreso offline sincronizado: ${result['egreso_id']}'
+            '${result['idempotent'] == true ? " (idempotente)" : ""}',
+          );
         } else {
-          print('    ❌ Error en servicio de egreso: ${result['message']}');
+          print('    ❌ Error en servicio de egreso: ${result?['message']}');
         }
       } catch (e) {
-        print(
-          '    ❌ Error sincronizando egreso offline ${egresoData['offline_id']}: $e',
-        );
+        print('    ❌ Error sincronizando egreso offline $offlineId: $e');
         // Continúa con el siguiente egreso sin interrumpir el proceso
       }
     }
 
-    if (syncedCount > 0) {
-      // Limpiar los egresos sincronizados exitosamente
-      await _userPreferencesService.clearEgresosOffline();
-      print('  🧹 Limpiados $syncedCount egresos offline sincronizados');
+    // Remover SOLO los sincronizados; los fallidos quedan pendientes.
+    if (syncedOfflineIds.isNotEmpty) {
+      await _userPreferencesService.removeEgresosOfflineByIds(syncedOfflineIds);
     }
 
     return syncedCount;
@@ -1113,41 +1186,106 @@ class AutoSyncService {
     print('  🔄 Sincronizando ${pendingOrders.length} ventas offline...');
     int syncedCount = 0;
     final syncedOrderIds = <String>[];
+    final syncedOperationIds = <String, int>{};
 
     for (var orderData in pendingOrders) {
+      final orderId = orderData['id']?.toString();
       try {
-        final orderId = orderData['id']?.toString();
         if (orderId == null || orderId.isEmpty) {
           throw Exception('Orden offline sin ID');
         }
 
         print('    - Procesando venta offline: $orderId');
 
+        // Limpiar error previo para reflejar solo el resultado de este intento
+        await _userPreferencesService.clearPendingOrderError(orderId);
+
         // 1. Registrar cliente si hay datos
         await _registerClientFromOfflineData(orderData);
 
-        // 2. Registrar la venta
+        // 2. Registrar la venta (idempotente por client_uuid)
         await _registerSaleInSupabase(orderData);
 
         // 3. Completar la orden según su estado
         final estado = (orderData['estado'] ?? 'completada').toString();
         await _completeOrderWithStatus(orderId, estado);
 
+        // Capturar el id_operacion devuelto por el servidor para asociarlo.
+        final opId = orderData['_operation_id'];
+        if (opId is int) {
+          syncedOperationIds[orderId] = opId;
+        }
+
         syncedCount++;
         syncedOrderIds.add(orderId);
         print('    ✅ Venta offline sincronizada: $orderId');
       } catch (e) {
         print('    ❌ Error sincronizando venta offline ${orderData['id']}: $e');
+        if (orderId != null && orderId.isNotEmpty) {
+          await _userPreferencesService.markPendingOrderSyncFailure(
+            orderId,
+            e.toString(),
+          );
+        }
         // Continúa con la siguiente venta sin interrumpir el proceso
       }
     }
 
     if (syncedOrderIds.isNotEmpty) {
-      // Limpiar las órdenes sincronizadas exitosamente
-      await _cleanupSyncedOrders(syncedOrderIds);
+      // Marcar como sincronizadas (NO eliminar) para que las órdenes activas
+      // sigan visibles en la pantalla de órdenes. Asociar id_operacion.
+      await _userPreferencesService.markOrdersSyncedById(
+        syncedOrderIds,
+        operationIds: syncedOperationIds,
+      );
+      // Purgar solo las que además están en estado final.
+      await _userPreferencesService.purgeFinalizedSyncedOrders();
     }
 
     return syncedCount;
+  }
+
+  /// Sincronizar una sola orden pendiente (para reintentos manuales desde la UI)
+  /// Retorna true si la sincronización fue exitosa
+  Future<bool> syncSinglePendingOrder(String orderId) async {
+    try {
+      // Verificar autenticación antes de intentar
+      final isAuthenticated = await _reauthService.ensureAuthenticated();
+      if (!isAuthenticated) {
+        throw Exception('No se pudo autenticar al usuario');
+      }
+
+      final pendingOrders = await _userPreferencesService.getPendingOrders();
+      final orderData = pendingOrders.firstWhere(
+        (o) => o['id']?.toString() == orderId,
+        orElse: () => <String, dynamic>{},
+      );
+
+      if (orderData.isEmpty) {
+        print('⚠️ Orden $orderId no encontrada en pendientes');
+        return false;
+      }
+
+      print('🔁 Reintento manual de orden offline: $orderId');
+      await _userPreferencesService.clearPendingOrderError(orderId);
+
+      await _registerClientFromOfflineData(orderData);
+      await _registerSaleInSupabase(orderData);
+
+      final estado = (orderData['estado'] ?? 'completada').toString();
+      await _completeOrderWithStatus(orderId, estado);
+
+      await _cleanupSyncedOrders([orderId]);
+      print('✅ Reintento manual exitoso: $orderId');
+      return true;
+    } catch (e) {
+      print('❌ Reintento manual falló para $orderId: $e');
+      await _userPreferencesService.markPendingOrderSyncFailure(
+        orderId,
+        e.toString(),
+      );
+      return false;
+    }
   }
 
   /// Registrar cliente desde datos offline
@@ -1245,68 +1383,113 @@ class AutoSyncService {
       });
     }
 
-    // Llamar directamente al RPC fn_registrar_venta
-    final response = await Supabase.instance.client.rpc(
-      'fn_registrar_venta',
-      params: {
-        'p_codigo_promocion': orderData['promo_code'] ?? orderData['promoCode'],
-        'p_denominacion': 'Venta Auto Sync - ${orderData['id']}',
-        'p_estado_inicial': 1, // Estado enviada
-        'p_id_tpv': idTpv,
-        'p_observaciones':
-            orderData['notas'] ?? 'Sincronización automática de venta offline',
-        'p_productos': productos,
-        'p_uuid': userId,
-        'p_id_cliente': orderData['idCliente'],
-      },
-    );
+    // 🔑 IDEMPOTENCIA: usar client_uuid para que reintentos no dupliquen.
+    // Si la orden no tiene client_uuid (creada antes de esta mejora), se genera
+    // uno y se persiste para futuros reintentos.
+    String? clientUuid = orderData['client_uuid']?.toString();
+    if (clientUuid == null || clientUuid.isEmpty) {
+      clientUuid = UuidGenerator.v4();
+      orderData['client_uuid'] = clientUuid;
+    }
+
+    dynamic response;
+    try {
+      // Preferir el wrapper idempotente fn_registrar_venta_offline.
+      response = await Supabase.instance.client.rpc(
+        'fn_registrar_venta_offline',
+        params: {
+          'p_client_uuid': clientUuid,
+          'p_codigo_promocion':
+              orderData['promo_code'] ?? orderData['promoCode'],
+          'p_denominacion': 'Venta Offline - ${orderData['id']}',
+          'p_estado_inicial': 1, // Estado enviada
+          'p_id_tpv': idTpv,
+          'p_observaciones':
+              orderData['notas'] ?? 'Sincronización de venta offline',
+          'p_productos': productos,
+          'p_uuid': userId,
+          'p_id_cliente': orderData['idCliente'],
+        },
+      );
+    } catch (e) {
+      // Fallback: si el RPC idempotente no existe aún (no se subió el .sql),
+      // usar el RPC original. NOTA: sin idempotencia del servidor, el control
+      // de duplicados depende del marcado local de órdenes sincronizadas.
+      print(
+        '⚠️ fn_registrar_venta_offline no disponible ($e). Usando fn_registrar_venta.',
+      );
+      response = await Supabase.instance.client.rpc(
+        'fn_registrar_venta',
+        params: {
+          'p_codigo_promocion':
+              orderData['promo_code'] ?? orderData['promoCode'],
+          'p_denominacion': 'Venta Auto Sync - ${orderData['id']}',
+          'p_estado_inicial': 1,
+          'p_id_tpv': idTpv,
+          'p_observaciones':
+              orderData['notas'] ??
+              'Sincronización automática de venta offline',
+          'p_productos': productos,
+          'p_uuid': userId,
+          'p_id_cliente': orderData['idCliente'],
+        },
+      );
+    }
 
     if (response != null && response['status'] == 'success') {
       // Obtener el ID de operación de la respuesta
       final operationId = response['id_operacion'] as int?;
+      final bool yaExistia = response['idempotent'] == true;
+
       if (operationId != null) {
         // Guardar el ID de operación para usarlo en la actualización de estado
         orderData['_operation_id'] = operationId;
 
-        // Registrar desgloses de pago si existen
+        if (yaExistia) {
+          print(
+            '    ♻️ Operación $operationId ya existía (idempotente); se reintentan pagos/estado de forma idempotente',
+          );
+        }
+
+        // ⚠️ Pagos y cambio de estado se ejecutan SIEMPRE (también si la venta
+        // ya existía), porque la conexión pudo cortarse ENTRE la creación de la
+        // operación y estos pasos. Son idempotentes (client_uuid propio por
+        // propósito), así que reintentarlos no duplica.
+
+        // Registrar desgloses de pago si existen (idempotente).
         final paymentBreakdown = orderData['desglose_pagos'] as List<dynamic>?;
         if (paymentBreakdown != null && paymentBreakdown.isNotEmpty) {
           await _registerPaymentBreakdownFromOfflineData(
             operationId,
             paymentBreakdown,
+            orderData,
+            userId,
           );
         }
-        print('order_data $orderData');
-        if (orderData['estado'] == 'completada') {
-          print('order_status 1');
 
-          await Supabase.instance.client.rpc(
-            'fn_registrar_cambio_estado_operacion',
-            params: {
-              'p_id_operacion': operationId,
-              'p_nuevo_estado': 2,
-              'p_uuid_usuario': userId,
-            },
-          );
+        // Cambio de estado final según el estado de NEGOCIO de la orden.
+        // 'estado' puede valer 'pendiente_sincronizacion' (estado de sync, no
+        // de negocio); en ese caso se usa 'estado_final' (default 'completada'
+        // para ventas de checkout). Idempotente.
+        var estado = orderData['estado'];
+        if (estado == null || estado == 'pendiente_sincronizacion') {
+          estado = orderData['estado_final'] ?? 'completada';
         }
-        if (orderData['estado'] == 'cancelada') {
-          await Supabase.instance.client.rpc(
-            'fn_registrar_cambio_estado_operacion',
-            params: {
-              'p_id_operacion': operationId,
-              'p_nuevo_estado': 4,
-              'p_uuid_usuario': userId,
-            },
-          );
+        int? nuevoEstado;
+        if (estado == 'completada') {
+          nuevoEstado = 2;
+        } else if (estado == 'cancelada') {
+          nuevoEstado = 4;
+        } else if (estado == 'devuelta') {
+          nuevoEstado = 3;
         }
-        if (orderData['estado'] == 'devuelta') {
-          await Supabase.instance.client.rpc(
-            'fn_registrar_cambio_estado_operacion',
-            params: {
-              'p_id_operacion': operationId,
-              'p_nuevo_estado': 3,
-              'p_uuid_usuario': userId,
-            },
+
+        if (nuevoEstado != null) {
+          await _registerCambioEstadoIdempotente(
+            operationId: operationId,
+            nuevoEstado: nuevoEstado,
+            userId: userId,
+            orderData: orderData,
           );
         }
       }
@@ -1315,12 +1498,68 @@ class AutoSyncService {
     }
   }
 
-  /// Registrar desgloses de pago desde datos offline
+  /// Aplica un cambio de estado de operación de forma idempotente.
+  /// Usa un client_uuid propio por (orden, estado) persistido en orderData para
+  /// que un reintento no duplique el registro de auditoría. Fallback al RPC
+  /// original si el wrapper offline no está desplegado.
+  Future<void> _registerCambioEstadoIdempotente({
+    required int operationId,
+    required int nuevoEstado,
+    required dynamic userId,
+    required Map<String, dynamic> orderData,
+  }) async {
+    // client_uuid estable por cambio de estado (uno por estado destino).
+    final key = 'client_uuid_estado_$nuevoEstado';
+    var estadoUuid = orderData[key]?.toString();
+    if (estadoUuid == null || estadoUuid.isEmpty) {
+      estadoUuid = UuidGenerator.v4();
+      orderData[key] = estadoUuid;
+    }
+
+    try {
+      await Supabase.instance.client.rpc(
+        'fn_registrar_cambio_estado_offline',
+        params: {
+          'p_client_uuid': estadoUuid,
+          'p_id_operacion': operationId,
+          'p_nuevo_estado': nuevoEstado,
+          'p_uuid_usuario': userId,
+        },
+      );
+      print('    ✅ Estado $nuevoEstado aplicado (idempotente) a op $operationId');
+    } catch (e) {
+      // Fallback: wrapper no disponible. NOTA: sin idempotencia del servidor,
+      // un reintento podría duplicar el registro de auditoría del cambio.
+      print(
+        '    ⚠️ fn_registrar_cambio_estado_offline no disponible ($e). Usando RPC original.',
+      );
+      await Supabase.instance.client.rpc(
+        'fn_registrar_cambio_estado_operacion',
+        params: {
+          'p_id_operacion': operationId,
+          'p_nuevo_estado': nuevoEstado,
+          'p_uuid_usuario': userId,
+        },
+      );
+    }
+  }
+
+  /// Registrar desgloses de pago desde datos offline (idempotente).
+  ///
+  /// Usa fn_registrar_pago_venta_offline con un client_uuid propio por orden
+  /// (persistido en orderData), de modo que un reintento NO duplique los pagos.
+  /// Fallback a fn_registrar_pago_venta si el wrapper no está desplegado.
   Future<void> _registerPaymentBreakdownFromOfflineData(
     int operationId,
     List<dynamic> paymentBreakdown,
+    Map<String, dynamic> orderData,
+    dynamic userId,
   ) async {
     try {
+      // Referencia determinista (basada en la orden) para que el fallback NO
+      // genere referencias distintas en cada reintento.
+      final refBase = orderData['client_uuid'] ?? orderData['id'] ?? operationId;
+
       // Preparar array de pagos para la función RPC
       List<Map<String, dynamic>> pagos = [];
 
@@ -1329,18 +1568,47 @@ class AutoSyncService {
         pagos.add({
           'id_medio_pago': paymentData['id_medio_pago'],
           'monto': paymentData['monto'],
-          'referencia_pago':
-              'Pago Auto Sync - ${DateTime.now().millisecondsSinceEpoch}',
+          'referencia_pago': 'Pago Offline - $refBase',
         });
       }
 
-      // Llamar a fn_registrar_pago_venta
-      final response = await Supabase.instance.client.rpc(
-        'fn_registrar_pago_venta',
-        params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
-      );
+      // client_uuid estable para el registro de pagos de esta operación.
+      var pagoUuid = orderData['client_uuid_pago']?.toString();
+      if (pagoUuid == null || pagoUuid.isEmpty) {
+        pagoUuid = UuidGenerator.v4();
+        orderData['client_uuid_pago'] = pagoUuid;
+      }
 
-      if (response == true) {
+      bool ok = false;
+      try {
+        // Preferir el wrapper idempotente.
+        final resp = await Supabase.instance.client.rpc(
+          'fn_registrar_pago_venta_offline',
+          params: {
+            'p_client_uuid': pagoUuid,
+            'p_id_operacion_venta': operationId,
+            'p_pagos': pagos,
+            'p_uuid_usuario': userId,
+          },
+        );
+        ok = resp is Map && resp['success'] == true;
+        if (ok && resp['idempotent'] == true) {
+          print('    ♻️ Pagos ya registrados (idempotente) para op $operationId');
+        }
+      } catch (e) {
+        // Fallback: wrapper no disponible. NOTA: sin idempotencia del servidor,
+        // un reintento podría duplicar los pagos.
+        print(
+          '    ⚠️ fn_registrar_pago_venta_offline no disponible ($e). Usando RPC original.',
+        );
+        final response = await Supabase.instance.client.rpc(
+          'fn_registrar_pago_venta',
+          params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+        );
+        ok = response == true;
+      }
+
+      if (ok) {
         print(
           '    ✅ Desgloses de pago registrados para operación: $operationId',
         );
@@ -1360,36 +1628,26 @@ class AutoSyncService {
     print('    📝 Orden $orderId marcada como $estado');
   }
 
-  /// Limpiar órdenes sincronizadas exitosamente
+  /// Marcar órdenes como sincronizadas SIN eliminarlas.
+  ///
+  /// ⚠️ Antes este método BORRABA las órdenes sincronizadas de pending_orders.
+  /// Como en modo offline la pantalla de órdenes solo lee de pending_orders /
+  /// caché, las órdenes activas (no completadas) DESAPARECÍAN de la vista tras
+  /// sincronizar aunque siguieran activas en el servidor.
+  ///
+  /// Nuevo comportamiento: la orden se MARCA `synced: true` y conserva su
+  /// `id_operacion` del servidor. Sigue visible en orders_screen. La purga real
+  /// del array local ocurre por separado (ver markOrdersSyncedById /
+  /// purgeFinalizedSyncedOrders en UserPreferencesService) solo cuando la orden
+  /// llega a estado final o cuando ya se recargó del servidor.
   Future<void> _cleanupSyncedOrders(List<String> syncedOrderIds) async {
     try {
-      // Obtener órdenes actuales
-      final currentOrders = await _userPreferencesService.getPendingOrders();
-
-      final syncedSet = syncedOrderIds.toSet();
-
-      final remainingOrders =
-          currentOrders.where((order) {
-            final orderId = order['id']?.toString();
-            if (orderId == null) return true;
-            return !syncedSet.contains(orderId);
-          }).toList();
-
-      final removedCount = currentOrders.length - remainingOrders.length;
-
-      if (removedCount > 0) {
-        // Guardar las órdenes restantes
-        await _userPreferencesService.clearPendingOrders();
-        for (final order in remainingOrders) {
-          await _userPreferencesService.savePendingOrder(order);
-        }
-      }
-
+      await _userPreferencesService.markOrdersSyncedById(syncedOrderIds);
       print(
-        '  🧹 Limpiadas $removedCount órdenes sincronizadas, ${remainingOrders.length} pendientes',
+        '  🔖 ${syncedOrderIds.length} órdenes marcadas como sincronizadas (conservadas para la vista)',
       );
     } catch (e) {
-      print('  ⚠️ Error limpiando órdenes sincronizadas: $e');
+      print('  ⚠️ Error marcando órdenes sincronizadas: $e');
     }
   }
 
@@ -1402,6 +1660,36 @@ class AutoSyncService {
 
     print('🚀 Forzando sincronización inmediata...');
     await _performSync();
+  }
+
+  /// Esperar a que NO haya ningún pase de sincronización en curso.
+  ///
+  /// Si no se está sincronizando, retorna de inmediato. Si hay un pase en
+  /// curso, espera el próximo evento de fin (`syncCompleted` o `syncFailed`)
+  /// del stream existente. El [timeout] es una red de seguridad: si se agota,
+  /// retorna igualmente (no lanza) para no dejar la UI bloqueada.
+  ///
+  /// Se usa al cambiar el modo offline para drenar cualquier sincronización
+  /// (automática o forzada) antes de cambiar de estado y evitar inconsistencias.
+  Future<void> waitUntilIdle({
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    if (!_isSyncing) return;
+
+    print('⏳ Esperando a que termine la sincronización en curso...');
+    try {
+      await _syncEventController.stream
+          .firstWhere(
+            (event) =>
+                event.type == AutoSyncEventType.syncCompleted ||
+                event.type == AutoSyncEventType.syncFailed,
+          )
+          .timeout(timeout);
+    } on TimeoutException {
+      print('⚠️ waitUntilIdle agotó el timeout; continuando de todos modos');
+    } catch (e) {
+      print('⚠️ waitUntilIdle terminó con error ($e); continuando');
+    }
   }
 
   /// Obtener estadísticas de sincronización

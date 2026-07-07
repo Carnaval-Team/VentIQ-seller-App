@@ -3,5 +3,9 @@
     "allow": [
       "Bash(flutter analyze:*)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "supabase"
+  ],
+  "enableAllProjectMcpServers": true
 }

@@ -7,6 +7,10 @@ import '../services/user_preferences_service.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../utils/navigation_guard.dart';
 
+enum _StockFilter { todos, conStock, sinStock }
+
+enum _MarginCompare { mayorQue, menorQue }
+
 class PreciosProductosScreen extends StatefulWidget {
   const PreciosProductosScreen({super.key});
 
@@ -25,9 +29,13 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
   bool _filterSinPrecioVenta = false;
   bool _filterSinPrecioCosto = false;
   double? _filterPrecioCosto;
+  _StockFilter _filterStock = _StockFilter.todos;
+  _MarginCompare? _filterMarginCompare;
+  double? _filterMarginPercent;
   double _usdRate = 0.0;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _filterPrecioController = TextEditingController();
+  final TextEditingController _filterMarginController = TextEditingController();
 
   @override
   void initState() {
@@ -39,6 +47,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
   void dispose() {
     _searchController.dispose();
     _filterPrecioController.dispose();
+    _filterMarginController.dispose();
     super.dispose();
   }
 
@@ -190,6 +199,55 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
     }
   }
 
+  bool _productHasStock(Map<String, dynamic> producto) {
+    final pres = producto['presentaciones'] as List<Map<String, dynamic>>;
+    if (pres.isEmpty) return false;
+    return pres.any(
+      (pp) => ((pp['stock_total'] as num?)?.toDouble() ?? 0.0) > 0,
+    );
+  }
+
+  double? _marginPercentForPresentation(
+    Map<String, dynamic> producto,
+    Map<String, dynamic> pres,
+  ) {
+    final rawCosto = pres['precio_promedio'];
+    final costoUsdVal = rawCosto is num
+        ? rawCosto.toDouble()
+        : double.tryParse(rawCosto?.toString() ?? '') ?? 0.0;
+    final tieneCosto = costoUsdVal > 0 && costoUsdVal != 0.0019;
+    if (!tieneCosto) return null;
+
+    final ventaCup = (producto['precio_venta'] as double?) ?? 0.0;
+    final ventaUsd = (producto['precio_venta_usd'] as double?) ??
+        (_usdRate > 0 && ventaCup > 1 ? ventaCup / _usdRate : null);
+    if (ventaUsd == null || ventaUsd <= 0) return null;
+
+    final gananciaUsd = ventaUsd - costoUsdVal;
+    return (gananciaUsd / ventaUsd) * 100;
+  }
+
+  bool _productMatchesMarginFilter(Map<String, dynamic> producto) {
+    if (_filterMarginCompare == null || _filterMarginPercent == null) {
+      return true;
+    }
+
+    final pres = producto['presentaciones'] as List<Map<String, dynamic>>;
+    if (pres.isEmpty) return false;
+
+    for (final pp in pres) {
+      final margin = _marginPercentForPresentation(producto, pp);
+      if (margin == null) continue;
+      switch (_filterMarginCompare!) {
+        case _MarginCompare.mayorQue:
+          if (margin > _filterMarginPercent!) return true;
+        case _MarginCompare.menorQue:
+          if (margin < _filterMarginPercent!) return true;
+      }
+    }
+    return false;
+  }
+
   void _applyFilter() {
     final q = _searchQuery.toLowerCase().trim();
     _filteredProductos = _productos.where((p) {
@@ -227,6 +285,13 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
         );
         if (!tienePrecio) return false;
       }
+      if (_filterStock == _StockFilter.conStock && !_productHasStock(p)) {
+        return false;
+      }
+      if (_filterStock == _StockFilter.sinStock && _productHasStock(p)) {
+        return false;
+      }
+      if (!_productMatchesMarginFilter(p)) return false;
       return true;
     }).toList()
       ..sort((a, b) => (a['denominacion'] as String)
@@ -663,7 +728,10 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Chips de filtro rápido
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               _filterChip(
                 label: 'Sin precio venta',
@@ -675,7 +743,6 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
                   _applyFilter();
                 }),
               ),
-              const SizedBox(width: 8),
               _filterChip(
                 label: 'Sin precio costo',
                 icon: Icons.inventory_2_outlined,
@@ -686,7 +753,30 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
                   _applyFilter();
                 }),
               ),
-              const Spacer(),
+              _filterChip(
+                label: 'Con stock',
+                icon: Icons.check_circle_outline,
+                active: _filterStock == _StockFilter.conStock,
+                activeColor: const Color(0xFF2563EB),
+                onTap: () => setState(() {
+                  _filterStock = _filterStock == _StockFilter.conStock
+                      ? _StockFilter.todos
+                      : _StockFilter.conStock;
+                  _applyFilter();
+                }),
+              ),
+              _filterChip(
+                label: 'Sin stock',
+                icon: Icons.remove_circle_outline,
+                active: _filterStock == _StockFilter.sinStock,
+                activeColor: const Color(0xFFDC2626),
+                onTap: () => setState(() {
+                  _filterStock = _filterStock == _StockFilter.sinStock
+                      ? _StockFilter.todos
+                      : _StockFilter.sinStock;
+                  _applyFilter();
+                }),
+              ),
               Text(
                 '${_filteredProductos.length} producto${_filteredProductos.length == 1 ? '' : 's'}',
                 style: TextStyle(fontSize: 12, color: Colors.grey[500]),
@@ -731,6 +821,93 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
                   onChanged: (value) {
                     setState(() {
                       _filterPrecioCosto = double.tryParse(value);
+                      _applyFilter();
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                flex: 5,
+                child: DropdownButtonFormField<_MarginCompare>(
+                  value: _filterMarginCompare,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    hintText: '% ganancia',
+                    prefixIcon: const Icon(Icons.percent, size: 18),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding:
+                        const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: _MarginCompare.mayorQue,
+                      child: Text('Mayor que', style: TextStyle(fontSize: 13)),
+                    ),
+                    DropdownMenuItem(
+                      value: _MarginCompare.menorQue,
+                      child: Text('Menor que', style: TextStyle(fontSize: 13)),
+                    ),
+                  ],
+                  onChanged: (value) => setState(() {
+                    _filterMarginCompare = value;
+                    _applyFilter();
+                  }),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 3,
+                child: TextField(
+                  controller: _filterMarginController,
+                  decoration: InputDecoration(
+                    hintText: 'Ej: 5',
+                    suffixText: '%',
+                    suffixIcon: _filterMarginPercent != null ||
+                            _filterMarginCompare != null
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _filterMarginController.clear();
+                              setState(() {
+                                _filterMarginCompare = null;
+                                _filterMarginPercent = null;
+                                _applyFilter();
+                              });
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding:
+                        const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                  ),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (value) {
+                    setState(() {
+                      _filterMarginPercent = double.tryParse(value);
                       _applyFilter();
                     });
                   },
@@ -1054,16 +1231,11 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
     final ventaUsd = (producto['precio_venta_usd'] as double?) ??
         (_usdRate > 0 && ventaCup > 1 ? ventaCup / _usdRate : null);
 
-    // Costo ya está en USD (precio_promedio se almacena en USD)
-    final costoUsd = tieneCosto ? costoUsdVal : null;
-
     // Ganancia
-    double? gananciaUsd;
-    double? porcGanancia;
-    if (ventaUsd != null && ventaUsd > 0 && costoUsd != null && costoUsd > 0) {
-      gananciaUsd = ventaUsd - costoUsd;
-      porcGanancia = (gananciaUsd / ventaUsd) * 100;
-    }
+    final porcGanancia = _marginPercentForPresentation(producto, pres);
+    final gananciaUsd = porcGanancia != null && ventaUsd != null
+        ? ventaUsd - costoUsdVal
+        : null;
     final esPositiva = gananciaUsd != null && gananciaUsd >= 0;
 
     final costoCup = (tieneCosto && _usdRate > 0) ? costoUsdVal * _usdRate : null;

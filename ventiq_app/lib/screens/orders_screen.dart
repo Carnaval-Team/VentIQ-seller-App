@@ -21,10 +21,14 @@ import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/currency_service.dart';
 import '../utils/platform_utils.dart';
+import '../utils/pdf_download.dart';
 import '../utils/connection_error_handler.dart';
+import '../utils/navigation_helper.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/sales_monitor_fab.dart';
+// import '../widgets/offline_status_badge.dart';
+import '../widgets/pending_orders_fab.dart';
 import '../widgets/notification_widget.dart';
 import '../widgets/sync_status_chip.dart';
 import '../widgets/bill_count_dialog.dart';
@@ -61,6 +65,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool _isLoadingUsdRate = false;
   bool _isOfflineMode = false;
   bool _isShowSkuEnabled = false;
+  List<Map<String, dynamic>> _defaultOrderItems = [];
 
   @override
   void initState() {
@@ -69,16 +74,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
     _searchController.addListener(_onSearchChanged);
     _loadUsdRate();
     _loadShowSkuSetting();
+    _loadDefaultOrderItems();
     // Cargar órdenes desde Supabase y órdenes pendientes offline
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadOrdersFromSupabase().then((_) {
-        if (widget.autoOpenOrderId != null) {
-          _autoOpenOrder(widget.autoOpenOrderId!);
-        }
-      });
-      _loadDiscountPermission();
-      _loadPrintPendingPermission();
-      _loadSellerModificationsPermission();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future.wait([
+        _loadOrdersFromSupabase(),
+        _loadDiscountPermission(),
+        _loadPrintPendingPermission(),
+        _loadSellerModificationsPermission(),
+      ]);
+      if (widget.autoOpenOrderId != null) {
+        _autoOpenOrder(widget.autoOpenOrderId!);
+      }
     });
   }
 
@@ -87,6 +94,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
     if (mounted) {
       setState(() {
         _isShowSkuEnabled = isEnabled;
+      });
+    }
+  }
+
+  Future<void> _loadDefaultOrderItems() async {
+    final items = await _userPreferencesService.getDefaultOrderItems();
+    if (mounted) {
+      setState(() {
+        _defaultOrderItems = items;
       });
     }
   }
@@ -833,6 +849,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         foregroundColor: Colors.white,
         centerTitle: true,
         actions: [
+          // const OfflineStatusBadge(showLabel: false),
           const NotificationWidget(),
           if (_isPrintingAllOrders)
             const Padding(
@@ -910,7 +927,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
         currentIndex: 2, // Órdenes tab
         onTap: _onBottomNavTap,
       ),
-      floatingActionButton: const SalesMonitorFAB(),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          PendingOrdersFAB(onSyncCompleted: _refreshOrders),
+          const SizedBox(height: 12),
+          const SalesMonitorFAB(),
+        ],
+      ),
     );
   }
 
@@ -1191,6 +1216,44 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                     color: Colors.blue,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        // Badge de mesa (modo restaurante)
+                        if (order.idMesa != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE65100).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: const Color(0xFFE65100).withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.table_restaurant,
+                                  size: 11,
+                                  color: Color(0xFFE65100),
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  order.mesaNumero != null
+                                      ? 'Mesa ${order.mesaNumero}'
+                                      : 'Mesa',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFFE65100),
                                   ),
                                 ),
                               ],
@@ -1786,23 +1849,68 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                 CrossAxisAlignment.start,
                                             children: [
                                               Expanded(
-                                                child: Text(
-                                                  item.nombre,
-                                                  style: const TextStyle(
-                                                    fontSize: 15,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Color(0xFF1F2937),
-                                                  ),
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      item.nombre,
+                                                      style: const TextStyle(
+                                                        fontSize: 15,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: Color(0xFF1F2937),
+                                                      ),
+                                                    ),
+                                                    if ((_isShowSkuEnabled || _userPreferencesService.isShowSkuEnabledSync) &&
+                                                        item.producto.sku != null &&
+                                                        item.producto.sku!.isNotEmpty) ...[
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        'SKU: ${item.producto.sku}',
+                                                        style: const TextStyle(
+                                                          fontSize: 11,
+                                                          color: Color(0xFF4A90E2),
+                                                          fontWeight: FontWeight.w500,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                    if ((_isShowSkuEnabled || _userPreferencesService.isShowSkuEnabledSync) &&
+                                                        item.producto.descripcion != null &&
+                                                        item.producto.descripcion!.isNotEmpty) ...[
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        item.producto.descripcion!,
+                                                        maxLines: 2,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: Colors.grey[500],
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
                                                 ),
                                               ),
                                               const SizedBox(width: 8),
-                                              Text(
-                                                '\$${item.subtotal.toStringAsFixed(2)}',
-                                                style: const TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Color(0xFF4A90E2),
-                                                ),
+                                              Column(
+                                                crossAxisAlignment: CrossAxisAlignment.end,
+                                                children: [
+                                                  Text(
+                                                    '\$${item.subtotal.toStringAsFixed(2)}',
+                                                    style: const TextStyle(
+                                                      fontSize: 16,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Color(0xFF4A90E2),
+                                                    ),
+                                                  ),
+                                                  if (_usdRate > 0)
+                                                    Text(
+                                                      'USD ${(item.subtotal / _usdRate).toStringAsFixed(2)}',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors.grey[400],
+                                                      ),
+                                                    ),
+                                                ],
                                               ),
                                             ],
                                           ),
@@ -1817,7 +1925,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                               const SizedBox(width: 4),
                                               Expanded(
                                                 child: Text(
-                                                  '${PriceUtils.formatQuantity(item.cantidad)} unid. · ${item.ubicacionAlmacen}',
+                                                  '${PriceUtils.formatQuantity(item.cantidad)} unid. · \$${item.precioUnitario.toStringAsFixed(2)} c/u${_usdRate > 0 ? ' (USD ${(item.precioUnitario / _usdRate).toStringAsFixed(2)} c/u)' : ''} · ${item.ubicacionAlmacen}',
                                                   style: TextStyle(
                                                     fontSize: 13,
                                                     color: Colors.grey[600],
@@ -1894,6 +2002,138 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   .toList(),
                         ),
                       ),
+
+                      // ── Productos por defecto no incluidos (solo órdenes activas) ─
+                      Builder(builder: (context) {
+                        if (order.status == OrderStatus.completada) {
+                          return const SizedBox.shrink();
+                        }
+                        final ghostItems = _defaultOrderItems.where((entry) {
+                          try {
+                            final p = Product.fromJson(
+                                entry['product'] as Map<String, dynamic>);
+                            final alreadyIn = order.items.any(
+                              (i) =>
+                                  i.producto.id == p.id && i.cantidad > 0,
+                            );
+                            return !alreadyIn;
+                          } catch (_) {
+                            return false;
+                          }
+                        }).toList();
+                        if (ghostItems.isEmpty) return const SizedBox.shrink();
+                        return Column(
+                          children: [
+                            const SizedBox(height: 12),
+                            _buildDetailSection(
+                              title:
+                                  'Por defecto no incluidos (${ghostItems.length})',
+                              icon: Icons.playlist_add_check_outlined,
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                              child: Column(
+                                children: ghostItems.map((entry) {
+                                  final p = Product.fromJson(
+                                      entry['product']
+                                          as Map<String, dynamic>);
+                                  return Opacity(
+                                    opacity: 0.55,
+                                    child: Container(
+                                      margin: const EdgeInsets.only(bottom: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey[50],
+                                        borderRadius:
+                                            BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: Colors.grey[200]!,
+                                          style: BorderStyle.solid,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  p.denominacion,
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight:
+                                                        FontWeight.w600,
+                                                    color: Colors.grey[600],
+                                                  ),
+                                                ),
+                                                if ((_isShowSkuEnabled ||
+                                                        _userPreferencesService
+                                                            .isShowSkuEnabledSync) &&
+                                                    p.sku != null &&
+                                                    p.sku!.isNotEmpty)
+                                                  Text(
+                                                    'SKU: ${p.sku}',
+                                                    style: const TextStyle(
+                                                        fontSize: 11,
+                                                        color: Color(
+                                                            0xFF4A90E2)),
+                                                  ),
+                                                if ((_isShowSkuEnabled ||
+                                                        _userPreferencesService
+                                                            .isShowSkuEnabledSync) &&
+                                                    p.descripcion != null &&
+                                                    p.descripcion!.isNotEmpty)
+                                                  Text(
+                                                    p.descripcion!,
+                                                    maxLines: 2,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors.grey[500]),
+                                                  ),
+                                                Text(
+                                                  '\$${p.precio.toStringAsFixed(2)} c/u',
+                                                  style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: Colors.grey[500]),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Container(
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey
+                                                  .withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                  color: Colors.grey
+                                                      .withOpacity(0.3)),
+                                            ),
+                                            child: const Text(
+                                              'NO INCLUIDO',
+                                              style: TextStyle(
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ],
+                        );
+                      }),
 
                       // ── Resumen de totales ────────────────────────────────
                       const SizedBox(height: 12),
@@ -2029,6 +2269,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final descripcion = paquete['descripcion']?.toString() ??
         order.paqueteria?['descripcion']?.toString();
     final fotoUrl = paquete['foto_url']?.toString();
+    final fotosExtrasRaw = paquete['fotos_extras'];
+    final List<String> fotosExtras = fotosExtrasRaw is List
+        ? fotosExtrasRaw
+            .map((e) => e?.toString() ?? '')
+            .where((e) => e.trim().isNotEmpty)
+            .toList()
+        : <String>[];
 
     return _buildDetailSection(
       title: 'Paquete',
@@ -2039,31 +2286,79 @@ class _OrdersScreenState extends State<OrdersScreen> {
           if (fotoUrl != null && fotoUrl.trim().isNotEmpty) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                fotoUrl,
-                width: double.infinity,
-                height: 180,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 120,
-                  color: Colors.grey[100],
-                  alignment: Alignment.center,
-                  child: Icon(
-                    Icons.broken_image_outlined,
-                    color: Colors.grey[400],
-                    size: 40,
-                  ),
-                ),
-                loadingBuilder: (_, child, progress) {
-                  if (progress == null) return child;
-                  return Container(
+              child: GestureDetector(
+                onTap: () => _showFullImage(fotoUrl),
+                child: Image.network(
+                  fotoUrl,
+                  width: double.infinity,
+                  height: 180,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
                     height: 120,
                     color: Colors.grey[100],
                     alignment: Alignment.center,
-                    child: const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.grey[400],
+                      size: 40,
+                    ),
+                  ),
+                  loadingBuilder: (_, child, progress) {
+                    if (progress == null) return child;
+                    return Container(
+                      height: 120,
+                      color: Colors.grey[100],
+                      alignment: Alignment.center,
+                      child: const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (fotosExtras.isNotEmpty) ...[
+            Text(
+              'Fotos adicionales (${fotosExtras.length})',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[700],
+              ),
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 80,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: fotosExtras.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 6),
+                itemBuilder: (_, i) {
+                  final url = fotosExtras[i];
+                  return GestureDetector(
+                    onTap: () => _showFullImage(url),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        url,
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 80,
+                          height: 80,
+                          color: Colors.grey[100],
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: Colors.grey[400],
+                            size: 24,
+                          ),
+                        ),
+                      ),
                     ),
                   );
                 },
@@ -2076,6 +2371,22 @@ class _OrdersScreenState extends State<OrdersScreen> {
           if (descripcion != null && descripcion.trim().isNotEmpty)
             _buildDetailRowNew('Descripción', descripcion.trim()),
         ],
+      ),
+    );
+  }
+
+  void _showFullImage(String url) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(12),
+        child: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: InteractiveViewer(
+            child: Image.network(url, fit: BoxFit.contain),
+          ),
+        ),
       ),
     );
   }
@@ -4050,17 +4361,82 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Future<void> _generateCustomerInvoice(Order order) async {
     print('📄 Generar factura cliente (PDF) - Orden: ${order.id}');
 
-    // Web aún no soporta shareXFiles con filesystem temporal
+    // En Web: generar el PDF y descargarlo directamente en el navegador
     if (PlatformUtils.isWeb) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              'La generación/compartir de factura en PDF no está disponible en Web en esta versión.',
-            ),
-            backgroundColor: Colors.orange,
+            content: Text('Generando factura PDF...'),
+            backgroundColor: Colors.blueAccent,
+            duration: Duration(seconds: 2),
           ),
         );
+      }
+      setState(() => _isGeneratingCustomerInvoice = true);
+      try {
+        final storeId = await _userPreferencesService.getIdTienda();
+        Map<String, dynamic>? storeData;
+        if (storeId != null) {
+          storeData = await Supabase.instance.client
+              .from('app_dat_tienda')
+              .select('denominacion, direccion, ubicacion, imagen_url, phone')
+              .eq('id', storeId)
+              .maybeSingle();
+        }
+        final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+        final storeAddress = storeData?['direccion'] as String? ?? '';
+        final storeLocation = storeData?['ubicacion'] as String? ?? '';
+        final storePhone = storeData?['phone'] as String? ?? '';
+        final storeLogoUrl = storeData?['imagen_url'] as String?;
+        final logoBytes = await _downloadImageBytes(storeLogoUrl);
+        final discountData = _getDiscountData(order);
+        final hasDiscount = discountData['hasDiscount'] as bool;
+        final double originalTotal = (discountData['originalTotal'] as num?)?.toDouble() ?? order.total;
+        final double finalTotal = (discountData['finalTotal'] as num?)?.toDouble() ?? order.total;
+        final double saved = (discountData['saved'] as num?)?.toDouble() ?? 0.0;
+        final String discountLabel = discountData['label'] as String? ?? '';
+        final items = order.items.where((item) => item.subtotal > 0).toList();
+        final ingredientsByProduct = await _loadIngredientsForProducts(
+          items.map((i) => i.producto.id).toSet(),
+        );
+        final pdf = _buildInvoicePdf(
+          order: order,
+          storeName: storeName,
+          storeAddress: storeAddress,
+          storeLocation: storeLocation,
+          storePhone: storePhone,
+          logoBytes: logoBytes,
+          hasDiscount: hasDiscount,
+          originalTotal: originalTotal,
+          finalTotal: finalTotal,
+          saved: saved,
+          discountLabel: discountLabel,
+          items: items,
+          ingredientsByProduct: ingredientsByProduct,
+        );
+        final bytes = await pdf.save();
+        downloadPdfWeb(bytes, 'factura_${order.id}.pdf');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Factura descargada como PDF.'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      } catch (e) {
+        print('Error generando factura web: \$e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error al generar factura: \$e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isGeneratingCustomerInvoice = false);
       }
       return;
     }
@@ -4137,366 +4513,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
       final ingredientsByProduct = await _loadIngredientsForProducts(
         items.map((i) => i.producto.id).toSet(),
       );
-      final pdf = pw.Document();
-
-      pdf.addPage(
-        pw.MultiPage(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-          build:
-              (context) => [
-                pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    if (logoBytes != null)
-                      pw.Container(
-                        width: 72,
-                        height: 72,
-                        decoration: pw.BoxDecoration(
-                          borderRadius: pw.BorderRadius.circular(12),
-                          border: pw.Border.all(
-                            color: PdfColors.grey300,
-                            width: 1,
-                          ),
-                        ),
-                        child: pw.ClipRRect(
-                          horizontalRadius: 12,
-                          verticalRadius: 12,
-                          child: pw.Image(
-                            pw.MemoryImage(logoBytes),
-                            fit: pw.BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                    if (logoBytes != null) pw.SizedBox(width: 16),
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            storeName,
-                            style: pw.TextStyle(
-                              fontSize: 20,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black,
-                            ),
-                          ),
-                          if (storeAddress.isNotEmpty ||
-                              storeLocation.isNotEmpty)
-                            pw.Text(
-                              [
-                                if (storeAddress.isNotEmpty) storeAddress,
-                                if (storeLocation.isNotEmpty) storeLocation,
-                              ].join(' · '),
-                              style: const pw.TextStyle(
-                                fontSize: 10,
-                                color: PdfColors.grey600,
-                              ),
-                            ),
-                          if (storePhone.isNotEmpty)
-                            pw.Text(
-                              'Tel: $storePhone',
-                              style: const pw.TextStyle(
-                                fontSize: 10,
-                                color: PdfColors.grey600,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        pw.Text(
-                          'Factura Cliente',
-                          style: pw.TextStyle(
-                            fontSize: 16,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColor.fromHex('#0F172A'),
-                          ),
-                        ),
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          'Orden: ${order.id}',
-                          style: const pw.TextStyle(
-                            fontSize: 11,
-                            color: PdfColors.grey700,
-                          ),
-                        ),
-                        pw.Text(
-                          _formatInvoiceDate(order.fechaCreacion),
-                          style: const pw.TextStyle(
-                            fontSize: 11,
-                            color: PdfColors.grey700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                pw.SizedBox(height: 24),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(12),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex('#F8FAFC'),
-                    borderRadius: pw.BorderRadius.circular(12),
-                    border: pw.Border.all(color: PdfColors.grey300, width: 1),
-                  ),
-                  child: pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'Cliente',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColor.fromHex('#334155'),
-                            ),
-                          ),
-                          pw.Text(
-                            order.buyerName?.isNotEmpty == true
-                                ? order.buyerName!
-                                : 'Cliente Final',
-                            style: const pw.TextStyle(
-                              fontSize: 11,
-                              color: PdfColors.grey700,
-                            ),
-                          ),
-                          if (order.buyerPhone != null &&
-                              order.buyerPhone!.isNotEmpty)
-                            pw.Text(
-                              order.buyerPhone!,
-                              style: const pw.TextStyle(
-                                fontSize: 10,
-                                color: PdfColors.grey600,
-                              ),
-                            ),
-                        ],
-                      ),
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.end,
-                        children: [
-                          pw.Text(
-                            'Estado',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColor.fromHex('#334155'),
-                            ),
-                          ),
-                          pw.Container(
-                            padding: const pw.EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: pw.BoxDecoration(
-                              color: PdfColor.fromHex('#DCFCE7'),
-                              borderRadius: pw.BorderRadius.circular(8),
-                            ),
-                            child: pw.Text(
-                              'Completada',
-                              style: pw.TextStyle(
-                                fontSize: 11,
-                                fontWeight: pw.FontWeight.bold,
-                                color: PdfColor.fromHex('#15803D'),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                pw.SizedBox(height: 20),
-                pw.Text(
-                  'Productos',
-                  style: pw.TextStyle(
-                    fontSize: 13,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColor.fromHex('#0F172A'),
-                  ),
-                ),
-                pw.SizedBox(height: 8),
-                pw.Table(
-                  border: pw.TableBorder(
-                    horizontalInside: pw.BorderSide(
-                      color: PdfColors.grey300,
-                      width: 0.4,
-                    ),
-                    bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.6),
-                  ),
-                  columnWidths: {
-                    0: const pw.FlexColumnWidth(4),
-                    1: const pw.FlexColumnWidth(1.3),
-                    2: const pw.FlexColumnWidth(1.5),
-                    3: const pw.FlexColumnWidth(1.7),
-                  },
-                  children: [
-                    pw.TableRow(
-                      children: [
-                        _pdfHeaderCell('Producto'),
-                        _pdfHeaderCell('Cant.'),
-                        _pdfHeaderCell('Precio'),
-                        _pdfHeaderCell('Subtotal'),
-                      ],
-                    ),
-                    ...items.expand((item) {
-                      final List<pw.TableRow> rows = [
-                        pw.TableRow(
-                          children: [
-                            _pdfBodyCell(item.nombre),
-                            _pdfBodyCell(PriceUtils.formatQuantity(item.cantidad)),
-                            _pdfBodyCell(
-                              '\$${item.displayPrice.toStringAsFixed(2)}',
-                            ),
-                            _pdfBodyCell(
-                              '\$${item.subtotal.toStringAsFixed(2)}',
-                              isBold: true,
-                            ),
-                          ],
-                        ),
-                      ];
-
-                      final ingredientes =
-                          ingredientsByProduct[item.producto.id] ??
-                          item.ingredientes;
-                      if (ingredientes != null && ingredientes.isNotEmpty) {
-                        rows.add(
-                          pw.TableRow(
-                            children: [
-                              _pdfBodyCell(
-                                '    Aditamentos',
-                                isBold: true,
-                                isIngredient: true,
-                              ),
-                              _pdfBodyCell('', isIngredient: true),
-                              _pdfBodyCell('', isIngredient: true),
-                              _pdfBodyCell('', isIngredient: true),
-                            ],
-                          ),
-                        );
-
-                        rows.addAll(
-                          ingredientes.map<pw.TableRow>((ingrediente) {
-                            final nombreIngrediente =
-                                (ingrediente['nombre_ingrediente'] ??
-                                        'Ingrediente')
-                                    .toString();
-                            final double cantidadBase =
-                                (ingrediente['cantidad_necesaria'] ??
-                                            ingrediente['cantidad_vendida'] ??
-                                            0)
-                                        is num
-                                    ? (ingrediente['cantidad_necesaria'] ??
-                                            ingrediente['cantidad_vendida'])
-                                        .toDouble()
-                                    : 0;
-                            final unidad =
-                                (ingrediente['unidad_medida'] ?? 'unid')
-                                    .toString();
-                            final double cantidadTotal =
-                                (ingrediente['cantidad_vendida'] is num)
-                                    ? (ingrediente['cantidad_vendida'] as num)
-                                        .toDouble()
-                                    : (cantidadBase * item.cantidad);
-                            final cantidad = cantidadTotal.toStringAsFixed(2);
-
-                            return pw.TableRow(
-                              children: [
-                                _pdfBodyCell(
-                                  '    $nombreIngrediente',
-                                  isIngredient: true,
-                                ),
-                                _pdfBodyCell(
-                                  '$cantidad $unidad',
-                                  isIngredient: true,
-                                ),
-                                _pdfBodyCell('', isIngredient: true),
-                                _pdfBodyCell('', isIngredient: true),
-                              ],
-                            );
-                          }),
-                        );
-                      }
-
-                      return rows;
-                    }),
-                  ],
-                ),
-                pw.SizedBox(height: 18),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(12),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex('#F1F5F9'),
-                    borderRadius: pw.BorderRadius.circular(12),
-                    border: pw.Border.all(color: PdfColors.grey300, width: 1),
-                  ),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          _pdfSummaryLabel('Total sin descuento'),
-                          _pdfSummaryValue(
-                            '\$${originalTotal.toStringAsFixed(2)}',
-                          ),
-                        ],
-                      ),
-                      if (hasDiscount) ...[
-                        pw.SizedBox(height: 4),
-                        pw.Row(
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                          children: [
-                            _pdfSummaryLabel(
-                              discountLabel.isNotEmpty
-                                  ? discountLabel
-                                  : 'Descuento aplicado',
-                            ),
-                            _pdfSummaryValue(
-                              '- \$${saved.toStringAsFixed(2)}',
-                              color: PdfColor.fromHex('#DC2626'),
-                            ),
-                          ],
-                        ),
-                      ],
-                      pw.Divider(
-                        color: PdfColors.grey400,
-                        height: 14,
-                        thickness: 0.6,
-                      ),
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          _pdfSummaryLabel(
-                            'Total a pagar',
-                            fontSize: 13,
-                            isBold: true,
-                          ),
-                          _pdfSummaryValue(
-                            '\$${finalTotal.toStringAsFixed(2)}',
-                            fontSize: 14,
-                            isBold: true,
-                            color: PdfColor.fromHex('#0F172A'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                pw.SizedBox(height: 16),
-                pw.Text(
-                  'Gracias por su compra.',
-                  style: const pw.TextStyle(
-                    fontSize: 11,
-                    color: PdfColors.grey700,
-                  ),
-                ),
-              ],
-        ),
+      final pdf = _buildInvoicePdf(
+        order: order,
+        storeName: storeName,
+        storeAddress: storeAddress,
+        storeLocation: storeLocation,
+        storePhone: storePhone,
+        logoBytes: logoBytes,
+        hasDiscount: hasDiscount,
+        originalTotal: originalTotal,
+        finalTotal: finalTotal,
+        saved: saved,
+        discountLabel: discountLabel,
+        items: items,
+        ingredientsByProduct: ingredientsByProduct,
       );
 
       final output = await getTemporaryDirectory();
@@ -4557,6 +4587,201 @@ class _OrdersScreenState extends State<OrdersScreen> {
         });
       }
     }
+  }
+
+  pw.Document _buildInvoicePdf({
+    required Order order,
+    required String storeName,
+    required String storeAddress,
+    required String storeLocation,
+    required String storePhone,
+    required Uint8List? logoBytes,
+    required bool hasDiscount,
+    required double originalTotal,
+    required double finalTotal,
+    required double saved,
+    required String discountLabel,
+    required List items,
+    required Map<int, List<Map<String, dynamic>>> ingredientsByProduct,
+  }) {
+    final pdf = pw.Document();
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        build: (context) => [
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              if (logoBytes != null)
+                pw.Container(
+                  width: 72,
+                  height: 72,
+                  decoration: pw.BoxDecoration(
+                    borderRadius: pw.BorderRadius.circular(12),
+                    border: pw.Border.all(color: PdfColors.grey300, width: 1),
+                  ),
+                  child: pw.ClipRRect(
+                    horizontalRadius: 12,
+                    verticalRadius: 12,
+                    child: pw.Image(pw.MemoryImage(logoBytes), fit: pw.BoxFit.cover),
+                  ),
+                ),
+              if (logoBytes != null) pw.SizedBox(width: 16),
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(storeName, style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
+                    if (storeAddress.isNotEmpty || storeLocation.isNotEmpty)
+                      pw.Text([if (storeAddress.isNotEmpty) storeAddress, if (storeLocation.isNotEmpty) storeLocation].join(' · '), style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
+                    if (storePhone.isNotEmpty)
+                      pw.Text('Tel: $storePhone', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
+                  ],
+                ),
+              ),
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  pw.Text('Factura Cliente', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0F172A'))),
+                  pw.SizedBox(height: 4),
+                  pw.Text('Orden: ${order.id}', style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
+                  pw.Text(_formatInvoiceDate(order.fechaCreacion), style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
+                ],
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 24),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: PdfColor.fromHex('#F8FAFC'),
+              borderRadius: pw.BorderRadius.circular(12),
+              border: pw.Border.all(color: PdfColors.grey300, width: 1),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text('Cliente', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#334155'))),
+                    pw.Text(
+                      order.buyerName?.isNotEmpty == true ? order.buyerName! : 'Cliente Final',
+                      style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
+                    ),
+                    if (order.buyerPhone != null && order.buyerPhone!.isNotEmpty)
+                      pw.Text(order.buyerPhone!, style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
+                  ],
+                ),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Text('Estado', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#334155'))),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: pw.BoxDecoration(color: PdfColor.fromHex('#DCFCE7'), borderRadius: pw.BorderRadius.circular(8)),
+                      child: pw.Text('Completada', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#15803D'))),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 20),
+          pw.Text('Productos', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0F172A'))),
+          pw.SizedBox(height: 8),
+          pw.Table(
+            border: pw.TableBorder(
+              horizontalInside: pw.BorderSide(color: PdfColors.grey300, width: 0.4),
+              bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.6),
+            ),
+            columnWidths: {0: const pw.FlexColumnWidth(4), 1: const pw.FlexColumnWidth(1.3), 2: const pw.FlexColumnWidth(1.5), 3: const pw.FlexColumnWidth(1.7)},
+            children: [
+              pw.TableRow(children: [_pdfHeaderCell('Producto'), _pdfHeaderCell('Cant.'), _pdfHeaderCell('Precio'), _pdfHeaderCell('Subtotal')]),
+              ...items.expand((item) {
+                final List<pw.TableRow> rows = [
+                  pw.TableRow(children: [
+                    _pdfBodyCell(item.nombre),
+                    _pdfBodyCell(PriceUtils.formatQuantity(item.cantidad)),
+                    _pdfBodyCell('\$${item.displayPrice.toStringAsFixed(2)}'),
+                    _pdfBodyCell('\$${item.subtotal.toStringAsFixed(2)}', isBold: true),
+                  ]),
+                ];
+                final ingredientes = ingredientsByProduct[item.producto.id] ?? item.ingredientes;
+                if (ingredientes != null && ingredientes.isNotEmpty) {
+                  rows.add(pw.TableRow(children: [
+                    _pdfBodyCell('    Aditamentos', isBold: true, isIngredient: true),
+                    _pdfBodyCell('', isIngredient: true),
+                    _pdfBodyCell('', isIngredient: true),
+                    _pdfBodyCell('', isIngredient: true),
+                  ]));
+                  rows.addAll(ingredientes.map<pw.TableRow>((ingrediente) {
+                    final nombreIngrediente = (ingrediente['nombre_ingrediente'] ?? 'Ingrediente').toString();
+                    final double cantidadBase = (ingrediente['cantidad_necesaria'] ?? ingrediente['cantidad_vendida'] ?? 0) is num
+                        ? (ingrediente['cantidad_necesaria'] ?? ingrediente['cantidad_vendida']).toDouble()
+                        : 0;
+                    final unidad = (ingrediente['unidad_medida'] ?? 'unid').toString();
+                    final double cantidadTotal = (ingrediente['cantidad_vendida'] is num)
+                        ? (ingrediente['cantidad_vendida'] as num).toDouble()
+                        : (cantidadBase * item.cantidad);
+                    return pw.TableRow(children: [
+                      _pdfBodyCell('    $nombreIngrediente', isIngredient: true),
+                      _pdfBodyCell('${cantidadTotal.toStringAsFixed(2)} $unidad', isIngredient: true),
+                      _pdfBodyCell('', isIngredient: true),
+                      _pdfBodyCell('', isIngredient: true),
+                    ]);
+                  }));
+                }
+                return rows;
+              }),
+            ],
+          ),
+          pw.SizedBox(height: 18),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: PdfColor.fromHex('#F1F5F9'),
+              borderRadius: pw.BorderRadius.circular(12),
+              border: pw.Border.all(color: PdfColors.grey300, width: 1),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    _pdfSummaryLabel('Total sin descuento'),
+                    _pdfSummaryValue('\$${originalTotal.toStringAsFixed(2)}'),
+                  ],
+                ),
+                if (hasDiscount) ...[  
+                  pw.SizedBox(height: 4),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      _pdfSummaryLabel(discountLabel.isNotEmpty ? discountLabel : 'Descuento aplicado'),
+                      _pdfSummaryValue('- \$${saved.toStringAsFixed(2)}', color: PdfColor.fromHex('#DC2626')),
+                    ],
+                  ),
+                ],
+                pw.Divider(color: PdfColors.grey400, height: 14, thickness: 0.6),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    _pdfSummaryLabel('Total a pagar', fontSize: 13, isBold: true),
+                    _pdfSummaryValue('\$${finalTotal.toStringAsFixed(2)}', fontSize: 14, isBold: true, color: PdfColor.fromHex('#0F172A')),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 16),
+          pw.Text('Gracias por su compra.', style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
+        ],
+      ),
+    );
+    return pdf;
   }
 
   pw.Widget _pdfHeaderCell(String text) {
@@ -4744,9 +4969,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   void _onBottomNavTap(int index) {
     switch (index) {
-      case 0: // Home
-        // Usar pushNamed en lugar de pushNamedAndRemoveUntil para mantener la persistencia
-        Navigator.pushNamed(context, '/categories');
+      case 0: // Home → /mesas si modo restaurante, /categories si no
+        NavigationHelper.goHome(context, removeStack: false);
         break;
       case 1: // Preorden
         Navigator.pushNamed(context, '/preorder');
@@ -5058,6 +5282,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
             onOrderUpdated: _loadOrdersFromSupabase,
             isOfflineMode: _isOfflineMode,
             showSkuEnabled: _isShowSkuEnabled,
+            usdRate: _usdRate,
+            defaultOrderItems: _defaultOrderItems,
             pendingOrders: _orderService.orders
                 .where((o) => o.status == OrderStatus.enviada)
                 .toList(),
@@ -5225,6 +5451,8 @@ class _EditPendingOrderSheet extends StatefulWidget {
   final bool isOfflineMode;
   final List<Order> pendingOrders;
   final bool showSkuEnabled;
+  final double usdRate;
+  final List<Map<String, dynamic>> defaultOrderItems;
 
   const _EditPendingOrderSheet({
     required this.order,
@@ -5234,6 +5462,8 @@ class _EditPendingOrderSheet extends StatefulWidget {
     required this.isOfflineMode,
     required this.pendingOrders,
     this.showSkuEnabled = false,
+    this.usdRate = 0.0,
+    this.defaultOrderItems = const [],
   });
 
   @override
@@ -5302,8 +5532,37 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
     super.initState();
     _activeOrder = widget.order;
     _items = List.from(widget.order.items);
+    _mergeGhostDefaultItems();
     _recalcTotal();
   }
+
+  /// Agrega al listado local los productos por defecto que NO están en la orden
+  /// (o que tienen cantidad 0), como ítems "fantasma" con id ITEM-DEFAULT-*.
+  void _mergeGhostDefaultItems() {
+    for (final entry in widget.defaultOrderItems) {
+      try {
+        final product = Product.fromJson(
+            entry['product'] as Map<String, dynamic>);
+        final defaultCantidad = (entry['cantidad'] as num).toDouble();
+        final alreadyInOrder = _items.any(
+          (i) => i.producto.id == product.id && i.cantidad > 0,
+        );
+        if (!alreadyInOrder) {
+          _items.add(OrderItem(
+            id: 'ITEM-DEFAULT-${product.id}',
+            producto: product,
+            cantidad: defaultCantidad,
+            precioUnitario: product.precio,
+            precioBase: product.precio,
+            ubicacionAlmacen: 'Por defecto',
+          ));
+        }
+      } catch (_) {}
+    }
+  }
+
+  bool _isGhostItem(OrderItem item) =>
+      item.id.startsWith('ITEM-DEFAULT-');
 
   @override
   void dispose() {
@@ -5330,7 +5589,12 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
   // ── operaciones locales (sin tocar Supabase) ──────────────────
 
   void _updateQtyLocal(OrderItem item, double delta) {
-    final newQty = item.cantidad + delta;
+    _setQtyLocal(item, item.cantidad + delta);
+  }
+
+  void _setQtyLocal(OrderItem item, double newQty) {
+    // Ghost items cannot be qty-edited directly — user must go through catalog
+    if (_isGhostItem(item)) return;
     if (newQty <= 0) {
       _removeItemLocal(item);
       return;
@@ -5359,11 +5623,29 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
             'nueva_cantidad': newQty,
           });
         }
+      } else {
+        // Item nuevo aún no guardado: mantener sincronizada la operación 'add'
+        final opIdx = _pendingOps.indexWhere(
+          (o) => o['op'] == 'add' && o['item_id'] == item.id,
+        );
+        if (opIdx != -1) {
+          _pendingOps[opIdx]['payload']['cantidad'] = newQty;
+        }
       }
     });
   }
 
+  void _setAddQuantity(double quantity) {
+    if (quantity <= 0) return;
+    setState(() => _addQuantity = quantity.clamp(1, 9999).toDouble());
+  }
+
   void _removeItemLocal(OrderItem item) {
+    // Ghost items: just remove from local list, no pending op needed
+    if (_isGhostItem(item)) {
+      setState(() => _items.removeWhere((i) => i.id == item.id));
+      return;
+    }
     setState(() {
       // Quitar cualquier op previa para este item
       final extrId = _extractionId(item);
@@ -5421,6 +5703,11 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
     });
 
     setState(() {
+      // Remove ghost placeholder for this product (if any)
+      _items.removeWhere(
+        (i) => _isGhostItem(i) && i.producto.id == product.id,
+      );
+
       if (existIdx != -1) {
         // Producto ya existe → sumar cantidad localmente
         final existing = _items[existIdx];
@@ -6446,6 +6733,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
 
   Widget _buildItemTile(OrderItem item) {
     final isNew = item.id.startsWith('ITEM-NEW-');
+    final isGhost = _isGhostItem(item);
     // Detectar si la cantidad fue modificada respecto al original
     final origItem = widget.order.items
         .where((i) => i.producto.id == item.producto.id)
@@ -6453,7 +6741,9 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
     final wasModified =
         origItem != null && origItem.cantidad != item.cantidad && !isNew;
 
-    return Padding(
+    return Opacity(
+      opacity: isGhost ? 0.55 : 1.0,
+      child: Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -6468,13 +6758,37 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                     Expanded(
                       child: Text(
                         item.nombre,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
+                          color: isGhost
+                              ? Colors.grey[500]
+                              : const Color(0xFF1F2937),
                         ),
                       ),
                     ),
+                    if (isGhost)
+                      Container(
+                        margin: const EdgeInsets.only(left: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                              color: Colors.grey.withOpacity(0.3)),
+                        ),
+                        child: const Text(
+                          'NO INCLUIDO',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
                     if (isNew)
                       Container(
                         margin: const EdgeInsets.only(left: 6),
@@ -6518,15 +6832,76 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                   ],
                 ),
                 const SizedBox(height: 2),
+                if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+                    item.producto.sku != null &&
+                    item.producto.sku!.isNotEmpty)
+                  Text(
+                    'SKU: ${item.producto.sku}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF0EA5E9),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+                    item.producto.descripcion != null &&
+                    item.producto.descripcion!.isNotEmpty)
+                  Text(
+                    item.producto.descripcion!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                  ),
                 Text(
                   '\$${item.precioUnitario.toStringAsFixed(2)} c/u · Total: \$${item.subtotal.toStringAsFixed(2)}',
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
+                if (widget.usdRate > 0)
+                  Text(
+                    'USD ${(item.subtotal / widget.usdRate).toStringAsFixed(2)} · ${(item.precioUnitario / widget.usdRate).toStringAsFixed(2)} c/u',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                  ),
               ],
             ),
           ),
           const SizedBox(width: 8),
-          // Controles cantidad
+          // Controles cantidad — ghost items get an "Agregar" button instead
+          if (isGhost)
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _isSaving
+                      ? null
+                      : () async {
+                          final product = item.producto;
+                          await _startAddProduct();
+                          await _selectProduct(product);
+                        },
+                  icon: const Icon(Icons.add, size: 14),
+                  label: const Text('Agregar',
+                      style: TextStyle(fontSize: 12)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0EA5E9),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6)),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                GestureDetector(
+                  onTap: () => _removeItemLocal(item),
+                  child: Text('Ocultar',
+                      style: TextStyle(
+                          fontSize: 10, color: Colors.grey[400])),
+                ),
+              ],
+            )
+          else
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -6544,21 +6919,15 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                 enabled: !_isSaving,
                 onTap: () => _updateQtyLocal(item, -1),
               ),
-              Container(
-                constraints: const BoxConstraints(minWidth: 36),
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  item.cantidad % 1 == 0
-                      ? item.cantidad.toInt().toString()
-                      : item.cantidad.toStringAsFixed(1),
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1F2937),
-                  ),
-                ),
+              const SizedBox(width: 6),
+              _QuantityTextField(
+                value: item.cantidad,
+                enabled: !_isSaving,
+                width: 64,
+                fontSize: 15,
+                onChanged: (value) => _setQtyLocal(item, value),
               ),
+              const SizedBox(width: 6),
               _CtrlButton(
                 icon: Icons.add,
                 color: const Color(0xFF0EA5E9),
@@ -6569,7 +6938,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   // ── flujo añadir producto ─────────────────────────────────────
@@ -6722,7 +7091,9 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                     fontSize: 11,
                   ),
                 ),
-              if (p.descripcion != null && p.descripcion!.isNotEmpty)
+              if (showSkuSetting &&
+                  p.descripcion != null &&
+                  p.descripcion!.isNotEmpty)
                 Text(
                   p.descripcion!,
                   maxLines: 1,
@@ -6851,12 +7222,41 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    subtitle: Text(
-                      '\$${p.precio.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        color: Color(0xFF0EA5E9),
-                        fontWeight: FontWeight.w600,
-                      ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+                            p.sku != null &&
+                            p.sku!.isNotEmpty)
+                          Text(
+                            'SKU: ${p.sku}',
+                            style: const TextStyle(
+                              color: Color(0xFF0EA5E9),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 11,
+                            ),
+                          ),
+                        if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+                            p.descripcion != null &&
+                            p.descripcion!.isNotEmpty)
+                          Text(
+                            p.descripcion!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[500],
+                            ),
+                          ),
+                        Text(
+                          '\$${p.precio.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: Color(0xFF0EA5E9),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => _selectProduct(p),
@@ -6889,14 +7289,55 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
               color: Color(0xFF1F2937),
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            '\$${product.precio.toStringAsFixed(2)}',
-            style: const TextStyle(
-              fontSize: 16,
-              color: Color(0xFF0EA5E9),
-              fontWeight: FontWeight.w600,
+          if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+              product.sku != null &&
+              product.sku!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'SKU: ${product.sku}',
+              style: const TextStyle(
+                fontSize: 13,
+                color: Color(0xFF0EA5E9),
+                fontWeight: FontWeight.w500,
+              ),
             ),
+          ],
+          if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+              product.descripcion != null &&
+              product.descripcion!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              product.descripcion!,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Text(
+                '\$${product.precio.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Color(0xFF0EA5E9),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (widget.usdRate > 0) ...[
+                const SizedBox(width: 8),
+                Text(
+                  '/ USD ${(product.precio / widget.usdRate).toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[400],
+                  ),
+                ),
+              ],
+            ],
           ),
           const SizedBox(height: 20),
 
@@ -7023,26 +7464,22 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                   icon: Icons.remove,
                   color: const Color(0xFF6B7280),
                   enabled: _addQuantity > 1,
-                  onTap:
-                      () => setState(
-                        () => _addQuantity = (_addQuantity - 1).clamp(1, 9999),
-                      ),
+                  onTap: () => _setAddQuantity(_addQuantity - 1),
                 ),
-                const SizedBox(width: 16),
-                Text(
-                  _addQuantity.toInt().toString(),
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1F2937),
-                  ),
+                const SizedBox(width: 12),
+                _QuantityTextField(
+                  value: _addQuantity,
+                  enabled: true,
+                  width: 86,
+                  fontSize: 18,
+                  onChanged: _setAddQuantity,
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 _CtrlButton(
                   icon: Icons.add,
                   color: const Color(0xFF0EA5E9),
                   enabled: true,
-                  onTap: () => setState(() => _addQuantity++),
+                  onTap: () => _setAddQuantity(_addQuantity + 1),
                 ),
               ],
             ),
@@ -7191,7 +7628,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                           Row(
                             children: [
                               Text(
-                                '${_addQuantity.toInt()} × \$${precioFinal.toStringAsFixed(2)}',
+                                '${PriceUtils.formatQuantity(_addQuantity)} × \$${precioFinal.toStringAsFixed(2)}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -7286,6 +7723,141 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+// Campo compacto para capturar cantidades manuales sin perder los botones +/-.
+class _QuantityTextField extends StatefulWidget {
+  final double value;
+  final bool enabled;
+  final ValueChanged<double> onChanged;
+  final double width;
+  final double fontSize;
+
+  const _QuantityTextField({
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+    this.width = 64,
+    this.fontSize = 15,
+  });
+
+  @override
+  State<_QuantityTextField> createState() => _QuantityTextFieldState();
+}
+
+class _QuantityTextFieldState extends State<_QuantityTextField> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+
+  String _formatQuantity(double value) {
+    if (value % 1 == 0) return value.toInt().toString();
+    return value
+        .toStringAsFixed(3)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: _formatQuantity(widget.value));
+    _focusNode = FocusNode()..addListener(_handleFocusChange);
+  }
+
+  @override
+  void didUpdateWidget(covariant _QuantityTextField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_focusNode.hasFocus && oldWidget.value != widget.value) {
+      _controller.text = _formatQuantity(widget.value);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_handleFocusChange);
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChange() {
+    if (_focusNode.hasFocus) {
+      _controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _controller.text.length,
+      );
+      return;
+    }
+    _commitValue();
+  }
+
+  void _commitValue() {
+    final normalized = _controller.text.trim().replaceAll(',', '.');
+    final parsed = double.tryParse(normalized);
+    if (parsed == null || parsed <= 0) {
+      _controller.text = _formatQuantity(widget.value);
+      return;
+    }
+
+    final nextValue = parsed.clamp(0.01, 9999).toDouble();
+    _controller.text = _formatQuantity(nextValue);
+    widget.onChanged(nextValue);
+  }
+
+  void _emitLiveValue(String value) {
+    final parsed = double.tryParse(value.trim().replaceAll(',', '.'));
+    if (parsed == null || parsed <= 0) return;
+
+    final nextValue = parsed.clamp(0.01, 9999).toDouble();
+    widget.onChanged(nextValue);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: widget.width,
+      height: 36,
+      child: TextField(
+        controller: _controller,
+        focusNode: _focusNode,
+        enabled: widget.enabled,
+        textAlign: TextAlign.center,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textInputAction: TextInputAction.done,
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
+        ],
+        style: TextStyle(
+          fontSize: widget.fontSize,
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF1F2937),
+        ),
+        decoration: InputDecoration(
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 6,
+            vertical: 8,
+          ),
+          filled: true,
+          fillColor: widget.enabled ? Colors.white : Colors.grey[100],
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.grey[300]!),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.grey[300]!),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFF0EA5E9), width: 1.4),
+          ),
+        ),
+        onSubmitted: (_) => _commitValue(),
+        onChanged: _emitLiveValue,
       ),
     );
   }

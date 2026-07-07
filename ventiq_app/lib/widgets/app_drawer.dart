@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'dart:convert';
 import '../services/auth_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/store_config_service.dart';
 
 class AppDrawer extends StatefulWidget {
   const AppDrawer({Key? key}) : super(key: key);
@@ -16,12 +17,44 @@ class _AppDrawerState extends State<AppDrawer> {
   String _userEmail = '';
   bool _isLoading = true;
   String _appVersion = 'Cargando...';
+  bool _modoRestaurante = false;
+  bool _isSuperAdmin = false;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
     _loadAppVersion();
+    _loadModoRestaurante();
+    _loadSuperAdminFlag();
+  }
+
+  /// Carga el flag de superadmin (cacheado en login). Controla la visibilidad
+  /// de la entrada oculta "Datos Offline". Funciona también offline.
+  Future<void> _loadSuperAdminFlag() async {
+    try {
+      final value = await UserPreferencesService().isSuperAdmin();
+      if (mounted && value != _isSuperAdmin) {
+        setState(() => _isSuperAdmin = value);
+      }
+    } catch (e) {
+      print('❌ Error cargando flag superadmin en drawer: $e');
+    }
+  }
+
+  /// Carga el flag modo_restaurante desde el cache de StoreConfig.
+  /// Se ejecuta en paralelo con los demás loads — el primer render del drawer
+  /// es con modo=false, pero el rebuild llega muy rápido y la entrada aparece.
+  Future<void> _loadModoRestaurante() async {
+    try {
+      final config = await StoreConfigService.getStoreConfigFromCache();
+      final value = config?['modo_restaurante'] ?? false;
+      if (mounted && value != _modoRestaurante) {
+        setState(() => _modoRestaurante = value);
+      }
+    } catch (e) {
+      print('❌ Error cargando modo_restaurante en drawer: $e');
+    }
   }
 
   /// Cargar versión de la app desde changelog.json
@@ -203,10 +236,33 @@ class _AppDrawerState extends State<AppDrawer> {
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
+                // Modo restaurante: el item de mesas va primero como entrada
+                // principal de la operación. La "Venta de Productos" se
+                // mantiene debajo (útil para venta de mostrador puntual).
+                if (_modoRestaurante) ...[
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.table_restaurant,
+                    title: 'Mesas y Comensales',
+                    subtitle: 'Gestionar mesas y cuentas abiertas',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamedAndRemoveUntil(
+                        context,
+                        '/mesas',
+                        (route) => false,
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
+                ],
+
                 _buildDrawerItem(
                   context,
                   icon: Icons.shopping_cart,
-                  title: 'Venta de Productos',
+                  title: _modoRestaurante
+                      ? 'Venta de Mostrador'
+                      : 'Venta de Productos',
                   subtitle: 'Ir al catálogo de productos',
                   onTap: () {
                     Navigator.pop(context);
@@ -278,6 +334,22 @@ class _AppDrawerState extends State<AppDrawer> {
                   },
                 ),
                 const Divider(height: 1),
+
+                // Entrada oculta: solo visible para superadmins. Diagnóstico de
+                // los datos guardados para trabajar offline.
+                if (_isSuperAdmin) ...[
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.storage,
+                    title: 'Datos Offline',
+                    subtitle: 'Ver datos guardados sin conexión',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/offline-data-viewer');
+                    },
+                  ),
+                  const Divider(height: 1),
+                ],
 
                 _buildDrawerItem(
                   context,

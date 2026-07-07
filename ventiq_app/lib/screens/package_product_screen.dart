@@ -1,8 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import '../utils/package_image_picker.dart' as web_picker;
 import '../models/payment_method.dart' as pm;
 import '../models/product.dart';
+import '../services/currency_service.dart';
 import '../services/geonames_service.dart';
 import '../services/paqueteria_service.dart';
 import '../services/payment_method_service.dart';
@@ -36,13 +39,15 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   final UserPreferencesService _userPreferences = UserPreferencesService();
   final PaqueteriaService _paqueteriaService = PaqueteriaService();
 
-  int _quantity = 1;
+  double _quantity = 1.0;
+  final TextEditingController _quantityCtrl = TextEditingController(text: '1');
   bool _isLoading = true;
   bool _checkingShift = true;
   bool _hasOpenShift = false;
   Product? _detailedProduct;
 
   double _unitPrice = 0;
+  double _usdRate = 0.0;
 
   // Datos crudos de promociones (igual que product_details_screen / preorder)
   List<Map<String, dynamic>>? _productPromotions;
@@ -64,7 +69,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   String? _metodoPago; // 'Efectivo' | 'Transferencia'
   Uint8List? _packagePhotoBytes;
   String? _packagePhotoName;
+  String? _packagePhotoMime;
+  // Fotos adicionales del paquete (además de la principal).
+  final List<({Uint8List bytes, String name, String? mime})> _packageExtraPhotos = [];
   final ImagePicker _imagePicker = ImagePicker();
+  bool _loadingPackageNumber = false;
 
   bool _isSubmitting = false;
 
@@ -101,8 +110,35 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   void initState() {
     super.initState();
     _unitPrice = widget.product.precio;
+    _loadPackageNumber();
     _checkOpenShift();
     _loadData();
+  }
+
+  /// Obtiene el siguiente número correlativo del mes para la tienda actual.
+  /// Reinicia a 1 cada mes (RPC `fn_get_next_numero_paquete`).
+  /// IMPORTANTE: el RPC incrementa el contador en cada llamada, así que solo
+  /// debe invocarse cuando realmente vamos a reservar un número (init y botón
+  /// de refrescar).
+  Future<void> _loadPackageNumber() async {
+    if (_loadingPackageNumber) return;
+    setState(() => _loadingPackageNumber = true);
+    try {
+      final idTienda = await _userPreferences.getIdTienda();
+      String? code;
+      if (idTienda != null) {
+        code = await _paqueteriaService.getNextNumeroPaquete(idTienda);
+      }
+      if (!mounted) return;
+      setState(() {
+        _numeroPaqueteCtrl.text = code ?? '';
+        _loadingPackageNumber = false;
+      });
+    } catch (e) {
+      debugPrint('❌ Error cargando numero de paquete: $e');
+      if (!mounted) return;
+      setState(() => _loadingPackageNumber = false);
+    }
   }
 
   Future<void> _checkOpenShift() async {
@@ -172,28 +208,36 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     _dNombreCtrl.dispose();
     _numeroPaqueteCtrl.dispose();
     _descPaqueteCtrl.dispose();
+    _quantityCtrl.dispose();
     super.dispose();
   }
 
   // ───────────────── GEONAMES (REMITENTE) ─────────────────
 
   Future<void> _loadSenderCountries() async {
+    print('🌍 [GEO] → Solicitando países a GeoNames...');
     setState(() => _sLoadingCountries = true);
     try {
       final countries = await GeonamesService.getCountries();
+      print('🌍 [GEO] ✓ Países recibidos: ${countries.length}');
+      if (countries.isNotEmpty) {
+        print('🌍 [GEO]   primer país: ${countries.first}');
+      }
       if (!mounted) return;
       setState(() {
         _sCountries = countries;
         _sLoadingCountries = false;
       });
-    } catch (e) {
-      debugPrint('❌ Error cargando países (remitente): $e');
+    } catch (e, st) {
+      print('❌ [GEO] Error cargando países: $e');
+      print('❌ [GEO] Stack: $st');
       if (!mounted) return;
       setState(() => _sLoadingCountries = false);
     }
   }
 
   Future<void> _loadSenderStates(String countryCode) async {
+    print('🗺️ [GEO] → Solicitando estados (remitente) para countryCode=$countryCode');
     setState(() {
       _sLoadingStates = true;
       _sStates = [];
@@ -203,19 +247,25 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     });
     try {
       final states = await GeonamesService.getStates(countryCode);
+      print('🗺️ [GEO] ✓ Estados recibidos (remitente): ${states.length}');
+      if (states.isNotEmpty) {
+        print('🗺️ [GEO]   primer estado: ${states.first}');
+      }
       if (!mounted) return;
       setState(() {
         _sStates = states;
         _sLoadingStates = false;
       });
-    } catch (e) {
-      debugPrint('❌ Error cargando estados (remitente): $e');
+    } catch (e, st) {
+      print('❌ [GEO] Error cargando estados (remitente): $e');
+      print('❌ [GEO] Stack: $st');
       if (!mounted) return;
       setState(() => _sLoadingStates = false);
     }
   }
 
   Future<void> _loadSenderCities(String countryCode, String adminCode) async {
+    print('🏙️ [GEO] → Solicitando ciudades (remitente) country=$countryCode admin=$adminCode');
     setState(() {
       _sLoadingCities = true;
       _sCities = [];
@@ -223,13 +273,18 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     });
     try {
       final cities = await GeonamesService.getCities(countryCode, adminCode);
+      print('🏙️ [GEO] ✓ Ciudades recibidas (remitente): ${cities.length}');
+      if (cities.isNotEmpty) {
+        print('🏙️ [GEO]   primera ciudad: ${cities.first}');
+      }
       if (!mounted) return;
       setState(() {
         _sCities = cities;
         _sLoadingCities = false;
       });
-    } catch (e) {
-      debugPrint('❌ Error cargando ciudades (remitente): $e');
+    } catch (e, st) {
+      print('❌ [GEO] Error cargando ciudades (remitente): $e');
+      print('❌ [GEO] Stack: $st');
       if (!mounted) return;
       setState(() => _sLoadingCities = false);
     }
@@ -238,6 +293,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   // ───────────────── GEONAMES (DESTINATARIO) ─────────────────
 
   Future<void> _loadReceiverStates(String countryCode) async {
+    print('🗺️ [GEO] → Solicitando estados (destinatario) para countryCode=$countryCode');
     setState(() {
       _dLoadingStates = true;
       _dStates = [];
@@ -247,19 +303,25 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     });
     try {
       final states = await GeonamesService.getStates(countryCode);
+      print('🗺️ [GEO] ✓ Estados recibidos (destinatario): ${states.length}');
+      if (states.isNotEmpty) {
+        print('🗺️ [GEO]   primer estado: ${states.first}');
+      }
       if (!mounted) return;
       setState(() {
         _dStates = states;
         _dLoadingStates = false;
       });
-    } catch (e) {
-      debugPrint('❌ Error cargando estados (destinatario): $e');
+    } catch (e, st) {
+      print('❌ [GEO] Error cargando estados (destinatario): $e');
+      print('❌ [GEO] Stack: $st');
       if (!mounted) return;
       setState(() => _dLoadingStates = false);
     }
   }
 
   Future<void> _loadReceiverCities(String countryCode, String adminCode) async {
+    print('🏙️ [GEO] → Solicitando ciudades (destinatario) country=$countryCode admin=$adminCode');
     setState(() {
       _dLoadingCities = true;
       _dCities = [];
@@ -267,13 +329,18 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     });
     try {
       final cities = await GeonamesService.getCities(countryCode, adminCode);
+      print('🏙️ [GEO] ✓ Ciudades recibidas (destinatario): ${cities.length}');
+      if (cities.isNotEmpty) {
+        print('🏙️ [GEO]   primera ciudad: ${cities.first}');
+      }
       if (!mounted) return;
       setState(() {
         _dCities = cities;
         _dLoadingCities = false;
       });
-    } catch (e) {
-      debugPrint('❌ Error cargando ciudades (destinatario): $e');
+    } catch (e, st) {
+      print('❌ [GEO] Error cargando ciudades (destinatario): $e');
+      print('❌ [GEO] Stack: $st');
       if (!mounted) return;
       setState(() => _dLoadingCities = false);
     }
@@ -285,11 +352,27 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       // Tanto remitente como destinatario usan el mismo catálogo de países.
       final countriesFuture = _loadSenderCountries();
 
-      final detailed = await _productDetailService.getProductDetail(
-        widget.product.id,
-      );
-      _detailedProduct = detailed;
-      if (detailed.precio > 0) _unitPrice = detailed.precio;
+      // Cargar tasa USD en paralelo
+      try {
+        _usdRate = await CurrencyService.getUsdRate();
+      } catch (e) {
+        debugPrint('⚠️ Error cargando tasa USD: $e');
+        _usdRate = 420.0;
+      }
+
+      // En modo offline puede no haber detalles completos del producto; caer al
+      // producto básico en vez de romper la carga.
+      try {
+        final detailed = await _productDetailService.getProductDetail(
+          widget.product.id,
+        );
+        _detailedProduct = detailed;
+        if (detailed.precio > 0) _unitPrice = detailed.precio;
+      } catch (e) {
+        debugPrint('⚠️ Sin detalles completos, usando producto básico: $e');
+        _detailedProduct = widget.product;
+        if (widget.product.precio > 0) _unitPrice = widget.product.precio;
+      }
 
       await countriesFuture;
 
@@ -365,18 +448,19 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
 
     // Si aún no se eligió método de pago, usar la promo "para display"
     // (sin filtrar por medio de pago) para mostrar el descuento potencial.
+    final qtyInt = _quantity.ceil();
     final promo =
         paymentId == null
             ? PromotionRules.pickPromotionForDisplay(
               productPromotions: _productPromotions,
               globalPromotion: _globalPromotion,
-              quantity: _quantity,
+              quantity: qtyInt,
             )
             : PromotionRules.pickPromotionForPayment(
               productPromotions: _productPromotions,
               globalPromotion: _globalPromotion,
               paymentMethodId: paymentId,
-              quantity: _quantity,
+              quantity: qtyInt,
             );
 
     if (promo == null) {
@@ -704,8 +788,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   void _onSiguienteFromDetail() {
     final missing = <String>[];
     if (_numeroPaqueteCtrl.text.trim().isEmpty) {
+      // No bloqueamos: intentamos refrescar el correlativo en segundo plano.
+      _loadPackageNumber();
       missing.add('número de paquete');
     }
+    if (_quantity <= 0) missing.add('cantidad de libras');
     if (_descPaqueteCtrl.text.trim().isEmpty) missing.add('descripción');
     if (_metodoPago == null) missing.add('método de pago');
 
@@ -757,11 +844,27 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           const SizedBox(height: 10),
           TextField(
             controller: _numeroPaqueteCtrl,
+            readOnly: true,
             style: const TextStyle(fontSize: 13),
             decoration: InputDecoration(
-              labelText: 'Número de paquete',
+              labelText: 'Número de paquete (correlativo del mes)',
+              hintText: 'P-001',
               labelStyle: const TextStyle(fontSize: 13),
               prefixIcon: const Icon(Icons.tag, size: 18),
+              suffixIcon: _loadingPackageNumber
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.refresh, size: 18),
+                      tooltip: 'Obtener nuevo correlativo',
+                      onPressed: _loadPackageNumber,
+                    ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -800,96 +903,184 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   }
 
   Widget _buildPhotoPicker() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
-          onTap: _pickPackagePhoto,
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            InkWell(
+              onTap: () => _pickPackagePhoto(isExtra: false),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child:
-                _packagePhotoBytes != null
-                    ? Image.memory(_packagePhotoBytes!, fit: BoxFit.cover)
-                    : Icon(
-                      Icons.add_a_photo_outlined,
-                      color: Colors.grey.shade500,
-                      size: 22,
-                    ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Foto (opcional)',
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+              child: Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _pickPackagePhoto,
-                      icon: const Icon(Icons.add_a_photo_outlined, size: 14),
-                      label: Text(
-                        _packagePhotoBytes == null ? 'Elegir' : 'Cambiar',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _primary,
-                        side: const BorderSide(color: _primary),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 6,
+                clipBehavior: Clip.antiAlias,
+                child:
+                    _packagePhotoBytes != null
+                        ? Image.memory(_packagePhotoBytes!, fit: BoxFit.cover)
+                        : Icon(
+                          Icons.add_a_photo_outlined,
+                          color: Colors.grey.shade500,
+                          size: 22,
                         ),
-                        minimumSize: const Size(0, 32),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Foto principal (opcional)',
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (_packagePhotoBytes != null) ...[
-                    const SizedBox(width: 4),
-                    InkWell(
-                      onTap:
-                          () => setState(() {
-                            _packagePhotoBytes = null;
-                            _packagePhotoName = null;
-                          }),
-                      borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: Icon(
-                          Icons.close,
-                          size: 18,
-                          color: Colors.red.shade600,
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _pickPackagePhoto(isExtra: false),
+                          icon: const Icon(
+                            Icons.add_a_photo_outlined,
+                            size: 14,
+                          ),
+                          label: Text(
+                            _packagePhotoBytes == null ? 'Elegir' : 'Cambiar',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _primary,
+                            side: const BorderSide(color: _primary),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 6,
+                            ),
+                            minimumSize: const Size(0, 32),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ),
+                      if (_packagePhotoBytes != null) ...[
+                        const SizedBox(width: 4),
+                        InkWell(
+                          onTap:
+                              () => setState(() {
+                                _packagePhotoBytes = null;
+                                _packagePhotoName = null;
+                                _packagePhotoMime = null;
+                              }),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: Icon(
+                              Icons.close,
+                              size: 18,
+                              color: Colors.red.shade600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Text(
+              'Fotos adicionales (${_packageExtraPhotos.length})',
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            OutlinedButton.icon(
+              onPressed: () => _pickPackagePhoto(isExtra: true),
+              icon: const Icon(Icons.add_photo_alternate_outlined, size: 14),
+              label: const Text('Agregar', style: TextStyle(fontSize: 12)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _primary,
+                side: const BorderSide(color: _primary),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 6,
+                ),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ],
+        ),
+        if (_packageExtraPhotos.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 64,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _packageExtraPhotos.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              itemBuilder: (ctx, i) {
+                final photo = _packageExtraPhotos[i];
+                return Stack(
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Image.memory(photo.bytes, fit: BoxFit.cover),
+                    ),
+                    Positioned(
+                      top: -4,
+                      right: -4,
+                      child: InkWell(
+                        onTap:
+                            () => setState(
+                              () => _packageExtraPhotos.removeAt(i),
+                            ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade600,
+                            shape: BoxShape.circle,
+                          ),
+                          padding: const EdgeInsets.all(2),
+                          child: const Icon(
+                            Icons.close,
+                            size: 14,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
                   ],
-                ],
-              ),
-            ],
+                );
+              },
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
 
-  Future<void> _pickPackagePhoto() async {
+  Future<void> _pickPackagePhoto({bool isExtra = false}) async {
     final ImageSource? source = await showModalBottomSheet<ImageSource>(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -928,16 +1119,47 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     if (source == null) return;
 
     try {
-      final XFile? picked = await _imagePicker.pickImage(
-        source: source,
-        imageQuality: 80,
-        maxWidth: 1400,
-      );
-      if (picked == null) return;
-      final bytes = await picked.readAsBytes();
+      Uint8List? bytes;
+      String? name;
+      String? mime;
+
+      if (kIsWeb) {
+        // En Web image_picker_web sufre del bug "Could not load Blob from
+        // its URL. Has it been revoked?". Usamos nuestro picker propio
+        // basado en <input type=file>, que además permite capture=camera
+        // en navegadores móviles (Chrome Android / Safari iOS) y dispara
+        // automáticamente el prompt de permiso de cámara del navegador.
+        final picked = await web_picker.pickImageWeb(
+          useCamera: source == ImageSource.camera,
+        );
+        if (picked == null) return;
+        bytes = picked.bytes;
+        name = picked.name;
+        mime = picked.mimeType;
+      } else {
+        final XFile? picked = await _imagePicker.pickImage(
+          source: source,
+          imageQuality: 80,
+          maxWidth: 1400,
+        );
+        if (picked == null) return;
+        bytes = await picked.readAsBytes();
+        name = picked.name;
+        mime = picked.mimeType;
+      }
+
+      if (bytes == null || bytes.isEmpty) return;
+
       setState(() {
-        _packagePhotoBytes = bytes;
-        _packagePhotoName = picked.name;
+        if (isExtra) {
+          _packageExtraPhotos.add(
+            (bytes: bytes!, name: name ?? 'paquete.jpg', mime: mime),
+          );
+        } else {
+          _packagePhotoBytes = bytes;
+          _packagePhotoName = name ?? 'paquete.jpg';
+          _packagePhotoMime = mime;
+        }
       });
     } catch (e) {
       debugPrint('❌ Error eligiendo foto: $e');
@@ -1141,9 +1363,22 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     );
   }
 
+  String _toUsd(double cup) {
+    if (_usdRate <= 0) return '';
+    final usd = cup / _usdRate;
+    return 'USD \$${usd.toStringAsFixed(2)}';
+  }
+
+  double _usdValue(double cup) {
+    if (_usdRate <= 0) return 0;
+    return cup / _usdRate;
+  }
+
   Widget _buildPriceCard() {
+    final effectiveUsd = _usdValue(_effectiveUnitPrice);
+    final baseUsd = _usdValue(_unitPrice);
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -1152,42 +1387,55 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(7),
+            padding: const EdgeInsets.all(9),
             decoration: BoxDecoration(
-              color: _primary.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(8),
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.sell_outlined, color: _primary, size: 18),
+            child: Icon(
+              Icons.attach_money_rounded,
+              color: Colors.green.shade700,
+              size: 22,
+            ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Precio unitario',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+                  'Precio unitario (USD)',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                 ),
-                const SizedBox(height: 2),
-                if (_hasDiscount)
+                const SizedBox(height: 4),
+                if (_usdRate <= 0)
+                  Text(
+                    'Cargando tasa...',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 14,
+                    ),
+                  )
+                else if (_hasDiscount)
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '\$${_discountedPrice!.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 19,
+                        '\$${effectiveUsd.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 32,
                           fontWeight: FontWeight.bold,
-                          color: _primary,
+                          color: Colors.green.shade700,
+                          height: 1,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 3),
+                        padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
-                          '\$${_unitPrice.toStringAsFixed(2)}',
+                          '\$${baseUsd.toStringAsFixed(2)}',
                           style: const TextStyle(
-                            fontSize: 12,
+                            fontSize: 14,
                             color: Colors.grey,
                             decoration: TextDecoration.lineThrough,
                           ),
@@ -1200,19 +1448,21 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '\$${_discountedPrice!.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 19,
+                        '\$${effectiveUsd.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 32,
                           fontWeight: FontWeight.bold,
+                          color: Colors.green.shade700,
+                          height: 1,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 3),
+                        padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
-                          'base \$${_unitPrice.toStringAsFixed(2)}',
+                          'base \$${baseUsd.toStringAsFixed(2)}',
                           style: const TextStyle(
-                            fontSize: 11,
+                            fontSize: 12,
                             color: Colors.grey,
                           ),
                         ),
@@ -1221,10 +1471,12 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   )
                 else
                   Text(
-                    '\$${_unitPrice.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontSize: 19,
+                    '\$${effectiveUsd.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 32,
                       fontWeight: FontWeight.bold,
+                      color: Colors.green.shade700,
+                      height: 1,
                     ),
                   ),
               ],
@@ -1233,6 +1485,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         ],
       ),
     );
+  }
+
+  String _formatQty(double q) {
+    if (q == q.roundToDouble()) return q.toStringAsFixed(0);
+    return q.toString();
   }
 
   Widget _buildQuantityCard() {
@@ -1256,29 +1513,60 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           const Spacer(),
           _qtyButton(
             icon: Icons.remove_rounded,
-            onTap:
-                _quantity > 1
-                    ? () => setState(() {
-                      _quantity--;
+            onTap: _quantity > 0.5
+                ? () => setState(() {
+                      _quantity = (_quantity - 0.5);
+                      if (_quantity < 0.1) _quantity = 0.1;
+                      _quantityCtrl.text = _formatQty(_quantity);
                       _recalcPrices();
                     })
-                    : null,
+                : null,
           ),
           SizedBox(
-            width: 48,
-            child: Text(
-              '$_quantity',
+            width: 80,
+            child: TextField(
+              controller: _quantityCtrl,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+              ],
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              decoration: const InputDecoration(
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 6),
+                border: UnderlineInputBorder(),
+              ),
+              onChanged: (v) {
+                final normalized = v.replaceAll(',', '.');
+                final parsed = double.tryParse(normalized);
+                if (parsed != null && parsed > 0) {
+                  setState(() {
+                    _quantity = parsed;
+                    _recalcPrices();
+                  });
+                }
+              },
+              onSubmitted: (v) {
+                final normalized = v.replaceAll(',', '.');
+                final parsed = double.tryParse(normalized);
+                if (parsed == null || parsed <= 0) {
+                  setState(() {
+                    _quantity = 1;
+                    _quantityCtrl.text = '1';
+                    _recalcPrices();
+                  });
+                }
+              },
             ),
           ),
           _qtyButton(
             icon: Icons.add_rounded,
-            onTap:
-                () => setState(() {
-                  _quantity++;
-                  _recalcPrices();
-                }),
+            onTap: () => setState(() {
+              _quantity = _quantity + 0.5;
+              _quantityCtrl.text = _formatQty(_quantity);
+              _recalcPrices();
+            }),
           ),
         ],
       ),
@@ -1304,14 +1592,16 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   }
 
   Widget _buildTotalCard() {
+    final totalUsd = _usdValue(_total);
+    final unitUsd = _usdValue(_effectiveUnitPrice);
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [_primary.withOpacity(0.12), _primary.withOpacity(0.04)],
+          colors: [Colors.green.shade100, Colors.green.shade50],
         ),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _primary.withOpacity(0.3)),
+        border: Border.all(color: Colors.green.shade300),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1320,21 +1610,27 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Total',
-                style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+                'Total (USD)',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               Text(
-                '$_quantity × \$${_effectiveUnitPrice.toStringAsFixed(2)}',
+                _usdRate > 0
+                    ? '${_formatQty(_quantity)} × \$${unitUsd.toStringAsFixed(2)}'
+                    : 'Cargando tasa...',
                 style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
               ),
             ],
           ),
           Text(
-            '\$${_total.toStringAsFixed(2)}',
-            style: const TextStyle(
-              fontSize: 20,
+            _usdRate > 0 ? '\$${totalUsd.toStringAsFixed(2)}' : '--',
+            style: TextStyle(
+              fontSize: 28,
               fontWeight: FontWeight.bold,
-              color: _primary,
+              color: Colors.green.shade800,
             ),
           ),
         ],
@@ -1469,8 +1765,13 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           ),
           const SizedBox(height: 14),
           _kv('Producto', product.denominacion),
-          _kv('Cantidad de Libras', '$_quantity'),
-          _kv('Precio unit.', '\$${_effectiveUnitPrice.toStringAsFixed(2)}'),
+          _kv('Cantidad de Libras', _formatQty(_quantity)),
+          _kv(
+            'Precio unit. (USD)',
+            _usdRate > 0
+                ? '\$${_usdValue(_effectiveUnitPrice).toStringAsFixed(2)}'
+                : '--',
+          ),
           const Divider(height: 20),
           _kv(
             'Nº paquete',
@@ -1491,6 +1792,26 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               ),
             ),
           ],
+          if (_packageExtraPhotos.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 48,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _packageExtraPhotos.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 4),
+                itemBuilder: (_, i) => ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.memory(
+                    _packageExtraPhotos[i].bytes,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            ),
+          ],
           if (_descPaqueteCtrl.text.trim().isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
@@ -1505,18 +1826,20 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Total',
+                'Total (USD)',
                 style: TextStyle(
                   color: Colors.grey.shade700,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               Text(
-                '\$${_total.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  fontSize: 20,
+                _usdRate > 0
+                    ? '\$${_usdValue(_total).toStringAsFixed(2)}'
+                    : '--',
+                style: TextStyle(
+                  fontSize: 22,
                   fontWeight: FontWeight.bold,
-                  color: _primary,
+                  color: Colors.green.shade800,
                 ),
               ),
             ],
@@ -1593,7 +1916,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  '$_quantity × \$${_effectiveUnitPrice.toStringAsFixed(2)}',
+                  _usdRate > 0
+                      ? '${_formatQty(_quantity)} × USD \$${_usdValue(_effectiveUnitPrice).toStringAsFixed(2)}'
+                      : '${_formatQty(_quantity)} libras',
                   style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
                 ),
                 if (_numeroPaqueteCtrl.text.trim().isNotEmpty ||
@@ -1614,10 +1939,12 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             ),
           ),
           Text(
-            '\$${_total.toStringAsFixed(2)}',
-            style: const TextStyle(
+            _usdRate > 0
+                ? 'USD \$${_usdValue(_total).toStringAsFixed(2)}'
+                : '--',
+            style: TextStyle(
               fontWeight: FontWeight.bold,
-              color: _primary,
+              color: Colors.green.shade800,
               fontSize: 20,
             ),
           ),
@@ -1642,130 +1969,205 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             keyboardType: TextInputType.phone,
           ),
           const SizedBox(height: 10),
-          _field(_sDireccionCtrl, 'Dirección', Icons.location_on_outlined),
-          const SizedBox(height: 10),
           _senderCountryDropdown(),
           const SizedBox(height: 10),
           _senderStateDropdown(),
           const SizedBox(height: 10),
           _senderCityDropdown(),
+          const SizedBox(height: 10),
+          _field(_sDireccionCtrl, 'Dirección', Icons.location_on_outlined),
         ],
       ),
     );
   }
 
-  Widget _senderCountryDropdown() {
-    return DropdownButtonFormField<Map<String, dynamic>>(
-      value: _sSelectedCountry,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: _sLoadingCountries ? 'Cargando países...' : 'País',
-        prefixIcon: const Icon(Icons.public_outlined, size: 20),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        isDense: true,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      ),
-      items: _sCountries
-          .map(
-            (c) => DropdownMenuItem<Map<String, dynamic>>(
-              value: c,
-              child: Text(
-                c['countryName']?.toString() ?? '',
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          )
-          .toList(),
-      onChanged: _sLoadingCountries
-          ? null
-          : (country) {
-              if (country == null) return;
-              setState(() {
-                _sSelectedCountry = country;
-                _sSelectedState = null;
-                _sSelectedCity = null;
-                _sStates = [];
-                _sCities = [];
+  Widget _searchableDropdown({
+    required String label,
+    required IconData icon,
+    required List<Map<String, dynamic>> items,
+    required String Function(Map<String, dynamic>) labelOf,
+    required Map<String, dynamic>? selected,
+    required ValueChanged<Map<String, dynamic>> onSelected,
+    required String emptyValidatorMessage,
+    bool enabled = true,
+    bool loading = false,
+    String? loadingLabel,
+  }) {
+    final displayLabel = loading ? (loadingLabel ?? 'Cargando...') : label;
+    return FormField<Map<String, dynamic>>(
+      validator: (_) => selected == null ? emptyValidatorMessage : null,
+      builder: (state) {
+        return Autocomplete<Map<String, dynamic>>(
+          optionsBuilder: (TextEditingValue value) {
+            print('🔎 [Autocomplete:$label] optionsBuilder query="${value.text}" '
+                'items=${items.length} enabled=$enabled loading=$loading');
+            if (!enabled || loading) {
+              return const Iterable<Map<String, dynamic>>.empty();
+            }
+            final query = value.text.trim().toLowerCase();
+            if (query.isEmpty) return items;
+            return items.where(
+              (e) => labelOf(e).toLowerCase().contains(query),
+            );
+          },
+          displayStringForOption: labelOf,
+          fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+            // Mantener el texto sincronizado con el valor seleccionado externamente
+            if (selected != null && controller.text != labelOf(selected)) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (controller.text != labelOf(selected)) {
+                  controller.text = labelOf(selected);
+                }
               });
-              _loadSenderStates(country['countryCode']?.toString() ?? '');
-            },
-      validator: (v) => v == null ? 'Selecciona país' : null,
+            } else if (selected == null && controller.text.isNotEmpty) {
+              // No tocar mientras escribe — solo limpiar si pierde el foco se hace en blur
+            }
+            return TextFormField(
+              controller: controller,
+              focusNode: focusNode,
+              enabled: enabled && !loading,
+              onTap: () {
+                // Forzar trigger del optionsBuilder con texto vacío al hacer tap
+                if (controller.text.isEmpty) {
+                  controller.text = '';
+                  controller.selection = TextSelection.fromPosition(
+                    TextPosition(offset: controller.text.length),
+                  );
+                }
+              },
+              decoration: InputDecoration(
+                labelText: displayLabel,
+                prefixIcon: Icon(icon, size: 20),
+                suffixIcon: controller.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          controller.clear();
+                          state.didChange(null);
+                        },
+                      )
+                    : const Icon(Icons.arrow_drop_down),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                errorText: state.errorText,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 14,
+                ),
+              ),
+            );
+          },
+          optionsViewBuilder: (context, onSelectedOpt, options) {
+            return Align(
+              alignment: Alignment.topLeft,
+              child: Material(
+                elevation: 4,
+                borderRadius: BorderRadius.circular(10),
+                child: ConstrainedBox(
+                  constraints:
+                      const BoxConstraints(maxHeight: 260, maxWidth: 480),
+                  child: ListView.builder(
+                    padding: EdgeInsets.zero,
+                    shrinkWrap: true,
+                    itemCount: options.length,
+                    itemBuilder: (ctx, i) {
+                      final option = options.elementAt(i);
+                      return InkWell(
+                        onTap: () => onSelectedOpt(option),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          child: Text(
+                            labelOf(option),
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            );
+          },
+          onSelected: (option) {
+            print('✓ [Autocomplete:$label] Selected: ${labelOf(option)}');
+            state.didChange(option);
+            onSelected(option);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _senderCountryDropdown() {
+    return _searchableDropdown(
+      label: 'País',
+      icon: Icons.public_outlined,
+      items: _sCountries,
+      labelOf: (c) => c['countryName']?.toString() ?? '',
+      selected: _sSelectedCountry,
+      enabled: !_sLoadingCountries,
+      loading: _sLoadingCountries,
+      loadingLabel: 'Cargando países...',
+      emptyValidatorMessage: 'Selecciona país',
+      onSelected: (country) {
+        setState(() {
+          _sSelectedCountry = country;
+          _sSelectedState = null;
+          _sSelectedCity = null;
+          _sStates = [];
+          _sCities = [];
+        });
+        _loadSenderStates(country['countryCode']?.toString() ?? '');
+      },
     );
   }
 
   Widget _senderStateDropdown() {
     final enabled = _sSelectedCountry != null && !_sLoadingStates;
-    return DropdownButtonFormField<Map<String, dynamic>>(
-      value: _sSelectedState,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: _sLoadingStates ? 'Cargando estados...' : 'Estado/Provincia',
-        prefixIcon: const Icon(Icons.map_outlined, size: 20),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        isDense: true,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      ),
-      items: _sStates
-          .map(
-            (s) => DropdownMenuItem<Map<String, dynamic>>(
-              value: s,
-              child: Text(
-                s['name']?.toString() ?? '',
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          )
-          .toList(),
-      onChanged: enabled
-          ? (state) {
-              if (state == null) return;
-              setState(() {
-                _sSelectedState = state;
-                _sSelectedCity = null;
-                _sCities = [];
-              });
-              final countryCode =
-                  _sSelectedCountry?['countryCode']?.toString() ?? '';
-              final adminCode = state['adminCode1']?.toString() ?? '';
-              if (countryCode.isNotEmpty && adminCode.isNotEmpty) {
-                _loadSenderCities(countryCode, adminCode);
-              }
-            }
-          : null,
-      validator: (v) => v == null ? 'Selecciona estado/provincia' : null,
+    return _searchableDropdown(
+      label: 'Estado/Provincia',
+      icon: Icons.map_outlined,
+      items: _sStates,
+      labelOf: (s) => s['name']?.toString() ?? '',
+      selected: _sSelectedState,
+      enabled: enabled,
+      loading: _sLoadingStates,
+      loadingLabel: 'Cargando estados...',
+      emptyValidatorMessage: 'Selecciona estado/provincia',
+      onSelected: (state) {
+        setState(() {
+          _sSelectedState = state;
+          _sSelectedCity = null;
+          _sCities = [];
+        });
+        final countryCode =
+            _sSelectedCountry?['countryCode']?.toString() ?? '';
+        final adminCode = state['adminCode1']?.toString() ?? '';
+        if (countryCode.isNotEmpty && adminCode.isNotEmpty) {
+          _loadSenderCities(countryCode, adminCode);
+        }
+      },
     );
   }
 
   Widget _senderCityDropdown() {
     final enabled = _sSelectedState != null && !_sLoadingCities;
-    return DropdownButtonFormField<Map<String, dynamic>>(
-      value: _sSelectedCity,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: _sLoadingCities ? 'Cargando ciudades...' : 'Ciudad/Municipio',
-        prefixIcon: const Icon(Icons.location_city_outlined, size: 20),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        isDense: true,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      ),
-      items: _sCities
-          .map(
-            (c) => DropdownMenuItem<Map<String, dynamic>>(
-              value: c,
-              child: Text(
-                c['name']?.toString() ?? '',
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          )
-          .toList(),
-      onChanged: enabled
-          ? (city) => setState(() => _sSelectedCity = city)
-          : null,
-      validator: (v) => v == null ? 'Selecciona ciudad' : null,
+    return _searchableDropdown(
+      label: 'Ciudad/Municipio',
+      icon: Icons.location_city_outlined,
+      items: _sCities,
+      labelOf: (c) => c['name']?.toString() ?? '',
+      selected: _sSelectedCity,
+      enabled: enabled,
+      loading: _sLoadingCities,
+      loadingLabel: 'Cargando ciudades...',
+      emptyValidatorMessage: 'Selecciona ciudad',
+      onSelected: (city) => setState(() => _sSelectedCity = city),
     );
   }
 
@@ -1785,130 +2187,83 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             keyboardType: TextInputType.phone,
           ),
           const SizedBox(height: 10),
-          _field(_dDireccionCtrl, 'Dirección', Icons.location_on_outlined),
-          const SizedBox(height: 10),
           _receiverCountryDropdown(),
           const SizedBox(height: 10),
           _receiverStateDropdown(),
           const SizedBox(height: 10),
           _receiverCityDropdown(),
+          const SizedBox(height: 10),
+          _field(_dDireccionCtrl, 'Dirección', Icons.location_on_outlined),
         ],
       ),
     );
   }
 
   Widget _receiverCountryDropdown() {
-    return DropdownButtonFormField<Map<String, dynamic>>(
-      value: _dSelectedCountry,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: _sLoadingCountries ? 'Cargando países...' : 'País',
-        prefixIcon: const Icon(Icons.public_outlined, size: 20),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        isDense: true,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      ),
-      items: _sCountries
-          .map(
-            (c) => DropdownMenuItem<Map<String, dynamic>>(
-              value: c,
-              child: Text(
-                c['countryName']?.toString() ?? '',
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          )
-          .toList(),
-      onChanged: _sLoadingCountries
-          ? null
-          : (country) {
-              if (country == null) return;
-              setState(() {
-                _dSelectedCountry = country;
-                _dSelectedState = null;
-                _dSelectedCity = null;
-                _dStates = [];
-                _dCities = [];
-              });
-              _loadReceiverStates(country['countryCode']?.toString() ?? '');
-            },
-      validator: (v) => v == null ? 'Selecciona país' : null,
+    return _searchableDropdown(
+      label: 'País',
+      icon: Icons.public_outlined,
+      items: _sCountries,
+      labelOf: (c) => c['countryName']?.toString() ?? '',
+      selected: _dSelectedCountry,
+      enabled: !_sLoadingCountries,
+      loading: _sLoadingCountries,
+      loadingLabel: 'Cargando países...',
+      emptyValidatorMessage: 'Selecciona país',
+      onSelected: (country) {
+        setState(() {
+          _dSelectedCountry = country;
+          _dSelectedState = null;
+          _dSelectedCity = null;
+          _dStates = [];
+          _dCities = [];
+        });
+        _loadReceiverStates(country['countryCode']?.toString() ?? '');
+      },
     );
   }
 
   Widget _receiverStateDropdown() {
     final enabled = _dSelectedCountry != null && !_dLoadingStates;
-    return DropdownButtonFormField<Map<String, dynamic>>(
-      value: _dSelectedState,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: _dLoadingStates ? 'Cargando estados...' : 'Estado/Provincia',
-        prefixIcon: const Icon(Icons.map_outlined, size: 20),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        isDense: true,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      ),
-      items: _dStates
-          .map(
-            (s) => DropdownMenuItem<Map<String, dynamic>>(
-              value: s,
-              child: Text(
-                s['name']?.toString() ?? '',
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          )
-          .toList(),
-      onChanged: enabled
-          ? (state) {
-              if (state == null) return;
-              setState(() {
-                _dSelectedState = state;
-                _dSelectedCity = null;
-                _dCities = [];
-              });
-              final countryCode =
-                  _dSelectedCountry?['countryCode']?.toString() ?? '';
-              final adminCode = state['adminCode1']?.toString() ?? '';
-              if (countryCode.isNotEmpty && adminCode.isNotEmpty) {
-                _loadReceiverCities(countryCode, adminCode);
-              }
-            }
-          : null,
-      validator: (v) => v == null ? 'Selecciona estado/provincia' : null,
+    return _searchableDropdown(
+      label: 'Estado/Provincia',
+      icon: Icons.map_outlined,
+      items: _dStates,
+      labelOf: (s) => s['name']?.toString() ?? '',
+      selected: _dSelectedState,
+      enabled: enabled,
+      loading: _dLoadingStates,
+      loadingLabel: 'Cargando estados...',
+      emptyValidatorMessage: 'Selecciona estado/provincia',
+      onSelected: (state) {
+        setState(() {
+          _dSelectedState = state;
+          _dSelectedCity = null;
+          _dCities = [];
+        });
+        final countryCode =
+            _dSelectedCountry?['countryCode']?.toString() ?? '';
+        final adminCode = state['adminCode1']?.toString() ?? '';
+        if (countryCode.isNotEmpty && adminCode.isNotEmpty) {
+          _loadReceiverCities(countryCode, adminCode);
+        }
+      },
     );
   }
 
   Widget _receiverCityDropdown() {
     final enabled = _dSelectedState != null && !_dLoadingCities;
-    return DropdownButtonFormField<Map<String, dynamic>>(
-      value: _dSelectedCity,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: _dLoadingCities ? 'Cargando ciudades...' : 'Ciudad/Municipio',
-        prefixIcon: const Icon(Icons.location_city_outlined, size: 20),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        isDense: true,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      ),
-      items: _dCities
-          .map(
-            (c) => DropdownMenuItem<Map<String, dynamic>>(
-              value: c,
-              child: Text(
-                c['name']?.toString() ?? '',
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          )
-          .toList(),
-      onChanged: enabled
-          ? (city) => setState(() => _dSelectedCity = city)
-          : null,
-      validator: (v) => v == null ? 'Selecciona ciudad' : null,
+    return _searchableDropdown(
+      label: 'Ciudad/Municipio',
+      icon: Icons.location_city_outlined,
+      items: _dCities,
+      labelOf: (c) => c['name']?.toString() ?? '',
+      selected: _dSelectedCity,
+      enabled: enabled,
+      loading: _dLoadingCities,
+      loadingLabel: 'Cargando ciudades...',
+      emptyValidatorMessage: 'Selecciona ciudad',
+      onSelected: (city) => setState(() => _dSelectedCity = city),
     );
   }
 
@@ -2030,18 +2385,43 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         idProveedorCarnaval = 38;
       }
 
-      // Subir foto si existe
+      // Subir foto principal si existe
       String? fotoUrl;
       if (_packagePhotoBytes != null) {
         fotoUrl = await _paqueteriaService.uploadPackagePhoto(
           bytes: _packagePhotoBytes!,
           filename: _packagePhotoName ?? 'paquete.jpg',
+          mimeType: _packagePhotoMime,
         );
+        if (fotoUrl == null) {
+          _closeOverlay();
+          _showError(
+            'No se pudo subir la foto del paquete. Verifica tu conexión e inténtalo de nuevo.',
+          );
+          return;
+        }
       }
 
+      // Subir fotos adicionales (si existen)
+      final List<String> fotosExtrasUrls = [];
+      for (final extra in _packageExtraPhotos) {
+        final url = await _paqueteriaService.uploadPackagePhoto(
+          bytes: extra.bytes,
+          filename: extra.name,
+          mimeType: extra.mime,
+        );
+        if (url != null && url.isNotEmpty) fotosExtrasUrls.add(url);
+      }
+
+      // Separar cantidad entera y parte decimal (extra) para soportar
+      // libras fraccionarias en la RPC v2.
+      final int qtyInt = _quantity.floor();
+      final double qtyExtra =
+          double.parse((_quantity - qtyInt).toStringAsFixed(4));
       final payload = <String, dynamic>{
         'id_producto_inventtia': product.id,
-        'cantidad': _quantity,
+        'cantidad': qtyInt,
+        'extra': qtyExtra,
         'precio_unitario': _unitPrice,
         'precio_descuento': _discountedPrice,
         'id_proveedor_carnaval': idProveedorCarnaval,
@@ -2052,6 +2432,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           'numero': _numeroPaqueteCtrl.text.trim(),
           'descripcion': _descPaqueteCtrl.text.trim(),
           'foto_url': fotoUrl,
+          'fotos_extras': fotosExtrasUrls,
         },
         'remitente': {
           'nombre': _sNombreCtrl.text.trim(),
@@ -2161,8 +2542,10 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text('Producto: ${product.denominacion}'),
-                  Text('Cantidad: $_quantity'),
-                  Text('Total: \$${_total.toStringAsFixed(2)}'),
+                  Text('Cantidad: ${_formatQty(_quantity)} lb'),
+                  Text(
+                    'Total: ${_usdRate > 0 ? 'USD \$${_usdValue(_total).toStringAsFixed(2)}' : '\$${_total.toStringAsFixed(2)}'}',
+                  ),
                   Text('Método pago: ${_metodoPago ?? '-'}'),
                   const Divider(),
                   Text(

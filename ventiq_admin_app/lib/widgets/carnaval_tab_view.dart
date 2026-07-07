@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../services/carnaval_service.dart';
 import '../services/store_service.dart';
@@ -26,6 +27,12 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
   Map<String, List<Map<String, dynamic>>> _syncedProducts = {};
   List<Map<String, dynamic>> _tpvs = [];
   Map<String, dynamic>? _assignedTpvConfig;
+  // Sanity-check de integridad: mapa id_producto local -> id_tienda real.
+  // Si un producto sincronizado pertenece a una tienda distinta a `_storeId`,
+  // lo marcamos como inconsistente en el render y deshabilitamos las
+  // acciones (toggle de destacado, abrir diálogo de ventas) para que el
+  // usuario lo resincronice en vez de generar más datos cruzados.
+  Map<int, int> _productStoreMap = {};
 
   @override
   void initState() {
@@ -71,6 +78,11 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
           _syncedProducts = await CarnavalService.getSyncedProductsWithLocation(
             _carnavalStoreId!,
           );
+
+          // Sanity-check de integridad: cargar la tienda real de cada
+          // producto local sincronizado. Si alguno no pertenece a
+          // `_storeId`, es un dato cruzado legacy que la UI debe marcar.
+          _productStoreMap = await _loadProductStoreMap();
 
           // Cargar TPVs y configuración de asignación
           _tpvs = await TpvService.getTpvsByStore();
@@ -691,13 +703,32 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
                 children:
                     entry.value.map((product) {
                       final isActive = product['status'] == true;
+                      // Sanity-check: marcar productos cuyo id_producto local
+                      // apunta a otra tienda. No deshabilita el tile (el
+                      // usuario debe poder verlo) pero bloquea acciones de
+                      // mutación para no generar más datos cruzados.
+                      final isInconsistent = _isProductInconsistent(product);
                       return Opacity(
                         opacity: isActive ? 1.0 : 0.5,
                         child: ListTile(
-                          onTap: () async {
+                          onTap: isInconsistent
+                              ? () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        '⚠️ Producto inconsistente: pertenece a otra tienda. '
+                                        'Re-sincronízalo (eliminar + volver a agregar) antes de operar.',
+                                      ),
+                                      backgroundColor: Colors.orange,
+                                      duration: Duration(seconds: 4),
+                                    ),
+                                  );
+                                }
+                              : () async {
                             // Debug: verificar datos antes de abrir el diálogo
                             print('🔍 Abriendo ProductSalesDialog:');
                             print('  - storeId: $_storeId');
+                            print('  - carnavalStoreId: $_carnavalStoreId');
                             print('  - product id: ${product['id']}');
                             print(
                               '  - localProductId (id_producto): ${product['id_producto']}',
@@ -711,6 +742,7 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
                                     product: product,
                                     storeId: _storeId,
                                     localProductId: product['id_producto'],
+                                    carnavalStoreId: _carnavalStoreId,
                                   ),
                             );
                             // Si el producto cambió de estado, recargar datos
@@ -739,16 +771,46 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
                                       : null,
                             ),
                           ),
-                          title: Text(
-                            '${product['name']} (ID: ${product['id']})',
-                            style: TextStyle(
-                              color: isActive ? null : Colors.grey,
-                            ),
+                          title: Row(
+                            children: [
+                              if (isInconsistent)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 6),
+                                  child: Tooltip(
+                                    message:
+                                        'Producto inconsistente: id_producto local pertenece a otra tienda. '
+                                        'Re-sincronízalo (eliminar relación + volver a agregar) para que '
+                                        'las órdenes no extraigan inventario cruzado.',
+                                    child: Icon(
+                                      Icons.warning_amber_rounded,
+                                      color: Colors.orange,
+                                      size: 18,
+                                    ),
+                                  ),
+                                ),
+                              Expanded(
+                                child: Text(
+                                  '${product['name']} (ID: ${product['id']})',
+                                  style: TextStyle(
+                                    color: isActive ? null : Colors.grey,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              if (isInconsistent)
+                                const Text(
+                                  '⚠️ Pertenece a otra tienda — re-sincroniza',
+                                  style: TextStyle(
+                                    color: Colors.orange,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               Text(
                                 'Precio: \$${product['price']} | Stock: ${product['stock']}',
                                 style: TextStyle(
@@ -791,23 +853,29 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Tooltip(
-                                message: !isActive
-                                    ? 'Activa el producto para destacarlo'
-                                    : (product['destacado'] == true
-                                        ? 'Destacado'
-                                        : 'No destacado'),
+                                message: isInconsistent
+                                    ? 'Producto inconsistente — re-sincroniza antes de destacar'
+                                    : !isActive
+                                        ? 'Activa el producto para destacarlo'
+                                        : (product['destacado'] == true
+                                            ? 'Destacado'
+                                            : 'No destacado'),
                                 child: Icon(
                                   Icons.star,
                                   size: 16,
-                                  color: product['destacado'] == true && isActive
+                                  color: product['destacado'] == true &&
+                                          isActive &&
+                                          !isInconsistent
                                       ? Colors.amber
                                       : Colors.grey.shade300,
                                 ),
                               ),
                               Switch(
-                                value: isActive && product['destacado'] == true,
+                                value: isActive &&
+                                    !isInconsistent &&
+                                    product['destacado'] == true,
                                 activeColor: Colors.amber,
-                                onChanged: !isActive
+                                onChanged: (!isActive || isInconsistent)
                                     ? null
                                     : (value) async {
                                         final success = await CarnavalService
@@ -1108,6 +1176,52 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
       );
       setState(() => _isLoading = false);
     }
+  }
+
+  /// Construye el mapa {id_producto_local -> id_tienda} para todos los
+  /// productos actualmente listados como sincronizados. Una sola query a
+  /// app_dat_producto basta.
+  Future<Map<int, int>> _loadProductStoreMap() async {
+    final localIds = _syncedProducts.values
+        .expand((list) => list)
+        .map((p) => p['id_producto'])
+        .whereType<int>()
+        .toSet()
+        .toList();
+    if (localIds.isEmpty) return <int, int>{};
+
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('app_dat_producto')
+          .select('id, id_tienda')
+          .inFilter('id', localIds);
+
+      final map = <int, int>{};
+      for (final row in response) {
+        final id = row['id'];
+        final tienda = row['id_tienda'];
+        if (id is int && tienda is int) {
+          map[id] = tienda;
+        }
+      }
+      return map;
+    } catch (e) {
+      print('⚠️ No se pudo cargar map de tiendas para sanity-check: $e');
+      return <int, int>{};
+    }
+  }
+
+  /// Devuelve true si el producto sincronizado tiene datos cruzados:
+  /// id_producto local apunta a otra tienda distinta a la activa.
+  bool _isProductInconsistent(Map<String, dynamic> product) {
+    final localId = product['id_producto'];
+    if (localId is! int || _storeId == null) return false;
+    final actualTienda = _productStoreMap[localId];
+    // Si no aparece en el map, no podemos asegurar nada — no marcamos
+    // como inconsistente para evitar falsos positivos.
+    if (actualTienda == null) return false;
+    return actualTienda != _storeId;
   }
 
   Widget _buildQuickActions() {

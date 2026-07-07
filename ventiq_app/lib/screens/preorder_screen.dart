@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
+import '../models/product.dart';
 import '../models/payment_method.dart' as pm;
 import '../services/order_service.dart';
 import '../services/turno_service.dart';
@@ -11,6 +12,7 @@ import '../services/product_detail_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../utils/price_utils.dart';
+import '../utils/navigation_helper.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/scrolling_text.dart';
@@ -67,12 +69,54 @@ class _PreorderScreenState extends State<PreorderScreen> {
       if (isOfflineModeEnabled) {
         await _orderService.refreshPromotionsFromCache();
       }
+
+      // Si la orden está vacía (nueva), aplicar los productos por defecto
+      final currentOrder = _orderService.currentOrder;
+      final hasRealItems = currentOrder != null &&
+          currentOrder.items.any((i) => i.cantidad > 0);
+      if (!hasRealItems) {
+        await _applyDefaultOrderItems();
+      }
+
       if (mounted) {
         setState(() {});
       }
       print('📱 PreorderScreen: Preorden persistente cargada al inicializar');
     } catch (e) {
       print('❌ PreorderScreen: Error cargando preorden persistente: $e');
+    }
+  }
+
+  /// Aplica los productos por defecto configurados por el vendedor a la preorden actual.
+  Future<void> _applyDefaultOrderItems() async {
+    try {
+      final defaultItems =
+          await _userPreferencesService.getDefaultOrderItems();
+      if (defaultItems.isEmpty) return;
+
+      print(
+          '🛒 PreorderScreen: Aplicando ${defaultItems.length} productos por defecto');
+
+      for (final entry in defaultItems) {
+        try {
+          final product =
+              Product.fromJson(entry['product'] as Map<String, dynamic>);
+          final cantidad = (entry['cantidad'] as num).toDouble();
+          if (cantidad <= 0) continue;
+
+          await _orderService.addItemToCurrentOrder(
+            producto: product,
+            cantidad: cantidad,
+            ubicacionAlmacen: 'Por defecto',
+          );
+          print(
+              '✅ Producto por defecto agregado: ${product.denominacion} x$cantidad');
+        } catch (e) {
+          print('⚠️ Error agregando producto por defecto: $e');
+        }
+      }
+    } catch (e) {
+      print('❌ Error aplicando productos por defecto: $e');
     }
   }
 
@@ -993,6 +1037,58 @@ class _PreorderScreenState extends State<PreorderScreen> {
     }
   }
 
+  /// Busca el stock actual de un producto en el cache offline.
+  /// Navega por detalles_completos.inventario y filtra por ubicacion, variante y presentacion.
+  /// Retorna null si no encuentra el producto en cache (usar fallback).
+  Future<double?> _getStockFromCache({
+    required int idProducto,
+    int? idUbicacion,
+    int? idVariante,
+    int? idPresentacion,
+  }) async {
+    try {
+      final offlineData = await _userPreferencesService.getOfflineData();
+      if (offlineData == null || offlineData['products'] == null) return null;
+
+      final productsData = Map<String, dynamic>.from(offlineData['products'] as Map);
+
+      for (final categoryProducts in productsData.values) {
+        final productList = List<dynamic>.from(categoryProducts as List);
+        for (final prodDataRaw in productList) {
+          final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
+          if ((prodData['id'] as int?) != idProducto) continue;
+
+          final detalles = prodData['detalles_completos'] as Map<String, dynamic>?;
+          if (detalles == null) continue;
+
+          final inventarioList = List<dynamic>.from(detalles['inventario'] as List? ?? []);
+
+          for (final invRaw in inventarioList) {
+            final inv = Map<String, dynamic>.from(invRaw as Map);
+            final ubicacion = inv['ubicacion'] as Map<String, dynamic>?;
+            final variante = inv['variante'] as Map<String, dynamic>?;
+            final presentacion = inv['presentacion'] as Map<String, dynamic>?;
+
+            final invUbicacionId = ubicacion?['id'] as int?;
+            final invVarianteId = variante?['id'] as int?;
+            final invPresentacionId = presentacion?['id'] as int?;
+
+            final ubicacionMatch = idUbicacion == null || invUbicacionId == idUbicacion;
+            final varianteMatch = idVariante == null || invVarianteId == idVariante;
+            final presentacionMatch = idPresentacion == null || invPresentacionId == idPresentacion;
+
+            if (ubicacionMatch && varianteMatch && presentacionMatch) {
+              return (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print('⚠️ Error leyendo stock desde cache offline: $e');
+    }
+    return null;
+  }
+
   /// Verifica disponibilidad de inventario para todos los items de la orden.
   /// Para productos elaborados/servicios, verifica el stock de sus ingredientes.
   /// Para productos normales, verifica directamente en inventario.
@@ -1008,66 +1104,126 @@ class _PreorderScreenState extends State<PreorderScreen> {
       try {
         final isElaboradoOrServicio = item.producto.esElaborado || item.producto.esServicio;
 
-        if (isElaboradoOrServicio && !isOfflineMode) {
-          // Para elaborados/servicios: verificar stock de cada ingrediente
-          print('🍽️ Verificando ingredientes para producto elaborado/servicio: ${item.nombre}');
-          final ingredientes = await _productDetailService.getProductIngredients(item.producto.id);
+        if (isElaboradoOrServicio) {
+          print('🍽️ Verificando ingredientes para producto elaborado/servicio: ${item.nombre} (offline=$isOfflineMode)');
 
-          if (ingredientes.isEmpty) {
-            print('⚠️ Producto elaborado/servicio ${item.nombre} sin ingredientes definidos, se permite continuar');
-            continue;
-          }
+          if (isOfflineMode) {
+            // OFFLINE: buscar receta del elaborado en cache
+            final offlineData = await _userPreferencesService.getOfflineData();
+            final productsData = offlineData?['products'] as Map<String, dynamic>?;
+            List<dynamic>? ingredientesCache;
 
-          for (final ingrediente in ingredientes) {
-            final idIngrediente = ingrediente['producto_id'] as int?;
-            final cantidadNecesaria = ((ingrediente['cantidad_necesaria'] as num?)?.toDouble() ?? 0.0) * item.cantidad;
-            final cantidadDisponible = (ingrediente['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
-            final nombreIngrediente = ingrediente['producto_nombre'] as String? ?? 'Ingrediente desconocido';
+            if (productsData != null) {
+              outer:
+              for (final categoryProducts in productsData.values) {
+                for (final prodDataRaw in List<dynamic>.from(categoryProducts as List)) {
+                  final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
+                  if ((prodData['id'] as int?) != item.producto.id) continue;
+                  final detalles = prodData['detalles_completos'] as Map<String, dynamic>?;
+                  ingredientesCache = detalles?['ingredientes'] as List<dynamic>?;
+                  break outer;
+                }
+              }
+            }
 
-            if (idIngrediente == null) continue;
+            if (ingredientesCache == null || ingredientesCache.isEmpty) {
+              print('⚠️ Elaborado/servicio ${item.nombre} sin receta en cache offline, se permite continuar');
+              continue;
+            }
 
-            if (cantidadDisponible < cantidadNecesaria) {
-              problems.add({
-                'nombre': '${item.nombre} → $nombreIngrediente',
-                'cantidad_pedida': cantidadNecesaria,
-                'stock_disponible': cantidadDisponible,
-                'diferencia': cantidadNecesaria - cantidadDisponible,
-                'ubicacion': item.ubicacionAlmacen,
-                'presentacion': ' (ingrediente)',
-              });
+            for (final ingRaw in ingredientesCache) {
+              final ing = Map<String, dynamic>.from(ingRaw as Map);
+              final idIngrediente = ing['producto_id'] as int?;
+              if (idIngrediente == null) continue;
+
+              final cantidadNecesaria = ((ing['cantidad_necesaria'] as num?)?.toDouble() ?? 0.0) * item.cantidad;
+              final nombreIngrediente = ing['producto_nombre'] as String? ?? 'Ingrediente desconocido';
+
+              final stockIngrediente = await _getStockFromCache(idProducto: idIngrediente);
+              final cantidadDisponible = stockIngrediente ?? 0.0;
+
+              if (cantidadDisponible < cantidadNecesaria) {
+                problems.add({
+                  'nombre': '${item.nombre} → $nombreIngrediente',
+                  'cantidad_pedida': cantidadNecesaria,
+                  'stock_disponible': cantidadDisponible,
+                  'diferencia': cantidadNecesaria - cantidadDisponible,
+                  'ubicacion': item.ubicacionAlmacen,
+                  'presentacion': ' (ingrediente • cache offline)',
+                });
+              }
+            }
+          } else {
+            // ONLINE: verificar stock de cada ingrediente en Supabase
+            final ingredientes = await _productDetailService.getProductIngredients(item.producto.id);
+
+            if (ingredientes.isEmpty) {
+              print('⚠️ Producto elaborado/servicio ${item.nombre} sin ingredientes definidos, se permite continuar');
+              continue;
+            }
+
+            for (final ingrediente in ingredientes) {
+              final idIngrediente = ingrediente['producto_id'] as int?;
+              final cantidadNecesaria = ((ingrediente['cantidad_necesaria'] as num?)?.toDouble() ?? 0.0) * item.cantidad;
+              final cantidadDisponible = (ingrediente['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+              final nombreIngrediente = ingrediente['producto_nombre'] as String? ?? 'Ingrediente desconocido';
+
+              if (idIngrediente == null) continue;
+
+              if (cantidadDisponible < cantidadNecesaria) {
+                problems.add({
+                  'nombre': '${item.nombre} → $nombreIngrediente',
+                  'cantidad_pedida': cantidadNecesaria,
+                  'stock_disponible': cantidadDisponible,
+                  'diferencia': cantidadNecesaria - cantidadDisponible,
+                  'ubicacion': item.ubicacionAlmacen,
+                  'presentacion': ' (ingrediente)',
+                });
+              }
             }
           }
         } else {
           // Para productos normales: verificar directamente en inventario
           final idProducto = item.producto.id;
-          final idUbicacion = item.inventoryData?['id_ubicacion'];
-          final idVariante = item.inventoryData?['id_variante'];
-          final idPresentacion = item.inventoryData?['id_presentacion'];
+          final idUbicacion = item.inventoryData?['id_ubicacion'] as int?;
+          final idVariante = item.inventoryData?['id_variante'] as int?;
+          final idPresentacion = item.inventoryData?['id_presentacion'] as int?;
 
           double stockActual = 0.0;
+          String origenStock = 'Supabase';
 
           if (isOfflineMode) {
-            print('🔌 Verificando stock en modo offline para ${item.nombre}');
-            stockActual = item.cantidadInicial ?? 0.0;
+            // OFFLINE: leer desde cache, fallback a cantidadInicial del item
+            final stockCache = await _getStockFromCache(
+              idProducto: idProducto,
+              idUbicacion: idUbicacion,
+              idVariante: idVariante,
+              idPresentacion: idPresentacion,
+            );
+
+            if (stockCache != null) {
+              stockActual = stockCache;
+              origenStock = 'cache offline';
+              print('🔌 Stock offline desde cache para ${item.nombre}: $stockActual');
+            } else {
+              stockActual = item.cantidadInicial ?? 0.0;
+              origenStock = 'snapshot inicial';
+              print('🔌 Stock offline fallback (cantidadInicial) para ${item.nombre}: $stockActual');
+            }
           } else {
             var query = supabase
                 .from('app_dat_inventario_productos')
                 .select('cantidad_final')
                 .eq('id_producto', idProducto);
 
-            if (idUbicacion != null) {
-              query = query.eq('id_ubicacion', idUbicacion);
-            }
+            if (idUbicacion != null) query = query.eq('id_ubicacion', idUbicacion);
+            // NOTA: NO filtramos por id_variante. Los items provenientes de la vista de
+            // mesa pueden traer id_variante=1 (ID secuencial generado en el cliente, no
+            // un id real de DB). En el inventario real `id_variante` es null para estos
+            // productos, así que filtrar por ese valor sintético devuelve 0 filas.
+            if (idPresentacion != null) query = query.eq('id_presentacion', idPresentacion);
 
-            if (idVariante != null) {
-              query = query.eq('id_variante', idVariante);
-            }
-
-            if (idPresentacion != null) {
-              query = query.eq('id_presentacion', idPresentacion);
-            }
-
-            final response = await query.order('created_at', ascending: false).limit(1);
+            final response = await query.order('id', ascending: false).limit(1);
 
             if (response.isNotEmpty) {
               stockActual = (response.first['cantidad_final'] as num?)?.toDouble() ?? 0.0;
@@ -1075,7 +1231,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
           }
 
           if (stockActual < item.cantidad) {
-            final presentacionInfo = idPresentacion != null ? ' (Presentación ID: $idPresentacion)' : '';
+            final presentacionInfo = idPresentacion != null
+                ? ' (Presentación ID: $idPresentacion • $origenStock)'
+                : ' ($origenStock)';
             problems.add({
               'nombre': item.nombre,
               'cantidad_pedida': item.cantidad,
@@ -2288,9 +2446,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
   void _onBottomNavTap(int index) {
     switch (index) {
-      case 0: // Home
-        // Usar pushNamed en lugar de pushNamedAndRemoveUntil para mantener la persistencia
-        Navigator.pushNamed(context, '/categories');
+      case 0: // Home → /mesas si modo restaurante, /categories si no
+        NavigationHelper.goHome(context, removeStack: false);
         break;
       case 1: // Preorden (current)
         break;

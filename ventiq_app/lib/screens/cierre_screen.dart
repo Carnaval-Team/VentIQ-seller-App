@@ -7,6 +7,7 @@ import '../models/expense.dart';
 import '../services/order_service.dart';
 import '../services/notification_service.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/uuid_generator.dart';
 import '../services/turno_service.dart';
 import '../services/shift_workers_service.dart';
 
@@ -976,7 +977,13 @@ class _CierreScreenState extends State<CierreScreen> {
                                   (sum, loc) =>
                                       sum + ((loc['reservado_carnaval'] as num?)?.toDouble() ?? 0.0),
                                 );
-                                final totalReal = (totalQuantity - totalReservadoCarnaval).clamp(0.0, double.infinity);
+                                final totalPendienteCarnaval = locations.fold<double>(
+                                  0.0,
+                                  (sum, loc) =>
+                                      sum + ((loc['pendiente_carnaval'] as num?)?.toDouble() ?? 0.0),
+                                );
+                                final totalSistema = totalQuantity;
+                                final totalReal = totalQuantity + totalPendienteCarnaval;
 
                                 if (snapshot.connectionState ==
                                         ConnectionState.done &&
@@ -1017,7 +1024,9 @@ class _CierreScreenState extends State<CierreScreen> {
                                                 ),
                                                 const SizedBox(height: 4),
                                                 // Mostrar cantidad total del sistema
-                                                Row(
+                                                Wrap(
+                                                  spacing: 6,
+                                                  runSpacing: 4,
                                                   children: [
                                                     Container(
                                                       padding:
@@ -1036,7 +1045,7 @@ class _CierreScreenState extends State<CierreScreen> {
                                                         ),
                                                       ),
                                                       child: Text(
-                                                        'Sistema: ${totalReal.toStringAsFixed(2)} unidades',
+                                                        'Sistema: ${totalSistema.toStringAsFixed(2)} unidades',
                                                         style: TextStyle(
                                                           fontSize: 11,
                                                           fontWeight:
@@ -1045,8 +1054,7 @@ class _CierreScreenState extends State<CierreScreen> {
                                                         ),
                                                       ),
                                                     ),
-                                                    if (totalReservadoCarnaval > 0) ...[
-                                                      const SizedBox(width: 6),
+                                                    if (totalReservadoCarnaval > 0)
                                                       Container(
                                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                                                         decoration: BoxDecoration(
@@ -1063,7 +1071,23 @@ class _CierreScreenState extends State<CierreScreen> {
                                                           ),
                                                         ),
                                                       ),
-                                                    ],
+                                                    if (totalPendienteCarnaval > 0)
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.green[50],
+                                                          borderRadius: BorderRadius.circular(4),
+                                                          border: Border.all(color: Colors.green[300]!),
+                                                        ),
+                                                        child: Text(
+                                                          'Pendiente: ${totalPendienteCarnaval.toStringAsFixed(0)}',
+                                                          style: TextStyle(
+                                                            fontSize: 10,
+                                                            fontWeight: FontWeight.w600,
+                                                            color: Colors.green[800],
+                                                          ),
+                                                        ),
+                                                      ),
                                                   ],
                                                 ),
                                               ],
@@ -1135,12 +1159,12 @@ class _CierreScreenState extends State<CierreScreen> {
                                                                 as num?)
                                                             ?.toDouble() ??
                                                         0.0);
-                                                final locReal =
-                                                    (locCantidad - locReservado)
-                                                        .clamp(
-                                                          0.0,
-                                                          double.infinity,
-                                                        );
+                                                final locPendiente =
+                                                    ((loc['pendiente_carnaval']
+                                                                as num?)
+                                                            ?.toDouble() ??
+                                                        0.0);
+                                                final locReal = locCantidad;
                                                 return Padding(
                                                   padding:
                                                       const EdgeInsets.only(
@@ -1195,6 +1219,23 @@ class _CierreScreenState extends State<CierreScreen> {
                                                                         .w600,
                                                                 color: Colors
                                                                     .orange[700],
+                                                              ),
+                                                            ),
+                                                          ],
+                                                          if (locPendiente >
+                                                              0) ...[
+                                                            const SizedBox(
+                                                              width: 3,
+                                                            ),
+                                                            Text(
+                                                              '(pend: +${locPendiente.toStringAsFixed(0)})',
+                                                              style: TextStyle(
+                                                                fontSize: 10,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                                color: Colors
+                                                                    .green[700],
                                                               ),
                                                             ),
                                                           ],
@@ -1328,6 +1369,7 @@ class _CierreScreenState extends State<CierreScreen> {
                 'almacen': almacen['denominacion'] ?? 'Almacén',
                 'cantidad': cantidad,
                 'reservado_carnaval': 0.0,
+                'pendiente_carnaval': 0.0,
               };
             }
           }
@@ -1376,6 +1418,7 @@ class _CierreScreenState extends State<CierreScreen> {
                 'almacen': product.almacen,
                 'cantidad': product.cantidadFinal,
                 'reservado_carnaval': product.reservadoCarnaval,
+                'pendiente_carnaval': product.pendienteCarnaval,
               };
             }
           } catch (e) {
@@ -2761,12 +2804,14 @@ class _CierreScreenState extends State<CierreScreen> {
         throw Exception('Faltan datos requeridos para el cierre offline');
       }
 
-      // Generar ID único para el cierre offline
+      // Generar ID único para el cierre offline + client_uuid de idempotencia.
       final cierreId = '${DateTime.now().millisecondsSinceEpoch}';
+      final clientUuid = UuidGenerator.v4();
 
       // Crear estructura de cierre offline
       final cierreData = {
         'id': cierreId,
+        'client_uuid': clientUuid,
         'id_tpv': idTpv,
         'usuario': userUuid,
         'tipo_operacion': 'cierre',

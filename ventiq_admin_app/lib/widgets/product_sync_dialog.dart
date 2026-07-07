@@ -78,6 +78,7 @@ class _ProductSyncDialogState extends State<ProductSyncDialog> {
         carnavalCategoryId: _selectedCategory!['id'],
         carnavalStoreId: widget.carnavalStoreId,
         idUbicacion: location['id_ubicacion'],
+        storeId: widget.storeId,
       );
 
       if (mounted) {

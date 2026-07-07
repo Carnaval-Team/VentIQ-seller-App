@@ -151,6 +151,17 @@ class _LoginScreenState extends State<LoginScreen> {
             '  - Access Token: ${response.session?.accessToken != null ? response.session!.accessToken.substring(0, 20) : "null"}...',
           );
 
+          // Verificar y cachear si es superadmin (para herramientas ocultas).
+          // Se cachea para que la entrada del drawer funcione también offline.
+          try {
+            final esSuperAdmin =
+                await _sellerService.isSuperAdmin(response.user!.id);
+            await _userPreferencesService.setIsSuperAdmin(esSuperAdmin);
+            print('  - Superadmin: $esSuperAdmin');
+          } catch (e) {
+            print('⚠️ No se pudo verificar superadmin: $e');
+          }
+
           // Verificar si el usuario es un vendedor válido
           try {
             final sellerProfile = await _sellerService

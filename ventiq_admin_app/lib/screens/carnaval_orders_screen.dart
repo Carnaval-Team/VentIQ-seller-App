@@ -36,6 +36,8 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   List<Map<String, dynamic>> _orders = [];
   Map<int, int> _ventiqOps = {}; // carnaval order id -> ventiq operation id
   String? _selectedStatus;
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   @override
   void initState() {
@@ -124,6 +126,8 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       pageSize: _pageSize,
       statusFilter: _selectedStatus,
       orderIdFilter: _searchOrderId,
+      dateFrom: _dateFrom,
+      dateTo: _dateTo,
     );
     setState(() {
       _orders = orders;
@@ -144,6 +148,8 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       pageSize: _pageSize,
       statusFilter: _selectedStatus,
       orderIdFilter: _searchOrderId,
+      dateFrom: _dateFrom,
+      dateTo: _dateTo,
     );
     setState(() {
       _orders.addAll(orders);
@@ -292,6 +298,8 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                         ],
                       ),
                     ),
+                    // Date range filter
+                    _buildDateRangeRow(),
                     // Status chips
                     SizedBox(
                       height: 48,
@@ -357,6 +365,106 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     );
   }
 
+  String _fmtDate(DateTime dt) =>
+      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+
+  Widget _buildDateRangeRow() {
+    final hasFilter = _dateFrom != null || _dateTo != null;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.date_range, size: 16),
+              label: Text(
+                _dateFrom != null ? _fmtDate(_dateFrom!) : 'Desde',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _dateFrom != null ? Colors.indigo : Colors.grey[600],
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                side: BorderSide(
+                  color: _dateFrom != null ? Colors.indigo : Colors.grey.shade300,
+                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _dateFrom ?? DateTime.now(),
+                  firstDate: DateTime(2022),
+                  lastDate: _dateTo ?? DateTime.now(),
+                );
+                if (picked != null) {
+                  setState(() => _dateFrom = picked);
+                  _loadOrders();
+                }
+              },
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 6),
+            child: Text('—', style: TextStyle(color: Colors.grey)),
+          ),
+          Expanded(
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.date_range, size: 16),
+              label: Text(
+                _dateTo != null ? _fmtDate(_dateTo!) : 'Hasta',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _dateTo != null ? Colors.indigo : Colors.grey[600],
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                side: BorderSide(
+                  color: _dateTo != null ? Colors.indigo : Colors.grey.shade300,
+                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _dateTo ?? DateTime.now(),
+                  firstDate: _dateFrom ?? DateTime(2022),
+                  lastDate: DateTime.now(),
+                );
+                if (picked != null) {
+                  setState(() => _dateTo = picked);
+                  _loadOrders();
+                }
+              },
+            ),
+          ),
+          if (hasFilter) ...[
+            const SizedBox(width: 6),
+            IconButton(
+              icon: const Icon(Icons.clear, size: 18),
+              tooltip: 'Limpiar fechas',
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.red.withValues(alpha: 0.1),
+                foregroundColor: Colors.red,
+                padding: const EdgeInsets.all(6),
+                minimumSize: const Size(32, 32),
+              ),
+              onPressed: () {
+                setState(() {
+                  _dateFrom = null;
+                  _dateTo = null;
+                });
+                _loadOrders();
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildStatusChip(String? status, String label) {
     final isSelected = _selectedStatus == status;
     final color = status != null ? _statusColor(status) : Colors.grey[700]!;
@@ -387,9 +495,47 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     );
   }
 
+  Widget _buildForeignCurrencyBadge({
+    required String symbol,
+    required double amount,
+    required String code,
+    required Color color,
+    required Color bg,
+  }) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.payments_outlined, size: 13, color: color),
+            const SizedBox(width: 4),
+            Text(
+              '$symbol${amount.toStringAsFixed(2)} $code',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildOrderCard(Map<String, dynamic> order) {
     final status = order['status'] as String? ?? 'Desconocido';
     final total = (order['total'] as num?)?.toDouble() ?? 0;
+    final moneda = (order['moneda'] as String?)?.toUpperCase();
+    final totalUsd = (order['totalUsd'] as num?)?.toDouble();
+    final totalEuro = (order['totalEuro'] as num?)?.toDouble();
     final createdAt = order['created_at'] as String?;
     final orderId = order['id'];
     final metodoEntrega = order['metodo_entrega'] as String? ?? '-';
@@ -628,13 +774,32 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                   const SizedBox(width: 16),
                   Icon(Icons.attach_money,
                       size: 14, color: Colors.grey[600]),
-                  Text('\$${total.toStringAsFixed(2)}',
+                  Text('\$${total.toStringAsFixed(2)} CUP',
                       style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                           color: Colors.grey[800])),
                 ],
               ),
+              if (moneda == 'USD' && totalUsd != null && totalUsd > 0) ...[
+                const SizedBox(height: 4),
+                _buildForeignCurrencyBadge(
+                  symbol: '\$',
+                  amount: totalUsd,
+                  code: 'USD',
+                  color: Colors.green.shade700,
+                  bg: Colors.green.withValues(alpha: 0.10),
+                ),
+              ] else if (moneda == 'EUR' && totalEuro != null && totalEuro > 0) ...[
+                const SizedBox(height: 4),
+                _buildForeignCurrencyBadge(
+                  symbol: '€',
+                  amount: totalEuro,
+                  code: 'EUR',
+                  color: Colors.blue.shade700,
+                  bg: Colors.blue.withValues(alpha: 0.10),
+                ),
+              ],
               const SizedBox(height: 6),
               Row(
                 children: [

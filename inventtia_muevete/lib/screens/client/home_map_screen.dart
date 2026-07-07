@@ -1318,8 +1318,8 @@ class _HomeMapScreenState extends State<HomeMapScreen>
           if (_hasActiveTrip && !_checkingActiveTrip)
             _buildActiveTripPanel(isDark)
           // ── Normal bottom sheet ───────────────────────────────────────
-          else if (!_checkingActiveTrip)
-            _buildNormalBottomSheet(isDark, transportProvider),
+          /* else if (!_checkingActiveTrip)
+            _buildNormalBottomSheet(isDark, transportProvider), */
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(

@@ -9,8 +9,10 @@ import '../services/category_service.dart';
 import '../services/product_service.dart';
 import '../services/payment_method_service.dart';
 import '../services/turno_service.dart';
+import '../utils/uuid_generator.dart';
 import '../services/settings_integration_service.dart';
 import '../services/store_config_service.dart';
+import '../utils/navigation_helper.dart';
 import '../services/update_service.dart';
 import '../services/subscription_guard_service.dart';
 import '../models/subscription.dart';
@@ -46,8 +48,12 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isFluidModeEnabled =
       false; // Deshabilitado - Disponible en próxima versión
   bool _isOfflineModeEnabled = false; // Valor por defecto
+  bool _isTogglingOfflineMode =
+      false; // Cambio de modo offline en curso (deshabilita el switch)
   bool _hasOfflineTurno = false; // Turno abierto offline
   Map<String, dynamic>? _offlineTurnoInfo; // Información del turno offline
+  bool _isModoRestauranteEnabled = false; // Modo restaurante (mesas y comensales)
+  bool _isLoadingModoRestaurante = false;
 
   // Nuevas variables para servicios inteligentes
   StreamSubscription<SettingsIntegrationEvent>? _integrationSubscription;
@@ -203,6 +209,15 @@ class _SettingsScreenState extends State<SettingsScreen>
     final offlineTurnoInfo =
         await _userPreferencesService.getOfflineTurnoInfo();
 
+    // Modo restaurante - leer del cache (lo más rápido) sin bloquear el resto
+    bool modoRestaurante = false;
+    try {
+      final cfg = await StoreConfigService.getStoreConfigFromCache();
+      modoRestaurante = cfg?['modo_restaurante'] ?? false;
+    } catch (e) {
+      print('⚠️ No se pudo leer modo_restaurante del cache: $e');
+    }
+
     // Verificar si el widget está montado antes de actualizar el estado
     if (mounted) {
       setState(() {
@@ -215,7 +230,60 @@ class _SettingsScreenState extends State<SettingsScreen>
         _isOfflineModeEnabled = offlineModeEnabled;
         _hasOfflineTurno = hasOfflineTurno;
         _offlineTurnoInfo = offlineTurnoInfo;
+        _isModoRestauranteEnabled = modoRestaurante;
       });
+    }
+  }
+
+  Future<void> _onModoRestauranteChanged(bool value) async {
+    // Optimistic UI
+    setState(() {
+      _isModoRestauranteEnabled = value;
+      _isLoadingModoRestaurante = true;
+    });
+
+    final storeId = await _userPreferencesService.getIdTienda();
+    if (storeId == null) {
+      if (mounted) {
+        setState(() {
+          _isModoRestauranteEnabled = !value;
+          _isLoadingModoRestaurante = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ No se pudo identificar la tienda'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    final ok = await StoreConfigService.setModoRestaurante(storeId, value);
+
+    if (!mounted) return;
+    setState(() => _isLoadingModoRestaurante = false);
+
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            value
+                ? '🍽️ Modo Restaurante activado — La opción "Mesas y Comensales" ya está disponible'
+                : '🏪 Modo Restaurante desactivado — Volviendo a venta de mostrador',
+          ),
+          backgroundColor: value ? Colors.green : Colors.blueGrey,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } else {
+      setState(() => _isModoRestauranteEnabled = !value);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ Error guardando la configuración'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -623,23 +691,39 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Future<void> _onOfflineModeChanged(bool value) async {
-    final isBusy = await _isAutoSyncBusy(blockWhenRunning: false);
-    if (isBusy) {
-      _showAutoSyncBlockedMessage(
-        '🔄 Sincronización automática en progreso. Espera para cambiar el modo offline.',
-      );
-      if (mounted) {
-        setState(() {
-          _isOfflineModeEnabled = !value;
-        });
-      }
-      return;
+    // Evitar reentradas si ya hay un cambio de modo en curso.
+    if (_isTogglingOfflineMode) return;
+
+    // Deshabilitar el switch mientras se procesa el cambio.
+    if (mounted) {
+      setState(() {
+        _isTogglingOfflineMode = true;
+      });
     }
 
-    if (value) {
-      await _activateOfflineMode();
-    } else {
-      await _deactivateOfflineMode();
+    try {
+      // Si hay un pase de sincronización (automático o forzado) en curso,
+      // ESPERAR a que drene antes de cambiar de modo, en vez de bloquear y
+      // revertir. Así no quedan trabajos a medias que generen inconsistencias.
+      final isBusy = await _isAutoSyncBusy(blockWhenRunning: false);
+      if (isBusy) {
+        _showAutoSyncBlockedMessage(
+          '⏳ Esperando a que termine la sincronización para cambiar el modo...',
+        );
+        await _integrationService.waitForSyncIdle();
+      }
+
+      if (value) {
+        await _activateOfflineMode();
+      } else {
+        await _deactivateOfflineMode();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isTogglingOfflineMode = false;
+        });
+      }
     }
   }
 
@@ -889,6 +973,27 @@ class _SettingsScreenState extends State<SettingsScreen>
                   onTap: () => _showComingSoon('Tema'),
                 ),
               ]),
+
+              const SizedBox(height: 16),
+
+              // Sección Ventas
+              _buildSectionHeader('Ventas'),
+              _buildSettingsCard([
+                _buildSettingsTile(
+                  icon: Icons.playlist_add_check_outlined,
+                  title: 'Productos por Defecto',
+                  subtitle:
+                      'Configura productos que se agregan automáticamente al crear una orden',
+                  onTap: () => Navigator.pushNamed(
+                      context, '/default-order-items'),
+                ),
+              ]),
+
+              const SizedBox(height: 16),
+
+              // Sección Modo de Operación (modo restaurante)
+              _buildSectionHeader('Modo de Operación'),
+              _buildSettingsCard([_buildModoRestauranteTile()]),
 
               const SizedBox(height: 16),
 
@@ -1287,6 +1392,49 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  Widget _buildModoRestauranteTile() {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE65100).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(
+          Icons.restaurant_menu,
+          color: Color(0xFFE65100),
+          size: 20,
+        ),
+      ),
+      title: const Text(
+        'Modo Restaurante',
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFF1F2937),
+        ),
+      ),
+      subtitle: Text(
+        _isModoRestauranteEnabled
+            ? 'Mesas y comensales activos — el checkout pide mesa en lugar de cliente'
+            : 'Activar para gestionar mesas y cuentas por comensal',
+        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+      ),
+      trailing: _isLoadingModoRestaurante
+          ? const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Switch(
+              value: _isModoRestauranteEnabled,
+              onChanged: _onModoRestauranteChanged,
+              activeColor: const Color(0xFFE65100),
+            ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    );
+  }
+
   Widget _buildOfflineModeSettingsTile() {
     return ListTile(
       leading: Container(
@@ -1306,16 +1454,30 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
       ),
       subtitle: Text(
-        _isOfflineModeEnabled
-            ? 'Datos sincronizados - Puede trabajar sin conexión'
-            : 'Sincronizar datos para trabajar offline',
+        _isTogglingOfflineMode
+            ? 'Procesando cambio de modo...'
+            : (_isOfflineModeEnabled
+                ? 'Datos sincronizados - Puede trabajar sin conexión'
+                : 'Sincronizar datos para trabajar offline'),
         style: TextStyle(fontSize: 13, color: Colors.grey[600]),
       ),
-      trailing: Switch(
-        value: _isOfflineModeEnabled,
-        onChanged: _onOfflineModeChanged,
-        activeColor: Colors.blue,
-      ),
+      trailing:
+          _isTogglingOfflineMode
+              ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.blue,
+                ),
+              )
+              : Switch(
+                value: _isOfflineModeEnabled,
+                // Deshabilitar mientras se procesa el cambio para evitar
+                // toggles rápidos que dejen trabajos de sync a medias.
+                onChanged: _isTogglingOfflineMode ? null : _onOfflineModeChanged,
+                activeColor: Colors.blue,
+              ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
   }
@@ -2286,13 +2448,28 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  void _showLogoutDialog() {
+  void _showLogoutDialog() async {
+    // 🛟 Proteger datos offline sin sincronizar: avisar antes de cerrar sesión
+    // si hay órdenes, operaciones o egresos pendientes que se perderían.
+    final hasUnsynced =
+        await _userPreferencesService.hasUnsyncedOfflineData();
+
+    if (!mounted) return;
+
+    final String contenido =
+        hasUnsynced
+            ? '⚠️ Tienes datos sin sincronizar (órdenes, turno o egresos en modo offline). '
+                'Si cierras sesión ahora podrías perderlos.\n\n'
+                'Te recomendamos conectarte y sincronizar antes de salir.\n\n'
+                '¿Cerrar sesión de todos modos?'
+            : '¿Estás seguro de que quieres cerrar sesión?';
+
     showDialog(
       context: context,
       builder:
           (context) => AlertDialog(
             title: const Text('Cerrar Sesión'),
-            content: const Text('¿Estás seguro de que quieres cerrar sesión?'),
+            content: Text(contenido),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
@@ -2300,7 +2477,6 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
               ElevatedButton(
                 onPressed: () {
-                  // Aquí implementarías la lógica de logout real
                   Navigator.pop(context);
                   _performLogout();
                 },
@@ -2308,7 +2484,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
                 ),
-                child: const Text('Cerrar Sesión'),
+                child: Text(
+                  hasUnsynced ? 'Cerrar de todos modos' : 'Cerrar Sesión',
+                ),
               ),
             ],
           ),
@@ -2334,12 +2512,8 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   void _onBottomNavTap(int index) {
     switch (index) {
-      case 0: // Home
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/categories',
-          (route) => false,
-        );
+      case 0: // Home → /mesas si modo restaurante, /categories si no
+        NavigationHelper.goHome(context);
         break;
       case 1: // Preorden
         Navigator.pushNamed(context, '/preorder');
@@ -4442,20 +4616,83 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
     }
   }
 
-  /// Cerrar turno desde datos offline
+  /// Cerrar turno desde datos offline.
+  ///
+  /// Solo cierra si EXISTE una operación 'cierre_turno' pendiente (el usuario
+  /// mandó a cerrar explícitamente). Usa el RPC idempotente
+  /// fn_cerrar_turno_offline (con client_uuid) para no cerrar dos veces; si no
+  /// está disponible, cae a fn_cerrar_turno_tpv.
   Future<void> _closeTurnoFromOffline() async {
     final operations =
         await widget.userPreferencesService.getPendingOperations();
 
     for (var operation in operations) {
-      if (operation['type'] == 'cierre_turno') {
-        print('🔄 Cerrando turno desde datos offline...');
-        // Aquí iría la lógica para cerrar el turno usando TurnoService
-        // Por ahora simulamos el éxito
-        await Future.delayed(const Duration(milliseconds: 500));
-        print('✅ Turno cerrado desde datos offline');
-        break;
+      if (operation['type'] != 'cierre_turno') continue;
+
+      final data = (operation['data'] as Map?)?.cast<String, dynamic>() ?? {};
+      final idTpv = data['id_tpv'];
+      final usuario = data['usuario'];
+      final efectivoFinal = (data['efectivo_final'] ?? 0.0);
+      final observaciones = data['observaciones'] as String?;
+      final productosRaw = data['productos'] as List<dynamic>? ?? [];
+      final productos =
+          productosRaw.map((e) => e as Map<String, dynamic>).toList();
+
+      if (idTpv == null || usuario == null) {
+        print('⚠️ Operación cierre_turno sin datos suficientes; se omite');
+        continue;
       }
+
+      var clientUuid = data['client_uuid']?.toString();
+      if (clientUuid == null || clientUuid.isEmpty) {
+        clientUuid = UuidGenerator.v4();
+      }
+
+      print('🔄 Cerrando turno desde datos offline (TPV $idTpv)...');
+      bool cerrado = false;
+
+      try {
+        final resp = await Supabase.instance.client.rpc(
+          'fn_cerrar_turno_offline',
+          params: {
+            'p_client_uuid': clientUuid,
+            'p_id_tpv': idTpv,
+            'p_efectivo_real': efectivoFinal,
+            'p_usuario': usuario,
+            'p_productos': productos,
+            'p_observaciones': observaciones,
+          },
+        );
+        cerrado = resp is Map && resp['status'] == 'success';
+        if (cerrado) {
+          print('✅ Turno cerrado (idempotente=${resp['idempotent']})');
+        } else {
+          print('⚠️ Cierre offline rechazado: $resp');
+        }
+      } catch (e) {
+        // Fallback: RPC idempotente no disponible.
+        print('⚠️ fn_cerrar_turno_offline no disponible ($e). Fallback.');
+        try {
+          final result = await TurnoService.cerrarTurnoDetailed(
+            efectivoReal: (efectivoFinal as num).toDouble(),
+            productos: productos,
+            observaciones: observaciones,
+          );
+          cerrado = result.success;
+        } catch (e2) {
+          print('❌ Error en fallback de cierre offline: $e2');
+        }
+      }
+
+      if (cerrado) {
+        // Marcar la operación como sincronizada y limpiar el turno offline.
+        await widget.userPreferencesService.removePendingOperationsByType(
+          'cierre_turno',
+        );
+        await widget.userPreferencesService.clearOfflineTurno();
+        print('✅ Turno cerrado desde datos offline y limpiado');
+      }
+      break;
     }
   }
 

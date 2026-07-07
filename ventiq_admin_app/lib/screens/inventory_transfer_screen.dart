@@ -5,6 +5,7 @@ import '../models/warehouse.dart';
 import '../services/warehouse_service.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
+import '../widgets/presentacion_equivalencia_widget.dart';
 
 class InventoryTransferScreen extends StatefulWidget {
   const InventoryTransferScreen({super.key});
@@ -322,7 +323,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     _showProgressDialog();
 
     // Initialize progress tracking
-    _totalSteps = 3; // Validación, Transferencia, Completar operaciones
+    _totalSteps = 2; // Validación + transferencia atómica (RPC)
     _currentStep = 0;
     _transferProgress = 0.0;
 
@@ -425,8 +426,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         );
       }
 
-      print('🔄 Iniciando transferencia unificada entre layouts...');
-      print('📞 Llamando a: InventoryService.transferBetweenLayouts');
+      print('🔄 Iniciando transferencia atómica entre layouts...');
+      print('📞 RPC: fn_transferir_inventario_entre_layouts');
       print('📋 Parámetros:');
       print('   - idLayoutOrigen: $sourceLayoutId');
       print('   - idLayoutDestino: $destinationLayoutId');
@@ -448,7 +449,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         productos: productosParaEnviar,
         autorizadoPor: _autorizadoPorController.text,
         observaciones: _observacionesController.text,
-        estadoInicial: 1, // Pendiente - can be confirmed later
+        completarOperaciones: true,
       );
 
       print('📋 Resultado de la transferencia:');
@@ -456,125 +457,15 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       print('   - Message: ${result['message']}');
       print('   - ID Extracción: ${result['id_extraccion']}');
       print('   - ID Recepción: ${result['id_recepcion']}');
-
-      if (result['extraction_completion'] != null) {
-        print('📤 Completado extracción:');
-        print('   - Status: ${result['extraction_completion']['status']}');
-        print('   - Message: ${result['extraction_completion']['message']}');
-      }
-
-      if (result['reception_completion'] != null) {
-        print('📥 Completado recepción:');
-        print('   - Status: ${result['reception_completion']['status']}');
-        print('   - Message: ${result['reception_completion']['message']}');
-      }
+      print(
+        '   - ID Op. transferencia: ${result['id_operacion_transferencia']}',
+      );
 
       if (result['status'] == 'success') {
-        // Update progress: Completando operaciones
-        setState(() {
-          _currentStep = 3;
-          _transferProgress = 0.7;
-          _transferStatus = 'Completando operaciones...';
-        });
-
-        // Complete both operations automatically if transfer was successful
-        if (result['id_extraccion'] != null && result['id_recepcion'] != null) {
-          try {
-            print('🔄 Completando operación de extracción...');
-            print('📊 ID Extracción: ${result['id_extraccion']}');
-
-            final completeExtractionResult =
-                await InventoryService.completeOperation(
-                  idOperacion: result['id_extraccion'],
-                  comentario:
-                      'Extracción de transferencia completada automáticamente - ${_observacionesController.text.trim()}',
-                  uuid: userUuid,
-                );
-
-            print(
-              '📋 Resultado completeOperation (extracción): $completeExtractionResult',
-            );
-
-            if (completeExtractionResult['status'] == 'success') {
-              print('✅ Extracción completada exitosamente');
-              print(
-                '📊 Productos afectados (extracción): ${completeExtractionResult['productos_afectados']}',
-              );
-            } else {
-              print(
-                '⚠️ Advertencia al completar extracción: ${completeExtractionResult['message']}',
-              );
-            }
-
-            print('🔄 Completando operación de recepción...');
-            print('📊 ID Recepción: ${result['id_recepcion']}');
-
-            final completeReceptionResult =
-                await InventoryService.completeOperation(
-                  idOperacion: result['id_recepcion'],
-                  comentario:
-                      'Recepción de transferencia completada automáticamente - ${_observacionesController.text.trim()}',
-                  uuid: userUuid,
-                );
-
-            print(
-              '📋 Resultado completeOperation (recepción): $completeReceptionResult',
-            );
-
-            if (completeReceptionResult['status'] == 'success') {
-              print('✅ Recepción completada exitosamente');
-              print(
-                '📊 Productos afectados (recepción): ${completeReceptionResult['productos_afectados']}',
-              );
-            } else {
-              print(
-                '⚠️ Advertencia al completar recepción: ${completeReceptionResult['message']}',
-              );
-            }
-          } catch (completeError, stackTrace) {
-            print(
-              '❌ Error al completar operaciones de transferencia: $completeError',
-            );
-            print('📍 StackTrace completo: $stackTrace');
-            // Don't throw here - transfer was successful, completion is secondary
-          }
-
-          // Register the transfer linkage in app_dat_operacion_transferencia
-          try {
-            print('📋 Registrando en app_dat_operacion_transferencia...');
-            final transferRegistroResult =
-                await InventoryService.registrarOperacionTransferencia(
-                  idExtraccion: result['id_extraccion'] as int,
-                  idRecepcion: result['id_recepcion'] as int,
-                  autorizadoPor: _autorizadoPorController.text,
-                  idTienda: idTienda,
-                  uuid: userUuid,
-                );
-            if (transferRegistroResult['status'] == 'success') {
-              print(
-                '✅ Operación de transferencia registrada - ID: ${transferRegistroResult['id_operacion']}',
-              );
-            } else {
-              print(
-                '⚠️ Error al registrar en app_dat_operacion_transferencia: ${transferRegistroResult['message']}',
-              );
-            }
-          } catch (regError) {
-            print(
-              '❌ Error al registrar en app_dat_operacion_transferencia: $regError',
-            );
-            // Don't throw - primary transfer already succeeded
-          }
-        } else {
-          print('⚠️ No se obtuvieron IDs de operaciones para completar');
-        }
-
-        // Save the values for future use before showing success message
         _savePersistedValues();
 
-        // Update progress: Completado
         setState(() {
-          _currentStep = 3;
+          _currentStep = 2;
           _transferProgress = 1.0;
           _transferStatus = '¡Transferencia completada!';
         });
@@ -1048,6 +939,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     final presNombre = product['presentacion_nombre']?.toString() ?? '';
     final varNombre = product['variante_nombre']?.toString() ?? '';
     final hasVariant = varNombre.isNotEmpty && varNombre != 'Sin variante';
+    final idProducto = (product['id_producto'] as num?)?.toInt();
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1088,6 +980,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               ),
             ),
           ),
+          if (idProducto != null)
+            PresentacionEquivalenciaIconButton(
+              productId: idProducto,
+              productName: nombre,
+              iconSize: 18,
+            ),
           // Qty input
           SizedBox(
             width: 72,

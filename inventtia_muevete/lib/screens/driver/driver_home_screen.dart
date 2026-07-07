@@ -25,14 +25,12 @@ import '../../models/notification_model.dart';
 import '../../services/completion_sync_service.dart';
 import '../../services/driver_service.dart';
 import '../../services/notification_service.dart';
-import '../../services/vehicle_type_service.dart';
-import '../../models/vehicle_type_model.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import 'active_ride_screen.dart';
 import 'incoming_requests_screen.dart';
 import 'driver_wallet_screen.dart';
-import 'driver_profile_screen.dart';
+import '../common/unified_profile_screen.dart';
 
 class DriverHomeScreen extends StatefulWidget {
   const DriverHomeScreen({super.key});
@@ -376,7 +374,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // Block going online if no vehicle assigned
     final vehiculo = driverProfile['vehiculos'] as Map<String, dynamic>?;
     if (vehiculo == null && !_isOnline) {
-      _showRegisterVehicleSheet();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Debes registrar un vehículo desde tu perfil antes de ponerte en línea'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const UnifiedProfileScreen()));
       return;
     }
 
@@ -431,270 +434,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     } finally {
       if (mounted) setState(() => _isTogglingStatus = false);
     }
-  }
-
-  Future<void> _showRegisterVehicleSheet() async {
-    final isDark = context.read<ThemeProvider>().isDark;
-    final authProvider = context.read<AuthProvider>();
-    final driverId = authProvider.driverProfile?['id'] as int?;
-    if (driverId == null) return;
-
-    final vehicleTypes = await VehicleTypeService().getActiveTypes();
-    if (!mounted) return;
-
-    VehicleTypeModel? selectedType = vehicleTypes.isNotEmpty
-        ? vehicleTypes.first
-        : null;
-    final marcaCtrl = TextEditingController();
-    final modeloCtrl = TextEditingController();
-    final chapaCtrl = TextEditingController();
-    final colorCtrl = TextEditingController();
-    final capacidadCtrl = TextEditingController();
-    bool saving = false;
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
-          ),
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppTheme.surface(isDark),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(24),
-              ),
-            ),
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AppTheme.shimmer(isDark),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Registrar vehículo',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textPrimary(isDark),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Debes tener un vehículo para activarte',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      color: AppTheme.textTertiary(isDark),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  // Vehicle type selector
-                  Text(
-                    'Tipo de vehículo',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textSecondary(isDark),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: vehicleTypes.map((vt) {
-                      final selected = selectedType?.id == vt.id;
-                      return ChoiceChip(
-                        label: Text(vt.displayName),
-                        selected: selected,
-                        onSelected: (_) => setSheet(() => selectedType = vt),
-                        selectedColor: AppTheme.primaryColor,
-                        backgroundColor: AppTheme.bg(isDark),
-                        labelStyle: GoogleFonts.plusJakartaSans(
-                          color: selected
-                              ? Colors.white
-                              : AppTheme.textTertiary(isDark),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 16),
-                  _sheetField(marcaCtrl, 'Marca', 'Ej: Toyota', isDark: isDark),
-                  const SizedBox(height: 12),
-                  _sheetField(
-                    modeloCtrl,
-                    'Modelo',
-                    'Ej: Corolla',
-                    isDark: isDark,
-                  ),
-                  const SizedBox(height: 12),
-                  _sheetField(
-                    chapaCtrl,
-                    'Chapa / Matrícula',
-                    'Ej: ABC-1234',
-                    isDark: isDark,
-                  ),
-                  const SizedBox(height: 12),
-                  _sheetField(colorCtrl, 'Color', 'Ej: Blanco', isDark: isDark),
-                  const SizedBox(height: 12),
-                  _sheetField(
-                    capacidadCtrl,
-                    'Capacidad (pasajeros)',
-                    '4',
-                    keyboard: TextInputType.number,
-                    isDark: isDark,
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      onPressed: saving
-                          ? null
-                          : () async {
-                              if (selectedType == null ||
-                                  marcaCtrl.text.trim().isEmpty ||
-                                  modeloCtrl.text.trim().isEmpty ||
-                                  chapaCtrl.text.trim().isEmpty ||
-                                  colorCtrl.text.trim().isEmpty) {
-                                ScaffoldMessenger.of(ctx).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Completa todos los campos'),
-                                  ),
-                                );
-                                return;
-                              }
-                              setSheet(() => saving = true);
-                              try {
-                                await _driverService.createVehicleForDriver(
-                                  driverId: driverId,
-                                  vehicleTypeId: selectedType!.id,
-                                  marca: marcaCtrl.text.trim(),
-                                  modelo: modeloCtrl.text.trim(),
-                                  chapa: chapaCtrl.text.trim(),
-                                  color: colorCtrl.text.trim(),
-                                  capacidad: capacidadCtrl.text.trim().isEmpty
-                                      ? null
-                                      : capacidadCtrl.text.trim(),
-                                );
-                                await authProvider.refreshDriverProfile();
-                                if (ctx.mounted) Navigator.pop(ctx);
-                              } catch (e) {
-                                setSheet(() => saving = false);
-                                if (ctx.mounted) {
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Error: $e'),
-                                      backgroundColor: AppTheme.error,
-                                    ),
-                                  );
-                                }
-                              }
-                            },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryColor,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      child: saving
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Text(
-                              'Guardar vehículo',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _sheetField(
-    TextEditingController ctrl,
-    String label,
-    String hint, {
-    TextInputType keyboard = TextInputType.text,
-    bool isDark = true,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.textSecondary(isDark),
-          ),
-        ),
-        const SizedBox(height: 6),
-        TextField(
-          controller: ctrl,
-          keyboardType: keyboard,
-          style: GoogleFonts.plusJakartaSans(
-            color: AppTheme.textPrimary(isDark),
-            fontSize: 14,
-          ),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: GoogleFonts.plusJakartaSans(
-              color: AppTheme.textTertiary(isDark),
-              fontSize: 14,
-            ),
-            filled: true,
-            fillColor: AppTheme.bg(isDark),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 14,
-              vertical: 12,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide(color: AppTheme.border(isDark)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide(color: AppTheme.border(isDark)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(
-                color: AppTheme.primaryColor,
-                width: 2,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
   }
 
   void _dismissRequest(int index) {
@@ -1109,7 +848,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       case 3:
         Navigator.of(context)
             .push(
-              MaterialPageRoute(builder: (_) => const DriverProfileScreen()),
+              MaterialPageRoute(builder: (_) => const UnifiedProfileScreen()),
             )
             .then((_) {
               if (mounted && _isOnline) _loadNearbyRequests();
@@ -1395,7 +1134,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                           // Vehicle chip
                           vehiculo != null
                               ? GestureDetector(
-                                  onTap: _showRegisterVehicleSheet,
+                                  onTap: () => Navigator.push(context,
+                                      MaterialPageRoute(
+                                          builder: (_) =>
+                                              const UnifiedProfileScreen())),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 8,
@@ -1447,7 +1189,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                   ),
                                 )
                               : GestureDetector(
-                                  onTap: _showRegisterVehicleSheet,
+                                  onTap: () => Navigator.push(context,
+                                      MaterialPageRoute(
+                                          builder: (_) =>
+                                              const UnifiedProfileScreen())),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 8,

@@ -2099,20 +2099,25 @@ class _InventoryExtractionBySaleScreenState
     // Productos
     double total = 0;
     for (var product in _selectedProducts) {
-      final cantidad = product['cantidad'] as double? ?? 0;
-      final precio = product['precio'] as double? ?? 0;
+      final cantidad = (product['cantidad'] as num?)?.toDouble() ?? 0;
+      final precio = (product['precio_unitario'] as num?)?.toDouble() ?? 0;
       final subtotal = cantidad * precio;
       total += subtotal;
 
-      String nombre = product['nombre'] ?? 'Producto';
+      String nombre = product['denominacion'] ??
+          product['nombre_producto'] ??
+          product['nombre'] ??
+          'Producto';
+      final variante = product['variante'] as String? ?? '';
+      if (variante.isNotEmpty) nombre = '$nombre ($variante)';
       if (nombre.length > 28) nombre = nombre.substring(0, 25) + '...';
 
       bytes += generator.text(
-        '${cantidad.toStringAsFixed(1)}x $nombre',
+        '${cantidad % 1 == 0 ? cantidad.toInt() : cantidad.toStringAsFixed(2)}x $nombre',
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.text(
-        '  \$${precio.toStringAsFixed(0)} = \$${subtotal.toStringAsFixed(0)}',
+        '  \$${precio.toStringAsFixed(2)} = \$${subtotal.toStringAsFixed(2)}',
         styles: PosStyles(align: PosAlign.right),
       );
     }
@@ -2123,7 +2128,7 @@ class _InventoryExtractionBySaleScreenState
       styles: PosStyles(align: PosAlign.center),
     );
     bytes += generator.text(
-      'TOTAL: \$${total.toStringAsFixed(0)}',
+      'TOTAL: \$${_calculateTotal().toStringAsFixed(2)}',
       styles: PosStyles(align: PosAlign.right, bold: true),
     );
 

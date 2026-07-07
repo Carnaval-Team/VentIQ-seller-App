@@ -166,7 +166,13 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
     if (confirmed == true && mounted) {
       await context.read<TransportProvider>().cancelRequest();
       if (mounted) {
-        Navigator.popUntil(context, (route) => route.isFirst);
+        // Go back to the client home, not to the app's first route
+        // (which is the landing/auth gate).
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/client/home',
+          (route) => false,
+        );
       }
     }
   }

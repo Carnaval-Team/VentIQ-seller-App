@@ -336,10 +336,11 @@ class VariantService {
       }
 
       // Get products that use this variant and belong to this subcategory
-      final response = await _supabase.rpc('get_productos_completos_by_tienda_optimized', params: {
+      final response = await _supabase.rpc('get_productos_completos_by_tienda_optimized2', params: {
         'id_tienda_param': storeId,
         'id_categoria_param': null,
         'solo_disponibles_param': false,
+        'incluir_no_vendibles_param': true,
       });
 
       if (response == null) {
@@ -434,10 +435,11 @@ class VariantService {
       }
 
       // Use the product function to get subcategories since there's no direct subcategory RPC
-      final response = await _supabase.rpc('get_productos_completos_by_tienda_optimized', params: {
+      final response = await _supabase.rpc('get_productos_completos_by_tienda_optimized2', params: {
         'id_tienda_param': storeId,
         'id_categoria_param': null,
         'solo_disponibles_param': false,
+        'incluir_no_vendibles_param': true,
       });
 
       if (response == null) {

@@ -140,6 +140,13 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
 
   void _populateForm() {
     final promotion = widget.promotion!;
+    // En edición, fijar la tienda original de la promoción para evitar
+    // que se re-asigne a otra tienda por el store selector actual.
+    final promoStoreId = int.tryParse(promotion.idTienda);
+    if (promoStoreId != null) {
+      _selectedStoreId = promoStoreId;
+      _selectedStoreName = promotion.tiendaNombre ?? _selectedStoreName;
+    }
     _nombreController.text = promotion.nombre;
     _descripcionController.text = promotion.descripcion ?? '';
     _codigoController.text = promotion.codigoPromocion;
@@ -157,7 +164,11 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     _requiereMedioPago = promotion.requiereMedioPago ?? false;
     _selectedMedioPago = promotion.idMedioPagoRequerido?.toString();
 
-    _applyPromotionTypeDefaults(_selectedTipoPromocion);
+    // No aplicar defaults en edición: puede pisar valores existentes (ej: min_compra).
+    // Los defaults deben aplicar solo al crear o cuando el usuario cambia el tipo.
+    if (!_isEditing) {
+      _applyPromotionTypeDefaults(_selectedTipoPromocion);
+    }
 
     print('📝 Formulario poblado con datos de promoción: ${promotion.nombre}');
     print('📝 Tipo de promoción seleccionado: $_selectedTipoPromocion');
@@ -296,11 +307,14 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
         throw Exception('No se pudo obtener la tienda seleccionada');
       }
 
-      final userPrefs = UserPreferencesService();
-      await userPrefs.updateSelectedStore(storeId);
-      print(
-        '🏪 Tienda actualizada en preferencias: $_selectedStoreName (ID: $storeId)',
-      );
+      // Evitar cambiar la tienda global del usuario solo por editar una promo.
+      if (!_isEditing) {
+        final userPrefs = UserPreferencesService();
+        await userPrefs.updateSelectedStore(storeId);
+        print(
+          '🏪 Tienda actualizada en preferencias: $_selectedStoreName (ID: $storeId)',
+        );
+      }
 
       final selectable = await _promotionService.listPromotionSelectableProducts(
         storeId: storeId,
@@ -460,7 +474,7 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
 
     try {
       final isTwoForOne = _isTwoForOnePromotionType(_selectedTipoPromocion);
-      final promotionData = {
+      Map<String, dynamic> promotionData = {
         'nombre': _nombreController.text.trim(),
         'descripcion':
             _descripcionController.text.trim().isEmpty
@@ -490,6 +504,16 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                 : null,
         'id_tienda': _selectedStoreId,
       };
+
+      if (_isEditing && widget.promotion != null) {
+        // No permitir que la edición cambie la tienda por accidente.
+        promotionData.remove('id_tienda');
+        // Enviar solo campos que cambiaron vs. el original.
+        promotionData = _filterUnchangedFields(
+          original: widget.promotion!,
+          next: promotionData,
+        );
+      }
 
       print(
         '💾 Guardando promoción en tienda: $_selectedStoreName (ID: $_selectedStoreId)',
@@ -559,6 +583,105 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  Map<String, dynamic> _filterUnchangedFields({
+    required promo.Promotion original,
+    required Map<String, dynamic> next,
+  }) {
+    bool sameNum(num? a, num? b) {
+      if (a == null && b == null) return true;
+      if (a == null || b == null) return false;
+      return (a - b).abs() < 0.0001;
+    }
+
+    bool sameString(String? a, String? b) {
+      final aa = (a ?? '').trim();
+      final bb = (b ?? '').trim();
+      // Tratar vacío y null como equivalentes para descripcion
+      return aa == bb;
+    }
+
+    final filtered = <String, dynamic>{};
+
+    // Strings
+    if (!sameString(original.nombre, next['nombre'] as String?)) {
+      filtered['nombre'] = next['nombre'];
+    }
+    final nextDesc = next['descripcion'] as String?;
+    if (!sameString(original.descripcion, nextDesc)) {
+      filtered['descripcion'] = nextDesc;
+    }
+    if (!sameString(original.codigoPromocion, next['codigo_promocion'] as String?)) {
+      filtered['codigo_promocion'] = next['codigo_promocion'];
+    }
+
+    // Tipo / valores numéricos
+    final nextTipo = next['id_tipo_promocion'];
+    if (nextTipo != null &&
+        original.idTipoPromocion.toString() != nextTipo.toString()) {
+      filtered['id_tipo_promocion'] = nextTipo;
+    }
+
+    final nextValor = next['valor_descuento'] as num?;
+    if (!sameNum(original.valorDescuento, nextValor)) {
+      filtered['valor_descuento'] = nextValor;
+    }
+
+    final nextMin = next['min_compra'] as num?;
+    if (!sameNum(original.minCompra, nextMin)) {
+      filtered['min_compra'] = nextMin;
+    }
+
+    final nextLimite = next['limite_usos'];
+    if ((original.limiteUsos)?.toString() != nextLimite?.toString()) {
+      filtered['limite_usos'] = nextLimite;
+    }
+
+    // Fechas (comparar en local porque el form trabaja en local)
+    final nextInicio = next['fecha_inicio'] as String?;
+    if (nextInicio != null) {
+      final parsed = DateTime.tryParse(nextInicio)?.toLocal();
+      if (parsed != null &&
+          parsed.millisecondsSinceEpoch !=
+              original.fechaInicio.toLocal().millisecondsSinceEpoch) {
+        filtered['fecha_inicio'] = nextInicio;
+      }
+    }
+
+    final nextFin = next['fecha_fin'] as String?;
+    final origFin = original.fechaFin?.toLocal();
+    if (nextFin == null) {
+      if (origFin != null) filtered['fecha_fin'] = null;
+    } else {
+      final parsed = DateTime.tryParse(nextFin)?.toLocal();
+      if (parsed == null ||
+          origFin == null ||
+          parsed.millisecondsSinceEpoch != origFin.millisecondsSinceEpoch) {
+        filtered['fecha_fin'] = nextFin;
+      }
+    }
+
+    // Flags
+    if (original.estado != (next['estado'] as bool? ?? original.estado)) {
+      filtered['estado'] = next['estado'];
+    }
+    if (original.aplicaTodo != (next['aplica_todo'] as bool? ?? original.aplicaTodo)) {
+      filtered['aplica_todo'] = next['aplica_todo'];
+    }
+    final origReq = original.requiereMedioPago ?? false;
+    final nextReq = next['requiere_medio_pago'] as bool? ?? origReq;
+    if (origReq != nextReq) {
+      filtered['requiere_medio_pago'] = next['requiere_medio_pago'];
+    }
+
+    final origMedio = original.idMedioPagoRequerido;
+    final nextMedio = next['id_medio_pago_requerido'];
+    if (origMedio?.toString() != nextMedio?.toString()) {
+      filtered['id_medio_pago_requerido'] = nextMedio;
+    }
+
+    return filtered;
   }
 
   void _showErrorSnackBar(String message) {

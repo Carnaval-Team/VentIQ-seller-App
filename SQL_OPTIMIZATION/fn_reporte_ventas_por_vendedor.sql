@@ -1,7 +1,27 @@
+-- FUNCTION: public.fn_reporte_ventas_por_vendedor_sch(uuid, date, date, bigint, boolean)
+
+-- Se elimina la firma anterior (4 args) porque agregamos un parámetro nuevo.
+DROP FUNCTION IF EXISTS public.fn_reporte_ventas_por_vendedor_sch(uuid, date, date, bigint);
+
+CREATE OR REPLACE FUNCTION public.fn_reporte_ventas_por_vendedor_sch(
+	p_uuid_usuario uuid DEFAULT NULL::uuid,
+	p_fecha_desde date DEFAULT NULL::date,
+	p_fecha_hasta date DEFAULT NULL::date,
+	p_id_tienda bigint DEFAULT NULL::bigint,
+	p_hasta_cierre_turno boolean DEFAULT false)
+    RETURNS TABLE(uuid_usuario uuid, nombres character varying, apellidos character varying, nombre_completo character varying, total_ventas bigint, total_productos_vendidos numeric, total_dinero_efectivo numeric, total_dinero_transferencia numeric, total_dinero_general numeric, total_importe_ventas numeric, productos_diferentes_vendidos bigint, primera_venta timestamp with time zone, ultima_venta timestamp with time zone) 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+    ROWS 1000
+
+AS $BODY$
 DECLARE
     v_fecha_inicio_filtro timestamptz;
     v_fecha_fin_filtro timestamptz;
+    v_fecha_cierre_turno timestamptz;
     v_id_tpv bigint;
+    v_id_tpv_cierre bigint;
 BEGIN
     -- Si NO se pasan fechas, usamos el turno abierto del vendedor
     IF p_fecha_desde IS NULL AND p_fecha_hasta IS NULL AND p_uuid_usuario IS NOT NULL THEN
@@ -16,23 +36,71 @@ BEGIN
             RETURN;
         END IF;
 
-        -- Obtener TODOS los turnos (abiertos y cerrados) del vendedor en ese TPV
-        -- Tomar desde el más antiguo hasta el más reciente
-        SELECT MIN(ct.fecha_apertura), MAX(COALESCE(ct.fecha_cierre, NOW()))
-        INTO v_fecha_inicio_filtro, v_fecha_fin_filtro
+        -- Obtener el turno abierto en ese TPV
+        SELECT ct.fecha_apertura
+        INTO v_fecha_inicio_filtro
         FROM app_dat_caja_turno ct
         WHERE ct.id_tpv = v_id_tpv
-          AND ct.id_vendedor IN (SELECT id FROM app_dat_vendedor WHERE uuid = p_uuid_usuario);
+          AND ct.estado = 1  -- Abierto
+          AND ct.id_vendedor IN (SELECT id FROM app_dat_vendedor WHERE uuid = p_uuid_usuario)
+        ORDER BY ct.fecha_apertura DESC
+        LIMIT 1;
 
-        -- Si hay al menos un turno, filtramos desde el más antiguo hasta el más reciente
-        IF v_fecha_inicio_filtro IS NULL THEN
-            -- No hay turnos → no devolver datos
+        -- Si hay turno abierto, filtramos desde su apertura hasta ahora
+        IF v_fecha_inicio_filtro IS NOT NULL THEN
+            v_fecha_fin_filtro := NOW();
+        ELSE
+            -- No hay turno abierto → no devolver datos
             RETURN;
         END IF;
     ELSE
         -- Si se pasan fechas, usamos ese rango
         v_fecha_inicio_filtro := p_fecha_desde;
         v_fecha_fin_filtro := COALESCE(p_fecha_hasta, CURRENT_DATE) + INTERVAL '1 day' - INTERVAL '1 second';
+
+        -- Si p_hasta_cierre_turno = true, extendemos la fecha de fin hasta el cierre
+        -- del turno cuando este cerró después de p_fecha_hasta, o hasta NOW() si el
+        -- turno sigue abierto. Si el cierre es anterior/igual a p_fecha_hasta, se
+        -- mantiene el rango original (comportamiento actual por defecto).
+        IF p_hasta_cierre_turno IS TRUE THEN
+            -- Determinar el/los TPV involucrados: si viene el vendedor usamos su TPV,
+            -- de lo contrario tomamos todos los TPV de la tienda.
+            -- Usamos v_id_tpv_cierre (no v_id_tpv) para NO alterar el filtro de la
+            -- consulta principal, que solo debe filtrar por TPV en el flujo de turno abierto.
+            IF p_uuid_usuario IS NOT NULL THEN
+                SELECT v.id_tpv
+                INTO v_id_tpv_cierre
+                FROM app_dat_vendedor v
+                WHERE v.uuid = p_uuid_usuario;
+            END IF;
+
+            -- Buscar el turno cuya apertura sea <= fin del rango y que:
+            --   * siga abierto (estado = 1) -> se lleva hasta NOW(), o
+            --   * haya cerrado después del fin del rango -> se lleva hasta fecha_cierre
+            -- Tomamos el cierre más tardío (o NOW() si hay alguno abierto).
+            SELECT MAX(
+                     CASE
+                         WHEN ct.estado = 1 THEN NOW()
+                         ELSE ct.fecha_cierre
+                     END
+                   )
+            INTO v_fecha_cierre_turno
+            FROM app_dat_caja_turno ct
+            WHERE (
+                    (v_id_tpv_cierre IS NOT NULL AND ct.id_tpv = v_id_tpv_cierre)
+                    OR (v_id_tpv_cierre IS NULL AND ct.id_tpv IN (
+                            SELECT tpv.id FROM app_dat_tpv tpv
+                            WHERE p_id_tienda IS NULL OR tpv.id_tienda = p_id_tienda
+                       ))
+                  )
+              AND ct.fecha_apertura <= v_fecha_fin_filtro
+              AND (ct.estado = 1 OR ct.fecha_cierre > v_fecha_fin_filtro);
+
+            -- Solo extendemos si encontramos un cierre posterior al rango original.
+            IF v_fecha_cierre_turno IS NOT NULL AND v_fecha_cierre_turno > v_fecha_fin_filtro THEN
+                v_fecha_fin_filtro := v_fecha_cierre_turno;
+            END IF;
+        END IF;
     END IF;
 
     -- Aseguramos que el inicio tenga hora completa si es date
@@ -103,3 +171,18 @@ WHERE o.id_tipo_operacion = (SELECT id FROM app_nom_tipo_operacion WHERE LOWER(d
 GROUP BY o.uuid, t.nombres, t.apellidos
 ORDER BY total_dinero_general DESC, total_ventas DESC;
 END;
+$BODY$;
+
+ALTER FUNCTION public.fn_reporte_ventas_por_vendedor_sch(uuid, date, date, bigint, boolean)
+    OWNER TO postgres;
+
+GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_por_vendedor_sch(uuid, date, date, bigint, boolean) TO PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_por_vendedor_sch(uuid, date, date, bigint, boolean) TO anon;
+
+GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_por_vendedor_sch(uuid, date, date, bigint, boolean) TO authenticated;
+
+GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_por_vendedor_sch(uuid, date, date, bigint, boolean) TO postgres;
+
+GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_por_vendedor_sch(uuid, date, date, bigint, boolean) TO service_role;
+

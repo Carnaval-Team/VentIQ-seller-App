@@ -59,6 +59,8 @@ class ProductSalesReport {
   final int idTienda;
   final int idProducto;
   final String nombreProducto;
+  final int idProveedor;
+  final String nombreProveedor;
   final double precioVentaCup;
   final double precioCosto;
   final double valorUsd;
@@ -68,11 +70,15 @@ class ProductSalesReport {
   final double costoTotalVendido;
   final double gananciaUnitaria;
   final double gananciaTotal;
+  final bool esElaborado;
+  final bool esServicio;
 
   ProductSalesReport({
     required this.idTienda,
     required this.idProducto,
     required this.nombreProducto,
+    this.idProveedor = 0,
+    this.nombreProveedor = 'Sin Proveedor',
     required this.precioVentaCup,
     required this.precioCosto,
     required this.valorUsd,
@@ -82,6 +88,8 @@ class ProductSalesReport {
     required this.costoTotalVendido,
     required this.gananciaUnitaria,
     required this.gananciaTotal,
+    this.esElaborado = false,
+    this.esServicio = false,
   });
 
   factory ProductSalesReport.fromJson(Map<String, dynamic> json) {
@@ -89,6 +97,8 @@ class ProductSalesReport {
       idTienda: json['id_tienda'] ?? 0,
       idProducto: json['id_producto'] ?? 0,
       nombreProducto: json['nombre_producto'] ?? '',
+      idProveedor: (json['id_proveedor'] ?? 0) as int,
+      nombreProveedor: json['nombre_proveedor'] ?? 'Sin Proveedor',
       precioVentaCup: (json['precio_venta_cup'] ?? 0).toDouble(),
       precioCosto: (json['precio_costo'] ?? 0).toDouble(),
       valorUsd: (json['valor_usd'] ?? 1).toDouble(),
@@ -98,6 +108,8 @@ class ProductSalesReport {
       costoTotalVendido: (json['costo_total_vendido'] ?? 0).toDouble(),
       gananciaUnitaria: (json['ganancia_unitaria'] ?? 0).toDouble(),
       gananciaTotal: (json['ganancia_total'] ?? 0).toDouble(),
+      esElaborado: (json['es_elaborado'] ?? false) as bool,
+      esServicio: (json['es_servicio'] ?? false) as bool,
     );
   }
 }
@@ -256,65 +268,81 @@ class SalesService {
     DateTime? fechaDesde,
     DateTime? fechaHasta,
   }) async {
+    final sw = Stopwatch()..start();
+    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    print('📊 [getProductSalesReport] Iniciando...');
     try {
-      // Get store ID from preferences
       final userPrefs = UserPreferencesService();
       final idTienda = await userPrefs.getIdTienda();
       if (idTienda == null) {
-        print('Error: No se pudo obtener el ID de tienda');
+        print('❌ [getProductSalesReport] No se pudo obtener id_tienda');
         return [];
       }
 
-      print('Calling fn_reporte_ventas_ganancias with:');
-      print('- id_tienda: $idTienda');
-      print('- fecha_desde: $fechaDesde');
-      print('- fecha_hasta: $fechaHasta');
+      final String? desde = fechaDesde?.toIso8601String().split('T')[0];
+      final String? hasta = fechaHasta?.toIso8601String().split('T')[0];
+      print('   RPC : fn_reporte_ventas_con_proveedor4');
+      print('   Tienda : $idTienda');
+      print('   Desde  : ${desde ?? "(sin filtro)"}');
+      print('   Hasta  : ${hasta ?? "(sin filtro)"}');
 
-      // Prepare parameters
       final Map<String, dynamic> params = {'p_id_tienda': idTienda};
+      if (desde != null) params['p_fecha_desde'] = desde;
+      if (hasta != null) params['p_fecha_hasta'] = hasta;
 
-      if (fechaDesde != null) {
-        params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
-      }
-      if (fechaHasta != null) {
-        params['p_fecha_hasta'] = fechaHasta.toIso8601String().split('T')[0];
-      }
-
-      // Call the RPC function
-      // ✅ CAMBIO: Usar fn_reporte_ventas_gananciasv5_por_presentacion que agrupa por producto-presentación
-      // y usa precio_promedio de app_dat_producto_presentacion como costo real
       final response = await _supabase.rpc(
-        'fn_reporte_ventas_gananciasv5',
+        'fn_reporte_ventas_con_proveedor4',
         params: params,
       );
 
-      print('Response ventas received: ${response.length} products');
-      print('${response}');
+      sw.stop();
+      print('   ⏱ Respuesta en ${sw.elapsedMilliseconds} ms');
 
       if (response == null) {
-        print('No data received from RPC call');
+        print('⚠️ [getProductSalesReport] La RPC devolvió null');
         return [];
       }
 
-      // Convert response to ProductSalesReport objects
+      if (response is! List) {
+        print('❌ [getProductSalesReport] Tipo inesperado: ${response.runtimeType}');
+        print('   Datos: $response');
+        return [];
+      }
+
+      print('   Filas recibidas: ${response.length}');
+
       final List<ProductSalesReport> reports = [];
+      int parseErrors = 0;
       for (final item in response) {
         try {
-          final report = ProductSalesReport.fromJson(item);
-          reports.add(report);
-          print(
-            'Added product: ${report.nombreProducto} - Total vendido: ${report.totalVendido}',
-          );
+          final r = ProductSalesReport.fromJson(item);
+          reports.add(r);
+          print('   🔹 ${r.nombreProducto}'
+              ' | precio_cup=${r.precioVentaCup}'
+              ' | cant=${r.totalVendido}'
+              ' | local=${r.precioVentaCup.truncate() * r.totalVendido.truncate()}'
+              ' | ingresos_sql=${r.ingresosTotales}'
+              ' | costo_cup=${r.precioCostoCup}');
         } catch (e) {
-          print('Error parsing product sales report item: $e');
-          print('Item data: $item');
+          parseErrors++;
+          print('⚠️ [getProductSalesReport] Error parseando fila: $e');
+          print('   Fila: $item');
         }
       }
 
-      print('Successfully parsed ${reports.length} product sales reports');
+      if (parseErrors > 0) {
+        print('⚠️ [getProductSalesReport] $parseErrors filas no pudieron parsearse');
+      }
+      print('✅ [getProductSalesReport] ${reports.length} productos cargados');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return reports;
-    } catch (e) {
-      print('Error in getProductSalesReport: $e');
+    } catch (e, stack) {
+      sw.stop();
+      print('❌ [getProductSalesReport] Error después de ${sw.elapsedMilliseconds} ms');
+      print('   Excepción : $e');
+      print('   Tipo      : ${e.runtimeType}');
+      print('   Stack     :\n$stack');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return [];
     }
   }
@@ -600,6 +628,7 @@ class SalesService {
     DateTime? fechaDesde,
     DateTime? fechaHasta,
     String? uuidUsuario,
+    bool hastaCierreTurno = false,
   }) async {
     try {
       // Get store ID from preferences
@@ -615,9 +644,13 @@ class SalesService {
       print('- p_fecha_desde: $fechaDesde');
       print('- p_fecha_hasta: $fechaHasta');
       print('- p_uuid_usuario: $uuidUsuario');
+      print('- p_hasta_cierre_turno: $hastaCierreTurno');
 
       // Prepare parameters
-      final Map<String, dynamic> params = {'p_id_tienda': idTienda};
+      final Map<String, dynamic> params = {
+        'p_id_tienda': idTienda,
+        'p_hasta_cierre_turno': hastaCierreTurno,
+      };
 
       if (fechaDesde != null) {
         params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
@@ -631,7 +664,7 @@ class SalesService {
 
       // Call the RPC function
       final response = await _supabase.rpc(
-        'fn_reporte_ventas_por_vendedor',
+        'fn_reporte_ventas_por_vendedor_sch',
         params: params,
       );
 

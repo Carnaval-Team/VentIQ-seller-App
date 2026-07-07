@@ -1169,6 +1169,68 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     return Colors.blueGrey[600] ?? Colors.blueGrey;
   }
 
+  /// Detecta si la operación es una venta
+  bool _isVentaOperation(Map<String, dynamic> operation) {
+    final tipo = (operation['tipo_operacion_nombre'] ?? '').toString().toLowerCase();
+    final accion = (operation['tipo_operacion_accion'] ?? '').toString().toLowerCase();
+    return tipo.contains('venta') || accion.contains('venta');
+  }
+
+  /// Obtiene el detalle completo de los pagos de una operación de venta
+  Future<List<Map<String, dynamic>>> _getPaymentDetails(int operationId) async {
+    try {
+      final response = await Supabase.instance.client
+          .from('app_dat_pago_venta')
+          .select('''
+            id,
+            monto,
+            referencia_pago,
+            fecha_pago,
+            created_at,
+            tipo_pago,
+            importe_sin_descuento,
+            app_nom_medio_pago:app_nom_medio_pago(id, denominacion, es_digital, es_efectivo)
+          ''')
+          .eq('id_operacion_venta', operationId)
+          .order('created_at', ascending: true);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error obteniendo detalles de pagos: $e');
+      return [];
+    }
+  }
+
+  /// Verifica si una operación de venta ya tiene pagos registrados
+  Future<bool> _checkHasPayment(int operationId) async {
+    final payments = await _getPaymentDetails(operationId);
+    return payments.isNotEmpty;
+  }
+
+  /// Registra un pago con monto 0 para una operación de venta.
+  /// Se inserta directamente en app_dat_pago_venta porque fn_registrar_pago_venta
+  /// valida que el monto sea mayor que cero.
+  Future<bool> _registerZeroPayment(int operationId) async {
+    try {
+      print('💳 Registrando pago con monto 0 para operación $operationId');
+
+      await Supabase.instance.client.from('app_dat_pago_venta').insert({
+        'id_operacion_venta': operationId,
+        'id_medio_pago': 1,
+        'monto': 0,
+        'tipo_pago': 1,
+        'referencia_pago': 'Registro manual monto 0 - Admin',
+        'creado_por': Supabase.instance.client.auth.currentUser?.id,
+      });
+
+      print('✅ Pago con monto 0 registrado directamente');
+      return true;
+    } catch (e) {
+      print('❌ Error registrando pago con monto 0: $e');
+      return false;
+    }
+  }
+
   void _showOperationDetails(Map<String, dynamic> operation) {
     // Debug: Print all operation data
     print('🔍 Operation details:');
@@ -1373,11 +1435,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                               'Items:',
                               '${_calculateTotalItems(operation)}',
                             ),
-                            if (operation['observaciones']?.isNotEmpty == true)
-                              _buildModalDetailRow(
-                                'Observaciones:',
-                                operation['observaciones'],
-                              ),
+                            ..._buildOperationMetaSection(operation),
 
                             // Show specific details based on operation type
                             if (operation['detalles'] != null) ...[
@@ -1404,6 +1462,18 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                             if (_shouldShowCancelButton(operation)) ...[
                               const SizedBox(height: 12),
                               _buildCancelButton(operation),
+                            ],
+
+                            // Show payment details section for sales
+                            if (_isVentaOperation(operation) &&
+                                operation['id'] != null) ...[
+                              const SizedBox(height: 24),
+                              _PaymentDetailsSection(
+                                operationId: (operation['id'] as num).toInt(),
+                                totalIsZero: _calculateTotalPrice(operation) == 0,
+                                getPaymentDetails: _getPaymentDetails,
+                                registerZeroPayment: _registerZeroPayment,
+                              ),
                             ],
 
                             // Show print button for all operations
@@ -1493,11 +1563,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                         DateTime.parse(operation['created_at']),
                       ),
                     ),
-                    if (operation['observaciones']?.isNotEmpty == true)
-                      _buildModalDetailRow(
-                        'Observaciones:',
-                        operation['observaciones'],
-                      ),
+                    ..._buildOperationMetaSection(operation),
 
                     // Detalles del ajuste
                     const SizedBox(height: 16),
@@ -1510,37 +1576,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    FutureBuilder<Map<String, dynamic>>(
-                      future: InventoryService.getAdjustmentDetails(operation['id']),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: CircularProgressIndicator(),
-                          );
-                        }
-
-                        if (snapshot.hasError) {
-                          return Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Text(
-                              'Error al cargar detalles: ${snapshot.error}',
-                              style: const TextStyle(color: Colors.red),
-                            ),
-                          );
-                        }
-
-                        final adjustmentData = snapshot.data;
-                        if (adjustmentData == null || adjustmentData['details'].isEmpty) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Text('Sin detalles de ajuste'),
-                          );
-                        }
-
-                        return _buildAdjustmentDetailsList(adjustmentData['details']);
-                      },
-                    ),
+                    _buildAdjustmentDetailsSection(operation),
 
                     // Show print button for all operations
                     const SizedBox(height: 24),
@@ -1552,6 +1588,77 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Renders adjustment details.
+  ///
+  /// Path 1 (fast): uses pre-fetched `detalles.items` embedded in the listing
+  ///   response — contains ALL products of the grouped session, no extra call.
+  /// Path 2 (fallback): queries the DB using the list of ALL session op-IDs
+  ///   stored in `detalles.detalles_especificos.ids_operaciones`.
+  /// Path 3 (legacy): single-operation query for records before the grouping fix.
+  Widget _buildAdjustmentDetailsSection(Map<String, dynamic> operation) {
+    // ── Helper: safely coerce any Map to Map<String, dynamic> ──────────────
+    Map<String, dynamic>? _toStringMap(dynamic raw) {
+      if (raw == null) return null;
+      if (raw is Map<String, dynamic>) return raw;
+      if (raw is Map) return raw.map((k, v) => MapEntry(k.toString(), v));
+      return null;
+    }
+
+    final detalles = _toStringMap(operation['detalles']);
+
+    // Path 1 ─ embedded items (all products, zero extra DB call)
+    final rawItems = detalles?['items'];
+    if (rawItems is List && rawItems.isNotEmpty) {
+      return _buildAdjustmentDetailsList(List<dynamic>.from(rawItems));
+    }
+
+    // Path 2 ─ use ids_operaciones from det_esp for a multi-op query
+    final detEsp = _toStringMap(detalles?['detalles_especificos']);
+    final rawIds = detEsp?['ids_operaciones'];
+    List<int>? sessionIds;
+    if (rawIds is List && rawIds.isNotEmpty) {
+      sessionIds = rawIds
+          .map((e) => (e is int) ? e : int.tryParse(e.toString()))
+          .whereType<int>()
+          .toList();
+    }
+
+    final Future<Map<String, dynamic>> detailFuture =
+        (sessionIds != null && sessionIds.isNotEmpty)
+            ? InventoryService.getAdjustmentDetailsByIds(sessionIds)
+            : InventoryService.getAdjustmentDetails(operation['id'] as int);
+
+    return FutureBuilder<Map<String, dynamic>>(
+      future: detailFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: CircularProgressIndicator(),
+          );
+        }
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Error al cargar detalles: ${snapshot.error}',
+              style: const TextStyle(color: Colors.red),
+            ),
+          );
+        }
+        final adjustmentData = snapshot.data;
+        final details = adjustmentData?['details'] as List?;
+        if (details == null || details.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Sin detalles de ajuste'),
+          );
+        }
+        return _buildAdjustmentDetailsList(details);
+      },
     );
   }
 
@@ -1930,7 +2037,17 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ...especificos.entries.where((e) => e.key != 'cliente_info' && e.key != 'extraccion' && e.key != 'recepcion').map((entry) {
+            ...especificos.entries.where((e) {
+              const hiddenKeys = {
+                'cliente_info', 'extraccion', 'recepcion',
+                'entregado_por', 'recibido_por', 'autorizado_por',
+                'motivo', 'comentario_completado', 'observaciones',
+                'origen', 'destino', 'estado_extraccion', 'estado_recepcion',
+                'id_extraccion', 'id_recepcion', 'ids_operaciones',
+                'tipo_ajuste', 'monto_total',
+              };
+              return !hiddenKeys.contains(e.key);
+            }).map((entry) {
               String label = _formatFieldLabel(entry.key);
               String value = _formatFieldValue(entry.value);
               return Padding(
@@ -2165,6 +2282,98 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     );
   }
 
+  bool _hasDetailText(dynamic value) {
+    if (value == null) return false;
+    return value.toString().trim().isNotEmpty;
+  }
+
+  Map<String, dynamic>? _extractDetallesEspecificos(
+      Map<String, dynamic> operation) {
+    final detalles = operation['detalles'];
+    if (detalles is Map<String, dynamic>) {
+      final esp = detalles['detalles_especificos'];
+      if (esp is Map<String, dynamic>) return esp;
+      if (esp is Map) return Map<String, dynamic>.from(esp);
+    }
+    return null;
+  }
+
+  List<Widget> _buildOperationMetaSection(Map<String, dynamic> operation) {
+    final esp = _extractDetallesEspecificos(operation);
+    final rows = <Widget>[];
+
+    void addRow(String label, dynamic value) {
+      if (!_hasDetailText(value)) return;
+      rows.add(_buildModalDetailRow(label, value.toString()));
+    }
+
+    void addTextBlock(String label, dynamic value) {
+      if (!_hasDetailText(value)) return;
+      rows.add(const SizedBox(height: 4));
+      rows.add(Text(
+        label,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: Colors.grey[700],
+        ),
+      ));
+      rows.add(const SizedBox(height: 4));
+      rows.add(Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: Text(
+          value.toString(),
+          style: const TextStyle(fontSize: 13, color: Color(0xFF374151)),
+        ),
+      ));
+      rows.add(const SizedBox(height: 8));
+    }
+
+    addRow('Operador:', operation['usuario_nombre']);
+    addRow('Entregado por:', esp?['entregado_por']);
+    addRow('Recibido por:', esp?['recibido_por']);
+    addRow('Autorizado por:', esp?['autorizado_por']);
+    addRow('Motivo:', esp?['motivo']);
+    addRow('Tipo de ajuste:', esp?['tipo_ajuste']);
+    addRow('Origen:', esp?['origen']);
+    addRow('Destino:', esp?['destino']);
+    addRow('Estado extracción:', esp?['estado_extraccion']);
+    addRow('Estado recepción:', esp?['estado_recepcion']);
+
+    addTextBlock('Observaciones:', operation['observaciones']);
+
+    final obsDetalle = esp?['observaciones'];
+    if (_hasDetailText(obsDetalle) &&
+        obsDetalle.toString().trim() !=
+            (operation['observaciones']?.toString().trim() ?? '')) {
+      addTextBlock('Observaciones adicionales:', obsDetalle);
+    }
+
+    addTextBlock('Comentario al completar:', esp?['comentario_completado']);
+
+    if (rows.isEmpty) return [];
+
+    return [
+      const Text(
+        'Información de la operación',
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF1F2937),
+        ),
+      ),
+      const SizedBox(height: 8),
+      ...rows,
+      const SizedBox(height: 8),
+    ];
+  }
+
   String _formatFieldLabel(String key) {
     switch (key) {
       case 'id_tpv':
@@ -2187,6 +2396,20 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         return 'Autorizado por';
       case 'entregado_por':
         return 'Entregado por';
+      case 'comentario_completado':
+        return 'Comentario al completar';
+      case 'observaciones':
+        return 'Observaciones';
+      case 'estado_extraccion':
+        return 'Estado extracción';
+      case 'estado_recepcion':
+        return 'Estado recepción';
+      case 'origen':
+        return 'Origen';
+      case 'destino':
+        return 'Destino';
+      case 'tipo_ajuste':
+        return 'Tipo de ajuste';
       case 'id_recepcion':
         return 'ID Recepción';
       case 'id_extraccion':
@@ -3956,6 +4179,226 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
             child: Text(
               text,
               style: const TextStyle(fontSize: 12, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Sección que muestra el detalle del pago de una operación de venta.
+/// Si no hay pagos y el total es 0, permite registrar uno manualmente.
+class _PaymentDetailsSection extends StatefulWidget {
+  final int operationId;
+  final bool totalIsZero;
+  final Future<List<Map<String, dynamic>>> Function(int) getPaymentDetails;
+  final Future<bool> Function(int) registerZeroPayment;
+
+  const _PaymentDetailsSection({
+    required this.operationId,
+    required this.totalIsZero,
+    required this.getPaymentDetails,
+    required this.registerZeroPayment,
+  });
+
+  @override
+  State<_PaymentDetailsSection> createState() =>
+      _PaymentDetailsSectionState();
+}
+
+class _PaymentDetailsSectionState extends State<_PaymentDetailsSection> {
+  bool _isRegistering = false;
+  Key _futureKey = UniqueKey();
+
+  String _formatDate(dynamic value) {
+    if (value == null) return '-';
+    final dt = value is DateTime ? value : DateTime.tryParse(value.toString());
+    if (dt == null) return '-';
+    return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      key: _futureKey,
+      future: widget.getPaymentDetails(widget.operationId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(
+            height: 80,
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+
+        final payments = snapshot.data ?? [];
+
+        if (payments.isNotEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.payments, color: Colors.blue.shade700, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Detalle del pago',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 24),
+                ...payments.map((payment) {
+                  final medio = payment['app_nom_medio_pago']
+                      as Map<String, dynamic>?;
+                  final medioNombre = medio?['denominacion'] ?? 'Desconocido';
+                  final monto = (payment['monto'] as num?) ?? 0;
+                  final referencia =
+                      payment['referencia_pago']?.toString() ?? '-';
+                  final fecha = payment['fecha_pago'] ?? payment['created_at'];
+                  final tipoPago =
+                      payment['tipo_pago'] == 1 ? 'Efectivo' : 'Digital';
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildDetailRow('Medio de pago', medioNombre),
+                        _buildDetailRow(
+                          'Monto',
+                          'CUP ${monto.toStringAsFixed(2)}',
+                        ),
+                        _buildDetailRow('Tipo', tipoPago),
+                        _buildDetailRow('Referencia', referencia),
+                        _buildDetailRow('Fecha', _formatDate(fecha)),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          );
+        }
+
+        if (widget.totalIsZero) {
+          return ElevatedButton.icon(
+            onPressed: _isRegistering
+                ? null
+                : () async {
+                    setState(() => _isRegistering = true);
+                    final success = await widget.registerZeroPayment(
+                      widget.operationId,
+                    );
+                    if (!mounted) return;
+                    setState(() {
+                      _isRegistering = false;
+                      _futureKey = UniqueKey();
+                    });
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          success
+                              ? 'Pago registrado correctamente'
+                              : 'Error al registrar el pago',
+                        ),
+                        backgroundColor: success ? Colors.green : Colors.red,
+                      ),
+                    );
+                  },
+            icon: _isRegistering
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.payment, color: Colors.white),
+            label: Text(
+              _isRegistering ? 'Registrando...' : 'Registrar pago (monto 0)',
+              style: const TextStyle(color: Colors.white),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4A90E2),
+              minimumSize: const Size(double.infinity, 48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          );
+        }
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.orange.shade200),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.warning_amber, color: Colors.orange.shade700, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Esta venta no tiene pagos registrados.',
+                  style: TextStyle(color: Colors.orange.shade900),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],

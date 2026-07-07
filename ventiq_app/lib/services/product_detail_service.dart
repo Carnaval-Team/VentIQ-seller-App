@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/product.dart';
+import 'user_preferences_service.dart';
 
 class ProductDetailService {
   static final ProductDetailService _instance =
@@ -9,10 +10,31 @@ class ProductDetailService {
   ProductDetailService._internal();
 
   final SupabaseClient _supabase = Supabase.instance.client;
+  final UserPreferencesService _userPrefs = UserPreferencesService();
 
-  /// Fetch detailed product information from Supabase
+  /// Fetch detailed product information.
+  ///
+  /// Offline-aware: si el modo offline está activado, NO llama a Supabase;
+  /// reconstruye el producto desde `detalles_completos` ya sincronizado en
+  /// `offline_data['products']` (misma forma que get_detalle_producto), usando
+  /// el mismo parser `_transformToProduct`. Así los flujos de venta (Fluido,
+  /// paquetería, órdenes) funcionan sin conexión con variantes/inventario.
   Future<Product> getProductDetail(int productId) async {
     try {
+      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      if (isOffline) {
+        final offlineDetail = await _getProductDetailOffline(productId);
+        if (offlineDetail != null) {
+          debugPrint('🔌 Detalles del producto $productId desde cache offline');
+          return offlineDetail;
+        }
+        // Sin detalles completos en cache: lanzar para que el llamador caiga a
+        // su fallback (producto básico) en vez de intentar la red.
+        throw Exception(
+          'Sin detalles offline para el producto $productId',
+        );
+      }
+
       debugPrint('🔍 Obteniendo detalles del producto ID: $productId');
 
       final response = await _supabase.rpc(
@@ -33,6 +55,79 @@ class ProductDetailService {
       debugPrint('📍 Stack trace completo:\n$stackTrace');
       rethrow;
     }
+  }
+
+  /// Busca `detalles_completos` del producto en el cache offline y lo
+  /// transforma a Product. Devuelve null si no hay datos completos guardados.
+  Future<Product?> _getProductDetailOffline(int productId) async {
+    final offlineData = await _userPrefs.getOfflineData();
+    final products = offlineData?['products'];
+    if (products is! Map) return null;
+
+    for (final categoryProducts in products.values) {
+      if (categoryProducts is! List) continue;
+      for (final prod in categoryProducts) {
+        if (prod is Map && prod['id'] == productId) {
+          final detalle = prod['detalles_completos'];
+          if (detalle is Map<String, dynamic>) {
+            return _transformToProduct(detalle);
+          }
+          return null; // producto encontrado pero sin detalles completos
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Obtiene los detalles completos de MÚLTIPLES productos en UNA sola llamada
+  /// (RPC batch get_detalles_productos_batch). Elimina el patrón N+1 al
+  /// sincronizar el catálogo offline.
+  ///
+  /// Devuelve un mapa { id_producto : { 'producto': {...}, 'inventario': [...] } }
+  /// con la MISMA forma que get_detalle_producto por producto.
+  ///
+  /// Si el RPC batch no existe aún en el servidor (no se ha subido el .sql),
+  /// hace fallback automático a llamadas individuales para no romper la app.
+  Future<Map<int, dynamic>> getProductDetailsBatch(List<int> productIds) async {
+    final Map<int, dynamic> result = {};
+    if (productIds.isEmpty) return result;
+
+    try {
+      final response = await _supabase.rpc(
+        'get_detalles_productos_batch',
+        params: {'ids_param': productIds},
+      );
+
+      if (response is Map) {
+        response.forEach((key, value) {
+          final id = int.tryParse(key.toString());
+          if (id != null) result[id] = value;
+        });
+        debugPrint(
+          '✅ Batch detalles: ${result.length}/${productIds.length} productos en 1 RPC',
+        );
+        return result;
+      }
+    } catch (e) {
+      debugPrint(
+        '⚠️ RPC batch get_detalles_productos_batch no disponible ($e). '
+        'Fallback a llamadas individuales.',
+      );
+    }
+
+    // Fallback: una llamada por producto (comportamiento previo).
+    for (final id in productIds) {
+      try {
+        final detail = await _supabase.rpc(
+          'get_detalle_producto',
+          params: {'id_producto_param': id},
+        );
+        if (detail != null) result[id] = detail;
+      } catch (e) {
+        debugPrint('⚠️ Error detalle producto $id (fallback): $e');
+      }
+    }
+    return result;
   }
 
   /// Transform Supabase response to Product model

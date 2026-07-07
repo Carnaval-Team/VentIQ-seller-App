@@ -19,6 +19,9 @@ import 'providers/location_provider.dart';
 import 'providers/transport_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/address_provider.dart';
+import 'providers/plan_provider.dart';
+import 'providers/suscripcion_provider.dart';
+import 'providers/nomencladores_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/landing_screen.dart';
 import 'screens/login_screen.dart';
@@ -28,7 +31,6 @@ import 'screens/client/route_preview_screen.dart';
 import 'screens/client/driver_offers_screen.dart';
 import 'screens/client/ride_confirmed_screen.dart';
 import 'screens/client/wallet_screen.dart';
-import 'screens/client/profile_screen.dart';
 import 'screens/client/saved_addresses_screen.dart';
 import 'screens/client/request_history_screen.dart';
 import 'screens/driver/driver_home_screen.dart';
@@ -39,6 +41,8 @@ import 'screens/shipper/shipper_home_screen.dart';
 import 'screens/shipper/carrier_directory_screen.dart';
 import 'screens/carrier/carrier_home_screen.dart';
 import 'screens/dispatcher/dispatcher_home_screen.dart';
+import 'screens/common/planes_screen.dart';
+import 'screens/common/unified_profile_screen.dart';
 import 'widgets/notification_overlay.dart';
 
 Future<void> main() async {
@@ -103,6 +107,9 @@ class MueveteApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => WalletProvider()),
         ChangeNotifierProvider(create: (_) => AddressProvider()),
         ChangeNotifierProvider(create: (_) => CargaProvider()),
+        ChangeNotifierProvider(create: (_) => NomencladoresProvider()),
+        ChangeNotifierProvider(create: (_) => PlanProvider()),
+        ChangeNotifierProvider(create: (_) => SuscripcionProvider()),
         ChangeNotifierProvider.value(value: MbTilesService.instance),
       ],
       child: Consumer<ThemeProvider>(
@@ -132,7 +139,7 @@ class MueveteApp extends StatelessWidget {
               '/client/ride-confirmed': (context) =>
                   const RideConfirmedScreen(),
               '/client/wallet': (context) => const WalletScreen(),
-              '/client/profile': (context) => const ProfileScreen(),
+              '/client/profile': (context) => const UnifiedProfileScreen(),
               '/client/saved-addresses': (context) =>
                   const SavedAddressesScreen(),
               '/client/request-history': (context) =>
@@ -143,9 +150,19 @@ class MueveteApp extends StatelessWidget {
               '/driver/active-ride': (context) => const ActiveRideScreen(),
               '/driver/wallet': (context) => const DriverWalletScreen(),
               '/shipper/home': (context) => const ShipperHomeScreen(),
+              '/profile': (context) => const UnifiedProfileScreen(),
+              '/shipper/profile': (context) => const UnifiedProfileScreen(),
               '/carrier-directory': (context) => const CarrierDirectoryScreen(),
               '/carrier/home': (context) => const CarrierHomeScreen(),
+              '/carrier/profile': (context) => const UnifiedProfileScreen(),
               '/dispatcher/home': (context) => const DispatcherHomeScreen(),
+              '/dispatcher/profile': (context) => const UnifiedProfileScreen(),
+              '/planes': (context) {
+                final args = ModalRoute.of(context)!.settings.arguments
+                    as Map<String, dynamic>?;
+                final tipo = args?['tipoUsuario'] as String? ?? 'shipper';
+                return PlanesScreen(tipoUsuario: tipo);
+              },
             },
           );
         },

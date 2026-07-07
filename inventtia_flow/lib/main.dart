@@ -1,0 +1,80 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'config/supabase_config.dart';
+import 'config/app_theme.dart';
+import 'providers/auth_provider.dart';
+import 'providers/entidad_provider.dart';
+import 'providers/notificacion_provider.dart';
+import 'services/local_notifications.dart';
+import 'services/catalogo_service.dart';
+import 'screens/splash_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/register_screen.dart';
+import 'screens/perfil_setup_screen.dart';
+import 'screens/home_shell.dart';
+import 'screens/notificaciones_screen.dart';
+
+Future<void> main() async {
+  final binding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: binding);
+
+  await Supabase.initialize(
+    url: SupabaseConfig.supabaseUrl,
+    anonKey: SupabaseConfig.supabaseAnonKey,
+  );
+
+  // Check schema access permissions for web deployment
+  final hasSchemaAccess = await CatalogoService.checkSchemaAccess();
+  if (!hasSchemaAccess) {
+    print('[flow] ERROR: No se puede acceder al esquema "flow". La aplicación no funcionará correctamente.');
+    print('[flow] Por favor, ejecuta los comandos SQL proporcionados arriba en Supabase.');
+  }
+
+  // Notificaciones locales del sistema (no-op en Web).
+  await LocalNotifications.init();
+
+  runApp(const FlowApp());
+}
+
+class FlowApp extends StatelessWidget {
+  const FlowApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => EntidadProvider()),
+        ChangeNotifierProvider(create: (_) => NotificacionProvider()),
+      ],
+      child: MaterialApp(
+        title: 'GoReserva',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light,
+        locale: const Locale('es'),
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('es'),
+          Locale('en'),
+        ],
+        initialRoute: '/splash',
+        routes: {
+          '/splash': (_) => const SplashScreen(),
+          '/login': (_) => const LoginScreen(),
+          '/register': (_) => const RegisterScreen(),
+          '/perfil-setup': (_) => const PerfilSetupScreen(),
+          '/home': (_) => const HomeShell(),
+          '/notificaciones': (_) => const NotificacionesScreen(),
+        },
+      ),
+    );
+  }
+}

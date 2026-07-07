@@ -7,10 +7,12 @@ import '../services/notification_service.dart';
 import '../services/background_service.dart';
 import '../services/pushy_service.dart';
 import '../services/vehicle_service.dart';
+import '../services/suscripcion_service.dart';
 import '../utils/battery_optimizer.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
+  final SuscripcionService _suscripcionService = SuscripcionService();
 
   User? _user;
   Map<String, dynamic>? _userProfile;
@@ -55,6 +57,9 @@ class AuthProvider extends ChangeNotifier {
         return '/client/home';
     }
   }
+
+  /// Ruta del perfil unificado (todos los roles).
+  String get profileRoute => '/profile';
 
   AuthProvider() {
     _user = _authService.currentUser;
@@ -212,9 +217,23 @@ class AuthProvider extends ChangeNotifier {
     String? vehiculoCondicion,
     bool? vehiculoAireAcondicionado,
     int? vehiculoIdTipo,
-    // Legacy single-vehicle fields kept for backward compat (conductor_pasajeros)
-    String? mcNumber,
-    String? dotNumber,
+    // Conductor pasajeros: license photo URLs
+    String? licCondFrenteUrl,
+    String? licCondDorsoUrl,
+    String? licCircFrenteUrl,
+    String? licCircDorsoUrl,
+    String? licOperativaFrenteUrl,
+    String? licOperativaDorsoUrl,
+    // Personal address
+    String? direccion,
+    // Shipper empresa: campos extendidos
+    String? nombreLegal,
+    String? idFiscal,
+    String? regionEmpresa,
+    String? ciudadEmpresa,
+    String? direccionEmpresa,
+    double? empLat,
+    double? empLng,
   }) async {
     _isLoading = true;
     _error = null;
@@ -256,9 +275,18 @@ class AuthProvider extends ChangeNotifier {
             if (tipoDocumento != null) 'tipo_documento': tipoDocumento,
             if (docFrenteUrl != null) 'doc_frente_url': docFrenteUrl,
             if (docDorsoUrl != null) 'doc_dorso_url': docDorsoUrl,
-            if (mcNumber != null && mcNumber.isNotEmpty) 'mc_number': mcNumber,
-            if (dotNumber != null && dotNumber.isNotEmpty)
-              'dot_number': dotNumber,
+            if (licCondFrenteUrl != null)
+              'lic_conduccion_frente_url': licCondFrenteUrl,
+            if (licCondDorsoUrl != null)
+              'lic_conduccion_dorso_url': licCondDorsoUrl,
+            if (licCircFrenteUrl != null)
+              'lic_circulacion_frente_url': licCircFrenteUrl,
+            if (licCircDorsoUrl != null)
+              'lic_circulacion_dorso_url': licCircDorsoUrl,
+            if (licOperativaFrenteUrl != null)
+              'lic_operativa_frente_url': licOperativaFrenteUrl,
+            if (licOperativaDorsoUrl != null)
+              'lic_operativa_dorso_url': licOperativaDorsoUrl,
             // Dispatcher company fields
             if (tipoUsuario == 'dispatcher') ...{
               if (empresaNombre != null) 'empresa_nombre': empresaNombre,
@@ -335,6 +363,7 @@ class AuthProvider extends ChangeNotifier {
             if (tipoDocumento != null) 'tipo_documento': tipoDocumento,
             if (docFrenteUrl != null) 'doc_frente_url': docFrenteUrl,
             if (docDorsoUrl != null) 'doc_dorso_url': docDorsoUrl,
+            if (direccion != null) 'direccion': direccion,
             // Shipper fields
             if (tipoUsuario == 'shipper') ...{
               if (tipoCuenta != null) 'tipo_cuenta': tipoCuenta,
@@ -343,6 +372,14 @@ class AuthProvider extends ChangeNotifier {
               if (empresaDireccion != null) 'empresa_direccion': empresaDireccion,
               if (mercaderiasHabituales != null)
                 'mercaderias_habituales': mercaderiasHabituales,
+              // Campos extendidos para empresa/cooperativa
+              if (nombreLegal != null) 'nombre_legal': nombreLegal,
+              if (idFiscal != null) 'id_fiscal': idFiscal,
+              if (regionEmpresa != null) 'region_empresa': regionEmpresa,
+              if (ciudadEmpresa != null) 'ciudad_empresa': ciudadEmpresa,
+              if (direccionEmpresa != null) 'direccion_empresa': direccionEmpresa,
+              if (empLat != null) 'emp_lat': empLat,
+              if (empLng != null) 'emp_lng': empLng,
             },
           });
           debugPrint('[signUp] Perfil usuario creado OK');
@@ -350,6 +387,16 @@ class AuthProvider extends ChangeNotifier {
         debugPrint('[signUp] Cargando perfil local...');
         await _loadProfile();
         debugPrint('[signUp] Perfil local cargado OK');
+
+        // Crear suscripción gratuita del primer mes
+        // Solo para tipos de usuario de la plataforma de carga
+        final tiposConPlan = ['shipper', 'carrier_carga', 'dispatcher'];
+        if (tiposConPlan.contains(tipoUsuario)) {
+          debugPrint('[signUp] Creando suscripción trial para tipo=$tipoUsuario...');
+          final tipoPlan = tipoUsuario == 'carrier_carga' ? 'carrier' : tipoUsuario;
+          await _suscripcionService.crearSuscripcionTrial(_user!.id, tipoPlan);
+          debugPrint('[signUp] Suscripción trial creada OK');
+        }
       }
 
       _isLoading = false;

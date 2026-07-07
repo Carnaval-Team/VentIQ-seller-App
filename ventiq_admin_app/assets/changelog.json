@@ -1,9 +1,149 @@
 {
-  "current_version": "2.1.4",
-  "build": 214,
+  "current_version": "2.2.9",
+  "build": 229,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.2.9",
+      "date": "2026-07-03",
+      "title": "🕒 Ventas por TPV hasta el cierre de turno",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Incluye las ventas hasta que cierra el turno",
+          "description": "En la pestaña de TPVs, al elegir un rango de fechas ahora te preguntamos si quieres mostrar las ventas hasta el cierre del turno. Ideal para turnos que empiezan en un día y terminan en otro: ya no se te quedan ventas fuera del reporte."
+        },
+        {
+          "type": "improvement",
+          "title": "Tú decides en cada consulta",
+          "description": "Un sencillo Sí/No al filtrar por fecha te deja elegir el comportamiento que necesitas en el momento. Si eliges No, todo funciona igual que siempre, respetando exactamente la fecha final que seleccionaste."
+        },
+        {
+          "type": "improvement",
+          "title": "Cuadres de caja más exactos",
+          "description": "Cuando el turno sigue abierto, el reporte llega hasta este instante; y si cerró después de tu fecha final, lo extiende hasta el cierre real. Así el total de cada TPV refleja el turno completo y cuadrar caja es más fácil."
+        }
+      ]
+    },
+    {
+      "version": "2.2.8",
+      "date": "2026-06-05",
+      "title": "🎯 Mejoras en la gestión de productos",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Formulario de productos más claro",
+          "description": "Reorganizamos la pantalla de creación y edición de productos para que sea más intuitiva y fácil de completar."
+        },
+        {
+          "type": "improvement",
+          "title": "Validaciones mejoradas",
+          "description": "Mejoramos las validaciones al crear o editar productos para evitar errores y asegurar que todos los datos necesarios estén completos."
+        },
+        {
+          "type": "improvement",
+          "title": "Detalles de producto más informativos",
+          "description": "La pantalla de detalle de productos ahora muestra la información de forma más organizada y fácil de leer."
+        }
+      ]
+    },
+    {
+      "version": "2.2.7",
+      "date": "2026-06-03",
+      "title": "📲 Tu catálogo, directo al WhatsApp de tus clientes",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Conecta tu WhatsApp en segundos con QR",
+          "description": "Vincula uno o varios números de WhatsApp escaneando un código QR desde la app. Sin instalar nada extra: tu tienda queda lista para comunicarse con clientes y grupos directamente desde Inventtia."
+        },
+        {
+          "type": "feature",
+          "title": "Envío automático diario de tu catálogo",
+          "description": "Programa la hora a la que quieres que tus productos lleguen cada día a tus clientes. Tú eliges qué artículos enviar, a quién y cuándo: el sistema se encarga del resto, todos los días, sin que muevas un dedo."
+        },
+        {
+          "type": "feature",
+          "title": "Selecciona productos a la medida de cada campaña",
+          "description": "Arma listas de productos personalizadas para tus envíos. Promociona novedades, ofertas del día o líneas específicas con un par de toques, y reutiliza tus selecciones cuando lo necesites."
+        },
+        {
+          "type": "feature",
+          "title": "Destinatarios: contactos y grupos en un solo lugar",
+          "description": "Elige fácilmente a quién enviar: clientes individuales, grupos de WhatsApp o ambos. Un selector visual te permite buscar, marcar y guardar tus destinatarios favoritos para próximas campañas."
+        },
+        {
+          "type": "feature",
+          "title": "Historial de envíos para que nada se pierda",
+          "description": "Consulta en cualquier momento qué se envió, a quién y cuándo. Ten total visibilidad de tus campañas de WhatsApp y comprueba el alcance de cada envío programado."
+        },
+        {
+          "type": "improvement",
+          "title": "Envíos con ritmo natural para mayor entregabilidad",
+          "description": "Configura un retardo aleatorio entre mensajes para que tus envíos se vean naturales y se entreguen mejor, cuidando la reputación de tu número de WhatsApp."
+        },
+        {
+          "type": "improvement",
+          "title": "Disponible en Plan Pro y Avanzado",
+          "description": "La conexión con WhatsApp y los envíos automáticos están incluidos en los planes Pro y Avanzado de Inventtia, llevando tu comunicación con clientes al siguiente nivel."
+        }
+      ]
+    },
+    {
+      "version": "2.2.3",
+      "date": "2026-05-25",
+      "title": "🔢 Cálculos exactos en reportes de ventas",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Costos calculados en CUP",
+          "description": "El costo unitario ahora se toma del precio en CUP ya convertido."
+        }
+      ]
+    },
+    {
+      "version": "2.2.2",
+      "date": "2026-05-22",
+      "title": "💵 Ventas en USD y EUR a la vista, y más control de tu inventario",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Identifica al instante las ventas en moneda extranjera",
+          "description": "Cuando un cliente paga en USD o EUR desde Carnaval App, ahora se muestra un sello de color muy visible con el monto exacto en su moneda. Verde para dólares, azul para euros: detectas en segundos qué órdenes entran en divisa sin tener que abrir el detalle."
+        },
+        {
+          "type": "feature",
+          "title": "Total en divisa dentro del detalle de cada orden",
+          "description": "Al abrir una orden de Carnaval, además del total en CUP verás un bloque resaltado con el total en USD o EUR según la moneda del cliente. Más claridad para cuadrar caja y conciliar pagos."
+        },
+        {
+          "type": "improvement",
+          "title": "Movimientos de producto más limpios y enfocados",
+          "description": "El historial de movimientos de cada producto ahora muestra únicamente las operaciones completadas. Olvídate del ruido de operaciones pendientes o canceladas: ves solo lo que realmente afectó tu inventario."
+        },
+        {
+          "type": "improvement",
+          "title": "Reportes PDF de movimientos con más detalle",
+          "description": "Al exportar el historial de un producto a PDF, ahora se incluyen el tipo de operación y el estado con colores distintivos. Reportes más completos para auditorías y revisiones internas."
+        },
+        {
+          "type": "feature",
+          "title": "Mejoras en el flujo de consignaciones",
+          "description": "Reforzamos la pantalla de detalle de envíos en consignación con mejor manejo de devoluciones. Ahora gestionar las mercancías que regresan del cliente es más rápido y transparente."
+        },
+        {
+          "type": "improvement",
+          "title": "Gestión de TPVs, vendedores y almacenes más fluida",
+          "description": "Pulimos las pantallas de configuración de puntos de venta, vendedores y almacenes para que asignar permisos y editar datos sea más directo y con menos pasos."
+        },
+        {
+          "type": "improvement",
+          "title": "Dashboard de inventario con más información útil",
+          "description": "El panel principal de inventario ahora muestra indicadores adicionales y mejor analítica para que tomes decisiones más rápido sobre qué reponer y dónde priorizar."
+        }
+      ]
+    },
     {
       "version": "2.1.4",
       "date": "2026-04-27",

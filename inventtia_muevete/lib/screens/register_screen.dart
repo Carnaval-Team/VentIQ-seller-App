@@ -2,8 +2,10 @@ import 'package:country_flags/country_flags.dart';
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../config/app_theme.dart';
@@ -14,6 +16,8 @@ import '../services/document_upload_service.dart';
 import '../services/dispatcher_service.dart';
 import '../services/geonames_service.dart';
 import '../services/vehicle_type_service.dart';
+import '../services/plan_service.dart';
+import '../models/plan_model.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data class for each carrocería (vehicle platform) in the carrier form
@@ -26,6 +30,14 @@ class _CarroceriaItem {
   final TextEditingController longitudM = TextEditingController();
   String? tipoCarroceria;
   bool seguroVigente = false;
+  String? licCircFrenteUrl;
+  String? licCircDorsoUrl;
+  String? licOperativaFrenteUrl;
+  String? licOperativaDorsoUrl;
+  bool uploadingCircFrente = false;
+  bool uploadingCircDorso = false;
+  bool uploadingOpFrente = false;
+  bool uploadingOpDorso = false;
 
   void dispose() {
     marca.dispose();
@@ -45,6 +57,12 @@ class _CarroceriaItem {
         if (longitudM.text.trim().isNotEmpty)
           'longitud_m': double.tryParse(longitudM.text.trim()),
         'seguro_vigente': seguroVigente,
+        if (licCircFrenteUrl != null) 'lic_circulacion_frente_url': licCircFrenteUrl,
+        if (licCircDorsoUrl != null) 'lic_circulacion_dorso_url': licCircDorsoUrl,
+        if (licOperativaFrenteUrl != null)
+          'lic_operativa_frente_url': licOperativaFrenteUrl,
+        if (licOperativaDorsoUrl != null)
+          'lic_operativa_dorso_url': licOperativaDorsoUrl,
       };
 }
 
@@ -59,9 +77,23 @@ class _TransportistaItem {
   final TextEditingController modelo = TextEditingController();
   final TextEditingController matricula = TextEditingController();
   final TextEditingController capacidadTon = TextEditingController();
-  final TextEditingController mcNumber = TextEditingController();
-  final TextEditingController dotNumber = TextEditingController();
   String? tipoCarroceria;
+
+  // License photos
+  String? licConduccionFrenteUrl;
+  String? licConduccionDorsoUrl;
+  String? licCircFrenteUrl;
+  String? licCircDorsoUrl;
+  String? licOperativaFrenteUrl;
+  String? licOperativaDorsoUrl;
+
+  // Upload states
+  bool uploadingLicCondFrente = false;
+  bool uploadingLicCondDorso = false;
+  bool uploadingLicCircFrente = false;
+  bool uploadingLicCircDorso = false;
+  bool uploadingLicOpFrente = false;
+  bool uploadingLicOpDorso = false;
 
   void dispose() {
     nombre.dispose();
@@ -71,8 +103,6 @@ class _TransportistaItem {
     modelo.dispose();
     matricula.dispose();
     capacidadTon.dispose();
-    mcNumber.dispose();
-    dotNumber.dispose();
   }
 
   Map<String, dynamic> toMap() => {
@@ -85,8 +115,19 @@ class _TransportistaItem {
         if (matricula.text.trim().isNotEmpty) 'matricula': matricula.text.trim(),
         if (capacidadTon.text.trim().isNotEmpty)
           'capacidad_ton': double.tryParse(capacidadTon.text.trim()),
-        if (mcNumber.text.trim().isNotEmpty) 'mc_number': mcNumber.text.trim(),
-        if (dotNumber.text.trim().isNotEmpty) 'dot_number': dotNumber.text.trim(),
+        // License photos
+        if (licConduccionFrenteUrl != null)
+          'lic_conduccion_frente_url': licConduccionFrenteUrl,
+        if (licConduccionDorsoUrl != null)
+          'lic_conduccion_dorso_url': licConduccionDorsoUrl,
+        if (licCircFrenteUrl != null)
+          'lic_circulacion_frente_url': licCircFrenteUrl,
+        if (licCircDorsoUrl != null)
+          'lic_circulacion_dorso_url': licCircDorsoUrl,
+        if (licOperativaFrenteUrl != null)
+          'lic_operativa_frente_url': licOperativaFrenteUrl,
+        if (licOperativaDorsoUrl != null)
+          'lic_operativa_dorso_url': licOperativaDorsoUrl,
       };
 }
 
@@ -134,17 +175,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
   // sub-type only when _selectedTopType == 'transportista'
   String _selectedTransportistaSubtype = 'conductor_pasajeros';
 
+  // ── Common personal address ─────────────────────────────────────────────────
+  final _direccionPersonalController = TextEditingController();
+
   // ── Shipper fields ──────────────────────────────────────────────────────────
   String _shipperTipoCuenta = 'individual';
   final _empresaNombreController = TextEditingController();
   final _empresaRutController = TextEditingController();
   final _empresaDireccionController = TextEditingController();
+  // Shipper empresa: geo location
+  List<Map<String, dynamic>> _empGeoStates = [];
+  List<Map<String, dynamic>> _empGeoCities = [];
+  Map<String, dynamic>? _empSelectedState;
+  Map<String, dynamic>? _empSelectedCity;
+  bool _empLoadingStates = false;
+  bool _empLoadingCities = false;
+  // Shipper empresa: map coordinates
+  double? _empLat;
+  double? _empLng;
+  final _empMapController = MapController();
   final List<String> _mercaderiasSeleccionadas = [];
 
   // ── Carrier fields (multi-vehicle) ─────────────────────────────────────────
   final List<_CarroceriaItem> _carrocerias = [_CarroceriaItem()];
-  final _mcNumberController = TextEditingController();
-  final _dotNumberController = TextEditingController();
 
   // ── Conductor pasajeros — vehicle fields ──────────────────────────────
   final _vMarcaController = TextEditingController();
@@ -156,6 +209,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String _vCondicion = 'bueno';
   bool _vAireAcondicionado = false;
   int? _vIdTipo;  // vehicle_type id selected
+
+  // ── Conductor pasajeros — license photo fields ────────────────────────────
+  String? _licCondFrenteUrl;
+  String? _licCondDorsoUrl;
+  String? _licCircFrenteUrl;
+  String? _licCircDorsoUrl;
+  bool _isUploadingLicCondFrente = false;
+  bool _isUploadingLicCondDorso = false;
+  bool _isUploadingLicCircFrente = false;
+  bool _isUploadingLicCircDorso = false;
+  String? _licOperativaFrenteUrl;
+  String? _licOperativaDorsoUrl;
+  bool _isUploadingLicOpFrente = false;
+  bool _isUploadingLicOpDorso = false;
 
   // ── Dispatcher fields ───────────────────────────────────────────────────────
   final _dispEmpresaNombreController = TextEditingController();
@@ -209,6 +276,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return _selectedTopType;
   }
 
+  /// Tipo usado en tabla `planes` (carrier_carga → carrier).
+  String? get _planTipoBd {
+    final tipo = _tipoUsuarioFinal;
+    if (!const ['shipper', 'carrier_carga', 'dispatcher'].contains(tipo)) {
+      return null;
+    }
+    return tipo == 'carrier_carga' ? 'carrier' : tipo;
+  }
+
+  Future<({PlanModel? def, List<PlanModel> pago})> _loadRegistroPlanes(
+      String tipo) async {
+    final svc = PlanService();
+    final def = await svc.getPlanPorDefectoRegistro(tipo);
+    final pago = await svc.getPlanesPago(tipo);
+    return (def: def, pago: pago);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -254,6 +338,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  Future<void> _loadEmpStates(String countryCode) async {
+    setState(() { _empLoadingStates = true; _empGeoStates = []; _empSelectedState = null; _empGeoCities = []; _empSelectedCity = null; });
+    try {
+      final states = await GeonamesService.getStates(countryCode);
+      if (mounted) setState(() { _empGeoStates = states; _empLoadingStates = false; });
+    } catch (e) {
+      if (mounted) setState(() => _empLoadingStates = false);
+    }
+  }
+
+  Future<void> _loadEmpCities(String countryCode, String adminCode) async {
+    setState(() { _empLoadingCities = true; _empGeoCities = []; _empSelectedCity = null; });
+    try {
+      final cities = await GeonamesService.getCities(countryCode, adminCode);
+      if (mounted) setState(() { _empGeoCities = cities; _empLoadingCities = false; });
+    } catch (e) {
+      if (mounted) setState(() => _empLoadingCities = false);
+    }
+  }
+
   Future<void> _loadCities(String countryCode, String adminCode) async {
     setState(() { _loadingCities = true; _geoCities = []; _selectedCity = null; });
     try {
@@ -273,14 +377,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _phoneController.dispose();
+    _direccionPersonalController.dispose();
+    _empMapController.dispose();
     _empresaNombreController.dispose();
     _empresaRutController.dispose();
     _empresaDireccionController.dispose();
     for (final c in _carrocerias) {
       c.dispose();
     }
-    _mcNumberController.dispose();
-    _dotNumberController.dispose();
     _vMarcaController.dispose();
     _vModeloController.dispose();
     _vChapaController.dispose();
@@ -390,6 +494,70 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  // ─── License photo picker ────────────────────────────────────────────────────
+  Future<void> _pickLicensePhoto({
+    required String filename,
+    required void Function(bool) setUploading,
+    required void Function(String) onSuccess,
+  }) async {
+    final isDark = context.read<ThemeProvider>().isDark;
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: isDark ? AppTheme.darkSurface : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Subir foto',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : Colors.black87),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: AppTheme.primaryColor),
+                title: Text('Cámara',
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library, color: AppTheme.primaryColor),
+                title: Text('Galería',
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+    setState(() => setUploading(true));
+    try {
+      final url = await _docService.pickCompressAndUpload(
+        uuid: _tempUuid!,
+        filename: filename,
+        source: source,
+      );
+      if (url != null && mounted) setState(() => onSuccess(url));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Error al subir imagen: $e'),
+            backgroundColor: AppTheme.error));
+      }
+    } finally {
+      if (mounted) setState(() => setUploading(false));
+    }
+  }
+
   // ─── Register handler ────────────────────────────────────────────────────────
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
@@ -401,6 +569,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (_docDorsoUrl == null) {
       _showError('Debes subir la foto del dorso del documento');
       return;
+    }
+
+    // Conductor pasajeros: licencias de conducción y circulación del vehículo
+    if (_tipoUsuarioFinal == 'conductor_pasajeros') {
+      if (_licCondFrenteUrl == null) {
+        _showError('Debes subir la foto del frente de la Licencia de Conducción');
+        return;
+      }
+      if (_licCondDorsoUrl == null) {
+        _showError('Debes subir la foto del dorso de la Licencia de Conducción');
+        return;
+      }
+      if (_licCircFrenteUrl == null) {
+        _showError('Debes subir la foto del frente de la Licencia de Circulación');
+        return;
+      }
+      if (_licCircDorsoUrl == null) {
+        _showError('Debes subir la foto del dorso de la Licencia de Circulación');
+        return;
+      }
+    }
+
+    // Carrier de carga: licencia de conducción del operador + circulación por vehículo
+    if (_tipoUsuarioFinal == 'carrier_carga') {
+      if (_licCondFrenteUrl == null || _licCondDorsoUrl == null) {
+        _showError(
+            'Debes subir el frente y el dorso de tu Licencia de Conducción');
+        return;
+      }
+      final vehiculos = _carrocerias.where((c) => c.tipoCarroceria != null);
+      if (vehiculos.isEmpty) {
+        _showError('Registra al menos un vehículo con tipo de carrocería');
+        return;
+      }
+      for (var i = 0; i < _carrocerias.length; i++) {
+        final c = _carrocerias[i];
+        if (c.tipoCarroceria == null) continue;
+        if (c.licCircFrenteUrl == null || c.licCircDorsoUrl == null) {
+          _showError(
+              'Vehículo ${i + 1}: sube el frente y el dorso de la Licencia de Circulación');
+          return;
+        }
+      }
     }
 
     // Dispatcher: require at least 1 transportista with name+email+phone
@@ -433,20 +644,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
       tipoDocumento: _selectedDocType,
       docFrenteUrl: _docFrenteUrl,
       docDorsoUrl: _docDorsoUrl,
+      direccion: _direccionPersonalController.text.trim().isNotEmpty
+          ? _direccionPersonalController.text.trim()
+          : null,
       // Shipper
       tipoCuenta: tipo == 'shipper' ? _shipperTipoCuenta : null,
-      empresaNombre: (tipo == 'shipper' || tipo == 'dispatcher') &&
+      empresaNombre: tipo == 'shipper' &&
               _empresaNombreController.text.trim().isNotEmpty
-          ? (tipo == 'shipper'
-              ? _empresaNombreController.text.trim()
-              : _dispEmpresaNombreController.text.trim())
-          : null,
-      empresaRut: (tipo == 'shipper' || tipo == 'dispatcher') &&
+          ? _empresaNombreController.text.trim()
+          : tipo == 'dispatcher' &&
+                  _dispEmpresaNombreController.text.trim().isNotEmpty
+              ? _dispEmpresaNombreController.text.trim()
+              : null,
+      empresaRut: tipo == 'shipper' &&
               _empresaRutController.text.trim().isNotEmpty
-          ? (tipo == 'shipper'
-              ? _empresaRutController.text.trim()
-              : _dispEmpresaRutController.text.trim())
-          : null,
+          ? _empresaRutController.text.trim()
+          : tipo == 'dispatcher' &&
+                  _dispEmpresaRutController.text.trim().isNotEmpty
+              ? _dispEmpresaRutController.text.trim()
+              : null,
       empresaDireccion: tipo == 'shipper' &&
               _empresaDireccionController.text.trim().isNotEmpty
           ? _empresaDireccionController.text.trim()
@@ -454,6 +670,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   _dispEmpresaDireccionController.text.trim().isNotEmpty
               ? _dispEmpresaDireccionController.text.trim()
               : null,
+      // Shipper empresa: campos extendidos (nombre_legal, id_fiscal, región, ciudad, coordenadas)
+      nombreLegal: tipo == 'shipper' &&
+              (_shipperTipoCuenta == 'empresa' ||
+                  _shipperTipoCuenta == 'cooperativa') &&
+              _empresaNombreController.text.trim().isNotEmpty
+          ? _empresaNombreController.text.trim()
+          : null,
+      idFiscal: tipo == 'shipper' &&
+              (_shipperTipoCuenta == 'empresa' ||
+                  _shipperTipoCuenta == 'cooperativa') &&
+              _empresaRutController.text.trim().isNotEmpty
+          ? _empresaRutController.text.trim()
+          : null,
+      regionEmpresa: tipo == 'shipper' && _empSelectedState != null
+          ? _empSelectedState!['name'] as String
+          : null,
+      ciudadEmpresa: tipo == 'shipper' && _empSelectedCity != null
+          ? _empSelectedCity!['name'] as String
+          : null,
+      direccionEmpresa: tipo == 'shipper' &&
+              _empresaDireccionController.text.trim().isNotEmpty
+          ? _empresaDireccionController.text.trim()
+          : null,
+      empLat: tipo == 'shipper' ? _empLat : null,
+      empLng: tipo == 'shipper' ? _empLng : null,
       mercaderiasHabituales:
           tipo == 'shipper' && _mercaderiasSeleccionadas.isNotEmpty
               ? List<String>.from(_mercaderiasSeleccionadas)
@@ -464,14 +705,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
               .where((c) => c.tipoCarroceria != null)
               .map((c) => c.toMap())
               .toList()
-          : null,
-      mcNumber: tipo == 'carrier_carga' &&
-              _mcNumberController.text.trim().isNotEmpty
-          ? _mcNumberController.text.trim()
-          : null,
-      dotNumber: tipo == 'carrier_carga' &&
-              _dotNumberController.text.trim().isNotEmpty
-          ? _dotNumberController.text.trim()
           : null,
       // Conductor pasajeros vehicle
       vehiculoMarca: tipo == 'conductor_pasajeros' &&
@@ -503,6 +736,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
           tipo == 'conductor_pasajeros' ? _vAireAcondicionado : null,
       vehiculoIdTipo:
           tipo == 'conductor_pasajeros' ? _vIdTipo : null,
+      // Licencia de conducción (conductor pasajeros y carrier de carga)
+      licCondFrenteUrl: (tipo == 'conductor_pasajeros' || tipo == 'carrier_carga')
+          ? _licCondFrenteUrl
+          : null,
+      licCondDorsoUrl: (tipo == 'conductor_pasajeros' || tipo == 'carrier_carga')
+          ? _licCondDorsoUrl
+          : null,
+      licCircFrenteUrl: tipo == 'conductor_pasajeros' ? _licCircFrenteUrl : null,
+      licCircDorsoUrl: tipo == 'conductor_pasajeros' ? _licCircDorsoUrl : null,
+      licOperativaFrenteUrl:
+          tipo == 'conductor_pasajeros' ? _licOperativaFrenteUrl : null,
+      licOperativaDorsoUrl:
+          tipo == 'conductor_pasajeros' ? _licOperativaDorsoUrl : null,
     );
 
     if (!mounted) return;
@@ -703,6 +949,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 if (v != null) {
                                   setState(() => _selectedCountry = v);
                                   _loadStates(v['countryCode'] as String);
+                                  _loadEmpStates(v['countryCode'] as String);
                                 }
                               },
                               validator: (v) => v == null
@@ -986,6 +1233,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ],
                       ),
 
+                      const SizedBox(height: 16),
+
+                      _FieldLabel(label: 'Dirección personal (opcional)'),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _direccionPersonalController,
+                        style: TextStyle(color: textPrimary),
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          hintText: 'Calle, número, barrio...',
+                          prefixIcon: Icon(Icons.home_outlined, size: 20),
+                        ),
+                      ),
+
                       const SizedBox(height: 28),
 
                       // ── SECTION: Documento de identidad ─────────────────
@@ -1076,6 +1337,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         duration: const Duration(milliseconds: 300),
                         child: _buildConditionalFields(
                             isDark, textPrimary, cardColor, borderColor),
+                      ),
+
+                      // ── Plan info (solo para tipos con plan de carga) ─────
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: _buildPlanInfo(isDark, textPrimary),
                       ),
 
                       const SizedBox(height: 32),
@@ -1223,6 +1490,170 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 }),
               ))
           .toList(),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Plan info section shown during registration
+  // ─────────────────────────────────────────────────────────────────────────────
+  Widget _buildPlanInfo(bool isDark, Color textPrimary) {
+    final planTipo = _planTipoBd;
+    if (planTipo == null) {
+      return const SizedBox.shrink(key: ValueKey('no_plan'));
+    }
+
+    final cardBg = isDark ? AppTheme.darkCard : Colors.white;
+    final borderColor = isDark ? AppTheme.darkBorder : Colors.grey[200]!;
+    final textSec = isDark ? Colors.white60 : Colors.grey[600]!;
+
+    return Padding(
+      key: ValueKey('plan_info_$planTipo'),
+      padding: const EdgeInsets.only(top: 24),
+      child: FutureBuilder<({PlanModel? def, List<PlanModel> pago})>(
+        future: _loadRegistroPlanes(planTipo),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          }
+
+          final def = snapshot.data?.def;
+          final pago = snapshot.data?.pago ?? [];
+          final planNombre = def?.nombre ?? 'Plan estándar';
+          final precioLuego = def != null
+              ? '\$${def.precioMensual.toStringAsFixed(0)} / mes'
+              : null;
+          final descripcion = def != null
+              ? 'Se activará el plan ${def.nombre}. El primer mes no tiene cargo; '
+                  'a partir del segundo mes${precioLuego != null ? ' el precio será $precioLuego' : ''}.'
+              : 'El primer mes no tiene cargo. Los precios se confirman al activar tu cuenta.';
+
+          final otrosPlanes = pago
+              .where((p) => p.codigo != def?.codigo)
+              .map((p) => '${p.nombre} — \$${p.precioMensual.toStringAsFixed(0)}/mes')
+              .toList();
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Tu plan al registrarte',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: textPrimary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppTheme.success.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppTheme.success.withValues(alpha: 0.4)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.card_giftcard_outlined,
+                            color: AppTheme.success, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            planNombre,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.success,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '\$0 / primer mes',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.success,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      descripcion,
+                      style: TextStyle(
+                          fontSize: 13, color: textSec, height: 1.4),
+                    ),
+                  ],
+                ),
+              ),
+              if (otrosPlanes.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: cardBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: borderColor),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Otros planes disponibles después del primer mes',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ...otrosPlanes.map((p) => Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Row(
+                              children: [
+                                Icon(Icons.check_circle_outline,
+                                    size: 15,
+                                    color: AppTheme.primaryColor),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    p,
+                                    style: TextStyle(
+                                        fontSize: 13, color: textSec),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Text(
+                'Puedes gestionar tu plan en cualquier momento desde tu perfil.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: textSec,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -1468,7 +1899,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _FieldLabel(label: 'Anio'),
+                  _FieldLabel(label: 'Año'),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _vAnioController,
@@ -1551,8 +1982,115 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             secondary: const Icon(Icons.ac_unit_outlined),
             value: _vAireAcondicionado,
-            activeColor: AppTheme.primaryColor,
+            activeThumbColor: AppTheme.primaryColor,
             onChanged: (v) => setState(() => _vAireAcondicionado = v),
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // ── Licencia de Conducción ─────────────────────────────────────────
+        _SectionHeader(title: 'Licencia de Conducción'),
+        const SizedBox(height: 8),
+        Text(
+          'Sube una foto del frente y el dorso de tu licencia de conducir.',
+          style: GoogleFonts.plusJakartaSans(fontSize: 13, color: textPrimary.withValues(alpha: 0.6)),
+        ),
+        const SizedBox(height: 12),
+        _FieldLabel(label: 'Frente de la licencia *'),
+        const SizedBox(height: 8),
+        _DocUploadTile(
+          label: 'Frente – Licencia de Conducción',
+          imageUrl: _licCondFrenteUrl,
+          isUploading: _isUploadingLicCondFrente,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_conduccion_frente',
+            setUploading: (v) => _isUploadingLicCondFrente = v,
+            onSuccess: (url) => _licCondFrenteUrl = url,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _FieldLabel(label: 'Dorso de la licencia *'),
+        const SizedBox(height: 8),
+        _DocUploadTile(
+          label: 'Dorso – Licencia de Conducción',
+          imageUrl: _licCondDorsoUrl,
+          isUploading: _isUploadingLicCondDorso,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_conduccion_dorso',
+            setUploading: (v) => _isUploadingLicCondDorso = v,
+            onSuccess: (url) => _licCondDorsoUrl = url,
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // ── Licencia de Circulación ────────────────────────────────────────
+        _SectionHeader(title: 'Licencia de Circulación del Vehículo'),
+        const SizedBox(height: 8),
+        Text(
+          'Sube una foto del frente y el dorso de la licencia de circulación.',
+          style: GoogleFonts.plusJakartaSans(fontSize: 13, color: textPrimary.withValues(alpha: 0.6)),
+        ),
+        const SizedBox(height: 12),
+        _FieldLabel(label: 'Frente de la circulación *'),
+        const SizedBox(height: 8),
+        _DocUploadTile(
+          label: 'Frente – Licencia de Circulación',
+          imageUrl: _licCircFrenteUrl,
+          isUploading: _isUploadingLicCircFrente,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_circulacion_frente',
+            setUploading: (v) => _isUploadingLicCircFrente = v,
+            onSuccess: (url) => _licCircFrenteUrl = url,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _FieldLabel(label: 'Dorso de la circulación *'),
+        const SizedBox(height: 8),
+        _DocUploadTile(
+          label: 'Dorso – Licencia de Circulación',
+          imageUrl: _licCircDorsoUrl,
+          isUploading: _isUploadingLicCircDorso,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_circulacion_dorso',
+            setUploading: (v) => _isUploadingLicCircDorso = v,
+            onSuccess: (url) => _licCircDorsoUrl = url,
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        _SectionHeader(title: 'Licencia Operativa (opcional)'),
+        const SizedBox(height: 8),
+        Text(
+          'Si aplica a tu servicio de pasajeros, puedes adjuntar la licencia operativa.',
+          style: GoogleFonts.plusJakartaSans(
+              fontSize: 13, color: textPrimary.withValues(alpha: 0.6)),
+        ),
+        const SizedBox(height: 12),
+        _DocUploadTile(
+          label: 'Frente – Licencia Operativa',
+          imageUrl: _licOperativaFrenteUrl,
+          isUploading: _isUploadingLicOpFrente,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_operativa_frente',
+            setUploading: (v) => _isUploadingLicOpFrente = v,
+            onSuccess: (url) => _licOperativaFrenteUrl = url,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _DocUploadTile(
+          label: 'Dorso – Licencia Operativa',
+          imageUrl: _licOperativaDorsoUrl,
+          isUploading: _isUploadingLicOpDorso,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_operativa_dorso',
+            setUploading: (v) => _isUploadingLicOpDorso = v,
+            onSuccess: (url) => _licOperativaDorsoUrl = url,
           ),
         ),
       ],
@@ -1600,7 +2138,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             style: TextStyle(color: textPrimary),
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(
-              hintText: 'Razón social',
+              hintText: 'Inventtia S.R.L.',
               prefixIcon: Icon(Icons.business, size: 20),
             ),
             validator: (v) {
@@ -1613,7 +2151,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             },
           ),
           const SizedBox(height: 16),
-          _FieldLabel(label: 'RUT / Número fiscal *'),
+          _FieldLabel(label: 'Número fiscal *'),
           const SizedBox(height: 8),
           TextFormField(
             controller: _empresaRutController,
@@ -1632,16 +2170,228 @@ class _RegisterScreenState extends State<RegisterScreen> {
             },
           ),
           const SizedBox(height: 16),
+
+          // Provincia / Estado de la empresa
+          _FieldLabel(label: 'Provincia / Estado de la empresa'),
+          const SizedBox(height: 8),
+          if (_empLoadingStates)
+            const _LoadingDropdown(label: 'Cargando provincias...')
+          else
+            DropdownSearch<Map<String, dynamic>>(
+              enabled: _selectedCountry != null,
+              selectedItem: _empSelectedState,
+              items: _empGeoStates,
+              filterFn: (item, filter) =>
+                  (item['name'] as String)
+                      .toLowerCase()
+                      .contains(filter.toLowerCase()),
+              itemAsString: (s) => s['name'] as String,
+              compareFn: (a, b) => a['geonameId'] == b['geonameId'],
+              onChanged: (v) {
+                if (v != null) {
+                  setState(() => _empSelectedState = v);
+                  _loadEmpCities(
+                    _selectedCountry!['countryCode'] as String,
+                    v['adminCode1'] as String,
+                  );
+                  final lat = double.tryParse(v['lat']?.toString() ?? '');
+                  final lng = double.tryParse(v['lng']?.toString() ?? '');
+                  if (lat != null && lng != null) {
+                    _empMapController.move(LatLng(lat, lng), 7);
+                  }
+                }
+              },
+              dropdownBuilder: (ctx, item) => item == null
+                  ? Text(
+                      _selectedCountry == null
+                          ? 'Selecciona un país personal primero'
+                          : _empGeoStates.isEmpty
+                              ? 'Sin datos — escribe la provincia abajo'
+                              : 'Selecciona una provincia',
+                      style: TextStyle(
+                          color: isDark ? Colors.white38 : Colors.grey[500],
+                          fontSize: 14))
+                  : Text(item['name'] as String,
+                      style: TextStyle(color: textPrimary, fontSize: 14)),
+              dropdownDecoratorProps: DropDownDecoratorProps(
+                dropdownSearchDecoration: InputDecoration(
+                  prefixIcon:
+                      const Icon(Icons.location_city_outlined, size: 20),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: borderColor),
+                  ),
+                  filled: true,
+                  fillColor: cardColor,
+                ),
+              ),
+              popupProps: PopupProps.menu(
+                showSearchBox: true,
+                searchFieldProps: TextFieldProps(
+                  decoration: InputDecoration(
+                    hintText: 'Buscar provincia...',
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                menuProps: MenuProps(
+                  backgroundColor:
+                      isDark ? AppTheme.darkCard : Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          const SizedBox(height: 16),
+
+          // Ciudad / Municipio de la empresa
+          _FieldLabel(label: 'Ciudad / Municipio de la empresa'),
+          const SizedBox(height: 8),
+          if (_empLoadingCities)
+            const _LoadingDropdown(label: 'Cargando ciudades...')
+          else
+            DropdownSearch<Map<String, dynamic>>(
+              enabled: _empSelectedState != null,
+              selectedItem: _empSelectedCity,
+              items: _empGeoCities,
+              filterFn: (item, filter) =>
+                  (item['name'] as String)
+                      .toLowerCase()
+                      .contains(filter.toLowerCase()),
+              itemAsString: (c) => c['name'] as String,
+              compareFn: (a, b) => a['geonameId'] == b['geonameId'],
+              onChanged: (v) {
+                setState(() => _empSelectedCity = v);
+                if (v != null) {
+                  final lat = double.tryParse(v['lat']?.toString() ?? '');
+                  final lng = double.tryParse(v['lng']?.toString() ?? '');
+                  if (lat != null && lng != null) {
+                    _empMapController.move(LatLng(lat, lng), 12);
+                  }
+                }
+              },
+              dropdownBuilder: (ctx, item) => item == null
+                  ? Text(
+                      _empSelectedState == null
+                          ? 'Selecciona una provincia primero'
+                          : 'Selecciona una ciudad',
+                      style: TextStyle(
+                          color: isDark ? Colors.white38 : Colors.grey[500],
+                          fontSize: 14))
+                  : Text(item['name'] as String,
+                      style: TextStyle(color: textPrimary, fontSize: 14)),
+              dropdownDecoratorProps: DropDownDecoratorProps(
+                dropdownSearchDecoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.place_outlined, size: 20),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: borderColor),
+                  ),
+                  filled: true,
+                  fillColor: cardColor,
+                ),
+              ),
+              popupProps: PopupProps.menu(
+                showSearchBox: true,
+                searchFieldProps: TextFieldProps(
+                  decoration: InputDecoration(
+                    hintText: 'Buscar ciudad...',
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                menuProps: MenuProps(
+                  backgroundColor:
+                      isDark ? AppTheme.darkCard : Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          const SizedBox(height: 16),
+
           _FieldLabel(label: 'Dirección de la empresa'),
           const SizedBox(height: 8),
           TextFormField(
             controller: _empresaDireccionController,
             style: TextStyle(color: textPrimary),
             decoration: const InputDecoration(
-              hintText: 'Dirección comercial',
+              hintText: 'Calle, número, reparto...',
               prefixIcon: Icon(Icons.location_on_outlined, size: 20),
             ),
           ),
+          const SizedBox(height: 16),
+
+          // Mapa para seleccionar coordenadas (opcional)
+          _FieldLabel(label: 'Ubicación en mapa (opcional)'),
+          const SizedBox(height: 4),
+          Text(
+            'Toca el mapa para fijar la ubicación exacta de la empresa.',
+            style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                color: isDark ? Colors.white38 : Colors.grey[500]),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              height: 220,
+              child: FlutterMap(
+                mapController: _empMapController,
+                options: MapOptions(
+                  initialCenter: LatLng(
+                    _empLat ??
+                        double.tryParse(_empSelectedCity?['lat']?.toString() ?? '') ??
+                        double.tryParse(_empSelectedState?['lat']?.toString() ?? '') ??
+                        20.0,
+                    _empLng ??
+                        double.tryParse(_empSelectedCity?['lng']?.toString() ?? '') ??
+                        double.tryParse(_empSelectedState?['lng']?.toString() ?? '') ??
+                        0.0,
+                  ),
+                  initialZoom: _empLat != null ? 14 : (_empSelectedCity != null ? 12 : (_empSelectedState != null ? 7 : 2)),
+                  onTap: (_, latlng) => setState(() {
+                    _empLat = latlng.latitude;
+                    _empLng = latlng.longitude;
+                  }),
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  ),
+                  if (_empLat != null)
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: LatLng(_empLat!, _empLng!),
+                          width: 36,
+                          height: 36,
+                          child: const Icon(Icons.location_pin,
+                              color: AppTheme.primaryColor, size: 36),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (_empLat != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Lat: ${_empLat!.toStringAsFixed(5)}, Lng: ${_empLng!.toStringAsFixed(5)}',
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11,
+                  color: AppTheme.primaryColor,
+                  fontWeight: FontWeight.w600),
+            ),
+          ],
         ],
 
         const SizedBox(height: 24),
@@ -1686,6 +2436,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _SectionHeader(title: 'Licencia de Conducción'),
+        const SizedBox(height: 8),
+        Text(
+          'Licencia del conductor que operará la carga (frente y dorso).',
+          style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              color: isDark ? Colors.white54 : Colors.grey[600]),
+        ),
+        const SizedBox(height: 12),
+        _DocUploadTile(
+          label: 'Frente – Licencia de Conducción',
+          imageUrl: _licCondFrenteUrl,
+          isUploading: _isUploadingLicCondFrente,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_conduccion_frente',
+            setUploading: (v) => _isUploadingLicCondFrente = v,
+            onSuccess: (url) => _licCondFrenteUrl = url,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _DocUploadTile(
+          label: 'Dorso – Licencia de Conducción',
+          imageUrl: _licCondDorsoUrl,
+          isUploading: _isUploadingLicCondDorso,
+          isDark: isDark,
+          onTap: () => _pickLicensePhoto(
+            filename: 'lic_conduccion_dorso',
+            setUploading: (v) => _isUploadingLicCondDorso = v,
+            onSuccess: (url) => _licCondDorsoUrl = url,
+          ),
+        ),
+        const SizedBox(height: 24),
+
         // ── Header row with "Add vehicle" button ───────────────────────────
         Row(
           children: [
@@ -1727,39 +2511,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           );
         }),
 
-        const SizedBox(height: 24),
-        _SectionHeader(title: 'Verificación Profesional (opcional)'),
-        const SizedBox(height: 8),
-        Text(
-          'Requerida para operar con escrow. Puedes completarla después del registro.',
-          style: GoogleFonts.plusJakartaSans(
-              fontSize: 12,
-              color: isDark ? Colors.white54 : Colors.grey[600]),
-        ),
-        const SizedBox(height: 16),
-
-        _FieldLabel(label: 'MC Number'),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: _mcNumberController,
-          style: TextStyle(color: textPrimary),
-          decoration: const InputDecoration(
-            hintText: 'Motor Carrier Number',
-            prefixIcon: Icon(Icons.numbers_outlined, size: 20),
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        _FieldLabel(label: 'DOT Number'),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: _dotNumberController,
-          style: TextStyle(color: textPrimary),
-          decoration: const InputDecoration(
-            hintText: 'DOT Number',
-            prefixIcon: Icon(Icons.numbers_outlined, size: 20),
-          ),
-        ),
       ],
     );
   }
@@ -1990,6 +2741,74 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             setLocal(() => item.seguroVigente = v),
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    _FieldLabel(label: 'Licencia de Circulación *'),
+                    const SizedBox(height: 8),
+                    _DocUploadTile(
+                      label: 'Frente – Circulación',
+                      imageUrl: item.licCircFrenteUrl,
+                      isUploading: item.uploadingCircFrente,
+                      isDark: isDark,
+                      onTap: () => _pickLicensePhoto(
+                        filename: 'carroceria_${index}_circ_frente',
+                        setUploading: (v) =>
+                            setLocal(() => item.uploadingCircFrente = v),
+                        onSuccess: (url) {
+                          item.licCircFrenteUrl = url;
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _DocUploadTile(
+                      label: 'Dorso – Circulación',
+                      imageUrl: item.licCircDorsoUrl,
+                      isUploading: item.uploadingCircDorso,
+                      isDark: isDark,
+                      onTap: () => _pickLicensePhoto(
+                        filename: 'carroceria_${index}_circ_dorso',
+                        setUploading: (v) =>
+                            setLocal(() => item.uploadingCircDorso = v),
+                        onSuccess: (url) {
+                          item.licCircDorsoUrl = url;
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _FieldLabel(label: 'Licencia Operativa (opcional)'),
+                    const SizedBox(height: 8),
+                    _DocUploadTile(
+                      label: 'Frente – Lic. Operativa',
+                      imageUrl: item.licOperativaFrenteUrl,
+                      isUploading: item.uploadingOpFrente,
+                      isDark: isDark,
+                      onTap: () => _pickLicensePhoto(
+                        filename: 'carroceria_${index}_op_frente',
+                        setUploading: (v) =>
+                            setLocal(() => item.uploadingOpFrente = v),
+                        onSuccess: (url) {
+                          item.licOperativaFrenteUrl = url;
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _DocUploadTile(
+                      label: 'Dorso – Lic. Operativa',
+                      imageUrl: item.licOperativaDorsoUrl,
+                      isUploading: item.uploadingOpDorso,
+                      isDark: isDark,
+                      onTap: () => _pickLicensePhoto(
+                        filename: 'carroceria_${index}_op_dorso',
+                        setUploading: (v) =>
+                            setLocal(() => item.uploadingOpDorso = v),
+                        onSuccess: (url) {
+                          item.licOperativaDorsoUrl = url;
+                          setState(() {});
+                        },
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -2018,7 +2837,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           style: TextStyle(color: textPrimary),
           textCapitalization: TextCapitalization.words,
           decoration: const InputDecoration(
-            hintText: 'Razón social',
+            hintText: 'Rayo Transportes S.R.L.',
             prefixIcon: Icon(Icons.business, size: 20),
           ),
           validator: (v) =>
@@ -2351,7 +3170,7 @@ class _ScrollHintState extends State<_ScrollHint>
 // ─────────────────────────────────────────────────────────────────────────────
 // Transportista form card widget (used inside dispatcher flow)
 // ─────────────────────────────────────────────────────────────────────────────
-class _TransportistaFormCard extends StatelessWidget {
+class _TransportistaFormCard extends StatefulWidget {
   final int index;
   final _TransportistaItem item;
   final bool isDark;
@@ -2373,9 +3192,126 @@ class _TransportistaFormCard extends StatelessWidget {
   });
 
   @override
+  State<_TransportistaFormCard> createState() => _TransportistaFormCardState();
+}
+
+class _TransportistaFormCardState extends State<_TransportistaFormCard> {
+  final _docService = DocumentUploadService();
+
+  Future<void> _pickLicensePhoto(
+    void Function() setUploading,
+    void Function(String?) onUrl,
+  ) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: widget.isDark ? AppTheme.darkSurface : Colors.white,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Cámara'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: const Text('Galería'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+    setUploading();
+    final url = await _docService.pickCompressAndUpload(
+      uuid: 'dispatcher_reg_${widget.index}_${DateTime.now().millisecondsSinceEpoch}',
+      filename: 'lic_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      source: source,
+    );
+    onUrl(url);
+  }
+
+  Widget _licensePhotoRow(
+    String label,
+    String? url,
+    bool uploading,
+    VoidCallback onTap,
+  ) {
+    final hasPhoto = url != null && url.isNotEmpty;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: widget.isDark ? AppTheme.darkSurface : Colors.grey[100],
+          borderRadius: BorderRadius.circular(10),
+          border: hasPhoto
+              ? Border.all(color: AppTheme.success)
+              : Border.all(color: Colors.transparent),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: hasPhoto
+                    ? AppTheme.success.withValues(alpha: 0.15)
+                    : AppTheme.primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                image: hasPhoto
+                    ? DecorationImage(
+                        image: NetworkImage(url),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
+              ),
+              child: !hasPhoto
+                  ? Icon(
+                      uploading ? Icons.hourglass_top : Icons.add_a_photo_outlined,
+                      size: 20,
+                      color: uploading ? Colors.orange : AppTheme.primaryColor,
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: widget.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    hasPhoto ? 'Foto agregada' : 'Toca para subir',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      color: hasPhoto ? AppTheme.success : Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (hasPhoto)
+              const Icon(Icons.check_circle, color: AppTheme.success, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final cardColor = isDark ? AppTheme.darkCard : Colors.grey[50]!;
-    final borderColor = isDark ? AppTheme.darkBorder : Colors.grey[300]!;
+    final cardColor = widget.isDark ? AppTheme.darkCard : Colors.grey[50]!;
+    final borderColor = widget.isDark ? AppTheme.darkBorder : Colors.grey[300]!;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -2390,14 +3326,13 @@ class _TransportistaFormCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppTheme.primaryColor.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  'Transportista ${index + 1}',
+                  'Transportista ${widget.index + 1}',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -2406,11 +3341,10 @@ class _TransportistaFormCard extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              if (canRemove)
+              if (widget.canRemove)
                 IconButton(
-                  onPressed: onRemove,
-                  icon: const Icon(Icons.close,
-                      size: 18, color: Colors.redAccent),
+                  onPressed: widget.onRemove,
+                  icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -2420,86 +3354,84 @@ class _TransportistaFormCard extends StatelessWidget {
 
           // Name
           TextFormField(
-            controller: item.nombre,
-            style: TextStyle(color: textPrimary),
+            controller: widget.item.nombre,
+            style: TextStyle(color: widget.textPrimary),
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(
               labelText: 'Nombre completo *',
               prefixIcon: Icon(Icons.person_outline, size: 18),
             ),
             validator: (v) {
-              if (index == 0 && (v == null || v.trim().isEmpty)) {
+              if (widget.index == 0 && (v == null || v.trim().isEmpty)) {
                 return 'El nombre es requerido';
               }
               return null;
             },
-            onChanged: (_) => onChanged(),
+            onChanged: (_) => widget.onChanged(),
           ),
           const SizedBox(height: 12),
 
           // Email
           TextFormField(
-            controller: item.email,
+            controller: widget.item.email,
             keyboardType: TextInputType.emailAddress,
-            style: TextStyle(color: textPrimary),
+            style: TextStyle(color: widget.textPrimary),
             decoration: const InputDecoration(
               labelText: 'Email *',
               prefixIcon: Icon(Icons.email_outlined, size: 18),
             ),
             validator: (v) {
-              if (index == 0 && (v == null || v.trim().isEmpty)) {
+              if (widget.index == 0 && (v == null || v.trim().isEmpty)) {
                 return 'El email es requerido';
               }
               if (v != null &&
                   v.trim().isNotEmpty &&
-                  !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
-                      .hasMatch(v.trim())) {
+                  !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v.trim())) {
                 return 'Email inválido';
               }
               return null;
             },
-            onChanged: (_) => onChanged(),
+            onChanged: (_) => widget.onChanged(),
           ),
           const SizedBox(height: 12),
 
           // Phone
           TextFormField(
-            controller: item.telefono,
+            controller: widget.item.telefono,
             keyboardType: TextInputType.phone,
-            style: TextStyle(color: textPrimary),
+            style: TextStyle(color: widget.textPrimary),
             decoration: const InputDecoration(
               labelText: 'Teléfono *',
               prefixIcon: Icon(Icons.phone_outlined, size: 18),
             ),
             validator: (v) {
-              if (index == 0 && (v == null || v.trim().isEmpty)) {
+              if (widget.index == 0 && (v == null || v.trim().isEmpty)) {
                 return 'El teléfono es requerido';
               }
               return null;
             },
-            onChanged: (_) => onChanged(),
+            onChanged: (_) => widget.onChanged(),
           ),
           const SizedBox(height: 12),
 
           // Tipo carrocería
           DropdownButtonFormField<String>(
-            value: item.tipoCarroceria,
-            dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
-            style: TextStyle(color: textPrimary),
+            value: widget.item.tipoCarroceria,
+            dropdownColor: widget.isDark ? AppTheme.darkCard : Colors.white,
+            style: TextStyle(color: widget.textPrimary),
             decoration: const InputDecoration(
               labelText: 'Tipo de carrocería',
-              prefixIcon:
-                  Icon(Icons.local_shipping_outlined, size: 18),
+              prefixIcon: Icon(Icons.local_shipping_outlined, size: 18),
             ),
-            items: tiposCarroceria
+            items: widget.tiposCarroceria
                 .map((t) => DropdownMenuItem<String>(
                       value: t,
                       child: Text(t),
                     ))
                 .toList(),
             onChanged: (v) {
-              item.tipoCarroceria = v;
-              onChanged();
+              widget.item.tipoCarroceria = v;
+              widget.onChanged();
             },
           ),
           const SizedBox(height: 12),
@@ -2509,19 +3441,17 @@ class _TransportistaFormCard extends StatelessWidget {
             children: [
               Expanded(
                 child: TextFormField(
-                  controller: item.marca,
-                  style: TextStyle(color: textPrimary),
-                  decoration:
-                      const InputDecoration(labelText: 'Marca'),
+                  controller: widget.item.marca,
+                  style: TextStyle(color: widget.textPrimary),
+                  decoration: const InputDecoration(labelText: 'Marca'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: TextFormField(
-                  controller: item.modelo,
-                  style: TextStyle(color: textPrimary),
-                  decoration:
-                      const InputDecoration(labelText: 'Modelo'),
+                  controller: widget.item.modelo,
+                  style: TextStyle(color: widget.textPrimary),
+                  decoration: const InputDecoration(labelText: 'Modelo'),
                 ),
               ),
             ],
@@ -2533,49 +3463,134 @@ class _TransportistaFormCard extends StatelessWidget {
             children: [
               Expanded(
                 child: TextFormField(
-                  controller: item.matricula,
-                  style: TextStyle(color: textPrimary),
+                  controller: widget.item.matricula,
+                  style: TextStyle(color: widget.textPrimary),
                   textCapitalization: TextCapitalization.characters,
-                  decoration:
-                      const InputDecoration(labelText: 'Matrícula'),
+                  decoration: const InputDecoration(labelText: 'Matrícula'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: TextFormField(
-                  controller: item.capacidadTon,
-                  keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true),
-                  style: TextStyle(color: textPrimary),
-                  decoration:
-                      const InputDecoration(labelText: 'Cap. (ton)'),
+                  controller: widget.item.capacidadTon,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: TextStyle(color: widget.textPrimary),
+                  decoration: const InputDecoration(labelText: 'Cap. (ton)'),
                 ),
               ),
             ],
           ),
+
+          const SizedBox(height: 20),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // ── License Photos Section ───────────────────────────────────────
+          Text(
+            'Licencias y Documentos',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: widget.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Sube fotos de las licencias de cada chofer',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              color: Colors.grey,
+            ),
+          ),
           const SizedBox(height: 12),
 
-          // MC + DOT
-          Row(
-            children: [
-              Expanded(
-                child: TextFormField(
-                  controller: item.mcNumber,
-                  style: TextStyle(color: textPrimary),
-                  decoration:
-                      const InputDecoration(labelText: 'MC Number'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextFormField(
-                  controller: item.dotNumber,
-                  style: TextStyle(color: textPrimary),
-                  decoration:
-                      const InputDecoration(labelText: 'DOT Number'),
-                ),
-              ),
-            ],
+          // Licencia de Conducción
+          _licensePhotoRow(
+            'Lic. Conducción - Frente',
+            widget.item.licConduccionFrenteUrl,
+            widget.item.uploadingLicCondFrente,
+            () => _pickLicensePhoto(
+              () => setState(() => widget.item.uploadingLicCondFrente = true),
+              (url) => setState(() {
+                widget.item.licConduccionFrenteUrl = url;
+                widget.item.uploadingLicCondFrente = false;
+                widget.onChanged();
+              }),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _licensePhotoRow(
+            'Lic. Conducción - Dorso',
+            widget.item.licConduccionDorsoUrl,
+            widget.item.uploadingLicCondDorso,
+            () => _pickLicensePhoto(
+              () => setState(() => widget.item.uploadingLicCondDorso = true),
+              (url) => setState(() {
+                widget.item.licConduccionDorsoUrl = url;
+                widget.item.uploadingLicCondDorso = false;
+                widget.onChanged();
+              }),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Licencia de Circulación
+          _licensePhotoRow(
+            'Lic. Circulación - Frente',
+            widget.item.licCircFrenteUrl,
+            widget.item.uploadingLicCircFrente,
+            () => _pickLicensePhoto(
+              () => setState(() => widget.item.uploadingLicCircFrente = true),
+              (url) => setState(() {
+                widget.item.licCircFrenteUrl = url;
+                widget.item.uploadingLicCircFrente = false;
+                widget.onChanged();
+              }),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _licensePhotoRow(
+            'Lic. Circulación - Dorso',
+            widget.item.licCircDorsoUrl,
+            widget.item.uploadingLicCircDorso,
+            () => _pickLicensePhoto(
+              () => setState(() => widget.item.uploadingLicCircDorso = true),
+              (url) => setState(() {
+                widget.item.licCircDorsoUrl = url;
+                widget.item.uploadingLicCircDorso = false;
+                widget.onChanged();
+              }),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Licencia Operativa (opcional)
+          _licensePhotoRow(
+            'Lic. Operativa - Frente (opcional)',
+            widget.item.licOperativaFrenteUrl,
+            widget.item.uploadingLicOpFrente,
+            () => _pickLicensePhoto(
+              () => setState(() => widget.item.uploadingLicOpFrente = true),
+              (url) => setState(() {
+                widget.item.licOperativaFrenteUrl = url;
+                widget.item.uploadingLicOpFrente = false;
+                widget.onChanged();
+              }),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _licensePhotoRow(
+            'Lic. Operativa - Dorso (opcional)',
+            widget.item.licOperativaDorsoUrl,
+            widget.item.uploadingLicOpDorso,
+            () => _pickLicensePhoto(
+              () => setState(() => widget.item.uploadingLicOpDorso = true),
+              (url) => setState(() {
+                widget.item.licOperativaDorsoUrl = url;
+                widget.item.uploadingLicOpDorso = false;
+                widget.onChanged();
+              }),
+            ),
           ),
         ],
       ),

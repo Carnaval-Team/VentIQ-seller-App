@@ -229,7 +229,8 @@ class _InventoryIPVReportScreenState extends State<InventoryIPVReportScreen> {
       // Precio de venta en CUP
       final precioVentaCup = (item['precio_venta'] as num?)?.toDouble() ?? 0;
       final reservado = (item['reservado'] as num?)?.toDouble() ?? 0;
-      final extracciones = (item['extracciones'] as num?)?.toDouble() ?? 0;
+      final extracciones = (item['cantidad_extracciones'] as num?)?.toDouble() ?? 0;
+      final disponible = (item['cantidad_disponible'] as num?)?.toDouble() ?? 0;
 
       totalInvInicialCostoCant += cantidadInicial;
       totalInvInicialCostoImporte += cantidadInicial * costoPromedioUsd;
@@ -237,7 +238,7 @@ class _InventoryIPVReportScreenState extends State<InventoryIPVReportScreen> {
       totalInvInicialVentaImporte += cantidadInicial * precioVentaCup;
       totalEntradas += cantidadEntradas;
       totalReservados += reservado;
-      totalDisponible += (cantidadInicial + cantidadEntradas - extracciones);
+      totalDisponible += disponible;
       totalExtracciones += extracciones;
       totalVendido += cantidadVendida;
       totalInvFinalCant += cantidadFinal;
@@ -796,7 +797,9 @@ class _InventoryIPVReportScreenState extends State<InventoryIPVReportScreen> {
       final reservado =
           (item['reservado'] as num?)?.toDouble() ?? 0;
       final extracciones =
-          (item['extracciones'] as num?)?.toDouble() ?? 0;
+          (item['cantidad_extracciones'] as num?)?.toDouble() ?? 0;
+      final disponible =
+          (item['cantidad_disponible'] as num?)?.toDouble() ?? 0;
 
       final costoUnitarioConvertido = _convertirValor(costoPromedioUsd);
       final ventaPrecioConvertido = _monedaSeleccionada == Moneda.cup
@@ -814,8 +817,6 @@ class _InventoryIPVReportScreenState extends State<InventoryIPVReportScreen> {
           ? cantidadVendida * precioVentaCup
           : cantidadVendida * (precioVentaCup / _tasaConversion);
       final costoTotal = _convertirValor(cantidadFinal * costoPromedioUsd);
-
-      final disponible = cantidadInicial + cantidadEntradas - extracciones;
 
       return TableRow(
         children: [
@@ -995,8 +996,8 @@ class _InventoryIPVReportScreenState extends State<InventoryIPVReportScreen> {
                         (item['costo_promedio_usd'] as num?)?.toDouble() ?? 0;
                     final precioVentaCup =
                         (item['precio_venta'] as num?)?.toDouble() ?? 0;
-                    final reservado =
-                        (item['reservado'] as num?)?.toDouble() ?? 0;
+                    final disponiblePdf =
+                        (item['cantidad_disponible'] as num?)?.toDouble() ?? 0;
 
                     final costoUnitarioConvertido =
                         _convertirValor(costoPromedioUsd);
@@ -1028,8 +1029,7 @@ class _InventoryIPVReportScreenState extends State<InventoryIPVReportScreen> {
                         _pdfDataCell(cantidadInicial.toStringAsFixed(2)),
                         _pdfDataCell(invInicialVentaImporte.toStringAsFixed(2)),
                         _pdfDataCell(cantidadEntradas.toStringAsFixed(2)),
-                        _pdfDataCell(
-                            (cantidadFinal - reservado).toStringAsFixed(2)),
+                        _pdfDataCell(disponiblePdf.toStringAsFixed(2)),
                         _pdfDataCell(cantidadVendida.toStringAsFixed(2)),
                         _pdfDataCell(cantidadFinal.toStringAsFixed(2)),
                         _pdfDataCell(invFinalImporte.toStringAsFixed(2)),

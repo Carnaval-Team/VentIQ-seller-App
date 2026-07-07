@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../models/warehouse.dart';
 import '../services/warehouse_service.dart';
@@ -22,6 +23,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   bool _isLoading = false;
   bool _isExporting = false;
   String? _selectedExportMethod = 'pdf'; // PDF seleccionado por defecto
+  String _selectedReportType = 'ventas'; // 'ventas' (v4) o 'movimientos' (v5)
   int? _selectedWarehouseId;
   String _selectedWarehouseName = 'Todos';
   DateTime? _selectedDate;
@@ -36,6 +38,8 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   bool _includeDescripcionCorta = false;
   bool _includeDescripcion = false;
   
+  bool _includePrecios = false;
+
   // Opciones de filtrado
   bool _includeZeroStock = false; // Incluir productos con stock cero
 
@@ -117,23 +121,40 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         throw Exception('No se encontró el ID de tienda del usuario');
       }
 
-      // Obtener datos del inventario
-      final inventoryData = await InventoryService.getInventarioSimple(
-        idAlmacen: _selectedWarehouseId,
-        idTienda: storeId,
-        fechaDesde: _selectedDate,
-        fechaHasta: _selectedDateTo,
-        includeZero: _includeZeroStock,
-      );
+      // Obtener datos del inventario según el tipo de reporte seleccionado
+      final List<Map<String, dynamic>> inventoryData;
+      if (_selectedReportType == 'movimientos') {
+        inventoryData = await InventoryService.getInventarioMovimientos(
+          idAlmacen: _selectedWarehouseId,
+          idTienda: storeId,
+          fechaDesde: _selectedDate,
+          fechaHasta: _selectedDateTo,
+          includeZero: _includeZeroStock,
+        );
+      } else {
+        inventoryData = await InventoryService.getInventarioSimple(
+          idAlmacen: _selectedWarehouseId,
+          idTienda: storeId,
+          fechaDesde: _selectedDate,
+          fechaHasta: _selectedDateTo,
+          includeZero: _includeZeroStock,
+        );
+      }
 
       if (inventoryData.isEmpty) {
         throw Exception('No se encontraron datos de inventario para exportar');
       }
 
+      // Si se pidieron precios, consultarlos y mergear en cada fila
+      List<Map<String, dynamic>> enrichedData = inventoryData;
+      if (_includePrecios) {
+        enrichedData = await _enrichWithPrices(inventoryData, storeId);
+      }
+
       // Generar y compartir el archivo según el método seleccionado
       await _exportService.exportInventorySimple(
         context: context,
-        inventoryData: inventoryData,
+        inventoryData: enrichedData,
         warehouseName: _selectedWarehouseName,
         filterDateFrom: _selectedDate,
         filterDateTo: _selectedDateTo,
@@ -143,6 +164,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         includeMarca: _includeMarca,
         includeDescripcionCorta: _includeDescripcionCorta,
         includeDescripcion: _includeDescripcion,
+        includePrecios: _includePrecios,
       );
 
       // Cerrar el diálogo después de la exportación exitosa
@@ -165,6 +187,110 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         });
       }
     }
+  }
+
+  /// Consulta precios y costos vigentes para cada producto del inventario
+  /// y los mergea en cada fila del mapa.
+  Future<List<Map<String, dynamic>>> _enrichWithPrices(
+    List<Map<String, dynamic>> inventoryData,
+    int storeId,
+  ) async {
+    final supabase = Supabase.instance.client;
+    final today = DateTime.now().toIso8601String().split('T')[0];
+
+    final ids = inventoryData
+        .map((r) => r['id_producto'])
+        .whereType<int>()
+        .toSet()
+        .toList();
+
+    if (ids.isEmpty) return inventoryData;
+
+    // Tasa USD→CUP vigente de la tienda, fallback a tasas_conversion
+    double tasa = 1.0;
+    try {
+      final tasaResp = await supabase
+          .from('tasa_cambio_extraoficial')
+          .select('valor_cambio')
+          .eq('id_tienda', storeId)
+          .eq('activo', true)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      tasa = (tasaResp?['valor_cambio'] as num?)?.toDouble() ?? 1.0;
+    } catch (_) {
+      try {
+        final t = await supabase
+            .from('tasas_conversion')
+            .select('tasa')
+            .eq('moneda_origen', 'USD')
+            .eq('moneda_destino', 'CUP')
+            .order('fecha_actualizacion', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        tasa = (t?['tasa'] as num?)?.toDouble() ?? 1.0;
+      } catch (_) {}
+    }
+
+    // Precio de venta vigente por producto
+    final preciosResp = await supabase
+        .from('app_dat_precio_venta')
+        .select('id_producto, precio_venta_cup, precio_venta_usd')
+        .inFilter('id_producto', ids)
+        .lte('fecha_desde', today)
+        .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
+        .order('created_at', ascending: false);
+
+    final Map<int, Map<String, dynamic>> preciosPorProducto = {};
+    for (final row in (preciosResp as List)) {
+      final pid = row['id_producto'] as int;
+      if (!preciosPorProducto.containsKey(pid)) {
+        preciosPorProducto[pid] = Map<String, dynamic>.from(row);
+      }
+    }
+
+    // Costo promedio USD (presentación base) por producto
+    final costosResp = await supabase
+        .from('app_dat_producto_presentacion')
+        .select('id_producto, precio_promedio')
+        .inFilter('id_producto', ids)
+        .eq('es_base', true);
+
+    final Map<int, double> costoUsdPorProducto = {};
+    for (final row in (costosResp as List)) {
+      final pid = row['id_producto'] as int;
+      costoUsdPorProducto[pid] =
+          (row['precio_promedio'] as num?)?.toDouble() ?? 0.0;
+    }
+
+    // Merge de precios en cada fila
+    return inventoryData.map((row) {
+      final pid = row['id_producto'] as int?;
+      if (pid == null) return row;
+
+      final precio = preciosPorProducto[pid];
+      final costoUsd = costoUsdPorProducto[pid] ?? 0.0;
+      final costoCup = costoUsd * tasa;
+
+      final precioVentaCup =
+          (precio?['precio_venta_cup'] as num?)?.toDouble() ?? 0.0;
+      final precioVentaUsd = tasa > 0 ? precioVentaCup / tasa : 0.0;
+      final gananciaCup = precioVentaCup - costoCup;
+      final gananciaUsd = tasa > 0 ? gananciaCup / tasa : 0.0;
+      final gananciaPorc =
+          costoCup > 0 ? (gananciaCup / costoCup) * 100 : 0.0;
+
+      return {
+        ...row,
+        'precio_costo_usd': costoUsd,
+        'precio_costo_cup': costoCup,
+        'precio_venta_usd_calc': precioVentaUsd,
+        'precio_venta_cup_actual': precioVentaCup,
+        'ganancia_usd': gananciaUsd,
+        'ganancia_cup': gananciaCup,
+        'ganancia_pct': gananciaPorc,
+      };
+    }).toList();
   }
 
   @override
@@ -227,6 +353,52 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Tipo de reporte
+                    const Text(
+                      'Tipo de Reporte',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _ExportMethodCard(
+                            icon: Icons.point_of_sale,
+                            label: 'Por ventas',
+                            description: 'Stock y ventas del período',
+                            color: Colors.blue,
+                            isSelected: _selectedReportType == 'ventas',
+                            onTap: () {
+                              setState(() {
+                                _selectedReportType = 'ventas';
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _ExportMethodCard(
+                            icon: Icons.swap_horiz,
+                            label: 'Por movimientos',
+                            description: 'Entradas, salidas y pendientes',
+                            color: Colors.deepPurple,
+                            isSelected: _selectedReportType == 'movimientos',
+                            onTap: () {
+                              setState(() {
+                                _selectedReportType = 'movimientos';
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+
                     // Método de exportación
                     const Text(
                       'Método de Exportación',
@@ -624,7 +796,31 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             activeColor: AppColors.primary,
                             contentPadding: EdgeInsets.zero,
                           ),
-                          
+                          CheckboxListTile(
+                            title: const Text(
+                              'Incluir Precios',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Costo USD/CUP, Precio Venta USD/CUP, Ganancia USD/CUP y %Ganancia',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            value: _includePrecios,
+                            onChanged: (value) {
+                              setState(() {
+                                _includePrecios = value ?? false;
+                              });
+                            },
+                            activeColor: AppColors.primary,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+
                           const Divider(height: 24),
                           
                           // Sección de filtros

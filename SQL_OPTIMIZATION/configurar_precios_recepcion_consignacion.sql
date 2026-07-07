@@ -27,6 +27,7 @@ DECLARE
   v_producto RECORD;
   v_id_presentacion BIGINT;
   v_precio_venta_cup NUMERIC;
+  v_precio_venta_usd NUMERIC;
   v_precio_costo_usd NUMERIC;
   v_cantidad NUMERIC;
   v_precio_promedio_nuevo NUMERIC;
@@ -56,6 +57,7 @@ BEGIN
       rp.id_presentacion,
       rp.cantidad,
       (precio_data->>'precio_venta_cup')::NUMERIC AS precio_venta_cup,
+      (precio_data->>'precio_venta_usd')::NUMERIC AS precio_venta_usd,
       (precio_data->>'precio_costo_usd')::NUMERIC AS precio_costo_usd
     FROM app_dat_recepcion_productos rp,
     LATERAL jsonb_array_elements(p_precios_productos) AS precio_data
@@ -67,6 +69,7 @@ BEGIN
     v_cantidad := v_producto.cantidad;
     -- El precio_venta_cup viene del envío, es lo que el consignador configuró para vender
     v_precio_venta_cup := COALESCE(v_producto.precio_venta_cup, 0);
+    v_precio_venta_usd := COALESCE(v_producto.precio_venta_usd, 0);
     -- El precio_costo_usd viene del envío, es lo que el consignador configura como costo
     v_precio_costo_usd := COALESCE(v_producto.precio_costo_usd, 0);
     
@@ -89,11 +92,13 @@ BEGIN
       INSERT INTO app_dat_precio_venta (
         id_producto,
         precio_venta_cup,
+        precio_venta_usd,
         fecha_desde,
         created_at
       ) VALUES (
         v_producto.id_producto,
         v_precio_venta_cup,
+        NULLIF(v_precio_venta_usd, 0),
         CURRENT_DATE,
         CURRENT_TIMESTAMP
       );

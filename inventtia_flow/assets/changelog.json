@@ -1,0 +1,147 @@
+{
+  "app_name": "inventtia_flow",
+  "current_version": "1.3.1",
+  "build": 5,
+  "changelogs": [
+    {
+      "version": "1.3.1",
+      "date": "2026-07-05",
+      "title": "🗂️ Mejoras en la vista de reservas para trabajadores",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Filtro por fecha para trabajadores",
+          "description": "Los trabajadores pueden navegar entre días deslizando o usando las flechas, con la opción de volver al día de hoy con un toque."
+        },
+        {
+          "type": "feature",
+          "title": "Filtro por estado en reservas del trabajador",
+          "description": "La vista de reservas del trabajador muestra por defecto solo las reservas en estado Reservado, y permite filtrar por cualquier estado disponible."
+        },
+        {
+          "type": "feature",
+          "title": "Filtros por local y servicio para trabajadores",
+          "description": "Los trabajadores pueden filtrar las reservas de la entidad por local y servicio desde un panel colapsable."
+        },
+        {
+          "type": "improvement",
+          "title": "Datos del cliente reorganizados",
+          "description": "La sección de datos del cliente ahora muestra nombre, apellidos, CI, teléfono, email y notas de forma separada. Los datos adicionales del servicio se muestran en su propia sección."
+        }
+      ]
+    },
+    {
+      "version": "1.3.0",
+      "date": "2026-07-03",
+      "title": "⚙️ Mejoras en administración y reservas",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Cancelar reservas desde administración",
+          "description": "Los administradores pueden cancelar reservas directamente desde el listado. El cliente recibe una notificación automática cuando su reserva es cancelada."
+        },
+        {
+          "type": "feature",
+          "title": "Gestión de administradores y trabajadores mejorada",
+          "description": "Al agregar un administrador o trabajador ahora se puede vincular un usuario existente buscando por correo, o crear un nuevo usuario con sus datos y contraseña temporal."
+        },
+        {
+          "type": "feature",
+          "title": "Filtro por estado en reservas",
+          "description": "El listado de reservas administrativo ahora incluye un filtro de estado (Reservado, Cancelado o Completado), mostrando por defecto las reservas activas."
+        },
+        {
+          "type": "improvement",
+          "title": "Exportación de reservas más controlada",
+          "description": "Para exportar reservas a PDF o Excel ahora se debe filtrar exactamente un solo día. Si no se cumple, se muestra un mensaje informativo."
+        },
+        {
+          "type": "improvement",
+          "title": "Datos del cliente en reservas y exportaciones",
+          "description": "La tabla de reservas y los reportes exportados ahora muestran únicamente los datos del cliente, evitando que aparezcan datos del usuario administrativo."
+        }
+      ]
+    },
+    {
+      "version": "1.2.0",
+      "date": "2026-07-03",
+      "title": "🎨 Nueva imagen más azul",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Colores renovados",
+          "description": "Ajustamos los azules de la app para que los botones, encabezados y fondos combinen mejor y se vean más elegantes."
+        },
+        {
+          "type": "improvement",
+          "title": "Notificaciones más claras",
+          "description": "La pantalla de notificaciones ahora tiene el mismo estilo que tus listas y reservas, con tarjetas más ordenadas y fáciles de leer."
+        },
+        {
+          "type": "improvement",
+          "title": "Bienvenida con más estilo",
+          "description": "Rediseñamos la pantalla de inicio de sesión y registro, resaltando el nombre GoReserva con un toque de color."
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "date": "2026-07-03",
+      "title": "✨ Ahora somos Inventtia GoReserva",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Nuevo nombre: Inventtia GoReserva",
+          "description": "La app cambió de nombre a Inventtia GoReserva. Es la misma aplicación de siempre, ahora con una imagen renovada."
+        },
+        {
+          "type": "feature",
+          "title": "Cancela tus reservas",
+          "description": "Ahora puedes cancelar una reserva que ya no vayas a usar directamente desde tus tickets, liberando el turno para otras personas."
+        },
+        {
+          "type": "feature",
+          "title": "Planificación de turnos recurrentes",
+          "description": "Los administradores pueden programar turnos que se repiten de forma automática (por ejemplo, cada semana), sin tener que crearlos uno por uno."
+        },
+        {
+          "type": "feature",
+          "title": "Reserva directa de turnos",
+          "description": "En los servicios que lo permitan, ahora puedes reservar un turno al instante sin pasos adicionales."
+        },
+        {
+          "type": "improvement",
+          "title": "Capacidad de locales y servicios",
+          "description": "Cada local y servicio ahora define cuántas personas puede atender, para que las reservas reflejen mejor la disponibilidad real."
+        },
+        {
+          "type": "improvement",
+          "title": "Mejoras en la gestión de servicios y reservas",
+          "description": "Se mejoró la pantalla de detalle de los locales y la gestión de servicios y reservas para hacerlas más claras y fáciles de usar."
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2026-06-22",
+      "title": "🚀 Lanzamiento inicial",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Catálogo de servicios",
+          "description": "Explora y reserva turnos en servicios cercanos."
+        },
+        {
+          "type": "feature",
+          "title": "Gestión de planificaciones",
+          "description": "Los administradores pueden crear y gestionar planes de turnos por fecha y cantidad."
+        },
+        {
+          "type": "feature",
+          "title": "Reservas y tickets",
+          "description": "Los usuarios pueden reservar turnos y consultar sus tickets desde la app."
+        }
+      ]
+    }
+  ]
+}

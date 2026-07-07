@@ -42,10 +42,10 @@ class _SplashScreenState extends State<SplashScreen>
     final authProvider = context.read<AuthProvider>();
 
     if (authProvider.isAuthenticated) {
-      // User is logged in -- wait for profile to load if needed
-      // Give profile loading a moment to complete
+      // User is logged in -- wait for profile (role + tipoUsuario) to load
       int attempts = 0;
-      while (authProvider.role == null && attempts < 10) {
+      while ((authProvider.role == null || authProvider.tipoUsuario == null) &&
+          attempts < 15) {
         await Future.delayed(const Duration(milliseconds: 300));
         attempts++;
         if (!mounted) return;
@@ -53,15 +53,15 @@ class _SplashScreenState extends State<SplashScreen>
 
       if (!mounted) return;
 
-      if (authProvider.role == null) {
-        // Profile failed to load (e.g. no connection) — go to login
-        Navigator.pushReplacementNamed(context, '/login');
+      if (authProvider.role == null || authProvider.profileLoadFailed) {
+        // Profile failed to load (e.g. no connection) — go to landing
+        Navigator.pushReplacementNamed(context, '/landing');
       } else {
         Navigator.pushReplacementNamed(context, authProvider.homeRoute);
       }
     } else {
-      // Not logged in -- go to login
-      Navigator.pushReplacementNamed(context, '/login');
+      // Not logged in -- go to landing
+      Navigator.pushReplacementNamed(context, '/landing');
     }
   }
 
