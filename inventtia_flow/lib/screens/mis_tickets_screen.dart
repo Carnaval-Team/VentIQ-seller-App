@@ -9,6 +9,7 @@ import '../providers/auth_provider.dart';
 import '../providers/entidad_provider.dart';
 import '../services/agenda_admin_service.dart';
 import '../services/agenda_service.dart';
+import '../services/auth_service.dart';
 import '../services/catalogo_service.dart';
 import '../widgets/datos_adicionales_view.dart';
 import '../widgets/notificaciones_bell.dart';
@@ -98,7 +99,7 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
   }
 
   Future<void> _cancelar(Agenda ticket) async {
-    final uuid = context.read<AuthProvider>().user?.id ?? '';
+    final uuid = AuthService.currentUserId ?? '';
     if (uuid.isEmpty) return;
 
     final entidad = ticket.entidad;
@@ -262,7 +263,7 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final uuid = context.read<AuthProvider>().user?.id ?? '';
+      final uuid = AuthService.currentUserId ?? '';
       List<Agenda> tickets;
       if (_esVendedor) {
         final entidad = _entidad!;

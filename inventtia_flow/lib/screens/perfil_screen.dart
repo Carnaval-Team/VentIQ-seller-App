@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/entidad_provider.dart';
+import '../services/auth_service.dart';
 import '../widgets/notificaciones_bell.dart';
 import '../services/update_service.dart';
 import 'perfil_setup_screen.dart';
@@ -470,7 +471,14 @@ class _EntidadAdminSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final seleccionada = provider.entidadSeleccionada;
-    final myUuid = context.read<AuthProvider>().user?.id ?? '';
+    final myUuid = AuthService.currentUserId ?? '';
+
+    // Si no hay UUID, mostrar mensaje de error
+    if (myUuid.isEmpty) {
+      return const Center(
+        child: Text('No se pudo obtener el usuario autenticado'),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

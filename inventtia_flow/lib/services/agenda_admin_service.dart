@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/agenda.dart';
+import 'auth_service.dart';
 
 class AgendaAdminService {
   static final SupabaseClient _supabase = Supabase.instance.client;
@@ -37,11 +38,12 @@ class AgendaAdminService {
     Map<String, dynamic>? datosAdicionales,
   }) async {
     try {
-      String? uuid = _supabase.auth.currentUser?.id;
+      // Usar método robusto con fallback para obtener UUID
+      final uuid = await AuthService.getCurrentUserId();
       if (uuid == null) {
-        final resp = await _supabase.auth.getUser();
-        uuid = resp.user?.id;
+        throw Exception('No se pudo obtener el usuario autenticado');
       }
+      
       final res = await _supabase.schema(_schema).rpc(
         'admin_crear_reserva_directa',
         params: {
@@ -49,7 +51,7 @@ class AgendaAdminService {
           'p_fecha': fecha.toIso8601String().substring(0, 10),
           if (cantidad != null) 'p_cantidad': cantidad,
           if (datosAdicionales != null) 'p_datos_adicionales': datosAdicionales,
-          if (uuid != null) 'p_uuid_admin': uuid,
+          'p_uuid_admin': uuid, // Siempre enviar el UUID
         },
       );
       final json = res as Map<String, dynamic>;

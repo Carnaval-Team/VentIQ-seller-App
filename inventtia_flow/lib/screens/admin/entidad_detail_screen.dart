@@ -56,7 +56,7 @@ class _EntidadDetailScreenState extends State<EntidadDetailScreen> {
   }
 
   bool get _isOwner =>
-      _entidad.isOwner(context.read<AuthProvider>().user?.id ?? '');
+      _entidad.isOwner(AuthService.currentUserId ?? '');
 
   void _editarEntidad() {
     showModalBottomSheet(

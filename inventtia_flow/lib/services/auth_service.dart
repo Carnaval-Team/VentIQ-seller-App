@@ -1,7 +1,9 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'user_preferences_service.dart';
 
 class AuthService {
   static final SupabaseClient _supabase = Supabase.instance.client;
+  static final UserPreferencesService _prefsService = UserPreferencesService();
 
   static User? get currentUser => _supabase.auth.currentUser;
   static String? get currentUserId => currentUser?.id;
@@ -32,6 +34,8 @@ class AuthService {
 
   static Future<void> signOut() async {
     await _supabase.auth.signOut();
+    // Limpiar preferencias locales
+    await _prefsService.clearUserData();
   }
 
   static Future<void> resetPassword(String email) async {
@@ -60,5 +64,85 @@ class AuthService {
       },
     );
     return res.toString();
+  }
+
+  // Métodos robustos para gestión de usuario (estilo ventiq_app)
+
+  /// Obtener usuario actual con múltiples fallbacks
+  static Future<User?> getCurrentUserWithFallback() async {
+    try {
+      // 1. Intentar de Supabase directo
+      final supabaseUser = _supabase.auth.currentUser;
+      if (supabaseUser != null) {
+        return supabaseUser;
+      }
+
+      // 2. Intentar getUser() de Supabase
+      final response = await _supabase.auth.getUser();
+      if (response.user != null) {
+        return response.user;
+      }
+
+      // 3. Fallback a SharedPreferences
+      final userId = await _prefsService.getUserId();
+      if (userId != null) {
+        final userResponse = await _supabase.auth.getUser();
+        return userResponse.user;
+      }
+
+      return null;
+    } catch (e) {
+      print('❌ Error obteniendo usuario con fallback: $e');
+      return null;
+    }
+  }
+
+  /// Obtener UUID del usuario con múltiples fallbacks
+  static Future<String?> getCurrentUserId() async {
+    try {
+      // 1. Intentar de Supabase directo
+      final supabaseUser = _supabase.auth.currentUser;
+      if (supabaseUser?.id != null) {
+        return supabaseUser!.id;
+      }
+
+      // 2. Intentar getUser() de Supabase
+      final response = await _supabase.auth.getUser();
+      if (response.user?.id != null) {
+        return response.user!.id;
+      }
+
+      // 3. Fallback a SharedPreferences
+      final cachedUserId = await _prefsService.getUserId();
+      if (cachedUserId != null) {
+        return cachedUserId;
+      }
+
+      return null;
+    } catch (e) {
+      print('❌ Error obteniendo UUID del usuario: $e');
+      // Último recurso: intentar de SharedPreferences
+      return await _prefsService.getUserId();
+    }
+  }
+
+  /// Verificar si hay sesión válida (incluyendo offline)
+  static Future<bool> hasValidSession() async {
+    return await _prefsService.hasValidSession();
+  }
+
+  /// Forzar refresh de sesión
+  static Future<bool> refreshSession() async {
+    return await _prefsService.refreshSession();
+  }
+
+  /// Sincronizar estado con Supabase Auth
+  static Future<void> syncWithSupabaseAuth() async {
+    await _prefsService.syncWithSupabaseAuth();
+  }
+
+  /// Verificar si hay datos cacheados
+  static Future<bool> hasCachedData() async {
+    return await _prefsService.hasCachedData();
   }
 }

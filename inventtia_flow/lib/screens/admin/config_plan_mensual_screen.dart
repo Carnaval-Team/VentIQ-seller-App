@@ -5,6 +5,7 @@ import '../../config/app_theme.dart';
 import '../../models/plan_config.dart';
 import '../../models/servicio.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/auth_service.dart';
 import '../../services/plan_config_service.dart';
 
 /// Configuración recurrente de capacidades por día de la semana para un
@@ -40,7 +41,7 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
   bool _generando = false;
   late DateTime _mesSel; // primer día del mes elegido
 
-  String get _uuid => context.read<AuthProvider>().user?.id ?? '';
+  String get _uuid => AuthService.currentUserId ?? '';
 
   @override
   void initState() {

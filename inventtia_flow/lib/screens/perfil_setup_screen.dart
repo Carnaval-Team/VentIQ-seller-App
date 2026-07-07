@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
+import '../services/auth_service.dart';
 import '../services/perfil_service.dart';
 
 class PerfilSetupScreen extends StatefulWidget {
@@ -43,7 +44,7 @@ class _PerfilSetupScreenState extends State<PerfilSetupScreen> {
 
   Future<void> _checkCiDuplicado(String ci) async {
     if (ci.length != 11) return;
-    final uuid = context.read<AuthProvider>().user?.id;
+    final uuid = AuthService.currentUserId;
     setState(() => _checkingCi = true);
     try {
       final existe = await PerfilService.existeCi(ci, excludeUuid: uuid);
@@ -81,7 +82,18 @@ class _PerfilSetupScreenState extends State<PerfilSetupScreen> {
       if (!_formKey.currentState!.validate()) return;
 
       // Doble verificación server-side antes de guardar
-      final uuid = auth.user?.id ?? '';
+      final uuid = await AuthService.getCurrentUserId();
+      if (uuid == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No se pudo obtener el usuario autenticado'),
+              backgroundColor: AppTheme.error,
+            ),
+          );
+        }
+        return;
+      }
       setState(() => _checkingCi = true);
       bool existe = false;
       try {

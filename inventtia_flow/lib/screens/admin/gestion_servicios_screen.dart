@@ -9,6 +9,7 @@ import '../../models/campo_adicional.dart';
 import '../../models/entidad.dart';
 import '../../models/servicio.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/imagen_service.dart';
 import '../../widgets/net_image.dart';
@@ -317,7 +318,7 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
       );
       return;
     }
-    final uuid = context.read<AuthProvider>().user?.id ?? '';
+    final uuid = AuthService.currentUserId ?? '';
     setState(() => _saving = true);
     try {
       String? fotoFinal = _fotoUrl;

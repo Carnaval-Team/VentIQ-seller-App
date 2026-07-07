@@ -9,6 +9,7 @@ import '../models/servicio.dart';
 import '../models/sala_espera.dart';
 import '../models/disponibilidad_dia.dart';
 import '../providers/auth_provider.dart';
+import '../services/auth_service.dart';
 import '../services/lista_service.dart';
 import '../services/agenda_service.dart';
 import '../services/catalogo_service.dart';
@@ -65,7 +66,7 @@ class _LocalServicioDetailScreenState
   Future<void> _load() async {
     setState(() => _isLoading = true);
     try {
-      final uuid = context.read<AuthProvider>().user?.id ?? '';
+      final uuid = AuthService.currentUserId ?? '';
       final results = await Future.wait([
         ListaService.getMisListas(uuid),
         ListaService.getContadoresCola(_localServicio.id),
@@ -117,7 +118,7 @@ class _LocalServicioDetailScreenState
   }
 
   Future<void> _anotarse() async {
-    final uuid = context.read<AuthProvider>().user?.id;
+    final uuid = AuthService.currentUserId;
     if (uuid == null) return;
 
     final now = DateTime.now();
@@ -177,7 +178,7 @@ class _LocalServicioDetailScreenState
 
   // ── Reserva directa: abre el calendario de disponibilidad ──
   Future<void> _reservarAhora() async {
-    final uuid = context.read<AuthProvider>().user?.id;
+    final uuid = AuthService.currentUserId;
     if (uuid == null) return;
 
     setState(() => _isActing = true);
@@ -320,7 +321,7 @@ class _LocalServicioDetailScreenState
   }
 
   Future<void> _cambiarFecha() async {
-    final uuid = context.read<AuthProvider>().user?.id;
+    final uuid = AuthService.currentUserId;
     if (uuid == null || _miLugar == null) return;
 
     final now = DateTime.now();
@@ -372,7 +373,7 @@ class _LocalServicioDetailScreenState
   }
 
   Future<void> _salir() async {
-    final uuid = context.read<AuthProvider>().user?.id;
+    final uuid = AuthService.currentUserId;
     if (uuid == null) return;
     final confirm = await showDialog<bool>(
       context: context,

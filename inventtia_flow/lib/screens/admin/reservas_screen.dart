@@ -18,6 +18,7 @@ import '../../models/servicio.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/agenda_admin_service.dart';
 import '../../services/agenda_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/notificacion_service.dart';
 import '../../widgets/datos_adicionales_form.dart';
@@ -80,8 +81,18 @@ class _ReservasScreenState extends State<ReservasScreen> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      final uuid =
-          context.read<AuthProvider>().user?.id ?? '';
+      final uuid = await AuthService.getCurrentUserId();
+      if (uuid == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No se pudo obtener el usuario autenticado'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
       final data = await AgendaAdminService.listarAgendas(
         uuidUsuario: uuid,
         idEntidad: widget.entidad.id,

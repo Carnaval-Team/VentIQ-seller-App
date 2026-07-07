@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../config/app_theme.dart';
 import '../models/sala_espera.dart';
 import '../providers/auth_provider.dart';
+import '../services/auth_service.dart';
 import '../services/lista_service.dart';
 import 'local_servicio_detail_screen.dart';
 import '../services/catalogo_service.dart';
@@ -32,7 +33,7 @@ class MisListasScreenState extends State<MisListasScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final uuid = context.read<AuthProvider>().user?.id ?? '';
+      final uuid = AuthService.currentUserId ?? '';
       final listas = await ListaService.getMisListas(uuid);
       if (!mounted) return;
       setState(() {
@@ -46,7 +47,7 @@ class MisListasScreenState extends State<MisListasScreen> {
   }
 
   Future<void> _salir(SalaEspera s) async {
-    final uuid = context.read<AuthProvider>().user?.id ?? '';
+    final uuid = AuthService.currentUserId ?? '';
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(

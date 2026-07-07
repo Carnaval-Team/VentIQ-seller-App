@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/perfil.dart';
 import '../services/auth_service.dart';
 import '../services/perfil_service.dart';
+import '../services/user_preferences_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   User? _user;
@@ -10,6 +11,7 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool _perfilLoaded = false;
+  final UserPreferencesService _prefsService = UserPreferencesService();
 
   User? get user => _user;
   Perfil? get perfil => _perfil;
@@ -20,19 +22,41 @@ class AuthProvider extends ChangeNotifier {
   bool get perfilLoaded => _perfilLoaded;
 
   AuthProvider() {
+    _initializeAuth();
+  }
+
+  Future<void> _initializeAuth() async {
+    // Primero intentar obtener usuario de Supabase
     _user = AuthService.currentUser;
+    
+    // Si no hay usuario en Supabase, intentar con fallback
+    if (_user == null) {
+      _user = await _prefsService.getCurrentUserWithFallback();
+    }
+    
+    // Escuchar cambios de autenticación
     AuthService.authStateChanges.listen((state) {
       _user = state.session?.user;
       if (_user != null) {
         _perfilLoaded = false;
         _loadPerfil();
+        // Sincronizar con SharedPreferences
+        _prefsService.syncWithSupabaseAuth();
       } else {
         _perfil = null;
         _perfilLoaded = false;
+        // Limpiar preferencias
+        _prefsService.clearUserData();
       }
       notifyListeners();
     });
-    if (_user != null) _loadPerfil();
+    
+    // Si hay usuario al iniciar, cargar perfil
+    if (_user != null) {
+      _loadPerfil();
+      // Sincronizar estado
+      await _prefsService.syncWithSupabaseAuth();
+    }
   }
 
   Future<void> _loadPerfil() async {
@@ -55,8 +79,18 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     print('[flow] signIn → $email');
     try {
-      await AuthService.signIn(email: email, password: password);
+      final response = await AuthService.signIn(email: email, password: password);
       print('[flow] signIn → OK');
+      
+      // Guardar en SharedPreferences después del login exitoso
+      if (response.user != null && response.session != null) {
+        await _prefsService.saveUserData(
+          userId: response.user!.id,
+          email: response.user!.email ?? email,
+          accessToken: response.session!.accessToken,
+        );
+      }
+      
       // _loadPerfil es disparado por authStateChanges; esperar a que termine
       int wait = 0;
       while (!_perfilLoaded && wait < 30) {
@@ -130,6 +164,8 @@ class AuthProvider extends ChangeNotifier {
   Future<void> signOut() async {
     await AuthService.signOut();
     _perfil = null;
+    // Limpiar preferencias locales
+    await _prefsService.clearUserData();
     notifyListeners();
   }
 
@@ -208,5 +244,32 @@ class AuthProvider extends ChangeNotifier {
   void clearError() {
     _error = null;
     notifyListeners();
+  }
+
+  // Métodos adicionales para compatibilidad con ventiq_app
+
+  /// Obtener UUID del usuario con múltiples fallbacks
+  Future<String?> getCurrentUserId() async {
+    return await _prefsService.getCurrentUserId();
+  }
+
+  /// Verificar si hay sesión válida (incluyendo offline)
+  Future<bool> hasValidSession() async {
+    return await _prefsService.hasValidSession();
+  }
+
+  /// Forzar refresh de sesión
+  Future<bool> refreshSession() async {
+    return await _prefsService.refreshSession();
+  }
+
+  /// Obtener usuario actual con fallback a preferencias
+  Future<User?> getCurrentUserWithFallback() async {
+    return await _prefsService.getCurrentUserWithFallback();
+  }
+
+  /// Verificar si hay datos cacheados
+  Future<bool> hasCachedData() async {
+    return await _prefsService.hasCachedData();
   }
 }

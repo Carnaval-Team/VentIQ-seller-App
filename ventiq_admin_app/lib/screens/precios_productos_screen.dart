@@ -69,115 +69,35 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
         _usdRate = 440.0;
       }
 
-      // Productos activos de la tienda con su precio de venta y proveedor
-      final productosResp = await _supabase
-          .from('app_dat_producto')
-          .select('''
-            id, denominacion, sku, imagen, id_proveedor,
-            app_dat_precio_venta(id, precio_venta_cup, precio_venta_usd),
-            app_dat_proveedor(id, denominacion)
-          ''')
-          .eq('id_tienda', storeId)
-          .isFilter('deleted_at', null)
-          .order('denominacion');
+      // RPC optimizado: productos + precios + presentaciones + stock
+      // + desglose de costo por ingrediente (elaborados/servicios)
+      final rpcResp = await _supabase.rpc(
+        'get_precios_productos_tienda',
+        params: {'p_id_tienda': storeId},
+      );
 
-      // Presentaciones de todos esos productos
-      final productoIds = (productosResp as List)
-          .map((p) => p['id'] as int)
-          .toList();
-
-      List<Map<String, dynamic>> presentacionesResp = [];
-      if (productoIds.isNotEmpty) {
-        final resp = await _supabase
-            .from('app_dat_producto_presentacion')
-            .select('''
-              id, id_producto, cantidad, es_base, precio_promedio,
-              app_nom_presentacion!inner(id, denominacion)
-            ''')
-            .inFilter('id_producto', productoIds);
-        presentacionesResp = List<Map<String, dynamic>>.from(resp);
-      }
-
-      // Agrupar presentaciones por id_producto
-      final Map<int, List<Map<String, dynamic>>> pressByProduct = {};
-      for (final p in presentacionesResp) {
-        final pid = p['id_producto'] as int;
-        pressByProduct.putIfAbsent(pid, () => []).add(p);
-      }
-
-      // Stock por (id_producto, id_presentacion): sumar cantidad_final
-      // del último registro de cada ubicación (fuente: app_dat_inventario_productos).
-      final Map<String, double> stockByProductoPresentacion = {};
-      if (productoIds.isNotEmpty) {
-        final presentacionIds = presentacionesResp
-            .map((p) => p['id'] as int)
-            .toSet()
-            .toList();
-        if (presentacionIds.isNotEmpty) {
-          final inventarioResp = await _supabase
-              .from('app_dat_inventario_productos')
-              .select(
-                'id, id_producto, id_presentacion, id_ubicacion, cantidad_final, created_at',
-              )
-              .inFilter('id_producto', productoIds)
-              .inFilter('id_presentacion', presentacionIds)
-              .order('created_at', ascending: false)
-              .order('id', ascending: false);
-
-          // Último registro por (producto, presentacion, ubicacion)
-          final Map<String, double> lastByCombo = {};
-          for (final row in (inventarioResp as List)) {
-            final pid = row['id_producto'];
-            final presId = row['id_presentacion'];
-            final ubId = row['id_ubicacion'];
-            if (pid == null || presId == null) continue;
-            final key = '${pid}_${presId}_${ubId ?? 'null'}';
-            if (lastByCombo.containsKey(key)) continue; // ya tenemos el más reciente
-            final qty = (row['cantidad_final'] as num?)?.toDouble() ?? 0.0;
-            lastByCombo[key] = qty;
-          }
-
-          // Sumar por (producto, presentacion)
-          lastByCombo.forEach((key, qty) {
-            final parts = key.split('_');
-            final aggKey = '${parts[0]}_${parts[1]}';
-            stockByProductoPresentacion[aggKey] =
-                (stockByProductoPresentacion[aggKey] ?? 0) + qty;
-          });
-        }
-      }
-
-      // Adjuntar stock a cada presentación
-      for (final p in presentacionesResp) {
-        final aggKey = '${p['id_producto']}_${p['id']}';
-        p['stock_total'] = stockByProductoPresentacion[aggKey] ?? 0.0;
-      }
-
-      // Combinar
       final List<Map<String, dynamic>> combined = [];
-      for (final prod in productosResp) {
-        final pid = prod['id'] as int;
-        final precioVentaList =
-            List<Map<String, dynamic>>.from(prod['app_dat_precio_venta'] as List? ?? []);
-        // Sort descending by id to get the latest record first
-        precioVentaList.sort((a, b) => (b['id'] as int).compareTo(a['id'] as int));
-        final latest = precioVentaList.isNotEmpty ? precioVentaList.first : null;
-        final precioVenta = (latest?['precio_venta_cup'] as num?)?.toDouble();
-        final precioVentaUsd = (latest?['precio_venta_usd'] as num?)?.toDouble();
-        final precioVentaId = latest?['id'] as int?;
-
-        final proveedor = prod['app_dat_proveedor'] as Map<String, dynamic>?;
+      for (final prod in (rpcResp as List)) {
+        final map = Map<String, dynamic>.from(prod as Map);
         combined.add({
-          'id': pid,
-          'denominacion': prod['denominacion'] ?? '',
-          'sku': prod['sku'] ?? '',
-          'imagen': prod['imagen'],
-          'id_proveedor': prod['id_proveedor'],
-          'proveedor': proveedor?['denominacion'] as String?,
-          'precio_venta': precioVenta,
-          'precio_venta_usd': precioVentaUsd,
-          'precio_venta_id': precioVentaId,
-          'presentaciones': pressByProduct[pid] ?? [],
+          'id': map['id'] as int,
+          'denominacion': map['denominacion'] ?? '',
+          'sku': map['sku'] ?? '',
+          'imagen': map['imagen'],
+          'id_proveedor': map['id_proveedor'],
+          'proveedor': map['proveedor'] as String?,
+          'es_elaborado': map['es_elaborado'] == true,
+          'es_servicio': map['es_servicio'] == true,
+          'precio_venta': (map['precio_venta'] as num?)?.toDouble(),
+          'precio_venta_usd': (map['precio_venta_usd'] as num?)?.toDouble(),
+          'precio_venta_id': map['precio_venta_id'] as int?,
+          'presentaciones': List<Map<String, dynamic>>.from(
+            (map['presentaciones'] as List? ?? [])
+                .map((e) => Map<String, dynamic>.from(e as Map)),
+          ),
+          'costo_ingredientes': map['costo_ingredientes'] != null
+              ? Map<String, dynamic>.from(map['costo_ingredientes'] as Map)
+              : null,
         });
       }
 
@@ -215,7 +135,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
     final costoUsdVal = rawCosto is num
         ? rawCosto.toDouble()
         : double.tryParse(rawCosto?.toString() ?? '') ?? 0.0;
-    final tieneCosto = costoUsdVal > 0 && costoUsdVal != 0.0019;
+    final tieneCosto = costoUsdVal > 0;
     if (!tieneCosto) return null;
 
     final ventaCup = (producto['precio_venta'] as double?) ?? 0.0;
@@ -494,12 +414,498 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
     }
   }
 
+  // ── construcción de sección de costos ───────────────────────
+
+  Widget _buildCostoSection(
+    Map<String, dynamic> producto,
+    Map<String, dynamic> pres,
+    bool tieneCosto,
+    double costoUsdVal,
+    double? costoCup,
+  ) {
+    final esElaborado = producto['es_elaborado'] == true ||
+        producto['es_servicio'] == true;
+    final costoIngredientes =
+        producto['costo_ingredientes'] as Map<String, dynamic>?;
+
+    // ── Elaborados / Servicios: costo calculado por ingredientes ──
+    if (esElaborado && costoIngredientes != null) {
+      final costoCalculado =
+          (costoIngredientes['costo_total'] as num?)?.toDouble() ?? 0.0;
+      final desglose = List<Map<String, dynamic>>.from(
+        (costoIngredientes['desglose'] as List? ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map)),
+      );
+      final costoCalcCup =
+          _usdRate > 0 ? costoCalculado * _usdRate : null;
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.calculate_outlined,
+                size: 12,
+                color: Colors.green[600],
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'Costo por ingredientes',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.green[700],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '\$${costoCalculado.toStringAsFixed(2)} USD',
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      color: Color(0xFF1F2937),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  if (costoCalcCup != null)
+                    Text(
+                      '${_formatMoney(costoCalcCup)} CUP',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.grey[700],
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Desglose inline por ingrediente
+          if (desglose.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      size: 14, color: Colors.orange[700]),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Sin ingredientes definidos',
+                      style: TextStyle(
+                          fontSize: 11, color: Colors.orange[800]),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.green.shade100),
+              ),
+              child: Column(
+                children: [
+                  ...desglose.map((ing) {
+                    final costoIng =
+                        (ing['costo_total'] as num?)?.toDouble() ?? 0.0;
+                    final cantidad =
+                        (ing['cantidad_requerida'] as num?)?.toDouble() ?? 0.0;
+                    final unidad = ing['unidad_receta'] ?? '';
+                    final sinCosto = ing['sin_costo'] == true;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${ing['denominacion'] ?? ''} '
+                              '(${_formatCantidad(cantidad)} $unidad)',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: sinCosto
+                                    ? Colors.orange[800]
+                                    : Colors.grey[800],
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Text(
+                            sinCosto
+                                ? 'Sin costo'
+                                : '\$${costoIng.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: sinCosto
+                                  ? Colors.orange[800]
+                                  : Colors.grey[900],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                  const Divider(height: 10),
+                  Row(
+                    children: [
+                      Text(
+                        'Total producción',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.green[800],
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '\$${costoCalculado.toStringAsFixed(2)} USD',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.green[800],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+        ],
+      );
+    }
+
+    // ── Productos normales ──
+    if (!tieneCosto) {
+      return Text(
+        'Sin costo',
+        style: TextStyle(fontSize: 12, color: Colors.red[400]),
+      );
+    }
+
+    return Column(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              'Costo',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const Spacer(),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '\$${costoUsdVal.toStringAsFixed(2)} USD',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    color: Color(0xFF1F2937),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (costoCup != null)
+                  Text(
+                    '${_formatMoney(costoCup)} CUP',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton.icon(
+              onPressed: () => _editPrecioPromedio(producto, pres),
+              icon: const Icon(Icons.edit_outlined, size: 14),
+              label: const Text(
+                'Editar costo',
+                style: TextStyle(fontSize: 11),
+              ),
+              style: TextButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _formatCantidad(double v) => v == v.roundToDouble()
+      ? v.toInt().toString()
+      : v.toStringAsFixed(2);
+
+  // ── desglose de costos para productos elaborados ─────────────
+
+  Future<void> _showDesgloseCostosElaborado(
+    Map<String, dynamic> producto,
+    Map<String, dynamic> presentacion,
+  ) async {
+    final nomPres = (presentacion['app_nom_presentacion'] as Map?)?['denominacion'] ?? 'Presentación';
+
+    try {
+      // Usar datos precargados del RPC (mismo cálculo que detalle del producto)
+      final costoIngredientes =
+          producto['costo_ingredientes'] as Map<String, dynamic>?;
+      final resultado = <String, dynamic>{
+        'costo_total':
+            (costoIngredientes?['costo_total'] as num?)?.toDouble() ?? 0.0,
+        'desglose': List<Map<String, dynamic>>.from(
+          (costoIngredientes?['desglose'] as List? ?? [])
+              .map((e) => Map<String, dynamic>.from(e as Map)),
+        ),
+        'error': costoIngredientes == null
+            ? 'No se encontró información de ingredientes'
+            : null,
+      };
+
+      if (!mounted) return;
+
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.calculate, color: AppColors.primary),
+              const SizedBox(width: 8),
+              const Text('Costo Calculado Automáticamente'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  producto['denominacion'] as String,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                  ),
+                ),
+                Text(
+                  'Presentación: $nomPres',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                
+                // Costo total
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Costo Total:',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        '\$${(resultado['costo_total'] as double).toStringAsFixed(2)} USD',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // Desglose de ingredientes
+                if (resultado['desglose'] != null && (resultado['desglose'] as List).isNotEmpty) ...[
+                  const Text(
+                    'Desglose por Ingrediente:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...((resultado['desglose'] as List).map((ingrediente) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  ingrediente['denominacion'] ?? '',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '\$${((ingrediente['costo_total'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(2)} USD',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Text(
+                                '${ingrediente['cantidad_requerida']} ${ingrediente['unidad_receta']} × \$${((ingrediente['costo_unitario_promedio'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(4)}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                'SKU: ${ingrediente['sku'] ?? 'N/A'}',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList()),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.warning, color: Colors.orange, size: 16),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'No se encontraron ingredientes definidos para este producto.',
+                            style: TextStyle(fontSize: 12, color: Colors.orange),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                
+                if (resultado['error'] != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error, color: Colors.red, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            resultado['error'] as String,
+                            style: const TextStyle(fontSize: 11, color: Colors.red),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al mostrar costos: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   // ── edición precio promedio (costo) de presentación ──────────
 
   Future<void> _editPrecioPromedio(
     Map<String, dynamic> producto,
     Map<String, dynamic> presentacion,
   ) async {
+    // Elaborados/servicios: costo calculado, no editable (datos precargados)
+    final esElaborado = producto['es_elaborado'] == true ||
+        producto['es_servicio'] == true;
+    if (esElaborado) {
+      await _showDesgloseCostosElaborado(producto, presentacion);
+      return;
+    }
+
     final precioActual =
         (presentacion['precio_promedio'] as num?)?.toDouble() ?? 0.0;
     final controller = TextEditingController(
@@ -1224,7 +1630,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
         : double.tryParse(rawCosto?.toString() ?? '') ?? 0.0;
     final esBase = pres['es_base'] as bool? ?? false;
 
-    final tieneCosto = costoUsdVal > 0 && costoUsdVal != 0.0019;
+    final tieneCosto = costoUsdVal > 0;
 
     // Precio de venta en USD (directo o convertido desde CUP)
     final ventaCup = (producto['precio_venta'] as double?) ?? 0.0;
@@ -1286,12 +1692,15 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
               InkWell(
                 onTap: () => _editPrecioPromedio(producto, pres),
                 borderRadius: BorderRadius.circular(6),
-                child: const Padding(
-                  padding: EdgeInsets.all(4),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
                   child: Icon(
-                    Icons.edit,
+                    (producto['es_elaborado'] == true ||
+                            producto['es_servicio'] == true)
+                        ? Icons.visibility_outlined
+                        : Icons.edit,
                     size: 14,
-                    color: Color(0xFF10B981),
+                    color: const Color(0xFF10B981),
                   ),
                 ),
               ),
@@ -1299,52 +1708,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
           ),
           const SizedBox(height: 6),
           // Fila 2: Costo (label + USD + CUP)
-          if (!tieneCosto)
-            Text(
-              'Sin costo',
-              style: TextStyle(fontSize: 12, color: Colors.red[400]),
-            )
-          else ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(
-                  'Costo',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const Spacer(),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '\$${costoUsdVal.toStringAsFixed(2)} USD',
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        color: Color(0xFF1F2937),
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (costoCup != null)
-                      Text(
-                        '${_formatMoney(costoCup)} CUP',
-                        textAlign: TextAlign.right,
-                        style: TextStyle(
-                          fontSize: 15,
-                          color: Colors.grey[700],
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ],
+          _buildCostoSection(producto, pres, tieneCosto, costoUsdVal, costoCup),
           // Fila 3: Stock (izq) + Ganancia (der)
           const SizedBox(height: 6),
           Row(

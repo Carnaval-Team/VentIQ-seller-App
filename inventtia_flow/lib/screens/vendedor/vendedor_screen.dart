@@ -19,6 +19,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/entidad_provider.dart';
 import '../../services/agenda_admin_service.dart';
 import '../../services/agenda_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -96,7 +97,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      final uuid = context.read<AuthProvider>().user?.id ?? '';
+      final uuid = AuthService.currentUserId ?? '';
       final data = await AgendaAdminService.listarAgendasVendedor(
         uuidUsuario: uuid,
         idEntidad: entidad.id,

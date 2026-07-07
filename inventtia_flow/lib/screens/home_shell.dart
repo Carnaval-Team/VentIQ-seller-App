@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/entidad_provider.dart';
+import '../services/auth_service.dart';
 import '../services/update_service.dart';
 import 'catalogo_screen.dart';
 import 'mis_listas_screen.dart';
@@ -77,7 +78,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Future<void> _loadInitialData() async {
-    final uuid = context.read<AuthProvider>().user?.id;
+    final uuid = AuthService.currentUserId;
     if (uuid != null) {
       await context.read<EntidadProvider>().cargarMisEntidades(uuid);
     }

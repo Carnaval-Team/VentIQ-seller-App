@@ -8,6 +8,7 @@ import '../../models/plan_servicio.dart';
 import '../../models/servicio.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/agenda_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/plan_servicio_service.dart';
 import '../../services/agenda_admin_service.dart';
@@ -80,9 +81,12 @@ class _PlanificacionScreenState extends State<PlanificacionScreen> {
       final planes = await PlanServicioService.getByLocalServicio(ls.id);
       
       // Check for existing reservations
-      final auth = context.read<AuthProvider>();
+      final uuidUsuario = await AuthService.getCurrentUserId();
+      if (uuidUsuario == null) {
+        throw Exception('No se pudo obtener el usuario autenticado');
+      }
       final reservas = await AgendaAdminService.listarAgendas(
-        uuidUsuario: auth.user?.id ?? '',
+        uuidUsuario: uuidUsuario,
         idLocalServicio: ls.id,
       );
 
@@ -348,7 +352,18 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
   }
 
   Future<void> _toggleReservaDirecta(bool value) async {
-    final uuid = context.read<AuthProvider>().user?.id ?? '';
+    final uuid = await AuthService.getCurrentUserId();
+    if (uuid == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo obtener el usuario autenticado'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+      return;
+    }
     setState(() {
       _permiteDirecta = value; // optimista
       _togglingDirecta = true;
