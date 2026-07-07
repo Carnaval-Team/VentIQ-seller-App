@@ -1,9 +1,31 @@
 {
-  "current_version": "2.2.9",
-  "build": 229,
+  "current_version": "2.3.0",
+  "build": 230,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.3.0",
+      "date": "2026-07-07",
+      "title": "🧮 Costo automático por ingredientes en gestión de precios",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Costo calculado automáticamente para elaborados y servicios",
+          "description": "Los productos elaborados y servicios ahora calculan su precio de costo sumando el costo de cada ingrediente de su receta. El cálculo usa el precio promedio de la presentación base de cada ingrediente y aplica conversiones de unidades cuando corresponde, igual que el detalle del producto."
+        },
+        {
+          "type": "improvement",
+          "title": "Pantalla de precios optimizada con un solo RPC",
+          "description": "La carga de la pantalla de gestión de precios ahora usa un único procedimiento en base de datos que devuelve productos, presentaciones, stock, precios de venta y desglose de costos en una sola consulta, reduciendo significativamente los tiempos de carga."
+        },
+        {
+          "type": "improvement",
+          "title": "Panel de filtros desplegable",
+          "description": "Los filtros avanzados de la pantalla de precios ahora se muestran en un panel colapsable. Permanecen ocultos por defecto y se abren con un toque en el botón \"Filtros\". Cuando hay filtros activos aparece un indicador con el número de filtros aplicados."
+        }
+      ]
+    },
     {
       "version": "2.2.9",
       "date": "2026-07-03",

@@ -33,6 +33,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
   _MarginCompare? _filterMarginCompare;
   double? _filterMarginPercent;
   double _usdRate = 0.0;
+  bool _filterExpanded = false;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _filterPrecioController = TextEditingController();
   final TextEditingController _filterMarginController = TextEditingController();
@@ -1127,203 +1128,335 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
     );
   }
 
+  bool get _hayFiltrosActivos =>
+      _filterSinPrecioVenta ||
+      _filterSinPrecioCosto ||
+      _filterStock != _StockFilter.todos ||
+      _filterPrecioCosto != null ||
+      _filterMarginCompare != null ||
+      _filterMarginPercent != null;
+
   Widget _buildLegend() {
+    final hayActivos = _hayFiltrosActivos;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Chips de filtro rápido
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          // ── Barra de control: contador + botón filtros ──
+          Row(
             children: [
-              _filterChip(
-                label: 'Sin precio venta',
-                icon: Icons.sell_outlined,
-                active: _filterSinPrecioVenta,
-                activeColor: Colors.orange[700]!,
-                onTap: () => setState(() {
-                  _filterSinPrecioVenta = !_filterSinPrecioVenta;
-                  _applyFilter();
-                }),
-              ),
-              _filterChip(
-                label: 'Sin precio costo',
-                icon: Icons.inventory_2_outlined,
-                active: _filterSinPrecioCosto,
-                activeColor: const Color(0xFF10B981),
-                onTap: () => setState(() {
-                  _filterSinPrecioCosto = !_filterSinPrecioCosto;
-                  _applyFilter();
-                }),
-              ),
-              _filterChip(
-                label: 'Con stock',
-                icon: Icons.check_circle_outline,
-                active: _filterStock == _StockFilter.conStock,
-                activeColor: const Color(0xFF2563EB),
-                onTap: () => setState(() {
-                  _filterStock = _filterStock == _StockFilter.conStock
-                      ? _StockFilter.todos
-                      : _StockFilter.conStock;
-                  _applyFilter();
-                }),
-              ),
-              _filterChip(
-                label: 'Sin stock',
-                icon: Icons.remove_circle_outline,
-                active: _filterStock == _StockFilter.sinStock,
-                activeColor: const Color(0xFFDC2626),
-                onTap: () => setState(() {
-                  _filterStock = _filterStock == _StockFilter.sinStock
-                      ? _StockFilter.todos
-                      : _StockFilter.sinStock;
-                  _applyFilter();
-                }),
-              ),
               Text(
                 '${_filteredProductos.length} producto${_filteredProductos.length == 1 ? '' : 's'}',
                 style: TextStyle(fontSize: 12, color: Colors.grey[500]),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // Filtro por precio de costo específico
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _filterPrecioController,
-                  decoration: InputDecoration(
-                    hintText: 'Filtrar por precio costo...',
-                    prefixIcon: const Icon(Icons.attach_money, size: 18),
-                    suffixIcon: _filterPrecioCosto != null
-                        ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _filterPrecioController.clear();
-                              setState(() {
-                                _filterPrecioCosto = null;
-                                _applyFilter();
-                              });
-                            },
-                          )
-                        : null,
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                  ),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (value) {
+              const Spacer(),
+              if (hayActivos)
+                TextButton.icon(
+                  onPressed: () {
+                    _filterPrecioController.clear();
+                    _filterMarginController.clear();
                     setState(() {
-                      _filterPrecioCosto = double.tryParse(value);
+                      _filterSinPrecioVenta = false;
+                      _filterSinPrecioCosto = false;
+                      _filterStock = _StockFilter.todos;
+                      _filterPrecioCosto = null;
+                      _filterMarginCompare = null;
+                      _filterMarginPercent = null;
                       _applyFilter();
                     });
                   },
+                  icon: const Icon(Icons.filter_alt_off, size: 14),
+                  label: const Text('Limpiar', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.red[600],
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: () => setState(() => _filterExpanded = !_filterExpanded),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: (hayActivos || _filterExpanded)
+                        ? AppColors.primary.withOpacity(0.1)
+                        : Colors.grey[100],
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: (hayActivos || _filterExpanded)
+                          ? AppColors.primary
+                          : Colors.grey[300]!,
+                      width: (hayActivos || _filterExpanded) ? 1.5 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.filter_list,
+                        size: 14,
+                        color: (hayActivos || _filterExpanded)
+                            ? AppColors.primary
+                            : Colors.grey[600],
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Filtros',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: (hayActivos || _filterExpanded)
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          color: (hayActivos || _filterExpanded)
+                              ? AppColors.primary
+                              : Colors.grey[600],
+                        ),
+                      ),
+                      if (hayActivos) ...[
+                        const SizedBox(width: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            _activeFilterCount().toString(),
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 4),
+                      AnimatedRotation(
+                        turns: _filterExpanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        child: Icon(
+                          Icons.keyboard_arrow_down,
+                          size: 16,
+                          color: (hayActivos || _filterExpanded)
+                              ? AppColors.primary
+                              : Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                flex: 5,
-                child: DropdownButtonFormField<_MarginCompare>(
-                  value: _filterMarginCompare,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    hintText: '% ganancia',
-                    prefixIcon: const Icon(Icons.percent, size: 18),
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding:
-                        const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                  ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: _MarginCompare.mayorQue,
-                      child: Text('Mayor que', style: TextStyle(fontSize: 13)),
-                    ),
-                    DropdownMenuItem(
-                      value: _MarginCompare.menorQue,
-                      child: Text('Menor que', style: TextStyle(fontSize: 13)),
-                    ),
-                  ],
-                  onChanged: (value) => setState(() {
-                    _filterMarginCompare = value;
-                    _applyFilter();
-                  }),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 3,
-                child: TextField(
-                  controller: _filterMarginController,
-                  decoration: InputDecoration(
-                    hintText: 'Ej: 5',
-                    suffixText: '%',
-                    suffixIcon: _filterMarginPercent != null ||
-                            _filterMarginCompare != null
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 18),
-                            onPressed: () {
-                              _filterMarginController.clear();
-                              setState(() {
-                                _filterMarginCompare = null;
-                                _filterMarginPercent = null;
+          // ── Panel desplegable ──
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOut,
+            child: _filterExpanded
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Chips de filtro rápido
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _filterChip(
+                              label: 'Sin precio venta',
+                              icon: Icons.sell_outlined,
+                              active: _filterSinPrecioVenta,
+                              activeColor: Colors.orange[700]!,
+                              onTap: () => setState(() {
+                                _filterSinPrecioVenta = !_filterSinPrecioVenta;
                                 _applyFilter();
-                              });
-                            },
-                          )
-                        : null,
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding:
-                        const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
+                              }),
+                            ),
+                            _filterChip(
+                              label: 'Sin precio costo',
+                              icon: Icons.inventory_2_outlined,
+                              active: _filterSinPrecioCosto,
+                              activeColor: const Color(0xFF10B981),
+                              onTap: () => setState(() {
+                                _filterSinPrecioCosto = !_filterSinPrecioCosto;
+                                _applyFilter();
+                              }),
+                            ),
+                            _filterChip(
+                              label: 'Con stock',
+                              icon: Icons.check_circle_outline,
+                              active: _filterStock == _StockFilter.conStock,
+                              activeColor: const Color(0xFF2563EB),
+                              onTap: () => setState(() {
+                                _filterStock = _filterStock == _StockFilter.conStock
+                                    ? _StockFilter.todos
+                                    : _StockFilter.conStock;
+                                _applyFilter();
+                              }),
+                            ),
+                            _filterChip(
+                              label: 'Sin stock',
+                              icon: Icons.remove_circle_outline,
+                              active: _filterStock == _StockFilter.sinStock,
+                              activeColor: const Color(0xFFDC2626),
+                              onTap: () => setState(() {
+                                _filterStock = _filterStock == _StockFilter.sinStock
+                                    ? _StockFilter.todos
+                                    : _StockFilter.sinStock;
+                                _applyFilter();
+                              }),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        // Filtro por precio de costo específico
+                        TextField(
+                          controller: _filterPrecioController,
+                          decoration: InputDecoration(
+                            hintText: 'Filtrar por precio costo (USD)...',
+                            prefixIcon: const Icon(Icons.attach_money, size: 18),
+                            suffixIcon: _filterPrecioCosto != null
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      _filterPrecioController.clear();
+                                      setState(() {
+                                        _filterPrecioCosto = null;
+                                        _applyFilter();
+                                      });
+                                    },
+                                  )
+                                : null,
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: Colors.grey.shade300),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: Colors.grey.shade300),
+                            ),
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          onChanged: (value) => setState(() {
+                            _filterPrecioCosto = double.tryParse(value);
+                            _applyFilter();
+                          }),
+                        ),
+                        const SizedBox(height: 8),
+                        // Filtro por % ganancia
+                        Row(
+                          children: [
+                            Expanded(
+                              flex: 5,
+                              child: DropdownButtonFormField<_MarginCompare>(
+                                value: _filterMarginCompare,
+                                isExpanded: true,
+                                decoration: InputDecoration(
+                                  hintText: '% ganancia',
+                                  prefixIcon: const Icon(Icons.percent, size: 18),
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 8, horizontal: 12),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(color: Colors.grey.shade300),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(color: Colors.grey.shade300),
+                                  ),
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: _MarginCompare.mayorQue,
+                                    child: Text('Mayor que',
+                                        style: TextStyle(fontSize: 13)),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: _MarginCompare.menorQue,
+                                    child: Text('Menor que',
+                                        style: TextStyle(fontSize: 13)),
+                                  ),
+                                ],
+                                onChanged: (value) => setState(() {
+                                  _filterMarginCompare = value;
+                                  _applyFilter();
+                                }),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 3,
+                              child: TextField(
+                                controller: _filterMarginController,
+                                decoration: InputDecoration(
+                                  hintText: 'Ej: 5',
+                                  suffixText: '%',
+                                  suffixIcon: _filterMarginPercent != null ||
+                                          _filterMarginCompare != null
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear, size: 18),
+                                          onPressed: () {
+                                            _filterMarginController.clear();
+                                            setState(() {
+                                              _filterMarginCompare = null;
+                                              _filterMarginPercent = null;
+                                              _applyFilter();
+                                            });
+                                          },
+                                        )
+                                      : null,
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 8, horizontal: 12),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(color: Colors.grey.shade300),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(color: Colors.grey.shade300),
+                                  ),
+                                ),
+                                keyboardType: const TextInputType.numberWithOptions(
+                                    decimal: true),
+                                onChanged: (value) => setState(() {
+                                  _filterMarginPercent = double.tryParse(value);
+                                  _applyFilter();
+                                }),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                      ],
                     ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                  ),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (value) {
-                    setState(() {
-                      _filterMarginPercent = double.tryParse(value);
-                      _applyFilter();
-                    });
-                  },
-                ),
-              ),
-            ],
+                  )
+                : const SizedBox.shrink(),
           ),
         ],
       ),
     );
+  }
+
+  int _activeFilterCount() {
+    int c = 0;
+    if (_filterSinPrecioVenta) c++;
+    if (_filterSinPrecioCosto) c++;
+    if (_filterStock != _StockFilter.todos) c++;
+    if (_filterPrecioCosto != null) c++;
+    if (_filterMarginCompare != null || _filterMarginPercent != null) c++;
+    return c;
   }
 
   Widget _filterChip({
