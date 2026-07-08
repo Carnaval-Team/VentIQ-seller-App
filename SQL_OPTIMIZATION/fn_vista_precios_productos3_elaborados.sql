@@ -94,16 +94,34 @@ BEGIN
           AND pp_inner.precio_promedio > 0
         ORDER BY pp_inner.id_producto, pp_inner.created_at DESC
     ),
-    -- 4) Costo por ingredientes para productos ELABORADOS:
-    --    suma del precio_promedio (mas reciente) de la presentacion de cada ingrediente.
+    -- 4) Costo por receta para productos ELABORADOS/SERVICIOS (misma logica que
+    --    fn_reporte_ventas_con_proveedor4.costo_receta_usd):
+    --    costo unitario del ingrediente = precio_promedio de la presentacion
+    --    dividido por cantidad_um (costo por unidad base), multiplicado por
+    --    cantidad_necesaria de la receta.
     costo_elaborado AS (
         SELECT
-            ing.id_producto_elaborado AS id_producto,
-            SUM(cd_ing.precio_promedio) AS precio_costo_usd
-        FROM app_dat_producto_ingredientes ing
-        JOIN costo_directo cd_ing
-          ON cd_ing.id_producto = ing.id_ingrediente
-        GROUP BY ing.id_producto_elaborado
+            pi.id_producto_elaborado AS id_producto,
+            SUM(
+                COALESCE(pi.cantidad_necesaria, 0) *
+                -- costo por unidad base = precio_promedio / cantidad_por_presentacion
+                COALESCE((
+                    SELECT pp2.precio_promedio /
+                           NULLIF(COALESCE((
+                               SELECT pum.cantidad_um
+                               FROM app_dat_presentacion_unidad_medida pum
+                               WHERE pum.id_producto = pi.id_ingrediente
+                               LIMIT 1
+                           ), 1), 0)
+                    FROM app_dat_producto_presentacion pp2
+                    WHERE pp2.id_producto = pi.id_ingrediente
+                      AND pp2.precio_promedio > 0
+                    ORDER BY pp2.es_base DESC NULLS LAST, pp2.id ASC
+                    LIMIT 1
+                ), 0)
+            ) AS precio_costo_usd
+        FROM app_dat_producto_ingredientes pi
+        GROUP BY pi.id_producto_elaborado
     )
     SELECT
         p.id_tienda::BIGINT,
@@ -142,10 +160,10 @@ BEGIN
     FROM app_dat_producto p
     LEFT JOIN precio_venta pv
         ON p.id = pv.id_producto AND COALESCE(pv.id_variante, 0) = 0
-    -- Costo efectivo: si es elaborado usa la suma de ingredientes; si no, el costo directo
+    -- Costo efectivo: elaborados/servicios usan el costo por receta; si no, el costo directo
     LEFT JOIN LATERAL (
         SELECT COALESCE(
-            CASE WHEN p.es_elaborado THEN ce.precio_costo_usd END,
+            CASE WHEN (p.es_elaborado OR p.es_servicio) THEN ce.precio_costo_usd END,
             cd.precio_promedio,
             0
         ) AS precio_costo_usd
