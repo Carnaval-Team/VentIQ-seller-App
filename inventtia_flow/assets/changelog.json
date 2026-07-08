@@ -1,8 +1,37 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.3.1",
-  "build": 5,
+  "current_version": "1.3.3",
+  "build": 7,
   "changelogs": [
+    {
+      "version": "1.3.3",
+      "date": "2026-07-07",
+      "title": "📋 Vista de reservas rediseñada",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Lista de reservas vertical",
+          "description": "La vista de reservas del administrador y del trabajador ahora muestra cada reserva como una tarjeta con toda la información visible, eliminando la tabla horizontal que impedía ver todos los datos en pantallas pequeñas."
+        },
+        {
+          "type": "fix",
+          "title": "Reducción de peticiones al servidor",
+          "description": "Se optimizó la sincronización de sesión para que no se repita más de una vez cada 5 minutos, evitando peticiones innecesarias al servidor."
+        }
+      ]
+    },
+    {
+      "version": "1.3.2",
+      "date": "2026-07-07",
+      "title": "🛠️ Correcciones de visualización",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Scroll horizontal en tabla de reservas",
+          "description": "La tabla de reservas ahora permite desplazamiento horizontal para ver todas las columnas cuando hay muchos campos de datos adicionales."
+        }
+      ]
+    },
     {
       "version": "1.3.1",
       "date": "2026-07-05",

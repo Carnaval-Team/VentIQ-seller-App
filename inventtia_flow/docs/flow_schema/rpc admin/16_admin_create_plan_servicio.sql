@@ -43,13 +43,13 @@ begin
     select 1
     from flow.local_servicio ls
     join flow.app_dat_locales l on l.id = ls.id_local
-    join flow.app_dat_entidades e on e.id = l.id_entidad
+    join flow.entidad e on e.id = l.id_entidad
     where ls.id = p_id_local_servicio
     and (
-      e.id_owner = v_uuid_admin
+      e.owner_uuid = v_uuid_admin
       or exists (
-        select 1 from flow.app_dat_entidades_admins a
-        where a.id_entidad = e.id and a.uuid_admin = v_uuid_admin
+        select 1 from flow.entidad_admin a
+        where a.id_entidad = e.id and a.uuid_usuario = v_uuid_admin
       )
     )
   ) into v_es_admin;
@@ -72,16 +72,12 @@ begin
     id_local_servicio,
     fecha,
     cantidad,
-    agendados,
-    created_at,
-    updated_at
+    agendados
   ) values (
     p_id_local_servicio,
     p_fecha,
     p_cantidad,
-    0,
-    now(),
-    now()
+    0
   ) returning id into v_id_plan;
 
   -- Obtener el plan creado
@@ -91,8 +87,7 @@ begin
     'fecha', ps.fecha,
     'cantidad', ps.cantidad,
     'agendados', ps.agendados,
-    'created_at', ps.created_at,
-    'updated_at', ps.updated_at
+    'created_at', ps.created_at
   ) into v_result
   from flow.plan_servicios ps
   where ps.id = v_id_plan;

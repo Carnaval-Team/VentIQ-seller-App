@@ -12,6 +12,8 @@ class UserPreferencesService {
   static const String _isLoggedInKey = 'is_logged_in';
   static const String _tokenExpiryKey = 'token_expiry';
 
+  DateTime? _lastSync;
+
   // Guardar datos del usuario
   Future<void> saveUserData({
     required String userId,
@@ -87,19 +89,13 @@ class UserPreferencesService {
   // Obtener usuario actual con fallback a SharedPreferences
   Future<User?> getCurrentUserWithFallback() async {
     try {
-      // Primero intentar obtener de Supabase
+      // Primero intentar obtener de Supabase (síncrono, sin red)
       final supabaseUser = Supabase.instance.client.auth.currentUser;
       if (supabaseUser != null) {
         return supabaseUser;
       }
 
-      // Fallback: intentar obtener de SharedPreferences y hacer getUser()
-      final userId = await getUserId();
-      if (userId != null) {
-        final response = await Supabase.instance.client.auth.getUser();
-        return response.user;
-      }
-
+      // No llamar getUser() de red aquí — se hace en AuthService si es necesario
       return null;
     } catch (e) {
       print('❌ Error obteniendo usuario con fallback: $e');
@@ -110,34 +106,28 @@ class UserPreferencesService {
   // Obtener UUID del usuario con múltiples fallbacks
   Future<String?> getCurrentUserId() async {
     try {
-      // 1. Intentar de Supabase directo
+      // 1. Intentar de Supabase directo (síncrono, sin red)
       final supabaseUser = Supabase.instance.client.auth.currentUser;
       if (supabaseUser?.id != null) {
         return supabaseUser!.id;
       }
 
-      // 2. Intentar getUser() de Supabase
-      final response = await Supabase.instance.client.auth.getUser();
-      if (response.user?.id != null) {
-        return response.user!.id;
-      }
-
-      // 3. Fallback a SharedPreferences
-      final cachedUserId = await getUserId();
-      if (cachedUserId != null) {
-        return cachedUserId;
-      }
-
-      return null;
+      // 2. Fallback a SharedPreferences (sin red)
+      // No llamar getUser() aquí — evita peticiones extra que causan 429
+      return await getUserId();
     } catch (e) {
       print('❌ Error obteniendo UUID del usuario: $e');
-      // Último recurso: intentar de SharedPreferences
       return await getUserId();
     }
   }
 
-  // Sincronizar estado con Supabase Auth
-  Future<void> syncWithSupabaseAuth() async {
+  // Sincronizar estado con Supabase Auth (máximo 1 vez cada 5 minutos)
+  Future<void> syncWithSupabaseAuth({bool force = false}) async {
+    final now = DateTime.now();
+    if (!force && _lastSync != null && now.difference(_lastSync!).inMinutes < 5) {
+      return;
+    }
+    _lastSync = now;
     try {
       final user = Supabase.instance.client.auth.currentUser;
       final session = Supabase.instance.client.auth.currentSession;

@@ -11,6 +11,7 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool _perfilLoaded = false;
+  bool _perfilLoading = false;
   final UserPreferencesService _prefsService = UserPreferencesService();
 
   User? get user => _user;
@@ -26,41 +27,42 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _initializeAuth() async {
-    // Primero intentar obtener usuario de Supabase
+    // Primero obtener usuario de Supabase (síncrono, sin red)
     _user = AuthService.currentUser;
-    
-    // Si no hay usuario en Supabase, intentar con fallback
-    if (_user == null) {
-      _user = await _prefsService.getCurrentUserWithFallback();
-    }
-    
+
     // Escuchar cambios de autenticación
+    String? _lastUserId;
     AuthService.authStateChanges.listen((state) {
-      _user = state.session?.user;
-      if (_user != null) {
-        _perfilLoaded = false;
-        _loadPerfil();
-        // Sincronizar con SharedPreferences
+      final newUser = state.session?.user;
+      _user = newUser;
+      if (newUser != null) {
+        // Solo recargar perfil si el usuario cambió
+        if (newUser.id != _lastUserId) {
+          _lastUserId = newUser.id;
+          _perfilLoaded = false;
+          _loadPerfil();
+        }
         _prefsService.syncWithSupabaseAuth();
       } else {
+        _lastUserId = null;
         _perfil = null;
         _perfilLoaded = false;
-        // Limpiar preferencias
+        _perfilLoading = false;
         _prefsService.clearUserData();
       }
       notifyListeners();
     });
-    
-    // Si hay usuario al iniciar, cargar perfil
+
+    // Si ya hay sesión activa al arrancar, cargar perfil una sola vez
     if (_user != null) {
       _loadPerfil();
-      // Sincronizar estado
       await _prefsService.syncWithSupabaseAuth();
     }
   }
 
   Future<void> _loadPerfil() async {
-    if (_user == null) return;
+    if (_user == null || _perfilLoading) return;
+    _perfilLoading = true;
     print('[flow] _loadPerfil → uuid: ${_user!.id}');
     try {
       _perfil = await PerfilService.getPerfil(_user!.id);
@@ -69,6 +71,7 @@ class AuthProvider extends ChangeNotifier {
       print('[flow] _loadPerfil ERROR: $e\n$st');
     } finally {
       _perfilLoaded = true;
+      _perfilLoading = false;
       notifyListeners();
     }
   }

@@ -57,13 +57,13 @@ begin
     from flow.plan_servicios ps
     join flow.local_servicio ls on ls.id = ps.id_local_servicio
     join flow.app_dat_locales l on l.id = ls.id_local
-    join flow.app_dat_entidades e on e.id = l.id_entidad
+    join flow.entidad e on e.id = l.id_entidad
     where ps.id = p_id
     and (
-      e.id_owner = v_uuid_admin
+      e.owner_uuid = v_uuid_admin
       or exists (
-        select 1 from flow.app_dat_entidades_admins a
-        where a.id_entidad = e.id and a.uuid_admin = v_uuid_admin
+        select 1 from flow.entidad_admin a
+        where a.id_entidad = e.id and a.uuid_usuario = v_uuid_admin
       )
     )
   ) into v_es_admin;
@@ -86,8 +86,7 @@ begin
   update flow.plan_servicios
   set 
     fecha = p_fecha,
-    cantidad = p_cantidad,
-    updated_at = now()
+    cantidad = p_cantidad
   where id = p_id;
 
   -- Obtener el plan actualizado
@@ -97,8 +96,7 @@ begin
     'fecha', ps.fecha,
     'cantidad', ps.cantidad,
     'agendados', ps.agendados,
-    'created_at', ps.created_at,
-    'updated_at', ps.updated_at
+    'created_at', ps.created_at
   ) into v_result
   from flow.plan_servicios ps
   where ps.id = p_id;

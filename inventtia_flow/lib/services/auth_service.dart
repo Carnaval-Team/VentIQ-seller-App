@@ -83,13 +83,8 @@ class AuthService {
         return response.user;
       }
 
-      // 3. Fallback a SharedPreferences
-      final userId = await _prefsService.getUserId();
-      if (userId != null) {
-        final userResponse = await _supabase.auth.getUser();
-        return userResponse.user;
-      }
-
+      // 3. Fallback a SharedPreferences (sin red)
+      // No llamar getUser() de nuevo — ya falló en el paso 2
       return null;
     } catch (e) {
       print('❌ Error obteniendo usuario con fallback: $e');

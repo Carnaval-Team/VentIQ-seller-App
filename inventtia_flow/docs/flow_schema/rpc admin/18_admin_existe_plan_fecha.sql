@@ -38,13 +38,13 @@ begin
     select 1
     from flow.local_servicio ls
     join flow.app_dat_locales l on l.id = ls.id_local
-    join flow.app_dat_entidades e on e.id = l.id_entidad
+    join flow.entidad e on e.id = l.id_entidad
     where ls.id = p_id_local_servicio
     and (
-      e.id_owner = v_uuid_admin
+      e.owner_uuid = v_uuid_admin
       or exists (
-        select 1 from flow.app_dat_entidades_admins a
-        where a.id_entidad = e.id and a.uuid_admin = v_uuid_admin
+        select 1 from flow.entidad_admin a
+        where a.id_entidad = e.id and a.uuid_usuario = v_uuid_admin
       )
     )
   ) into v_es_admin;

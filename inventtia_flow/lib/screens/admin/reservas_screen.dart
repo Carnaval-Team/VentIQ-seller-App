@@ -750,200 +750,182 @@ class _ReservasScreenState extends State<ReservasScreen> {
 
   Widget _buildTabla() {
     final grupos = _agruparPorLocal();
-    // Columnas dinámicas de datos adicionales y terceros calculadas sobre todo
-    // el listado para mantener consistencia entre grupos y reportes.
     final cols = _columnasDatos(_reservas);
-    final conTerceros = _hayTerceros(_reservas);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Ancho mínimo para forzar scroll horizontal cuando hay muchas columnas
-        final minWidth = constraints.maxWidth < 800 ? 800.0 : constraints.maxWidth;
-        return ListView.builder(
-          padding: const EdgeInsets.all(12),
-          itemCount: grupos.length,
-          itemBuilder: (_, gi) {
-            final localNombre = grupos.keys.elementAt(gi);
-            final lista = grupos[localNombre]!;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (grupos.length > 1) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 8, 0, 6),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.store_outlined,
-                            size: 14, color: AppTheme.primary),
-                        const SizedBox(width: 6),
-                        Text(localNombre,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                color: AppTheme.primary)),
-                      ],
-                    ),
-                  ),
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        for (final entry in grupos.entries) ...[
+          if (grupos.length > 1)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 8, 0, 6),
+              child: Row(
+                children: [
+                  const Icon(Icons.store_outlined, size: 14, color: AppTheme.primary),
+                  const SizedBox(width: 6),
+                  Text(entry.key,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: AppTheme.primary)),
                 ],
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    side: BorderSide(color: Colors.grey.shade200),
-                  ),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(minWidth: minWidth),
-                      child: DataTable(
-                        headingRowHeight: 36,
-                        dataRowMinHeight: 32,
-                        dataRowMaxHeight: 44,
-                        columnSpacing: 12,
-                        headingTextStyle: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                            color: AppTheme.textPrimary),
-                        dataTextStyle: const TextStyle(
-                            fontSize: 12, color: AppTheme.textSecondary),
-                        columns: [
-                          const DataColumn(label: Text('Servicio')),
-                          const DataColumn(label: Text('Fecha')),
-                          const DataColumn(label: Text('Nombre')),
-                          const DataColumn(label: Text('Apellidos')),
-                          const DataColumn(label: Text('CI')),
-                          const DataColumn(label: Text('Teléfono')),
-                          const DataColumn(label: Text('Cant.')),
-                          if (conTerceros)
-                            const DataColumn(label: Text('Tercero')),
-                          ...cols.map((c) => DataColumn(
-                                label: SizedBox(
-                                  width: 120,
-                                  child: Text(
-                                    c.etiqueta,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              )),
-                          const DataColumn(label: Text('Acciones')),
-                        ],
-                        rows: lista.map((r) {
-                          final esTercero = r.reservadoPor != null &&
-                              r.uuidUsuario != null &&
-                              r.reservadoPor != r.uuidUsuario;
-                          final puedeCancelar = r.estado?.esCancelado != true;
-                          return DataRow(cells: [
-                            DataCell(Text(
-                                r.localServicio?.servicio?.nombre ?? '-',
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                    color: AppTheme.textPrimary))),
-                            DataCell(Text(_fmt.format(r.fechaHoraReserva))),
-                            DataCell(Text(
-                              _datoCliente(r, 'nombre'),
-                              overflow: TextOverflow.ellipsis,
-                            )),
-                            DataCell(Text(
-                              _datoCliente(r, 'apellidos'),
-                              overflow: TextOverflow.ellipsis,
-                            )),
-                            DataCell(Text(
-                              _datoCliente(r, 'ci'),
-                              overflow: TextOverflow.ellipsis,
-                            )),
-                            DataCell(
-                              _datoCliente(r, 'telefono') == '-' || _datoCliente(r, 'telefono').isEmpty
-                                  ? const Text('-')
-                                  : GestureDetector(
-                                      onTap: () async {
-                                        final uri = Uri(scheme: 'tel', path: _datoCliente(r, 'telefono'));
-                                        try {
-                                          await launchUrl(uri);
-                                        } catch (_) {}
-                                      },
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(Icons.phone, size: 12, color: AppTheme.primary),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            _datoCliente(r, 'telefono'),
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: AppTheme.primary,
-                                              decoration: TextDecoration.underline,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                            ),
-                            DataCell(Text('${r.cantidad}')),
-                            if (conTerceros)
-                              DataCell(Text(esTercero ? 'Sí' : 'No')),
-                            ...cols.map((c) => DataCell(
-                                  SizedBox(
-                                    width: 120,
-                                    child: Text(
-                                      _valorDato(r, c.clave),
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 1,
-                                    ),
-                                  ),
-                                )),
-                            DataCell(
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit_outlined,
-                                        color: AppTheme.primary, size: 18),
-                                    tooltip: 'Editar datos',
-                                    padding: EdgeInsets.zero,
-                                    constraints:
-                                        const BoxConstraints(minWidth: 28),
-                                    onPressed: () => _editarReserva(r),
-                                  ),
-                                  if (puedeCancelar)
-                                    IconButton(
-                                      icon: const Icon(Icons.cancel_outlined,
-                                          color: AppTheme.error, size: 18),
-                                      tooltip: 'Cancelar reserva',
-                                      padding: EdgeInsets.zero,
-                                      constraints:
-                                          const BoxConstraints(minWidth: 28),
-                                      onPressed: () => _cancelarReserva(r),
-                                    )
-                                  else
-                                    const Padding(
-                                      padding: EdgeInsets.only(left: 4),
-                                      child: Text(
-                                        'Cancelada',
-                                        style: TextStyle(
-                                            fontSize: 10,
-                                            color: AppTheme.error,
-                                            fontStyle: FontStyle.italic),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ]);
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-              ],
-            );
-          },
-        );
-      },
+              ),
+            ),
+          ...entry.value.map((r) => _buildReservaCard(r, cols)),
+        ],
+      ],
     );
   }
+
+  Widget _buildReservaCard(Agenda r, List<({String clave, String etiqueta})> cols) {
+    final esTercero = r.reservadoPor != null &&
+        r.uuidUsuario != null &&
+        r.reservadoPor != r.uuidUsuario;
+    final puedeCancelar = r.estado?.esCancelado != true;
+    final telefono = _datoCliente(r, 'telefono');
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    r.localServicio?.servicio?.nombre ?? '-',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: AppTheme.textPrimary),
+                  ),
+                ),
+                Text(
+                  _fmt.format(r.fechaHoraReserva),
+                  style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Divider(height: 1),
+            const SizedBox(height: 6),
+            _infoRow('Nombre', '${_datoCliente(r, 'nombre')} ${_datoCliente(r, 'apellidos')}'),
+            _infoRow('CI', _datoCliente(r, 'ci')),
+            if (telefono != '-' && telefono.isNotEmpty)
+              _infoRowWidget(
+                'Teléfono',
+                GestureDetector(
+                  onTap: () async {
+                    try { await launchUrl(Uri(scheme: 'tel', path: telefono)); } catch (_) {}
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.phone, size: 12, color: AppTheme.primary),
+                      const SizedBox(width: 4),
+                      Text(telefono,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.primary,
+                              decoration: TextDecoration.underline)),
+                    ],
+                  ),
+                ),
+              )
+            else
+              _infoRow('Teléfono', '-'),
+            if (r.cantidad > 1) _infoRow('Cantidad', '${r.cantidad}'),
+            if (esTercero) _infoRow('Para tercero', 'Sí'),
+            for (final c in cols)
+              if (_valorDato(r, c.clave) != '-')
+                _infoRow(c.etiqueta, _valorDato(r, c.clave)),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  icon: const Icon(Icons.edit_outlined, size: 16),
+                  label: const Text('Editar'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                  onPressed: () => _editarReserva(r),
+                ),
+                if (puedeCancelar)
+                  TextButton.icon(
+                    icon: const Icon(Icons.cancel_outlined, size: 16),
+                    label: const Text('Cancelar'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.error,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () => _cancelarReserva(r),
+                  )
+                else
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10),
+                    child: Text('Cancelada',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.error,
+                            fontStyle: FontStyle.italic)),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _infoRow(String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 90,
+              child: Text(label,
+                  style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textSecondary)),
+            ),
+            Expanded(
+              child: Text(value,
+                  style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary)),
+            ),
+          ],
+        ),
+      );
+
+  Widget _infoRowWidget(String label, Widget widget) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 90,
+              child: Text(label,
+                  style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textSecondary)),
+            ),
+            widget,
+          ],
+        ),
+      );
 
   Widget _buildEmpty() {
     return Center(
