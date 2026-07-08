@@ -1,9 +1,41 @@
 {
-  "current_version": "2.3.0",
-  "build": 230,
+  "current_version": "2.3.1",
+  "build": 231,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.3.1",
+      "date": "2026-07-08",
+      "title": "📊 Ventas, proveedores y filtros de precios más precisos",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Filtro por fecha de creación o de completado en Tiempo Real",
+          "description": "En el tab Tiempo Real de Ventas, los filtros ahora vienen en un panel expandible. Además de elegir el rango de fechas, puedes decidir si las ventas se calculan por la fecha de creación de la orden o por la fecha en que se completó según el historial de estados."
+        },
+        {
+          "type": "feature",
+          "title": "Detalle de proveedor con órdenes por producto",
+          "description": "Al ver el detalle de un proveedor ves cada producto con su cantidad, monto y cuántas órdenes lo incluyen. Al expandir un producto aparecen el ID de la orden, fechas de creación y completado, cantidad por orden y nombre del cliente."
+        },
+        {
+          "type": "feature",
+          "title": "Exportación PDF y Excel del detalle de proveedor con órdenes",
+          "description": "Al exportar el detalle de un proveedor, el archivo incluye el resumen de productos y, por cada producto, el desglose completo de órdenes (ID, fechas, cantidad y cliente). En Excel también hay una hoja dedicada «Órdenes»."
+        },
+        {
+          "type": "feature",
+          "title": "Filtros de stock y % de ganancia en precios",
+          "description": "En la pantalla de precios de productos puedes filtrar por Con stock / Sin stock y por margen de ganancia (mayor que o menor que un porcentaje), combinables con los filtros que ya existían."
+        },
+        {
+          "type": "improvement",
+          "title": "Productos con precio de venta 0 admitidos",
+          "description": "Ya puedes registrar y mantener productos con precio de venta 0 en CUP y USD, útil para cortesía, muestras o productos promocionales."
+        }
+      ]
+    },
     {
       "version": "2.3.0",
       "date": "2026-07-07",
