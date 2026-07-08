@@ -1,20 +1,9 @@
 -- =============================================================================
 -- fn_reporte_ventas_con_proveedor4
--- Versión 3: usa historial de precios de venta (app_dat_precio_venta) y
--- historial de tasas de cambio (tasa_cambio_extraoficial) vigentes en la
--- fecha exacta de cada operación para calcular ingresos y costos correctamente.
---
--- Cambios respecto a v2:
---   - precio_venta_cup: precio vigente en app_dat_precio_venta en la fecha
---     de la operación (no el precio actual).
---   - tasa_usd: tasa vigente en tasa_cambio_extraoficial en la fecha de la
---     operación (no la tasa actual).
---   - precio_costo_cup: precio_promedio (USD) × tasa vigente en esa fecha.
---   - ingresos_totales: SUM(precio_venta_vigente × cantidad) por operación.
---   - costo_total_vendido: SUM(precio_costo_usd_vigente × tasa_vigente × cantidad).
---   - Un mismo producto aparece en MÚLTIPLES filas si tuvo precios de venta distintos
---     O costos CUP distintos (por cambio de tasa o de costo USD) durante el período.
---     Cada fila representa ventas con el mismo (precio_venta_cup, precio_costo_cup).
+-- Agrega p_filtro_fecha:
+--   'creacion'   (default) -> filtra por o.created_at
+--   'completado'           -> filtra por eo.created_at del estado 2
+--                            (historial de app_dat_estado_operacion)
 -- =============================================================================
 
 DROP FUNCTION IF EXISTS public.fn_reporte_ventas_con_proveedor4(BIGINT, DATE, DATE, BIGINT);
@@ -33,15 +22,15 @@ RETURNS TABLE (
     nombre_producto     VARCHAR,
     id_proveedor        BIGINT,
     nombre_proveedor    VARCHAR,
-    precio_venta_cup    NUMERIC,   -- precio unitario vigente promedio ponderado
-    precio_costo        NUMERIC,   -- costo unitario en USD (precio_promedio actual)
-    valor_usd           NUMERIC,   -- tasa promedio ponderada usada en el período
-    precio_costo_cup    NUMERIC,   -- costo unitario en CUP (promedio ponderado)
+    precio_venta_cup    NUMERIC,
+    precio_costo        NUMERIC,
+    valor_usd           NUMERIC,
+    precio_costo_cup    NUMERIC,
     total_vendido       NUMERIC,
-    ingresos_totales    NUMERIC,   -- SUM(precio_venta_vigente × cantidad)
-    costo_total_vendido NUMERIC,   -- SUM(costo_usd_vigente × tasa_vigente × cantidad)
-    ganancia_unitaria   NUMERIC,   -- precio_venta_cup - precio_costo_cup (promedios)
-    ganancia_total      NUMERIC,   -- ingresos_totales - costo_total_vendido
+    ingresos_totales    NUMERIC,
+    costo_total_vendido NUMERIC,
+    ganancia_unitaria   NUMERIC,
+    ganancia_total      NUMERIC,
     es_elaborado        BOOLEAN,
     es_servicio         BOOLEAN
 )
@@ -67,7 +56,7 @@ BEGIN
             ep.id_variante,
             ep.id_presentacion,
             ep.cantidad,
-            ep.importe,                          -- importe registrado en la venta
+            ep.importe,
             CASE
                 WHEN v_filtro_fecha = 'completado' THEN eo.created_at::DATE
                 ELSE o.created_at::DATE
@@ -77,7 +66,7 @@ BEGIN
         JOIN app_dat_extraccion_productos ep ON o.id = ep.id_operacion
         JOIN app_dat_estado_operacion eo ON o.id = eo.id_operacion
         WHERE o.id_tienda = p_id_tienda
-          AND eo.estado = 2   -- solo completadas
+          AND eo.estado = 2
           AND eo.id = (SELECT MAX(id) FROM app_dat_estado_operacion WHERE id_operacion = o.id)
           AND ov.es_pagada = true
           AND o.id_tipo_operacion = (
@@ -105,12 +94,7 @@ BEGIN
     ),
 
     -- -------------------------------------------------------------------------
-    -- 2. Para cada línea: precio de venta vigente en la fecha de la operación
-    --    Se toma el registro de app_dat_precio_venta cuyo rango de fechas
-    --    engloba la fecha de la operación.  Si no hay, se usa NULL (se
-    --    resolverá con el importe registrado como fallback).
-    --    Nota: el precio se redondea a 2 decimales para evitar fragmentación
-    --    de grupos por diferencias de punto flotante en el fallback.
+    -- 2. Precio de venta vigente en la fecha de criterio
     -- -------------------------------------------------------------------------
     precio_venta_historico AS (
         SELECT DISTINCT ON (vd.id_producto, COALESCE(vd.id_variante, 0), vd.fecha_op)
@@ -129,13 +113,11 @@ BEGIN
             vd.id_producto,
             COALESCE(vd.id_variante, 0),
             vd.fecha_op,
-            pv.created_at DESC   -- en caso de solapamiento, el más reciente
+            pv.created_at DESC
     ),
 
     -- -------------------------------------------------------------------------
-    -- 3. Tasa de cambio USD→CUP vigente en cada fecha de operación
-    --    Se busca en tasa_cambio_extraoficial la tasa activa más reciente
-    --    que no supere la fecha de la operación.
+    -- 3. Tasa USD→CUP vigente en cada fecha de criterio
     -- -------------------------------------------------------------------------
     tasa_historica AS (
         SELECT DISTINCT ON (vd.fecha_op)
@@ -150,10 +132,7 @@ BEGIN
     ),
 
     -- -------------------------------------------------------------------------
-    -- 4. Costo unitario en USD por producto/presentación
-    --    Se usa precio_promedio de app_dat_producto_presentacion (costo
-    --    promedio ponderado acumulado, en USD).
-    --    Fallback: último costo de recepción.
+    -- 4. Costo unitario en USD
     -- -------------------------------------------------------------------------
     costo_usd AS (
         SELECT
@@ -176,7 +155,7 @@ BEGIN
     ),
 
     -- -------------------------------------------------------------------------
-    -- 5. Enriquecer cada línea de venta con precio y tasa históricos
+    -- 5. Enriquecer cada línea
     -- -------------------------------------------------------------------------
     ventas_enriquecidas AS (
         SELECT
@@ -186,29 +165,21 @@ BEGIN
             vd.cantidad,
             vd.importe,
             vd.fecha_op,
-
-            -- Precio de venta CUP vigente en la fecha; fallback: importe/cantidad
-            -- Redondeado a 2 decimales para evitar fragmentación por punto flotante.
             ROUND(COALESCE(
                 pvh.precio_cup_historico,
                 CASE WHEN vd.cantidad > 0 THEN (vd.importe / vd.cantidad)::NUMERIC ELSE 0 END
             ), 2) AS precio_venta_cup_op,
-
-            -- Tasa vigente en la fecha; fallback: tasa actual de tasas_conversion
             COALESCE(
                 th.tasa_cup,
                 (SELECT tasa FROM tasas_conversion
                  WHERE moneda_origen = 'USD' AND moneda_destino = 'CUP'
                  ORDER BY fecha_actualizacion DESC LIMIT 1)
             ) AS tasa_op,
-
-            -- Costo unitario en USD (precio_promedio de presentacion > recepción)
             COALESCE(
                 cu.costo_unitario_usd,
                 cur.costo_unitario_usd,
                 0
             ) AS costo_usd_op
-
         FROM ventas_detalle vd
         LEFT JOIN precio_venta_historico pvh
                ON pvh.id_producto = vd.id_producto
@@ -224,18 +195,13 @@ BEGIN
     ),
 
     -- -------------------------------------------------------------------------
-    -- 5b. Costo por receta para productos elaborados/servicios.
-    --     Costo unitario del ingrediente = precio_promedio de
-    --     app_dat_producto_presentacion (precio promedio ponderado acumulado, USD),
-    --     dividido por cantidad_um de app_dat_presentacion_unidad_medida para
-    --     obtener el costo por unidad base, multiplicado por cantidad_necesaria.
+    -- 5b. Costo por receta para elaborados/servicios
     -- -------------------------------------------------------------------------
     costo_receta_usd AS (
         SELECT
             pi.id_producto_elaborado AS id_producto,
             SUM(
                 COALESCE(pi.cantidad_necesaria, 0) *
-                -- costo por unidad base = precio_promedio / cantidad_por_presentacion
                 COALESCE((
                     SELECT pp2.precio_promedio /
                            NULLIF(COALESCE((
@@ -257,29 +223,20 @@ BEGIN
 
     -- -------------------------------------------------------------------------
     -- 6. Agregar por producto/presentación/precio_venta/costo_cup
-    --    Cada combinación distinta de (precio_venta, costo_cup) genera una fila
-    --    separada, capturando tanto cambios de precio de venta como cambios de
-    --    tasa o de costo USD que resulten en un costo CUP diferente.
     -- -------------------------------------------------------------------------
     agregado AS (
         SELECT
             ve.id_producto,
             ve.id_variante,
             ve.id_presentacion,
-            ve.precio_venta_cup_op,                                          -- clave 1: precio de venta
-            ROUND((ve.costo_usd_op * ve.tasa_op)::NUMERIC, 2) AS costo_cup_op, -- clave 2: costo CUP unitario
-            ve.costo_usd_op,                                                 -- para exponer en resultado
-            ve.tasa_op,                                                      -- para exponer en resultado
-            SUM(ve.cantidad)                                          AS total_vendido,
-
-            -- Ingresos: precio × cantidad (mismo precio en todo el grupo)
-            SUM(ve.precio_venta_cup_op * ve.cantidad)                AS ingresos_totales,
-
-            -- Costo total: costo_cup_op × cantidad (mismo costo CUP en todo el grupo)
-            SUM(ve.costo_usd_op * ve.tasa_op * ve.cantidad)          AS costo_total_vendido,
-
-            AVG(ve.tasa_op)                                           AS tasa_promedio
-
+            ve.precio_venta_cup_op,
+            ROUND((ve.costo_usd_op * ve.tasa_op)::NUMERIC, 2) AS costo_cup_op,
+            ve.costo_usd_op,
+            ve.tasa_op,
+            SUM(ve.cantidad)                                 AS total_vendido,
+            SUM(ve.precio_venta_cup_op * ve.cantidad)       AS ingresos_totales,
+            SUM(ve.costo_usd_op * ve.tasa_op * ve.cantidad) AS costo_total_vendido,
+            AVG(ve.tasa_op)                                  AS tasa_promedio
         FROM ventas_enriquecidas ve
         GROUP BY
             ve.id_producto,
@@ -293,7 +250,7 @@ BEGIN
     )
 
     -- -------------------------------------------------------------------------
-    -- 7. Resultado final con datos del producto y proveedor
+    -- 7. Resultado final
     -- -------------------------------------------------------------------------
     SELECT
         p.id_tienda,
@@ -301,39 +258,26 @@ BEGIN
         p.denominacion::VARCHAR                           AS nombre_producto,
         COALESCE(p.id_proveedor, 0)::BIGINT               AS id_proveedor,
         COALESCE(prov.denominacion, 'Sin Proveedor')::VARCHAR AS nombre_proveedor,
-
-        -- Precio de venta CUP exacto de este grupo
         ROUND(ag.precio_venta_cup_op::NUMERIC, 2)                  AS precio_venta_cup,
-
-        -- Costo unitario en USD: para elaborados/servicios usar receta; si no, precio_promedio
         ROUND(COALESCE(
             CASE WHEN (p.es_elaborado OR p.es_servicio) THEN cr.costo_receta_usd END,
             ag.costo_usd_op
         )::NUMERIC, 4)                                             AS precio_costo,
-
-        -- Tasa exacta del grupo
         ROUND(ag.tasa_op::NUMERIC, 2)                              AS valor_usd,
-
-        -- Costo unitario en CUP: para elaborados/servicios usar receta × tasa; si no, costo_cup_op
         ROUND(COALESCE(
             CASE WHEN (p.es_elaborado OR p.es_servicio)
                 THEN cr.costo_receta_usd * ag.tasa_promedio
             END,
             ag.costo_cup_op
         )::NUMERIC, 2)                                             AS precio_costo_cup,
-
         ag.total_vendido,
         ROUND(ag.ingresos_totales::NUMERIC, 2)                     AS ingresos_totales,
-
-        -- Costo total vendido: para elaborados/servicios recalcular con receta
         ROUND(COALESCE(
             CASE WHEN (p.es_elaborado OR p.es_servicio)
                 THEN cr.costo_receta_usd * ag.tasa_promedio * ag.total_vendido
             END,
             ag.costo_total_vendido
         )::NUMERIC, 2)                                             AS costo_total_vendido,
-
-        -- Ganancia unitaria
         ROUND((
             ag.precio_venta_cup_op - COALESCE(
                 CASE WHEN (p.es_elaborado OR p.es_servicio)
@@ -342,8 +286,6 @@ BEGIN
                 ag.costo_cup_op
             )
         )::NUMERIC, 2)                                             AS ganancia_unitaria,
-
-        -- Ganancia total
         ROUND((
             ag.ingresos_totales - COALESCE(
                 CASE WHEN (p.es_elaborado OR p.es_servicio)
@@ -352,10 +294,8 @@ BEGIN
                 ag.costo_total_vendido
             )
         )::NUMERIC, 2)                                             AS ganancia_total,
-
         COALESCE(p.es_elaborado, FALSE)                            AS es_elaborado,
         COALESCE(p.es_servicio, FALSE)                             AS es_servicio
-
     FROM agregado ag
     JOIN app_dat_producto p ON ag.id_producto = p.id
     LEFT JOIN app_dat_proveedor prov ON p.id_proveedor = prov.id
@@ -366,7 +306,6 @@ BEGIN
 END;
 $$;
 
--- Permisos
 GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_con_proveedor4(BIGINT, DATE, DATE, BIGINT, TEXT)
     TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_con_proveedor4(BIGINT, DATE, DATE, BIGINT, TEXT)

@@ -242,11 +242,17 @@ class ProductSalesWithSupplier {
   });
 
   factory ProductSalesWithSupplier.fromJson(Map<String, dynamic> json) {
+    int asInt(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse('$v') ?? 0;
+    }
+
     return ProductSalesWithSupplier(
-      idTienda: json['id_tienda'] ?? 0,
-      idProducto: json['id_producto'] ?? 0,
+      idTienda: asInt(json['id_tienda']),
+      idProducto: asInt(json['id_producto']),
       nombreProducto: json['nombre_producto'] ?? '',
-      idProveedor: json['id_proveedor'] ?? 0,
+      idProveedor: asInt(json['id_proveedor']),
       nombreProveedor: json['nombre_proveedor'] ?? 'Sin Proveedor',
       precioVentaCup: (json['precio_venta_cup'] ?? 0).toDouble(),
       precioCosto: (json['precio_costo'] ?? 0).toDouble(),
@@ -261,12 +267,56 @@ class ProductSalesWithSupplier {
   }
 }
 
+class SupplierProductOrderDetail {
+  final int idProducto;
+  final int idOperacion;
+  final DateTime fechaCreacion;
+  final DateTime fechaCompletado;
+  final double cantidad;
+  final String nombreCliente;
+
+  SupplierProductOrderDetail({
+    required this.idProducto,
+    required this.idOperacion,
+    required this.fechaCreacion,
+    required this.fechaCompletado,
+    required this.cantidad,
+    required this.nombreCliente,
+  });
+
+  factory SupplierProductOrderDetail.fromJson(Map<String, dynamic> json) {
+    DateTime parseDate(dynamic value) {
+      if (value == null) return DateTime.fromMillisecondsSinceEpoch(0);
+      if (value is DateTime) return value;
+      return DateTime.tryParse(value.toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+    }
+
+    final cliente = (json['nombre_cliente'] ?? '').toString().trim();
+
+    return SupplierProductOrderDetail(
+      idProducto: json['id_producto'] is int
+          ? json['id_producto'] as int
+          : int.tryParse('${json['id_producto']}') ?? 0,
+      idOperacion: json['id_operacion'] is int
+          ? json['id_operacion'] as int
+          : int.tryParse('${json['id_operacion']}') ?? 0,
+      fechaCreacion: parseDate(json['fecha_creacion']),
+      fechaCompletado: parseDate(json['fecha_completado']),
+      cantidad: (json['cantidad'] as num?)?.toDouble() ?? 0.0,
+      nombreCliente: cliente.isNotEmpty ? cliente : 'Sin cliente',
+    );
+  }
+}
+
 class SalesService {
   static final SupabaseClient _supabase = Supabase.instance.client;
 
   static Future<List<ProductSalesReport>> getProductSalesReport({
     DateTime? fechaDesde,
     DateTime? fechaHasta,
+    /// 'creacion' | 'completado'
+    String filtroFecha = 'creacion',
   }) async {
     final sw = Stopwatch()..start();
     print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -281,12 +331,18 @@ class SalesService {
 
       final String? desde = fechaDesde?.toIso8601String().split('T')[0];
       final String? hasta = fechaHasta?.toIso8601String().split('T')[0];
+      final filtro =
+          filtroFecha == 'completado' ? 'completado' : 'creacion';
       print('   RPC : fn_reporte_ventas_con_proveedor4');
       print('   Tienda : $idTienda');
       print('   Desde  : ${desde ?? "(sin filtro)"}');
       print('   Hasta  : ${hasta ?? "(sin filtro)"}');
+      print('   Filtro : $filtro');
 
-      final Map<String, dynamic> params = {'p_id_tienda': idTienda};
+      final Map<String, dynamic> params = {
+        'p_id_tienda': idTienda,
+        'p_filtro_fecha': filtro,
+      };
       if (desde != null) params['p_fecha_desde'] = desde;
       if (hasta != null) params['p_fecha_hasta'] = hasta;
 
@@ -899,5 +955,113 @@ class SalesService {
       print('Error in getSupplierProductReport: $e');
       return [];
     }
+  }
+
+  /// Productos + órdenes del proveedor para detalle/exportación.
+  static Future<Map<String, dynamic>> getSupplierDetailExportData({
+    required int idProveedor,
+    DateTime? fechaDesde,
+    DateTime? fechaHasta,
+    int? idAlmacen,
+  }) async {
+    final products = await getSupplierProductReport(
+      idProveedor: idProveedor,
+      fechaDesde: fechaDesde,
+      fechaHasta: fechaHasta,
+      idAlmacen: idAlmacen,
+    );
+
+    final orders = await getSupplierProductOrders(
+      idProveedor: idProveedor,
+      productoIds: products.map((p) => p.idProducto).toList(),
+      fechaDesde: fechaDesde,
+      fechaHasta: fechaHasta,
+      idAlmacen: idAlmacen,
+    );
+
+    final ordersByProduct = <int, List<SupplierProductOrderDetail>>{};
+    for (final order in orders) {
+      ordersByProduct.putIfAbsent(order.idProducto, () => []).add(order);
+    }
+
+    return {
+      'products': products,
+      'ordersByProduct': ordersByProduct,
+      'orders': orders,
+    };
+  }
+
+  /// Órdenes (completadas/pagadas) en las que aparece cada producto del proveedor.
+  /// Lanza excepción si falla la RPC (para que la UI pueda mostrar el error).
+  static Future<List<SupplierProductOrderDetail>> getSupplierProductOrders({
+    required int idProveedor,
+    List<int> productoIds = const [],
+    DateTime? fechaDesde,
+    DateTime? fechaHasta,
+    int? idAlmacen,
+  }) async {
+    final userPrefs = UserPreferencesService();
+    final idTienda = await userPrefs.getIdTienda();
+    if (idTienda == null) {
+      throw Exception('No se pudo obtener la tienda actual');
+    }
+
+    final Map<String, dynamic> params = {
+      'p_id_tienda': idTienda,
+      'p_id_proveedor': idProveedor,
+    };
+
+    // Misma forma de fechas que fn_reporte_ventas_con_proveedor2
+    if (fechaDesde != null) {
+      params['p_fecha_desde'] = fechaDesde.toIso8601String();
+    }
+    if (fechaHasta != null) {
+      params['p_fecha_hasta'] = fechaHasta.toIso8601String();
+    }
+    if (idAlmacen != null) {
+      params['p_id_almacen'] = idAlmacen;
+    }
+
+    print(
+      '📦 [getSupplierProductOrders] params=$params productosFiltro=${productoIds.length}',
+    );
+
+    final response = await _supabase.rpc(
+      'fn_ordenes_producto_proveedor',
+      params: params,
+    );
+
+    print(
+      '📦 [getSupplierProductOrders] responseType=${response.runtimeType} '
+      'length=${response is List ? response.length : 'n/a'} raw=$response',
+    );
+
+    if (response == null) return [];
+    if (response is! List) {
+      throw Exception(
+        'Respuesta inesperada de fn_ordenes_producto_proveedor: ${response.runtimeType}',
+      );
+    }
+
+    var details = <SupplierProductOrderDetail>[];
+    for (final item in response) {
+      try {
+        details.add(
+          SupplierProductOrderDetail.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        );
+      } catch (e) {
+        print('⚠️ [getSupplierProductOrders] fila inválida: $item error=$e');
+      }
+    }
+
+    if (productoIds.isNotEmpty) {
+      final ids = productoIds.map((e) => e).toSet();
+      details = details.where((d) => ids.contains(d.idProducto)).toList();
+    }
+
+    print('✅ [getSupplierProductOrders] ${details.length} filas finales');
+    return details;
   }
 }

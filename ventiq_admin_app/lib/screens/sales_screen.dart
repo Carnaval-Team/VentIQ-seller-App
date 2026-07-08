@@ -55,6 +55,10 @@ class _SalesScreenState extends State<SalesScreen>
   // Tab TPVs: si es true, el reporte de vendedores se extiende hasta el cierre
   // del turno cuando este cerró después de la fecha_hasta (o hasta ahora si sigue abierto).
   bool _tpvHastaCierreTurno = false;
+  /// Criterio de fecha para ventas de productos (tab Tiempo Real):
+  /// 'creacion' = o.created_at | 'completado' = eo.created_at del estado 2
+  String _productDateFilterMode = 'creacion';
+  bool _filtersExpanded = false;
   double _totalSales = 0.0;
   int _totalProductsSold = 0;
   bool _isLoadingMetrics = false;
@@ -1875,6 +1879,7 @@ class _SalesScreenState extends State<SalesScreen>
       final productSales = await SalesService.getProductSalesReport(
         fechaDesde: dateRange['start'],
         fechaHasta: dateRange['end'],
+        filtroFecha: _productDateFilterMode,
       );
 
       setState(() {
@@ -2182,7 +2187,7 @@ class _SalesScreenState extends State<SalesScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildPeriodSelector(),
+          _buildPeriodSelector(showDateBasisFilter: true),
           const SizedBox(height: 16),
           _buildRealTimeMetrics(_totalSales, _totalProductsSold),
           const SizedBox(height: 20),
@@ -4957,45 +4962,208 @@ class _SalesScreenState extends State<SalesScreen>
     );
   }
 
-  Widget _buildPeriodSelector() {
+  Widget _buildPeriodSelector({bool showDateBasisFilter = false}) {
+    final isExpanded = showDateBasisFilter ? _filtersExpanded : true;
+    final dateBasisLabel =
+        _productDateFilterMode == 'completado'
+            ? 'Fecha de completado'
+            : 'Fecha de creación';
+
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: Row(
+      child: Column(
         children: [
-          const Icon(Icons.date_range, color: AppColors.primary),
-          const SizedBox(width: 12),
-          const Text('Fecha: ', style: TextStyle(fontWeight: FontWeight.w600)),
-          Expanded(
-            child: GestureDetector(
-              onTap: _showDateRangePicker,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 8,
-                  horizontal: 12,
-                ),
-                decoration: BoxDecoration(
-                  border: Border.all(color: AppColors.border),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      _formatDateRangeLabel(),
-                      style: const TextStyle(fontSize: 14),
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap:
+                showDateBasisFilter
+                    ? () => setState(() => _filtersExpanded = !_filtersExpanded)
+                    : null,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  const Icon(Icons.filter_list, color: AppColors.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Filtros',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          showDateBasisFilter
+                              ? '${_formatDateRangeLabel()} · $dateBasisLabel'
+                              : _formatDateRangeLabel(),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
                     ),
-                    const Icon(Icons.arrow_drop_down, color: AppColors.primary),
-                  ],
-                ),
+                  ),
+                  if (showDateBasisFilter)
+                    Icon(
+                      isExpanded
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                      color: AppColors.primary,
+                    )
+                  else
+                    const Icon(Icons.date_range, color: AppColors.primary),
+                ],
               ),
             ),
           ),
+          if (isExpanded) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Rango de fechas',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: _showDateRangePicker,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 10,
+                        horizontal: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: AppColors.border),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _formatDateRangeLabel(),
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          const Icon(
+                            Icons.calendar_today,
+                            size: 18,
+                            color: AppColors.primary,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (showDateBasisFilter) ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Filtrar ventas por',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildDateBasisChip(
+                            label: 'Creación',
+                            subtitle: 'Fecha de la orden',
+                            value: 'creacion',
+                            icon: Icons.add_circle_outline,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildDateBasisChip(
+                            label: 'Completado',
+                            subtitle: 'Hist. de estados',
+                            value: 'completado',
+                            icon: Icons.check_circle_outline,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildDateBasisChip({
+    required String label,
+    required String subtitle,
+    required String value,
+    required IconData icon,
+  }) {
+    final active = _productDateFilterMode == value;
+    return GestureDetector(
+      onTap: () {
+        if (_productDateFilterMode == value) return;
+        setState(() => _productDateFilterMode = value);
+        _loadProductSalesData();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(
+          color: active
+              ? AppColors.primary.withOpacity(0.12)
+              : Colors.grey[50],
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: active ? AppColors.primary : AppColors.border,
+            width: active ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: active ? AppColors.primary : Colors.grey[600],
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: active ? AppColors.primary : const Color(0xFF374151),
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -8369,6 +8537,14 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Future<void> _showSupplierDetailDialog(SupplierSalesReport supplier) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
+      ),
+    );
+
     try {
       final products = await SalesService.getSupplierProductReport(
         idProveedor: supplier.idProveedor,
@@ -8377,145 +8553,418 @@ class _SalesScreenState extends State<SalesScreen>
         idAlmacen: _selectedWarehouseId,
       );
 
+      String? ordersError;
+      var orderDetails = <SupplierProductOrderDetail>[];
+      try {
+        orderDetails = await SalesService.getSupplierProductOrders(
+          idProveedor: supplier.idProveedor,
+          fechaDesde: _startDate,
+          fechaHasta: _endDate,
+          idAlmacen: _selectedWarehouseId,
+        );
+      } catch (e) {
+        ordersError = e.toString();
+        print('❌ Error cargando órdenes de proveedor: $e');
+      }
+
+      final ordersByProduct = <int, List<SupplierProductOrderDetail>>{};
+      for (final order in orderDetails) {
+        ordersByProduct.putIfAbsent(order.idProducto, () => []).add(order);
+      }
+
       if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // loading
+
+      final expandedProducts = <int>{
+        // Auto-expand products that have quantity but no matching orders,
+        // so el usuario vea de inmediato el problema.
+        for (final p in products)
+          if ((ordersByProduct[p.idProducto] ?? const []).isEmpty) p.idProducto,
+      };
 
       showDialog(
         context: context,
         builder: (BuildContext context) {
-          return AlertDialog(
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Detalle - ${supplier.nombreProveedor}'),
-                if (_selectedWarehouseId != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      'Almacén: $_selectedWarehouseName',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Expanded(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.vertical,
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: DataTable(
-                          columns: const [
-                            DataColumn(
-                              label: Text(
-                                'Producto',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            DataColumn(
-                              label: Text(
-                                'Cantidad',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            DataColumn(
-                              label: Text(
-                                'Monto',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ],
-                          rows:
-                              products.map((product) {
-                                return DataRow(
-                                  cells: [
-                                    DataCell(Text(product.nombreProducto)),
-                                    DataCell(
-                                      Text(product.totalVendido.toString()),
-                                    ),
-                                    DataCell(
-                                      Text(
-                                        '\$${product.costoTotalVendido.toStringAsFixed(2)}',
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              }).toList(),
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Detalle - ${supplier.nombreProveedor}'),
+                    if (_selectedWarehouseId != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Almacén: $_selectedWarehouseName',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                            fontStyle: FontStyle.italic,
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.center,
+                    if (ordersError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Error al cargar órdenes: $ordersError',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  height: MediaQuery.of(context).size.height * 0.65,
+                  child: Column(
                     children: [
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _exportSupplierDetailToPDF(
-                            supplier,
-                            products,
-                            _selectedWarehouseName,
-                          );
-                        },
-                        icon: const Icon(Icons.picture_as_pdf, size: 18),
-                        label: const Text('PDF'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                        ),
+                      Expanded(
+                        child: products.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  'No hay productos para este proveedor',
+                                ),
+                              )
+                            : ListView.separated(
+                                itemCount: products.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 8),
+                                itemBuilder: (context, index) {
+                                  final product = products[index];
+                                  final orders =
+                                      ordersByProduct[product.idProducto] ??
+                                          const <SupplierProductOrderDetail>[];
+                                  final isExpanded = expandedProducts
+                                      .contains(product.idProducto);
+
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: AppColors.border,
+                                      ),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        InkWell(
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          onTap: () {
+                                            setDialogState(() {
+                                              if (isExpanded) {
+                                                expandedProducts.remove(
+                                                  product.idProducto,
+                                                );
+                                              } else {
+                                                expandedProducts.add(
+                                                  product.idProducto,
+                                                );
+                                              }
+                                            });
+                                          },
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(12),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  isExpanded
+                                                      ? Icons.expand_less
+                                                      : Icons.expand_more,
+                                                  color: AppColors.primary,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        product.nombreProducto,
+                                                        style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          fontSize: 14,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        '${orders.length} orden${orders.length == 1 ? '' : 'es'}',
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: orders.isEmpty
+                                                              ? Colors.orange[800]
+                                                              : Colors.grey[600],
+                                                          fontWeight:
+                                                              orders.isEmpty
+                                                                  ? FontWeight
+                                                                      .w600
+                                                                  : FontWeight
+                                                                      .normal,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.end,
+                                                  children: [
+                                                    Text(
+                                                      'Cant: ${product.totalVendido % 1 == 0 ? product.totalVendido.toInt() : product.totalVendido.toStringAsFixed(2)}',
+                                                      style: const TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      '\$${product.costoTotalVendido.toStringAsFixed(2)}',
+                                                      style: const TextStyle(
+                                                        fontSize: 12,
+                                                        color:
+                                                            AppColors.primary,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        if (isExpanded) ...[
+                                          const Divider(height: 1),
+                                          if (orders.isEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.all(12),
+                                              child: Text(
+                                                ordersError != null
+                                                    ? 'No se pudieron cargar las órdenes. Revisa si aplicaste la migración SQL.'
+                                                    : 'Sin órdenes detalladas para este producto en el período.',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[700],
+                                                ),
+                                              ),
+                                            )
+                                          else
+                                            SingleChildScrollView(
+                                              scrollDirection: Axis.horizontal,
+                                              child: DataTable(
+                                                headingRowHeight: 36,
+                                                dataRowMinHeight: 40,
+                                                dataRowMaxHeight: 56,
+                                                columns: const [
+                                                  DataColumn(
+                                                    label: Text(
+                                                      'Orden',
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  DataColumn(
+                                                    label: Text(
+                                                      'Creación',
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  DataColumn(
+                                                    label: Text(
+                                                      'Completado',
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  DataColumn(
+                                                    label: Text(
+                                                      'Cant.',
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  DataColumn(
+                                                    label: Text(
+                                                      'Cliente',
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                                rows: orders.map((order) {
+                                                  return DataRow(
+                                                    cells: [
+                                                      DataCell(
+                                                        Text(
+                                                          '#${order.idOperacion}',
+                                                          style:
+                                                              const TextStyle(
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      DataCell(
+                                                        Text(
+                                                          _formatDateTime(
+                                                            order
+                                                                .fechaCreacion,
+                                                          ),
+                                                          style:
+                                                              const TextStyle(
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      DataCell(
+                                                        Text(
+                                                          _formatDateTime(
+                                                            order
+                                                                .fechaCompletado,
+                                                          ),
+                                                          style:
+                                                              const TextStyle(
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      DataCell(
+                                                        Text(
+                                                          order.cantidad % 1 ==
+                                                                  0
+                                                              ? order.cantidad
+                                                                  .toInt()
+                                                                  .toString()
+                                                              : order.cantidad
+                                                                  .toStringAsFixed(
+                                                                    2,
+                                                                  ),
+                                                          style:
+                                                              const TextStyle(
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      DataCell(
+                                                        ConstrainedBox(
+                                                          constraints:
+                                                              const BoxConstraints(
+                                                            maxWidth: 140,
+                                                          ),
+                                                          child: Text(
+                                                            order.nombreCliente,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                            style:
+                                                                const TextStyle(
+                                                              fontSize: 12,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  );
+                                                }).toList(),
+                                              ),
+                                            ),
+                                        ],
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
                       ),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _exportSupplierDetailToExcel(
-                            supplier,
-                            products,
-                            _selectedWarehouseName,
-                          );
-                        },
-                        icon: const Icon(Icons.table_chart, size: 18),
-                        label: const Text('Excel'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _exportSupplierDetailToPDF(
+                                supplier,
+                                products,
+                                _selectedWarehouseName,
+                                ordersByProduct: ordersByProduct,
+                              );
+                            },
+                            icon: const Icon(Icons.picture_as_pdf, size: 18),
+                            label: const Text('PDF'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                            ),
                           ),
-                        ),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _exportSupplierDetailToExcel(
+                                supplier,
+                                products,
+                                _selectedWarehouseName,
+                                ordersByProduct: ordersByProduct,
+                              );
+                            },
+                            icon: const Icon(Icons.table_chart, size: 18),
+                            label: const Text('Excel'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cerrar'),
+                  ),
                 ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cerrar'),
-              ),
-            ],
+              );
+            },
           );
         },
       );
     } catch (e) {
       print('Error al cargar detalles del proveedor: $e');
       if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // loading
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error al cargar detalles: $e'),
@@ -8526,13 +8975,55 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
+
+  Future<Map<int, List<SupplierProductOrderDetail>>>
+  _resolveSupplierOrdersForExport({
+    required SupplierSalesReport supplier,
+    required List<ProductSalesWithSupplier> products,
+    Map<int, List<SupplierProductOrderDetail>> ordersByProduct = const {},
+  }) async {
+    final hasAnyOrders = ordersByProduct.values.any((list) => list.isNotEmpty);
+    if (hasAnyOrders) return ordersByProduct;
+
+    final exportData = await SalesService.getSupplierDetailExportData(
+      idProveedor: supplier.idProveedor,
+      fechaDesde: _startDate,
+      fechaHasta: _endDate,
+      idAlmacen: _selectedWarehouseId,
+    );
+
+    return Map<int, List<SupplierProductOrderDetail>>.from(
+      exportData['ordersByProduct'] as Map? ?? {},
+    );
+  }
+
   Future<void> _exportSupplierDetailToPDF(
     SupplierSalesReport supplier,
     List<ProductSalesWithSupplier> products,
-    String? warehouseName,
-  ) async {
+    String? warehouseName, {
+    Map<int, List<SupplierProductOrderDetail>> ordersByProduct = const {},
+  }) async {
     try {
       setState(() => _isExportingPDF = true);
+
+      // Siempre asegurar datos de órdenes por producto para la exportación.
+      final resolvedOrders = await _resolveSupplierOrdersForExport(
+        supplier: supplier,
+        products: products,
+        ordersByProduct: ordersByProduct,
+      );
+      var exportProducts = products;
+      if (exportProducts.isEmpty) {
+        final exportData = await SalesService.getSupplierDetailExportData(
+          idProveedor: supplier.idProveedor,
+          fechaDesde: _startDate,
+          fechaHasta: _endDate,
+          idAlmacen: _selectedWarehouseId,
+        );
+        exportProducts = List<ProductSalesWithSupplier>.from(
+          exportData['products'] as List? ?? const [],
+        );
+      }
 
       final storeId = await UserPreferencesService().getIdTienda();
       Map<String, dynamic>? storeData;
@@ -8556,183 +9047,275 @@ class _SalesScreenState extends State<SalesScreen>
       final dateLabel = _formatDateRangeLabel();
 
       pdf.addPage(
-        pw.Page(
+        pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 24),
           build: (pw.Context context) {
-            return pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                _buildPdfHeader(
-                  logoBytes: logoBytes,
-                  storeName: storeName,
-                  storeAddress: storeAddress,
-                  storeLocation: storeLocation,
-                  storePhone: storePhone,
-                  dateLabel: dateLabel,
+            return [
+              _buildPdfHeader(
+                logoBytes: logoBytes,
+                storeName: storeName,
+                storeAddress: storeAddress,
+                storeLocation: storeLocation,
+                storePhone: storePhone,
+                dateLabel: dateLabel,
+              ),
+              pw.SizedBox(height: 16),
+              pw.Text(
+                'Reporte de Proveedor',
+                style: pw.TextStyle(
+                  fontSize: 16,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromHex('#0F172A'),
                 ),
-                pw.SizedBox(height: 16),
-                pw.Text(
-                  'Reporte de Proveedor',
-                  style: pw.TextStyle(
-                    fontSize: 16,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColor.fromHex('#0F172A'),
+              ),
+              pw.SizedBox(height: 12),
+              pw.Container(
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromHex('#F1F5F9'),
+                  borderRadius: pw.BorderRadius.circular(6),
+                  border: pw.Border.all(
+                    color: PdfColor.fromHex('#CBD5E1'),
+                    width: 0.8,
                   ),
                 ),
-                pw.SizedBox(height: 12),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(12),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex('#F1F5F9'),
-                    borderRadius: pw.BorderRadius.circular(6),
-                    border: pw.Border.all(
-                      color: PdfColor.fromHex('#CBD5E1'),
-                      width: 0.8,
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      'Datos del Proveedor',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColor.fromHex('#0F172A'),
+                      ),
                     ),
-                  ),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
+                    pw.SizedBox(height: 8),
+                    if (warehouseName != null) ...[
                       pw.Text(
-                        'Datos del Proveedor',
+                        'Almacén: $warehouseName',
                         style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromHex('#0F172A'),
+                          fontSize: 11,
+                          color: PdfColor.fromHex('#475569'),
                         ),
                       ),
                       pw.SizedBox(height: 8),
-                      if (warehouseName != null) ...[
+                    ],
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
                         pw.Text(
-                          'Almacén: $warehouseName',
+                          'Nombre:',
+                          style: const pw.TextStyle(fontSize: 11),
+                        ),
+                        pw.Text(
+                          supplier.nombreProveedor,
                           style: pw.TextStyle(
                             fontSize: 11,
-                            color: PdfColor.fromHex('#475569'),
+                            fontWeight: pw.FontWeight.bold,
                           ),
                         ),
-                        pw.SizedBox(height: 8),
                       ],
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text(
-                            'Nombre:',
-                            style: const pw.TextStyle(fontSize: 11),
-                          ),
-                          pw.Text(
-                            supplier.nombreProveedor,
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      pw.SizedBox(height: 4),
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text(
-                            'Total Costo:',
-                            style: const pw.TextStyle(fontSize: 11),
-                          ),
-                          pw.Text(
-                            '\$${supplier.totalCosto.toStringAsFixed(2)}',
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                pw.SizedBox(height: 16),
-                pw.Text(
-                  'Detalle de Productos',
-                  style: pw.TextStyle(
-                    fontSize: 14,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColor.fromHex('#0F172A'),
-                  ),
-                ),
-                pw.SizedBox(height: 8),
-                pw.Text(
-                  'Período: $dateLabel',
-                  style: const pw.TextStyle(fontSize: 12),
-                ),
-                pw.SizedBox(height: 16),
-                pw.Table(
-                  border: pw.TableBorder(
-                    horizontalInside: pw.BorderSide(
-                      color: PdfColors.grey300,
-                      width: 0.3,
                     ),
-                    bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5),
-                  ),
-                  columnWidths: {
-                    0: const pw.FlexColumnWidth(4),
-                    1: const pw.FlexColumnWidth(1.5),
-                    2: const pw.FlexColumnWidth(1.5),
-                  },
-                  children: [
-                    pw.TableRow(
+                    pw.SizedBox(height: 4),
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
-                        _pdfHeaderCell('Producto'),
-                        _pdfHeaderCell('Cantidad'),
-                        _pdfHeaderCell('Monto'),
+                        pw.Text(
+                          'Total Costo:',
+                          style: const pw.TextStyle(fontSize: 11),
+                        ),
+                        pw.Text(
+                          '\$${supplier.totalCosto.toStringAsFixed(2)}',
+                          style: pw.TextStyle(
+                            fontSize: 11,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
                       ],
                     ),
-                    ...products.map((product) {
-                      return pw.TableRow(
-                        children: [
-                          _pdfBodyCell(product.nombreProducto),
-                          _pdfBodyCell(product.totalVendido.toStringAsFixed(0)),
-                          _pdfBodyCell(
-                            '\$${product.costoTotalVendido.toStringAsFixed(2)}',
-                          ),
-                        ],
-                      );
-                    }).toList(),
                   ],
                 ),
-                pw.SizedBox(height: 16),
-                pw.Divider(),
-                pw.SizedBox(height: 8),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(10),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex('#EEF2FF'),
-                    borderRadius: pw.BorderRadius.circular(8),
-                    border: pw.Border.all(
-                      color: PdfColor.fromHex('#CBD5E1'),
-                      width: 0.8,
-                    ),
+              ),
+              pw.SizedBox(height: 16),
+              pw.Text(
+                'Detalle de Productos',
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromHex('#0F172A'),
+                ),
+              ),
+              pw.SizedBox(height: 8),
+              pw.Text(
+                'Período: $dateLabel',
+                style: const pw.TextStyle(fontSize: 12),
+              ),
+              pw.SizedBox(height: 16),
+              pw.Table(
+                border: pw.TableBorder(
+                  horizontalInside: pw.BorderSide(
+                    color: PdfColors.grey300,
+                    width: 0.3,
                   ),
-                  child: pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5),
+                ),
+                columnWidths: {
+                  0: const pw.FlexColumnWidth(3.2),
+                  1: const pw.FlexColumnWidth(1.2),
+                  2: const pw.FlexColumnWidth(1.3),
+                  3: const pw.FlexColumnWidth(1.2),
+                },
+                children: [
+                  pw.TableRow(
                     children: [
-                      pw.Text(
-                        'TOTAL:',
-                        style: pw.TextStyle(
-                          fontWeight: pw.FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                      pw.Text(
-                        '\$${supplier.totalCosto.toStringAsFixed(2)}',
-                        style: pw.TextStyle(
-                          fontWeight: pw.FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
+                      _pdfHeaderCell('Producto'),
+                      _pdfHeaderCell('Cantidad'),
+                      _pdfHeaderCell('Monto'),
+                      _pdfHeaderCell('Órdenes'),
                     ],
                   ),
+                  ...exportProducts.map((product) {
+                    final orderCount =
+                        (resolvedOrders[product.idProducto] ?? const [])
+                            .length;
+                    return pw.TableRow(
+                      children: [
+                        _pdfBodyCell(product.nombreProducto),
+                        _pdfBodyCell(product.totalVendido.toStringAsFixed(0)),
+                        _pdfBodyCell(
+                          '\$${product.costoTotalVendido.toStringAsFixed(2)}',
+                        ),
+                        _pdfBodyCell('$orderCount'),
+                      ],
+                    );
+                  }),
+                ],
+              ),
+              pw.SizedBox(height: 16),
+              pw.Divider(),
+              pw.SizedBox(height: 8),
+              pw.Container(
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromHex('#EEF2FF'),
+                  borderRadius: pw.BorderRadius.circular(8),
+                  border: pw.Border.all(
+                    color: PdfColor.fromHex('#CBD5E1'),
+                    width: 0.8,
+                  ),
                 ),
-              ],
-            );
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'TOTAL:',
+                      style: pw.TextStyle(
+                        fontWeight: pw.FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                    pw.Text(
+                      '\$${supplier.totalCosto.toStringAsFixed(2)}',
+                      style: pw.TextStyle(
+                        fontWeight: pw.FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Text(
+                'Detalle de órdenes por producto',
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromHex('#0F172A'),
+                ),
+              ),
+              pw.SizedBox(height: 10),
+              ...exportProducts.expand((product) {
+                final orders =
+                    resolvedOrders[product.idProducto] ??
+                    const <SupplierProductOrderDetail>[];
+                return [
+                  pw.SizedBox(height: 8),
+                  pw.Container(
+                    width: double.infinity,
+                    padding: const pw.EdgeInsets.all(8),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColor.fromHex('#F8FAFC'),
+                      borderRadius: pw.BorderRadius.circular(6),
+                    ),
+                    child: pw.Text(
+                      '${product.nombreProducto} · ${orders.length} orden${orders.length == 1 ? '' : 'es'}',
+                      style: pw.TextStyle(
+                        fontSize: 11,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(height: 6),
+                  if (orders.isEmpty)
+                    pw.Text(
+                      'Sin órdenes detalle',
+                      style: const pw.TextStyle(fontSize: 10),
+                    )
+                  else
+                    pw.Table(
+                      border: pw.TableBorder(
+                        horizontalInside: pw.BorderSide(
+                          color: PdfColors.grey300,
+                          width: 0.3,
+                        ),
+                        bottom: pw.BorderSide(
+                          color: PdfColors.grey300,
+                          width: 0.5,
+                        ),
+                      ),
+                      columnWidths: {
+                        0: const pw.FlexColumnWidth(1.1),
+                        1: const pw.FlexColumnWidth(1.6),
+                        2: const pw.FlexColumnWidth(1.6),
+                        3: const pw.FlexColumnWidth(1.0),
+                        4: const pw.FlexColumnWidth(2.2),
+                      },
+                      children: [
+                        pw.TableRow(
+                          children: [
+                            _pdfHeaderCell('Orden'),
+                            _pdfHeaderCell('Creación'),
+                            _pdfHeaderCell('Completado'),
+                            _pdfHeaderCell('Cant.'),
+                            _pdfHeaderCell('Cliente'),
+                          ],
+                        ),
+                        ...orders.map((order) {
+                          return pw.TableRow(
+                            children: [
+                              _pdfBodyCell('#${order.idOperacion}'),
+                              _pdfBodyCell(
+                                _formatDateTime(order.fechaCreacion),
+                              ),
+                              _pdfBodyCell(
+                                _formatDateTime(order.fechaCompletado),
+                              ),
+                              _pdfBodyCell(
+                                order.cantidad % 1 == 0
+                                    ? order.cantidad.toInt().toString()
+                                    : order.cantidad.toStringAsFixed(2),
+                              ),
+                              _pdfBodyCell(order.nombreCliente),
+                            ],
+                          );
+                        }),
+                      ],
+                    ),
+                ];
+              }),
+            ];
           },
         ),
       );
@@ -8783,15 +9366,36 @@ class _SalesScreenState extends State<SalesScreen>
   Future<void> _exportSupplierDetailToExcel(
     SupplierSalesReport supplier,
     List<ProductSalesWithSupplier> products,
-    String? warehouseName,
-  ) async {
+    String? warehouseName, {
+    Map<int, List<SupplierProductOrderDetail>> ordersByProduct = const {},
+  }) async {
     try {
       setState(() => _isExportingPDF = true);
 
+      // Siempre asegurar datos de órdenes por producto para la exportación.
+      final resolvedOrders = await _resolveSupplierOrdersForExport(
+        supplier: supplier,
+        products: products,
+        ordersByProduct: ordersByProduct,
+      );
+      var exportProducts = products;
+      if (exportProducts.isEmpty) {
+        final exportData = await SalesService.getSupplierDetailExportData(
+          idProveedor: supplier.idProveedor,
+          fechaDesde: _startDate,
+          fechaHasta: _endDate,
+          idAlmacen: _selectedWarehouseId,
+        );
+        exportProducts = List<ProductSalesWithSupplier>.from(
+          exportData['products'] as List? ?? const [],
+        );
+      }
+
       final excelSheet = excel.Excel.createExcel();
       final sheet = excelSheet['Detalle'];
+      // Segunda hoja dedicada solo a órdenes (más fácil de revisar).
+      final ordersSheet = excelSheet['Ordenes'];
 
-      // Agregar encabezado con información del almacén si está filtrado
       if (warehouseName != null) {
         sheet.appendRow([excel.TextCellValue('Almacén: $warehouseName')]);
         sheet.appendRow([]);
@@ -8800,19 +9404,26 @@ class _SalesScreenState extends State<SalesScreen>
       sheet.appendRow([
         excel.TextCellValue('Proveedor: ${supplier.nombreProveedor}'),
       ]);
+      sheet.appendRow([
+        excel.TextCellValue('Período: ${_formatDateRangeLabel()}'),
+      ]);
       sheet.appendRow([]);
 
       sheet.appendRow([
         excel.TextCellValue('Producto'),
         excel.TextCellValue('Cantidad'),
         excel.TextCellValue('Monto'),
+        excel.TextCellValue('Órdenes'),
       ]);
 
-      for (var product in products) {
+      for (var product in exportProducts) {
+        final orderCount =
+            (resolvedOrders[product.idProducto] ?? const []).length;
         sheet.appendRow([
           excel.TextCellValue(product.nombreProducto),
           excel.IntCellValue(product.totalVendido.toInt()),
           excel.DoubleCellValue(product.costoTotalVendido),
+          excel.IntCellValue(orderCount),
         ]);
       }
 
@@ -8821,7 +9432,76 @@ class _SalesScreenState extends State<SalesScreen>
         excel.TextCellValue('TOTAL'),
         excel.TextCellValue(''),
         excel.DoubleCellValue(supplier.totalCosto),
+        excel.TextCellValue(''),
       ]);
+
+      sheet.appendRow([]);
+      sheet.appendRow([
+        excel.TextCellValue('Detalle de órdenes por producto'),
+      ]);
+      sheet.appendRow([]);
+      sheet.appendRow([
+        excel.TextCellValue('Producto'),
+        excel.TextCellValue('ID Orden'),
+        excel.TextCellValue('Fecha creación'),
+        excel.TextCellValue('Fecha completado'),
+        excel.TextCellValue('Cantidad'),
+        excel.TextCellValue('Cliente'),
+      ]);
+
+      ordersSheet.appendRow([
+        excel.TextCellValue('Proveedor: ${supplier.nombreProveedor}'),
+      ]);
+      ordersSheet.appendRow([
+        excel.TextCellValue('Período: ${_formatDateRangeLabel()}'),
+      ]);
+      ordersSheet.appendRow([]);
+      ordersSheet.appendRow([
+        excel.TextCellValue('Producto'),
+        excel.TextCellValue('ID Orden'),
+        excel.TextCellValue('Fecha creación'),
+        excel.TextCellValue('Fecha completado'),
+        excel.TextCellValue('Cantidad'),
+        excel.TextCellValue('Cliente'),
+      ]);
+
+      for (final product in exportProducts) {
+        final orders =
+            resolvedOrders[product.idProducto] ??
+            const <SupplierProductOrderDetail>[];
+        if (orders.isEmpty) {
+          sheet.appendRow([
+            excel.TextCellValue(product.nombreProducto),
+            excel.TextCellValue('Sin órdenes'),
+            excel.TextCellValue(''),
+            excel.TextCellValue(''),
+            excel.TextCellValue(''),
+            excel.TextCellValue(''),
+          ]);
+          ordersSheet.appendRow([
+            excel.TextCellValue(product.nombreProducto),
+            excel.TextCellValue('Sin órdenes'),
+            excel.TextCellValue(''),
+            excel.TextCellValue(''),
+            excel.TextCellValue(''),
+            excel.TextCellValue(''),
+          ]);
+          continue;
+        }
+
+        for (final order in orders) {
+          final row = [
+            excel.TextCellValue(product.nombreProducto),
+            excel.IntCellValue(order.idOperacion),
+            excel.TextCellValue(_formatDateTime(order.fechaCreacion)),
+            excel.TextCellValue(_formatDateTime(order.fechaCompletado)),
+            excel.DoubleCellValue(order.cantidad),
+            excel.TextCellValue(order.nombreCliente),
+          ];
+          sheet.appendRow(row);
+          ordersSheet.appendRow(row);
+        }
+      }
 
       final fileName =
           'detalle_proveedor_${supplier.idProveedor}_${DateTime.now().millisecondsSinceEpoch}.xlsx';
