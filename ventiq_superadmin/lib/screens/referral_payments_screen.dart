@@ -32,7 +32,7 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
   _ReferrerRow? _selected;
   List<Map<String, dynamic>> _selectedOrders = [];
 
-  bool _excludeZeroPayments = false;
+  bool _excludeZeroPayments = true;
 
   final NumberFormat _moneyFmt = NumberFormat('#,##0.00');
 

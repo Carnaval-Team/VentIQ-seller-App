@@ -59,7 +59,8 @@ class ReferralPaymentsService {
     }
   }
 
-  /// Obtiene ordenes asociadas a un codigo de referido en un rango de fecha
+  /// Obtiene ordenes asociadas a un codigo de referido en un rango de fecha.
+  /// Solo incluye órdenes Completado (las efectivamente cobradas).
   static Future<List<Map<String, dynamic>>> getOrdersByReferralCode({
     required String referalCode,
     required DateTime from,
@@ -67,7 +68,10 @@ class ReferralPaymentsService {
   }) async {
     try {
       final fromStr = _formatDate(from);
-      final toStr = _formatDate(to);
+      // Incluir el día completo hasta 23:59:59
+      final toExclusive = DateTime(to.year, to.month, to.day)
+          .add(const Duration(days: 1));
+      final toStr = _formatDate(toExclusive);
 
       final response = await _supabase
           .schema('carnavalapp')
@@ -76,8 +80,9 @@ class ReferralPaymentsService {
             'id, created_at, total, "totalUsd", "totalEuro", metodo_pago, moneda, status, user_id, referal_code',
           )
           .eq('referal_code', referalCode)
+          .eq('status', 'Completado')
           .gte('created_at', fromStr)
-          .lte('created_at', toStr)
+          .lt('created_at', toStr)
           .order('created_at', ascending: false);
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
