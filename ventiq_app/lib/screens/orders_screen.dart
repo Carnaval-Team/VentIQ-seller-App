@@ -1559,6 +1559,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   });
                 }
 
+                Future<void> reloadOrderAfterEdit() async {
+                  await _loadOrdersFromSupabase();
+                  refreshOrderData();
+                }
+
                 final discountData = _getDiscountData(order);
                 final hasDiscount = discountData['hasDiscount'] as bool;
                 final displayTotal =
@@ -1803,17 +1808,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
                       // ── Productos ─────────────────────────────────────────
                       const SizedBox(height: 12),
-                      _buildDetailSection(
-                        title:
-                            'Productos (${order.items.where((i) => i.subtotal > 0).length})',
-                        icon: Icons.shopping_bag_outlined,
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                        child: Column(
-                          children:
-                              order.items
-                                  .where((item) => item.subtotal > 0)
-                                  .map(
-                                    (item) => Container(
+                      Builder(
+                        builder: (context) {
+                          final visibleItems =
+                              order.items.where((i) => i.cantidad > 0).toList();
+                          return _buildDetailSection(
+                            title: 'Productos (${visibleItems.length})',
+                            icon: Icons.shopping_bag_outlined,
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                            child: Column(
+                              children: visibleItems.map(
+                                (item) => Container(
                                       margin: const EdgeInsets.only(bottom: 8),
                                       padding: const EdgeInsets.all(14),
                                       decoration: BoxDecoration(
@@ -1989,10 +1994,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                           ],
                                         ],
                                       ),
-                                    ),
-                                  )
-                                  .toList(),
-                        ),
+                                ),
+                              ).toList(),
+                            ),
+                          );
+                        },
                       ),
 
                       // ── Productos por defecto no incluidos (solo órdenes activas) ─
@@ -2156,7 +2162,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
                       // ── Acciones ──────────────────────────────────────────
                       const SizedBox(height: 12),
-                      _buildActionButtons(order, detailContext: context, onDiscountApplied: refreshOrderData),
+                      _buildActionButtons(
+                        order,
+                        detailContext: context,
+                        onDiscountApplied: refreshOrderData,
+                        onOrderEdited: reloadOrderAfterEdit,
+                      ),
                       const SizedBox(height: 24),
                     ],
                   ),
@@ -2548,7 +2559,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  Widget _buildActionButtons(Order order, {BuildContext? detailContext, VoidCallback? onDiscountApplied}) {
+  Widget _buildActionButtons(
+    Order order, {
+    BuildContext? detailContext,
+    VoidCallback? onDiscountApplied,
+    Future<void> Function()? onOrderEdited,
+  }) {
     return Column(
       children: [
         const Divider(),
@@ -2636,8 +2652,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () {
-                  Navigator.pop(detailContext ?? context); // Cerrar pantalla de detalles
-                  _showEditPendingOrderSheet(order);
+                  _showEditPendingOrderSheet(
+                    order,
+                    sheetContext: detailContext,
+                    onOrderUpdated: onOrderEdited,
+                  );
                 },
                 icon: const Icon(Icons.edit_note),
                 label: const Text('Editar productos de la orden'),
@@ -4387,7 +4406,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         final double finalTotal = (discountData['finalTotal'] as num?)?.toDouble() ?? order.total;
         final double saved = (discountData['saved'] as num?)?.toDouble() ?? 0.0;
         final String discountLabel = discountData['label'] as String? ?? '';
-        final items = order.items.where((item) => item.subtotal > 0).toList();
+        final items = order.items.where((item) => item.cantidad > 0).toList();
         final ingredientsByProduct = await _loadIngredientsForProducts(
           items.map((i) => i.producto.id).toSet(),
         );
@@ -4501,7 +4520,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           (discountData['finalTotal'] as num?)?.toDouble() ?? order.total;
       final double saved = (discountData['saved'] as num?)?.toDouble() ?? 0.0;
       final String discountLabel = discountData['label'] as String? ?? '';
-      final items = order.items.where((item) => item.subtotal > 0).toList();
+      final items = order.items.where((item) => item.cantidad > 0).toList();
       final ingredientsByProduct = await _loadIngredientsForProducts(
         items.map((i) => i.producto.id).toSet(),
       );
@@ -5261,9 +5280,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
   // EDICIÓN DE ÓRDENES PENDIENTES
   // ============================================================
 
-  void _showEditPendingOrderSheet(Order order) {
+  void _showEditPendingOrderSheet(
+    Order order, {
+    BuildContext? sheetContext,
+    Future<void> Function()? onOrderUpdated,
+  }) {
     showModalBottomSheet(
-      context: context,
+      context: sheetContext ?? context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder:
@@ -5271,7 +5294,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             order: order,
             orderService: _orderService,
             userPreferencesService: _userPreferencesService,
-            onOrderUpdated: _loadOrdersFromSupabase,
+            onOrderUpdated: onOrderUpdated ?? _loadOrdersFromSupabase,
             isOfflineMode: _isOfflineMode,
             showSkuEnabled: _isShowSkuEnabled,
             usdRate: _usdRate,
@@ -5439,7 +5462,7 @@ class _EditPendingOrderSheet extends StatefulWidget {
   final Order order;
   final OrderService orderService;
   final UserPreferencesService userPreferencesService;
-  final VoidCallback onOrderUpdated;
+  final Future<void> Function() onOrderUpdated;
   final bool isOfflineMode;
   final List<Order> pendingOrders;
   final bool showSkuEnabled;
@@ -5888,7 +5911,8 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
     }
 
     setState(() => _isSaving = false);
-    widget.onOrderUpdated();
+    await widget.onOrderUpdated();
+    if (!mounted) return;
     Navigator.pop(context);
   }
 
