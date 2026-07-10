@@ -75,6 +75,23 @@ class AgendaAdminService {
         .eq('id', idAgenda);
   }
 
+  /// Marca una agenda como Completado (id 3) o Cancelado (id 2) desde el
+  /// listado de reservas (admin o vendedor). La RPC valida permisos, libera
+  /// capacidad al cancelar y sella la atención al completar.
+  static Future<Agenda> marcarEstadoAgenda({
+    required int idAgenda,
+    required int idEstado,
+  }) async {
+    final res = await _supabase.schema(_schema).rpc(
+      'staff_marcar_estado_agenda',
+      params: {
+        'p_id_agenda': idAgenda,
+        'p_id_estado': idEstado,
+      },
+    );
+    return Agenda.fromJson(res as Map<String, dynamic>);
+  }
+
   static Future<List<Agenda>> listarAgendasVendedor({
     required String uuidUsuario,
     int? idEntidad,

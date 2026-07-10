@@ -9,6 +9,8 @@ CREATE TABLE flow.app_dat_servicios (
   created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   id_entidad integer,
+  campos_adicionales jsonb NOT NULL DEFAULT '[]'::jsonb,
+  permite_tercero boolean NOT NULL DEFAULT false,
   CONSTRAINT app_dat_servicios_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_servicios_id_entidad_fkey FOREIGN KEY (id_entidad) REFERENCES flow.entidad(id)
 );
@@ -68,6 +70,9 @@ CREATE TABLE flow.agenda (
   fecha_hora_atencion timestamp without time zone,
   created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  cantidad integer NOT NULL DEFAULT 1,
+  datos_adicionales jsonb,
+  reservado_por uuid,
   CONSTRAINT agenda_pkey PRIMARY KEY (id),
   CONSTRAINT agenda_uuid_usuario_fkey FOREIGN KEY (uuid_usuario) REFERENCES flow.perfil(uuid_usuario),
   CONSTRAINT agenda_id_local_servicio_fkey FOREIGN KEY (id_local_servicio) REFERENCES flow.local_servicio(id),
@@ -80,6 +85,8 @@ CREATE TABLE flow.sala_espera (
   fecha_regla timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   numero_cola integer NOT NULL,
   created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  datos_adicionales jsonb,
+  reservado_por uuid,
   CONSTRAINT sala_espera_pkey PRIMARY KEY (id),
   CONSTRAINT sala_espera_uuid_usuario_fkey FOREIGN KEY (uuid_usuario) REFERENCES flow.perfil(uuid_usuario),
   CONSTRAINT sala_espera_id_local_servicio_fkey FOREIGN KEY (id_local_servicio) REFERENCES flow.local_servicio(id)
@@ -162,4 +169,25 @@ CREATE TABLE flow.notificaciones (
   CONSTRAINT notificaciones_pkey PRIMARY KEY (id),
   CONSTRAINT notificaciones_uuid_usuario_fkey FOREIGN KEY (uuid_usuario) REFERENCES flow.perfil(uuid_usuario),
   CONSTRAINT notificaciones_id_local_servicio_fkey FOREIGN KEY (id_local_servicio) REFERENCES flow.local_servicio(id)
+);
+CREATE TABLE flow.plan_config (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_local_servicio integer NOT NULL UNIQUE,
+  config jsonb NOT NULL,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT plan_config_pkey PRIMARY KEY (id),
+  CONSTRAINT plan_config_id_local_servicio_fkey FOREIGN KEY (id_local_servicio) REFERENCES flow.local_servicio(id)
+);
+CREATE TABLE flow.entidad_vendedor (
+  id integer NOT NULL DEFAULT nextval('flow.entidad_vendedor_id_seq'::regclass),
+  id_entidad integer NOT NULL,
+  uuid_usuario uuid NOT NULL,
+  asignado_por uuid NOT NULL,
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT entidad_vendedor_pkey PRIMARY KEY (id),
+  CONSTRAINT entidad_vendedor_id_entidad_fkey FOREIGN KEY (id_entidad) REFERENCES flow.entidad(id),
+  CONSTRAINT entidad_vendedor_uuid_usuario_fkey FOREIGN KEY (uuid_usuario) REFERENCES auth.users(id),
+  CONSTRAINT entidad_vendedor_asignado_por_fkey FOREIGN KEY (asignado_por) REFERENCES auth.users(id)
 );

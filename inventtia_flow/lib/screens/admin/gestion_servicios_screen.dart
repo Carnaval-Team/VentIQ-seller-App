@@ -228,7 +228,9 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
   /// Construye la lista de campos en formato jsonb, autogenerando claves únicas.
   /// Devuelve null si hay un campo inválido (sin etiqueta, o select sin opciones).
   List<Map<String, dynamic>>? _camposToJson() {
-    final out = <Map<String, dynamic>>[];
+    // Pasada 1: calcular la clave única (slug) de cada campo, para poder
+    // resolver las referencias de las reglas condicionales (si_clave).
+    final claves = <_CampoEditable, String>{};
     final usadas = <String>{};
     for (final c in _campos) {
       final etiqueta = c.etiquetaCtrl.text.trim();
@@ -236,6 +238,32 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
         _campoError = 'Cada dato adicional necesita una etiqueta';
         return null;
       }
+      var clave = CampoAdicional.slug(etiqueta);
+      final base = clave;
+      var n = 2;
+      while (usadas.contains(clave)) {
+        clave = '${base}_$n';
+        n++;
+      }
+      usadas.add(clave);
+      claves[c] = clave;
+    }
+
+    // Resuelve el slug base seleccionado en una regla a la clave final del campo.
+    String? resolverSiClave(String? siBase) {
+      if (siBase == null || siBase.isEmpty) return null;
+      for (final c in _campos) {
+        if (CampoAdicional.slug(c.etiquetaCtrl.text.trim()) == siBase) {
+          return claves[c];
+        }
+      }
+      return siBase;
+    }
+
+    // Pasada 2: construir el jsonb de cada campo.
+    final out = <Map<String, dynamic>>[];
+    for (final c in _campos) {
+      final etiqueta = c.etiquetaCtrl.text.trim();
       final opciones = c.tipo == TipoCampo.select
           ? c.opcionesCtrl.text
               .split(',')
@@ -247,23 +275,43 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
         _campoError = '"$etiqueta": un seleccionable necesita opciones';
         return null;
       }
-      // Clave única (slug de la etiqueta, con sufijo si colisiona).
-      var clave = CampoAdicional.slug(etiqueta);
-      var base = clave;
-      var n = 2;
-      while (usadas.contains(clave)) {
-        clave = '${base}_$n';
-        n++;
+
+      // Valor por defecto fijo según el tipo.
+      Object? defaultVal;
+      if (c.tipo == TipoCampo.booleano) {
+        if (c.defaultBool) defaultVal = true; // false == ausencia
+      } else {
+        final dt = c.defaultCtrl.text.trim();
+        if (dt.isNotEmpty) {
+          defaultVal = c.tipo == TipoCampo.numero ? (int.tryParse(dt) ?? dt) : dt;
+        }
       }
-      usadas.add(clave);
+
+      // Reglas de default condicional (se ignoran las incompletas).
+      final reglasJson = <Map<String, dynamic>>[];
+      for (final r in c.reglas) {
+        final si = resolverSiClave(r.siClave);
+        final ig = r.igualCtrl.text.trim();
+        final va = r.valorCtrl.text.trim();
+        if (si == null || si.isEmpty || ig.isEmpty || va.isEmpty) continue;
+        reglasJson.add({
+          'si_clave': si,
+          'igual': ig,
+          'valor': c.tipo == TipoCampo.numero ? (int.tryParse(va) ?? va) : va,
+        });
+      }
+
       out.add({
-        'clave': clave,
+        'clave': claves[c],
         'etiqueta': etiqueta,
         'tipo': c.tipo.valor,
         'requerido': c.requerido,
         'opciones': opciones,
         if (c.min != null) 'min': c.min,
         if (c.max != null) 'max': c.max,
+        if (defaultVal != null) 'default': defaultVal,
+        if (c.contabilizar) 'contabilizar': true,
+        if (reglasJson.isNotEmpty) 'reglas': reglasJson,
       });
     }
     _campoError = null;
@@ -528,6 +576,7 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
               _CampoEditableTile(
                 key: ValueKey(_campos[i]),
                 campo: _campos[i],
+                todosCampos: _campos,
                 onChanged: () => setState(() {}),
                 onRemove: () => _quitarCampo(i),
               ),
@@ -563,6 +612,22 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
   }
 }
 
+/// Estado mutable de una regla de default condicional mientras se edita.
+class _ReglaEditable {
+  String? siClave; // slug base del campo del que depende (etiqueta -> slug)
+  final TextEditingController igualCtrl;
+  final TextEditingController valorCtrl;
+
+  _ReglaEditable({this.siClave, String igual = '', String valor = ''})
+      : igualCtrl = TextEditingController(text: igual),
+        valorCtrl = TextEditingController(text: valor);
+
+  void dispose() {
+    igualCtrl.dispose();
+    valorCtrl.dispose();
+  }
+}
+
 /// Estado mutable de un campo adicional mientras se edita en el formulario.
 class _CampoEditable {
   final TextEditingController etiquetaCtrl;
@@ -574,6 +639,12 @@ class _CampoEditable {
   final TextEditingController minCtrl;
   final TextEditingController maxCtrl;
 
+  // Datos adicionales nuevos: default, contabilizar, reglas.
+  final TextEditingController defaultCtrl; // default para texto/numero/select
+  bool defaultBool; // default para booleano
+  bool contabilizar;
+  final List<_ReglaEditable> reglas;
+
   _CampoEditable({
     required String etiqueta,
     required this.tipo,
@@ -581,10 +652,16 @@ class _CampoEditable {
     required List<String> opciones,
     this.min,
     this.max,
+    String defaultTexto = '',
+    this.defaultBool = false,
+    this.contabilizar = false,
+    List<_ReglaEditable>? reglas,
   })  : etiquetaCtrl = TextEditingController(text: etiqueta),
         opcionesCtrl = TextEditingController(text: opciones.join(', ')),
         minCtrl = TextEditingController(text: min?.toString() ?? ''),
-        maxCtrl = TextEditingController(text: max?.toString() ?? '');
+        maxCtrl = TextEditingController(text: max?.toString() ?? ''),
+        defaultCtrl = TextEditingController(text: defaultTexto),
+        reglas = reglas ?? [];
 
   factory _CampoEditable.nuevo() => _CampoEditable(
         etiqueta: '',
@@ -600,6 +677,18 @@ class _CampoEditable {
         opciones: c.opciones,
         min: c.min,
         max: c.max,
+        defaultTexto:
+            c.tipo == TipoCampo.booleano ? '' : (c.valorDefault?.toString() ?? ''),
+        defaultBool: c.tipo == TipoCampo.booleano &&
+            DatosAdicionalesBoolParse.asBool(c.valorDefault),
+        contabilizar: c.contabilizar,
+        reglas: c.reglas
+            .map((r) => _ReglaEditable(
+                  siClave: r.siClave,
+                  igual: r.igual,
+                  valor: r.valor.toString(),
+                ))
+            .toList(),
       );
 
   void dispose() {
@@ -607,21 +696,210 @@ class _CampoEditable {
     opcionesCtrl.dispose();
     minCtrl.dispose();
     maxCtrl.dispose();
+    defaultCtrl.dispose();
+    for (final r in reglas) {
+      r.dispose();
+    }
   }
 }
 
-/// Tarjeta editable para un campo adicional (etiqueta, tipo, requerido, opciones, min/max).
+/// Pequeño helper para interpretar un default booleano guardado como bool o texto.
+class DatosAdicionalesBoolParse {
+  static bool asBool(Object? v) {
+    if (v is bool) return v;
+    final s = v?.toString().toLowerCase().trim();
+    return s == 'true' || s == 'sí' || s == 'si' || s == '1';
+  }
+}
+
+/// Tarjeta editable para un campo adicional (etiqueta, tipo, requerido, opciones,
+/// min/max, valor por defecto, contabilizar y reglas de default condicional).
 class _CampoEditableTile extends StatelessWidget {
   final _CampoEditable campo;
+  final List<_CampoEditable> todosCampos;
   final VoidCallback onChanged;
   final VoidCallback onRemove;
 
   const _CampoEditableTile({
     super.key,
     required this.campo,
+    required this.todosCampos,
     required this.onChanged,
     required this.onRemove,
   });
+
+  /// Opciones del dropdown "depende de": los demás campos con etiqueta no vacía.
+  List<DropdownMenuItem<String>> _otrosCamposItems() {
+    final items = <DropdownMenuItem<String>>[];
+    for (final c in todosCampos) {
+      if (identical(c, campo)) continue;
+      final etq = c.etiquetaCtrl.text.trim();
+      if (etq.isEmpty) continue;
+      items.add(DropdownMenuItem(
+        value: CampoAdicional.slug(etq),
+        child: Text(etq, overflow: TextOverflow.ellipsis),
+      ));
+    }
+    return items;
+  }
+
+  Widget _buildDefault() {
+    if (campo.tipo == TipoCampo.booleano) {
+      return Row(
+        children: [
+          const Text('Valor por defecto', style: TextStyle(fontSize: 13)),
+          const Spacer(),
+          Switch(
+            value: campo.defaultBool,
+            onChanged: (v) {
+              campo.defaultBool = v;
+              onChanged();
+            },
+          ),
+        ],
+      );
+    }
+    if (campo.tipo == TipoCampo.select) {
+      final opciones = campo.opcionesCtrl.text
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      final current = campo.defaultCtrl.text.trim();
+      return DropdownButtonFormField<String>(
+        value: opciones.contains(current) ? current : null,
+        isDense: true,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          labelText: 'Valor por defecto',
+          isDense: true,
+          border: OutlineInputBorder(),
+        ),
+        items: [
+          const DropdownMenuItem(value: '', child: Text('— Ninguno —')),
+          ...opciones
+              .map((o) => DropdownMenuItem(value: o, child: Text(o))),
+        ],
+        onChanged: (v) {
+          campo.defaultCtrl.text = v ?? '';
+          onChanged();
+        },
+      );
+    }
+    return TextField(
+      controller: campo.defaultCtrl,
+      keyboardType:
+          campo.tipo == TipoCampo.numero ? TextInputType.number : TextInputType.text,
+      decoration: const InputDecoration(
+        labelText: 'Valor por defecto',
+        isDense: true,
+        border: OutlineInputBorder(),
+      ),
+      onChanged: (_) => onChanged(),
+    );
+  }
+
+  Widget _buildReglas() {
+    final otros = _otrosCamposItems();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text('Default según otro campo',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+            ),
+            TextButton.icon(
+              onPressed: otros.isEmpty
+                  ? null
+                  : () {
+                      campo.reglas.add(_ReglaEditable());
+                      onChanged();
+                    },
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Regla'),
+            ),
+          ],
+        ),
+        if (otros.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 4),
+            child: Text('Agrega otros campos para poder condicionar.',
+                style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+          ),
+        for (var i = 0; i < campo.reglas.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Text('Si ', style: TextStyle(fontSize: 12)),
+                Expanded(
+                  flex: 3,
+                  child: DropdownButtonFormField<String>(
+                    value: otros.any((o) => o.value == campo.reglas[i].siClave)
+                        ? campo.reglas[i].siClave
+                        : null,
+                    isDense: true,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    ),
+                    hint: const Text('campo', style: TextStyle(fontSize: 12)),
+                    items: otros,
+                    onChanged: (v) {
+                      campo.reglas[i].siClave = v;
+                      onChanged();
+                    },
+                  ),
+                ),
+                const Text(' = ', style: TextStyle(fontSize: 12)),
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    controller: campo.reglas[i].igualCtrl,
+                    decoration: const InputDecoration(
+                      hintText: 'valor',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    ),
+                  ),
+                ),
+                const Text(' → ', style: TextStyle(fontSize: 12)),
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    controller: campo.reglas[i].valorCtrl,
+                    decoration: const InputDecoration(
+                      hintText: 'default',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 16, color: AppTheme.error),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    campo.reglas[i].dispose();
+                    campo.reglas.removeAt(i);
+                    onChanged();
+                  },
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -646,6 +924,7 @@ class _CampoEditableTile extends StatelessWidget {
                     isDense: true,
                     border: OutlineInputBorder(),
                   ),
+                  onChanged: (_) => onChanged(),
                 ),
               ),
               IconButton(
@@ -707,9 +986,10 @@ class _CampoEditableTile extends StatelessWidget {
                 isDense: true,
                 border: OutlineInputBorder(),
               ),
+              onChanged: (_) => onChanged(),
             ),
           ],
-          if (campo.tipo != TipoCampo.select) ...[
+          if (campo.tipo == TipoCampo.numero || campo.tipo == TipoCampo.texto) ...[
             const SizedBox(height: 8),
             Row(
               children: [
@@ -745,6 +1025,26 @@ class _CampoEditableTile extends StatelessWidget {
               ],
             ),
           ],
+          const SizedBox(height: 8),
+          _buildDefault(),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Checkbox(
+                value: campo.contabilizar,
+                onChanged: (v) {
+                  campo.contabilizar = v ?? false;
+                  onChanged();
+                },
+              ),
+              const Flexible(
+                child: Text('Totalizar en reportes',
+                    style: TextStyle(fontSize: 13)),
+              ),
+            ],
+          ),
+          const Divider(height: 12),
+          _buildReglas(),
         ],
       ),
     );

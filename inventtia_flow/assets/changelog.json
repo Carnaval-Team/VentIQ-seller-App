@@ -1,8 +1,45 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.3.3",
-  "build": 7,
+  "current_version": "1.4.0",
+  "build": 8,
   "changelogs": [
+    {
+      "version": "1.4.0",
+      "date": "2026-07-10",
+      "title": "🚀 Datos inteligentes y control total de reservas",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Completa o cancela reservas en un toque",
+          "description": "Desde el listado de reservas, tanto administradores como trabajadores pueden marcar una reserva como completada o cancelarla al instante. Al cancelar, el cliente recibe su notificación automáticamente."
+        },
+        {
+          "type": "feature",
+          "title": "Totales automáticos de tus reservas",
+          "description": "Elige qué datos quieres contabilizar (por ejemplo asientos, paradas o tipo de viaje) y la app te muestra los totales sumados según tus filtros, con un desglose por día. Solo se cuentan las reservas completadas, para que tus números reflejen lo realmente atendido."
+        },
+        {
+          "type": "feature",
+          "title": "Datos que se completan solos",
+          "description": "Ahora los campos que pides al reservar pueden traer un valor por defecto, e incluso cambiarlo de forma inteligente según lo que elija el cliente. Menos escritura, menos errores y reservas más rápidas."
+        },
+        {
+          "type": "feature",
+          "title": "Campos de Sí / No",
+          "description": "Suma a tus servicios preguntas de tipo Sí o No (como '¿Lleva equipaje?') con un cómodo interruptor."
+        },
+        {
+          "type": "improvement",
+          "title": "Vista de reservas más clara de un vistazo",
+          "description": "Las reservas completadas se destacan con un borde azul y las canceladas aparecen atenuadas, para que sepas el estado de cada una sin leer letra por letra."
+        },
+        {
+          "type": "improvement",
+          "title": "El administrador ve todo el mes por defecto",
+          "description": "El listado de reservas del administrador ahora muestra el mes en curso completo y te deja filtrar por la fecha o el estado que prefieras cuando lo necesites."
+        }
+      ]
+    },
     {
       "version": "1.3.3",
       "date": "2026-07-07",

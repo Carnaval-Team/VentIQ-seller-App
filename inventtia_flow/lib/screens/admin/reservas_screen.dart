@@ -20,8 +20,8 @@ import '../../services/agenda_admin_service.dart';
 import '../../services/agenda_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
-import '../../services/notificacion_service.dart';
 import '../../widgets/datos_adicionales_form.dart';
+import '../../widgets/totales_datos_adicionales.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ReservasScreen extends StatefulWidget {
@@ -53,10 +53,10 @@ class _ReservasScreenState extends State<ReservasScreen> {
   @override
   void initState() {
     super.initState();
-    // Por defecto: hoy
+    // Por defecto: el mes actual completo.
     final now = DateTime.now();
-    _desde = DateTime(now.year, now.month, now.day);
-    _hasta = DateTime(now.year, now.month, now.day, 23, 59, 59);
+    _desde = DateTime(now.year, now.month, 1);
+    _hasta = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
     _loadFiltros();
   }
 
@@ -68,10 +68,8 @@ class _ReservasScreenState extends State<ReservasScreen> {
       setState(() {
         _locales = locales;
         _estados = estados;
-        final reservado = estados
-            .where((e) => e.nombre.toLowerCase() == 'reservado')
-            .firstOrNull;
-        _estadoFiltro = reservado ?? estados.firstOrNull;
+        // Por defecto: Todos los estados (ver todo el mes).
+        _estadoFiltro = null;
       });
     }
     await _load();
@@ -141,33 +139,50 @@ class _ReservasScreenState extends State<ReservasScreen> {
     );
 
     if (confirm != true || !mounted) return;
+    // Estado 2 = Cancelado. La RPC notifica al cliente y libera la capacidad.
+    await _cambiarEstado(reserva, 2, 'Reserva cancelada y cliente notificado');
+  }
 
+  Future<void> _completarReserva(Agenda reserva) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Completar reserva'),
+        content: Text(
+          '¿Marcar como completada la reserva de '
+          '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
+          'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.primary),
+            child: const Text('Sí, completar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+    // Estado 3 = Completado.
+    await _cambiarEstado(reserva, 3, 'Reserva marcada como completada');
+  }
+
+  /// Cambia el estado de una reserva vía RPC y refresca. [idEstado] 2=Cancelado, 3=Completado.
+  Future<void> _cambiarEstado(Agenda reserva, int idEstado, String okMsg) async {
     setState(() => _loading = true);
     try {
-      await AgendaService.cancelarTicket(reserva.id);
-
-      // Notificar al cliente si tiene uuid_usuario
-      final uuidCliente = reserva.uuidUsuario;
-      if (uuidCliente != null && uuidCliente.isNotEmpty) {
-        await NotificacionService.crearNotificacion(
-          uuidUsuario: uuidCliente,
-          tipo: 'reserva',
-          titulo: 'Reserva cancelada',
-          mensaje:
-              'Tu reserva para ${reserva.localServicio?.servicio?.nombre ?? 'el servicio'} '
-              'el ${DateFormat('dd/MM/yyyy HH:mm').format(reserva.fechaHoraReserva)} '
-              'ha sido cancelada por la administración.',
-          idLocalServicio: reserva.idLocalServicio,
-          idReferencia: reserva.id,
-        );
-      }
-
+      await AgendaAdminService.marcarEstadoAgenda(
+        idAgenda: reserva.id,
+        idEstado: idEstado,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Reserva cancelada y cliente notificado'),
-            backgroundColor: AppTheme.success,
-          ),
+          SnackBar(content: Text(okMsg), backgroundColor: AppTheme.success),
         );
         _load();
       }
@@ -175,7 +190,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al cancelar: $e'),
+            content: Text('Error: ${e.toString().replaceFirst('Exception: ', '')}'),
             backgroundColor: AppTheme.error,
           ),
         );
@@ -249,11 +264,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
       _localFiltro = null;
       _lsFiltro = null;
       _localServicios = [];
-      _desde = DateTime(now.year, now.month, now.day);
-      _hasta = DateTime(now.year, now.month, now.day, 23, 59, 59);
-      _estadoFiltro = _estados
-          .where((e) => e.nombre.toLowerCase() == 'reservado')
-          .firstOrNull;
+      _desde = DateTime(now.year, now.month, 1);
+      _hasta = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+      _estadoFiltro = null;
     });
     _load();
   }
@@ -668,9 +681,12 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
-                  items: _estados.map((e) => DropdownMenuItem(
-                      value: e,
-                      child: Text(e.nombre, overflow: TextOverflow.ellipsis))).toList(),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('Todos')),
+                    ..._estados.map((e) => DropdownMenuItem(
+                        value: e,
+                        child: Text(e.nombre, overflow: TextOverflow.ellipsis))),
+                  ],
                   onChanged: (v) {
                     setState(() => _estadoFiltro = v);
                     _load();
@@ -755,6 +771,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        TotalesPanel(reservas: _reservas),
         for (final entry in grupos.entries) ...[
           if (grupos.length > 1)
             Padding(
@@ -781,15 +798,23 @@ class _ReservasScreenState extends State<ReservasScreen> {
     final esTercero = r.reservadoPor != null &&
         r.uuidUsuario != null &&
         r.reservadoPor != r.uuidUsuario;
-    final puedeCancelar = r.estado?.esCancelado != true;
+    final esCancelada = r.estado?.esCancelado == true;
+    final esCompletada = r.estado?.esCompletado == true;
+    final esActiva = !esCancelada && !esCompletada; // 'Reservado'
     final telefono = _datoCliente(r, 'telefono');
 
-    return Card(
+    final card = Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: Colors.grey.shade200),
+        // Completada: borde azul sutil. Resto: borde gris tenue.
+        side: BorderSide(
+          color: esCompletada
+              ? AppTheme.primary.withValues(alpha: 0.55)
+              : Colors.grey.shade200,
+          width: esCompletada ? 1.2 : 1,
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -860,7 +885,17 @@ class _ReservasScreenState extends State<ReservasScreen> {
                   ),
                   onPressed: () => _editarReserva(r),
                 ),
-                if (puedeCancelar)
+                if (esActiva) ...[
+                  TextButton.icon(
+                    icon: const Icon(Icons.check_circle_outline, size: 16),
+                    label: const Text('Completar'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () => _completarReserva(r),
+                  ),
                   TextButton.icon(
                     icon: const Icon(Icons.cancel_outlined, size: 16),
                     label: const Text('Cancelar'),
@@ -870,15 +905,18 @@ class _ReservasScreenState extends State<ReservasScreen> {
                       textStyle: const TextStyle(fontSize: 12),
                     ),
                     onPressed: () => _cancelarReserva(r),
-                  )
-                else
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 10),
-                    child: Text('Cancelada',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: AppTheme.error,
-                            fontStyle: FontStyle.italic)),
+                  ),
+                ] else
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Text(
+                      esCompletada ? 'Completada' : 'Cancelada',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: esCompletada ? AppTheme.primary : AppTheme.error,
+                          fontWeight: FontWeight.w600,
+                          fontStyle: FontStyle.italic),
+                    ),
                   ),
               ],
             ),
@@ -886,6 +924,13 @@ class _ReservasScreenState extends State<ReservasScreen> {
         ),
       ),
     );
+
+    // Cancelada: se muestra atenuada (como deshabilitada) pero aún permite
+    // interacción de solo lectura (editar sigue disponible desde el estado).
+    if (esCancelada) {
+      return Opacity(opacity: 0.55, child: card);
+    }
+    return card;
   }
 
   Widget _infoRow(String label, String value) => Padding(
