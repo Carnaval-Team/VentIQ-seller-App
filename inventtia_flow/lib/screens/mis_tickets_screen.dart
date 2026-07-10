@@ -166,6 +166,74 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     }
   }
 
+  // ── Acciones de staff (solo vendedor): completar / cancelar una reserva ──
+  Future<void> _completarStaff(Agenda ticket) => _cambiarEstadoStaff(
+        ticket,
+        3,
+        titulo: 'Completar reserva',
+        mensaje: '¿Marcar esta reserva como completada?',
+        confirmar: 'Completar',
+        okMsg: 'Reserva completada',
+        colorConfirmar: AppTheme.success,
+      );
+
+  Future<void> _cancelarStaff(Agenda ticket) => _cambiarEstadoStaff(
+        ticket,
+        2,
+        titulo: 'Cancelar reserva',
+        mensaje:
+            '¿Cancelar esta reserva? Se liberará el turno y se notificará al cliente.',
+        confirmar: 'Cancelar reserva',
+        okMsg: 'Reserva cancelada',
+        colorConfirmar: AppTheme.error,
+      );
+
+  Future<void> _cambiarEstadoStaff(
+    Agenda ticket,
+    int idEstado, {
+    required String titulo,
+    required String mensaje,
+    required String confirmar,
+    required String okMsg,
+    required Color colorConfirmar,
+  }) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(titulo),
+        content: Text(mensaje),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('No')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: colorConfirmar),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(confirmar),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await AgendaAdminService.marcarEstadoAgenda(
+        idAgenda: ticket.id,
+        idEstado: idEstado,
+      );
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(okMsg), backgroundColor: AppTheme.success),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString()), backgroundColor: AppTheme.error),
+      );
+    }
+  }
+
   void _irDia(int delta) {
     if (_isLoading) return;
     setState(() {
@@ -207,14 +275,8 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
 
   void _resetFiltros() {
     if (_isLoading) return;
-    final reservado = _estados.firstWhere(
-      (e) => e.nombre.toLowerCase() == 'reservado',
-      orElse: () => _estados.isNotEmpty
-          ? _estados.first
-          : EstadoAgenda(id: 1, nombre: 'reservado'),
-    );
     setState(() {
-      _idEstadoFiltro = reservado.id;
+      _idEstadoFiltro = null; // Todos: muestra reservadas, completadas y canceladas.
       _localFiltro = null;
       _lsFiltro = null;
       _localServicios = [];
@@ -246,16 +308,11 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     ]);
     if (!mounted) return;
     final estados = results[1] as List<EstadoAgenda>;
-    final reservado = estados.firstWhere(
-      (e) => e.nombre.toLowerCase() == 'reservado',
-      orElse: () => estados.isNotEmpty
-          ? estados.first
-          : EstadoAgenda(id: 1, nombre: 'reservado'),
-    );
     setState(() {
       _locales = results[0] as List<Local>;
       _estados = estados;
-      if (_idEstadoFiltro == null) _idEstadoFiltro = reservado.id;
+      // Por defecto "Todos": así las canceladas quedan atenuadas y las
+      // completadas con borde azul, en vez de desaparecer del listado.
     });
   }
 
@@ -360,6 +417,11 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                                         ?.id ??
                                     '',
                                 onCancelar: null,
+                                esVendedor: _esVendedor,
+                                onCompletarStaff:
+                                    _esVendedor ? _completarStaff : null,
+                                onCancelarStaff:
+                                    _esVendedor ? _cancelarStaff : null,
                               ),
                             ),
                           ),
@@ -809,12 +871,24 @@ class _TicketCard extends StatelessWidget {
   final Agenda ticket;
   final String miUuid;
   final ValueChanged<Agenda>? onCancelar;
+  final bool esVendedor;
+  final ValueChanged<Agenda>? onCompletarStaff;
+  final ValueChanged<Agenda>? onCancelarStaff;
 
   const _TicketCard({
     required this.ticket,
     required this.miUuid,
     this.onCancelar,
+    this.esVendedor = false,
+    this.onCompletarStaff,
+    this.onCancelarStaff,
   });
+
+  bool get _esCompletada =>
+      ticket.estado?.esCompletado == true || ticket.idEstado == 3;
+  bool get _esCancelada =>
+      ticket.estado?.nombre == 'cancelado' || ticket.idEstado == 2;
+  bool get _esActiva => !_esCompletada && !_esCancelada;
 
   Color get _estadoColor {
     switch (ticket.estado?.nombre) {
@@ -859,11 +933,15 @@ class _TicketCard extends StatelessWidget {
     final color = _estadoColor;
     final esTercero = ticket.esParaTercero(miUuid);
 
-    return Container(
+    final card = Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
+        border: _esCompletada
+            ? Border.all(
+                color: AppTheme.primary.withValues(alpha: 0.35), width: 1.5)
+            : null,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.06),
@@ -1069,6 +1147,51 @@ class _TicketCard extends StatelessWidget {
                         ),
                       ),
                     ],
+                    // Acciones de staff (solo vendedor) sobre reservas activas.
+                    if (esVendedor && _esActiva) ...[
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: onCompletarStaff == null
+                                  ? null
+                                  : () => onCompletarStaff!(ticket),
+                              icon: const Icon(Icons.check_circle_outline,
+                                  size: 18),
+                              label: const Text('Completar'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.success,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: onCancelarStaff == null
+                                  ? null
+                                  : () => onCancelarStaff!(ticket),
+                              icon: const Icon(Icons.cancel_outlined, size: 18),
+                              label: const Text('Cancelar'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppTheme.error,
+                                side: const BorderSide(color: AppTheme.error),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1077,6 +1200,9 @@ class _TicketCard extends StatelessWidget {
         ),
       ),
     );
+
+    // Reservas canceladas se muestran atenuadas.
+    return _esCancelada ? Opacity(opacity: 0.55, child: card) : card;
   }
 }
 
