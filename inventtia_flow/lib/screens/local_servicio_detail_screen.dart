@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../config/app_theme.dart';
 import '../models/campo_adicional.dart';
+import '../models/config_precio.dart';
 import '../models/servicio.dart';
 import '../models/sala_espera.dart';
 import '../models/disponibilidad_dia.dart';
@@ -13,6 +14,7 @@ import '../services/auth_service.dart';
 import '../services/lista_service.dart';
 import '../services/agenda_service.dart';
 import '../services/catalogo_service.dart';
+import '../utils/precio_reserva.dart';
 import '../widgets/datos_adicionales_form.dart';
 import '../widgets/net_image.dart';
 
@@ -244,7 +246,7 @@ class _LocalServicioDetailScreenState
     );
     if (sel == null || !mounted) return;
 
-    final datos = await _recolectarDatosReserva();
+    final datos = await _recolectarDatosReserva(cantidad: sel.cantidad);
     if (datos == null || !mounted) return;
 
     await _confirmarReservaDirecta(uuid, sel.fecha, sel.cantidad, datos);
@@ -266,6 +268,7 @@ class _LocalServicioDetailScreenState
         terceroApellidos: datos.tApellidos,
         terceroCi: datos.tCi,
         terceroTelefono: datos.tTelefono,
+        moneda: datos.moneda,
       );
       await _load();
       if (mounted) {
@@ -298,12 +301,13 @@ class _LocalServicioDetailScreenState
   /// tercero), y si tiene campos adicionales los recolecta. Devuelve null si
   /// el usuario cancela. Si el servicio no requiere nada, devuelve datos vacíos
   /// sin mostrar diálogo.
-  Future<_DatosReserva?> _recolectarDatosReserva() async {
+  Future<_DatosReserva?> _recolectarDatosReserva({int cantidad = 1}) async {
     final servicio = _localServicio.servicio;
     final campos = servicio?.camposAdicionales ?? const <CampoAdicional>[];
     final permiteTercero = servicio?.permiteTercero ?? false;
+    final configPrecio = servicio?.configPrecio ?? ConfigPrecio();
 
-    if (!permiteTercero && campos.isEmpty) {
+    if (!permiteTercero && campos.isEmpty && !configPrecio.tienePrecio) {
       return const _DatosReserva(paraTercero: false, datosAdicionales: {});
     }
 
@@ -316,6 +320,8 @@ class _LocalServicioDetailScreenState
       builder: (_) => _DatosReservaSheet(
         campos: campos,
         permiteTercero: permiteTercero,
+        configPrecio: configPrecio,
+        cantidad: cantidad,
       ),
     );
   }
@@ -1218,6 +1224,7 @@ class _DatosReserva {
   final String? tCi;
   final String? tTelefono;
   final Map<String, dynamic> datosAdicionales;
+  final String? moneda;
 
   const _DatosReserva({
     required this.paraTercero,
@@ -1226,6 +1233,7 @@ class _DatosReserva {
     this.tCi,
     this.tTelefono,
     required this.datosAdicionales,
+    this.moneda,
   });
 }
 
@@ -1313,10 +1321,14 @@ class _CantidadDialogState extends State<_CantidadDialog> {
 class _DatosReservaSheet extends StatefulWidget {
   final List<CampoAdicional> campos;
   final bool permiteTercero;
+  final ConfigPrecio configPrecio;
+  final int cantidad;
 
   const _DatosReservaSheet({
     required this.campos,
     required this.permiteTercero,
+    required this.configPrecio,
+    this.cantidad = 1,
   });
 
   @override
@@ -1327,11 +1339,41 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
   final _formKey = GlobalKey<FormState>();
   final _datosKey = GlobalKey<DatosAdicionalesFormState>();
   bool _paraTercero = false;
+  late String _monedaSeleccionada;
+  Map<String, dynamic> _valoresActuales = {};
 
   final _nombreCtrl = TextEditingController();
   final _apellidosCtrl = TextEditingController();
   final _ciCtrl = TextEditingController();
   final _telefonoCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    final monedas = widget.configPrecio.monedas.isEmpty
+        ? ['USD']
+        : widget.configPrecio.monedas;
+    _monedaSeleccionada = monedas.contains(widget.configPrecio.monedaDefault)
+        ? widget.configPrecio.monedaDefault
+        : monedas.first;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _valoresActuales = _datosKey.currentState?.valores ?? {};
+      });
+    });
+  }
+
+  ResultadoPrecioReserva? get _precioActual {
+    if (!widget.configPrecio.tienePrecio) return null;
+    final datos = _datosKey.currentState?.valores ?? _valoresActuales;
+    return PrecioReserva.calcular(
+      config: widget.configPrecio,
+      datosAdicionales: datos,
+      moneda: _monedaSeleccionada,
+      cantidad: widget.cantidad,
+    );
+  }
 
   @override
   void dispose() {
@@ -1357,12 +1399,17 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
         tCi: _paraTercero ? _ciCtrl.text.trim() : null,
         tTelefono: _paraTercero ? _telefonoCtrl.text.trim() : null,
         datosAdicionales: valores,
+        moneda: _monedaSeleccionada,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final monedas = widget.configPrecio.monedas.isEmpty
+        ? ['USD']
+        : widget.configPrecio.monedas;
+    final precio = _precioActual;
     return Padding(
       padding: EdgeInsets.only(
         left: 24,
@@ -1506,11 +1553,86 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                     DatosAdicionalesForm(
                       key: _datosKey,
                       campos: widget.campos,
+                      onChanged: (v) => setState(() => _valoresActuales = v),
                     ),
                   ],
                 ],
               ),
             ),
+
+            if (widget.configPrecio.tienePrecio) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppTheme.primary.withValues(alpha: 0.2)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (monedas.length > 1) ...[
+                      DropdownButtonFormField<String>(
+                        value: _monedaSeleccionada,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Moneda',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                        items: monedas
+                            .map((m) => DropdownMenuItem(
+                                  value: m,
+                                  child: Text(MonedasApp.etiqueta(m)),
+                                ))
+                            .toList(),
+                        onChanged: (v) {
+                          if (v != null) setState(() => _monedaSeleccionada = v);
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                    Row(
+                      children: [
+                        const Icon(Icons.payments_outlined,
+                            color: AppTheme.primary, size: 22),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Total de la reserva',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.textSecondary)),
+                              Text(
+                                precio != null
+                                    ? PrecioReserva.formatear(
+                                        precio.total, precio.moneda)
+                                    : '—',
+                                style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppTheme.primary),
+                              ),
+                              if (widget.cantidad > 1 && precio != null)
+                                Text(
+                                  '${PrecioReserva.formatear(precio.unitario, precio.moneda)} × ${widget.cantidad}',
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppTheme.textSecondary),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             const SizedBox(height: 8),
             ElevatedButton(

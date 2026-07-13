@@ -39,6 +39,9 @@ declare
   v_cant              integer;
   v_uuid_admin        uuid;
   v_es_admin          boolean;
+  v_id_servicio       integer;
+  v_precio_total      numeric;
+  v_moneda            varchar;
 begin
   v_uuid_admin := coalesce(p_uuid_admin, auth.uid());
 
@@ -71,8 +74,8 @@ begin
   perform pg_advisory_xact_lock(hashtext('flow.sala_espera'), p_id_local_servicio);
 
   -- Capacidad configurada del servicio
-  select ls.cantidad_default, ls.cantidad_max_capacidad
-    into v_cantidad_default, v_cantidad_max
+  select ls.cantidad_default, ls.cantidad_max_capacidad, ls.id_servicio
+    into v_cantidad_default, v_cantidad_max, v_id_servicio
   from flow.local_servicio ls
   where ls.id = p_id_local_servicio;
 
@@ -121,12 +124,18 @@ begin
                                 extract(month from p_fecha)::int,
                                 extract(day from p_fecha)::int, 12, 0, 0));
 
+  select cp.precio_total, cp.moneda
+    into v_precio_total, v_moneda
+  from flow.calcular_precio_reserva(
+    v_id_servicio, coalesce(p_datos_adicionales, '{}'::jsonb), null, v_cant
+  ) cp;
+
   insert into flow.agenda
     (uuid_usuario, id_local_servicio, id_estado, fecha_hora_reserva,
-     cantidad, datos_adicionales, reservado_por)
+     cantidad, datos_adicionales, reservado_por, precio_total, moneda)
   values
     (v_uuid_admin, p_id_local_servicio, v_estado, v_fecha_ts,
-     v_cant, p_datos_adicionales, v_uuid_admin)
+     v_cant, p_datos_adicionales, v_uuid_admin, v_precio_total, v_moneda)
   returning id into v_id_agenda;
 
   update flow.plan_servicios

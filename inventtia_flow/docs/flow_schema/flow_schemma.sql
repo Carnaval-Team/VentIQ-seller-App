@@ -11,6 +11,7 @@ CREATE TABLE flow.app_dat_servicios (
   id_entidad integer,
   campos_adicionales jsonb NOT NULL DEFAULT '[]'::jsonb,
   permite_tercero boolean NOT NULL DEFAULT false,
+  config_precio jsonb NOT NULL DEFAULT '{}'::jsonb,
   CONSTRAINT app_dat_servicios_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_servicios_id_entidad_fkey FOREIGN KEY (id_entidad) REFERENCES flow.entidad(id)
 );
@@ -73,6 +74,8 @@ CREATE TABLE flow.agenda (
   cantidad integer NOT NULL DEFAULT 1,
   datos_adicionales jsonb,
   reservado_por uuid,
+  precio_total numeric,
+  moneda varchar(8),
   CONSTRAINT agenda_pkey PRIMARY KEY (id),
   CONSTRAINT agenda_uuid_usuario_fkey FOREIGN KEY (uuid_usuario) REFERENCES flow.perfil(uuid_usuario),
   CONSTRAINT agenda_id_local_servicio_fkey FOREIGN KEY (id_local_servicio) REFERENCES flow.local_servicio(id),

@@ -1,8 +1,82 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.4.0",
-  "build": 8,
+  "current_version": "1.4.2",
+  "build": 10,
   "changelogs": [
+    {
+      "version": "1.4.2",
+      "date": "2026-07-13",
+      "title": "📅 Reservas de administración con la misma usabilidad del trabajador",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Navegación por día en reservas del administrador",
+          "description": "El listado de reservas administrativas ahora funciona día a día: flechas, selector de fecha, botón Hoy y deslizamiento horizontal para cambiar de fecha, igual que en la vista del trabajador."
+        },
+        {
+          "type": "improvement",
+          "title": "Filtros colapsables y chips de estado",
+          "description": "Los filtros de local, servicio y estado quedan en un panel compacto. Por defecto se muestran las reservas del día en estado Reservado, y se pueden limpiar o ampliar con un toque."
+        },
+        {
+          "type": "improvement",
+          "title": "Exportación alineada al día seleccionado",
+          "description": "Al exportar a PDF o Excel se usa directamente el día que estás viendo, sin tener que configurar un rango Desde/Hasta."
+        }
+      ]
+    },
+    {
+      "version": "1.4.1",
+      "date": "2026-07-10",
+      "title": "💰 Precios por servicio y reservas visibles en administración",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Precio configurable por servicio",
+          "description": "Desde la gestión del servicio puedes definir precio base, monedas habilitadas (USD, EUR, CUP, MLC) y reglas que ajustan el precio según los datos adicionales del cliente (por ejemplo, tipo de viaje u opciones de un campo seleccionable)."
+        },
+        {
+          "type": "feature",
+          "title": "Precio independiente por cada opción",
+          "description": "En las reglas de precio, cada opción de un campo seleccionable tiene su propio valor por moneda. Ya no se comparte un mismo precio entre varias opciones marcadas."
+        },
+        {
+          "type": "feature",
+          "title": "Total de reserva al reservar",
+          "description": "El cliente ve el total calculado al final del formulario de datos adicionales. Si el servicio admite varias monedas, puede elegir en cuál ver el precio antes de confirmar."
+        },
+        {
+          "type": "feature",
+          "title": "Precio guardado en cada reserva",
+          "description": "Al crear la reserva (cliente o administrador), se guarda el precio total y la moneda usados en ese momento, para que el historial refleje el valor real de cada cita."
+        },
+        {
+          "type": "feature",
+          "title": "Precio en listados y exportaciones",
+          "description": "Las reservas muestran el precio en las vistas de cliente, administrador y trabajador. Los reportes PDF y Excel incluyen la columna Precio con el mismo formato de la app."
+        },
+        {
+          "type": "improvement",
+          "title": "Opciones de campos con chips",
+          "description": "Las opciones de los campos tipo seleccionable se gestionan como chips independientes (añadir, editar, eliminar), en lugar de escribirlas separadas por comas."
+        },
+        {
+          "type": "improvement",
+          "title": "Confirmar consumido",
+          "description": "El botón para marcar una reserva como atendida se renombró a «Confirmar consumido», alineado con el estado Completado."
+        },
+        {
+          "type": "fix",
+          "title": "Reservas visibles en administración",
+          "description": "Corregido el listado de reservas del administrador: ahora muestra las citas de clientes de la entidad (permisos RPC y RLS), sin filtro de fechas por defecto y con comparación correcta por día de cita."
+        },
+        {
+          "type": "fix",
+          "title": "Listado más robusto",
+          "description": "Mejorado el parseo de la respuesta del servidor y el envío de fechas sin zona horaria, para evitar listas vacías o errores al cargar reservas."
+        }
+      ]
+    },
     {
       "version": "1.4.0",
       "date": "2026-07-10",

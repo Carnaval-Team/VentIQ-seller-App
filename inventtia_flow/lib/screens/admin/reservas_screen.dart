@@ -6,7 +6,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart' show Share, XFile;
 import 'dart:io';
 
@@ -15,11 +14,11 @@ import '../../models/agenda.dart';
 import '../../models/campo_adicional.dart';
 import '../../models/entidad.dart';
 import '../../models/servicio.dart';
-import '../../providers/auth_provider.dart';
 import '../../services/agenda_admin_service.dart';
 import '../../services/agenda_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
+import '../../utils/precio_reserva.dart';
 import '../../widgets/datos_adicionales_form.dart';
 import '../../widgets/totales_datos_adicionales.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -35,43 +34,59 @@ class ReservasScreen extends StatefulWidget {
 class _ReservasScreenState extends State<ReservasScreen> {
   List<Agenda> _reservas = [];
   bool _loading = true;
+  bool _filtrosExpanded = false;
 
-  // Filtros
+  // Filtros (misma usabilidad que la vista de vendedor: un día + filtros colapsables)
   Local? _localFiltro;
   LocalServicio? _lsFiltro;
-  DateTime? _desde;
-  DateTime? _hasta;
-  EstadoAgenda? _estadoFiltro;
+  late DateTime _fecha;
+  int? _idEstadoFiltro;
 
   List<Local> _locales = [];
   List<LocalServicio> _localServicios = [];
   List<EstadoAgenda> _estados = [];
 
   final _fmt = DateFormat('dd/MM/yyyy');
+  final _fmtDiaSemana = DateFormat('EEEE', 'es');
   final _fmtHora = DateFormat('dd/MM/yyyy HH:mm');
+
+  DateTime get _desde => DateTime(_fecha.year, _fecha.month, _fecha.day);
+  DateTime get _hasta =>
+      DateTime(_fecha.year, _fecha.month, _fecha.day, 23, 59, 59);
+
+  bool get _esHoy {
+    final now = DateTime.now();
+    return _fecha.year == now.year &&
+        _fecha.month == now.month &&
+        _fecha.day == now.day;
+  }
 
   @override
   void initState() {
     super.initState();
-    // Por defecto: el mes actual completo.
     final now = DateTime.now();
-    _desde = DateTime(now.year, now.month, 1);
-    _hasta = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+    _fecha = DateTime(now.year, now.month, now.day);
     _loadFiltros();
   }
 
   Future<void> _loadFiltros() async {
-    final locales =
-        await CatalogoService.getLocalesByEntidad(widget.entidad.id);
-    final estados = await AgendaService.getEstados();
-    if (mounted) {
-      setState(() {
-        _locales = locales;
-        _estados = estados;
-        // Por defecto: Todos los estados (ver todo el mes).
-        _estadoFiltro = null;
-      });
-    }
+    final results = await Future.wait([
+      CatalogoService.getLocalesByEntidad(widget.entidad.id),
+      AgendaService.getEstados(),
+    ]);
+    if (!mounted) return;
+    final estados = results[1] as List<EstadoAgenda>;
+    final reservado = estados.firstWhere(
+      (e) => e.nombre.toLowerCase() == 'reservado',
+      orElse: () => estados.isNotEmpty
+          ? estados.first
+          : EstadoAgenda(id: 1, nombre: 'reservado'),
+    );
+    setState(() {
+      _locales = results[0] as List<Local>;
+      _estados = estados;
+      _idEstadoFiltro = reservado.id;
+    });
     await _load();
   }
 
@@ -96,7 +111,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
         idEntidad: widget.entidad.id,
         idLocal: _localFiltro?.id,
         idLocalServicio: _lsFiltro?.id,
-        idEstado: _estadoFiltro?.id,
+        idEstado: _idEstadoFiltro,
         desde: _desde,
         hasta: _hasta,
       );
@@ -112,6 +127,52 @@ class _ReservasScreenState extends State<ReservasScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _irDia(int delta) {
+    if (_loading) return;
+    setState(() => _fecha = _fecha.add(Duration(days: delta)));
+    _load();
+  }
+
+  Future<void> _pickFecha() async {
+    if (_loading) return;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _fecha,
+      firstDate: DateTime(2024),
+      lastDate: DateTime(2028),
+    );
+    if (picked != null) {
+      setState(
+          () => _fecha = DateTime(picked.year, picked.month, picked.day));
+      _load();
+    }
+  }
+
+  void _irHoy() {
+    if (_loading) return;
+    final now = DateTime.now();
+    setState(() => _fecha = DateTime(now.year, now.month, now.day));
+    _load();
+  }
+
+  void _resetFiltros() {
+    if (_loading) return;
+    final reservado = _estados.firstWhere(
+      (e) => e.nombre.toLowerCase() == 'reservado',
+      orElse: () => _estados.isNotEmpty
+          ? _estados.first
+          : EstadoAgenda(id: 1, nombre: 'reservado'),
+    );
+    setState(() {
+      _localFiltro = null;
+      _lsFiltro = null;
+      _localServicios = [];
+      _idEstadoFiltro = reservado.id;
+      _filtrosExpanded = false;
+    });
+    _load();
   }
 
   Future<void> _cancelarReserva(Agenda reserva) async {
@@ -147,9 +208,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Completar reserva'),
+        title: const Text('Confirmar consumo'),
         content: Text(
-          '¿Marcar como completada la reserva de '
+          '¿Confirmar que el cliente consumió la reserva de '
           '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
           'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?',
         ),
@@ -161,7 +222,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: AppTheme.primary),
-            child: const Text('Sí, completar'),
+            child: const Text('Sí, confirmar'),
           ),
         ],
       ),
@@ -169,7 +230,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
 
     if (confirm != true || !mounted) return;
     // Estado 3 = Completado.
-    await _cambiarEstado(reserva, 3, 'Reserva marcada como completada');
+    await _cambiarEstado(reserva, 3, 'Consumo de reserva confirmado');
   }
 
   /// Cambia el estado de una reserva vía RPC y refresca. [idEstado] 2=Cancelado, 3=Completado.
@@ -218,6 +279,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
   }
 
   Future<void> _onLocalChange(Local? local) async {
+    if (_loading) return;
     setState(() {
       _localFiltro = local;
       _lsFiltro = null;
@@ -227,47 +289,6 @@ class _ReservasScreenState extends State<ReservasScreen> {
       final ls = await CatalogoService.getLocalServicios(idLocal: local.id);
       if (mounted) setState(() => _localServicios = ls);
     }
-    _load();
-  }
-
-  Future<void> _pickDesde() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _desde ?? DateTime.now(),
-      firstDate: DateTime(2024),
-      lastDate: DateTime(2028),
-    );
-    if (picked != null) {
-      setState(() =>
-          _desde = DateTime(picked.year, picked.month, picked.day));
-      _load();
-    }
-  }
-
-  Future<void> _pickHasta() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _hasta ?? DateTime.now(),
-      firstDate: DateTime(2024),
-      lastDate: DateTime(2028),
-    );
-    if (picked != null) {
-      setState(() => _hasta =
-          DateTime(picked.year, picked.month, picked.day, 23, 59, 59));
-      _load();
-    }
-  }
-
-  void _clearFiltros() {
-    final now = DateTime.now();
-    setState(() {
-      _localFiltro = null;
-      _lsFiltro = null;
-      _localServicios = [];
-      _desde = DateTime(now.year, now.month, 1);
-      _hasta = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
-      _estadoFiltro = null;
-    });
     _load();
   }
 
@@ -324,6 +345,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
     return v == null ? '-' : '$v';
   }
 
+  String _precioExport(Agenda r) {
+    if (r.precioTotal == null || r.precioTotal! <= 0) return '-';
+    return PrecioReserva.formatear(r.precioTotal!, r.moneda ?? 'USD');
+  }
+
   /// Devuelve el dato del cliente real. Si la reserva fue creada por un
   /// administrador, los datos del cliente se guardan en [datosAdicionales].
   /// Si no, se usa el perfil del cliente ([r.cliente]).
@@ -350,11 +376,6 @@ class _ReservasScreenState extends State<ReservasScreen> {
   }
 
   Future<void> _exportPdf() async {
-    if (!_esUnaSolaFecha()) {
-      _mostrarCartelExportacion();
-      return;
-    }
-
     final fontRegular = await PdfGoogleFonts.robotoRegular();
     final fontBold = await PdfGoogleFonts.robotoBold();
 
@@ -405,7 +426,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
                 cellHeight: 22,
                 headers: [
                   'Servicio', 'Fecha reserva',
-                  'Nombre', 'Apellidos', 'CI', 'Telefono', 'Cant.',
+                  'Nombre', 'Apellidos', 'CI', 'Telefono', 'Cant.', 'Precio',
                   if (conTerceros) 'Tercero',
                   ...cols.map((c) => c.etiqueta),
                 ],
@@ -421,6 +442,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     _datoCliente(r, 'ci'),
                     _datoCliente(r, 'telefono'),
                     '${r.cantidad}',
+                    _precioExport(r),
                     if (conTerceros) (esTercero ? 'Sí' : 'No'),
                     ...cols.map((c) => _valorDato(r, c.clave)),
                   ];
@@ -445,11 +467,6 @@ class _ReservasScreenState extends State<ReservasScreen> {
   // EXPORT EXCEL
   // ──────────────────────────────────────────────────────────────────
   Future<void> _exportExcel() async {
-    if (!_esUnaSolaFecha()) {
-      _mostrarCartelExportacion();
-      return;
-    }
-
     final excel = xl.Excel.createExcel();
     final sheet = excel['Reservas'];
 
@@ -460,7 +477,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
 
     final headers = [
       'Local', 'Servicio', 'Fecha reserva',
-      'Nombre', 'Apellidos', 'CI', 'Telefono', 'Cantidad',
+      'Nombre', 'Apellidos', 'CI', 'Telefono', 'Cantidad', 'Precio',
       if (conTerceros) 'Para tercero',
       ...cols.map((c) => c.etiqueta),
     ];
@@ -488,6 +505,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
           _datoCliente(ag, 'ci'),
           _datoCliente(ag, 'telefono'),
           '${ag.cantidad}',
+          _precioExport(ag),
           if (conTerceros) (esTercero ? 'Sí' : 'No'),
           ...cols.map((c) => _valorDato(ag, c.clave)),
         ];
@@ -518,245 +536,346 @@ class _ReservasScreenState extends State<ReservasScreen> {
     if (_localFiltro != null) parts.add('Local: ${_localFiltro!.nombre}');
     if (_lsFiltro != null)
       parts.add('Servicio: ${_lsFiltro!.servicio?.nombre ?? ''}');
-    if (_desde != null) parts.add('Desde: ${_fmt.format(_desde!)}');
-    if (_hasta != null) parts.add('Hasta: ${_fmt.format(_hasta!)}');
+    parts.add('Fecha: ${_fmt.format(_fecha)}');
     return parts.join('  ·  ');
-  }
-
-  /// True si el filtro de fecha abarca exactamente un solo día.
-  bool _esUnaSolaFecha() {
-    if (_desde == null || _hasta == null) return false;
-    return _desde!.year == _hasta!.year &&
-        _desde!.month == _hasta!.month &&
-        _desde!.day == _hasta!.day;
-  }
-
-  /// Muestra cartel indicando que se debe filtrar una sola fecha para exportar.
-  void _mostrarCartelExportacion() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.info_outline, color: AppTheme.warning),
-            SizedBox(width: 8),
-            Text('Exportar reservas'),
-          ],
-        ),
-        content: const Text(
-          'Para exportar el listado de reservas debes filtrar una sola fecha.\n\n'
-          'Por favor, selecciona el mismo día en los campos "Desde" y "Hasta".',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Entendido'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.surface,
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Reservas'),
-            Text(widget.entidad.denominacion,
-                style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w400)),
+    return AbsorbPointer(
+      absorbing: _loading,
+      child: Scaffold(
+        backgroundColor: AppTheme.surface,
+        appBar: AppBar(
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Reservas'),
+              Text(widget.entidad.denominacion,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w400)),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              tooltip: 'Exportar PDF',
+              onPressed: _reservas.isEmpty || _loading ? null : _exportPdf,
+            ),
+            IconButton(
+              icon: const Icon(Icons.table_chart_outlined),
+              tooltip: 'Exportar Excel',
+              onPressed: _reservas.isEmpty || _loading ? null : _exportExcel,
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _loading ? null : _load,
+            ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            tooltip: 'Exportar PDF',
-            onPressed: _reservas.isEmpty ? null : _exportPdf,
-          ),
-          IconButton(
-            icon: const Icon(Icons.table_chart_outlined),
-            tooltip: 'Exportar Excel',
-            onPressed: _reservas.isEmpty ? null : _exportExcel,
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _load,
-          ),
-        ],
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
-          child: Column(
-            children: [
-              _buildFiltros(),
-              const Divider(height: 1),
-              Expanded(
-                child: _loading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _reservas.isEmpty
-                        ? _buildEmpty()
-                        : RefreshIndicator(
-                            onRefresh: _load,
-                            child: _buildTabla(),
-                          ),
-              ),
-            ],
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 900),
+            child: Column(
+              children: [
+                _buildBarraFecha(),
+                _buildFiltrosColapsables(),
+                const Divider(height: 1),
+                Expanded(
+                  child: GestureDetector(
+                    onHorizontalDragEnd: (details) {
+                      if (_loading) return;
+                      final v = details.primaryVelocity ?? 0;
+                      if (v < -200) _irDia(1);
+                      if (v > 200) _irDia(-1);
+                    },
+                    child: _loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _reservas.isEmpty
+                            ? _buildEmpty()
+                            : RefreshIndicator(
+                                onRefresh: _load,
+                                child: _buildTabla(),
+                              ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildFiltros() {
+  Widget _buildBarraFecha() {
+    final diaSemana = _fmtDiaSemana.format(_fecha);
+    final diaCapitalizado =
+        diaSemana[0].toUpperCase() + diaSemana.substring(1);
+
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      child: Column(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Row(
         children: [
-          Row(
-            children: [
-              // Local
-              Expanded(
-                child: DropdownButtonFormField<Local?>(
-                  value: _localFiltro,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Local',
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    const DropdownMenuItem(
-                        value: null, child: Text('Todos')),
-                    ..._locales.map((l) => DropdownMenuItem(
-                        value: l, child: Text(l.nombre, overflow: TextOverflow.ellipsis))),
-                  ],
-                  onChanged: _onLocalChange,
-                ),
-              ),
-              const SizedBox(width: 8),
-              // LocalServicio
-              Expanded(
-                child: DropdownButtonFormField<LocalServicio?>(
-                  value: _lsFiltro,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Servicio',
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    const DropdownMenuItem(
-                        value: null, child: Text('Todos')),
-                    ..._localServicios.map((ls) => DropdownMenuItem(
-                        value: ls,
-                        child: Text(ls.servicio?.nombre ?? '',
-                            overflow: TextOverflow.ellipsis))),
-                  ],
-                  onChanged: (v) {
-                    setState(() => _lsFiltro = v);
-                    _load();
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Estado
-              Expanded(
-                child: DropdownButtonFormField<EstadoAgenda?>(
-                  value: _estadoFiltro,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Estado',
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Todos')),
-                    ..._estados.map((e) => DropdownMenuItem(
-                        value: e,
-                        child: Text(e.nombre, overflow: TextOverflow.ellipsis))),
-                  ],
-                  onChanged: (v) {
-                    setState(() => _estadoFiltro = v);
-                    _load();
-                  },
-                ),
-              ),
-            ],
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            tooltip: 'Día anterior',
+            onPressed: _loading ? null : () => _irDia(-1),
+            color: AppTheme.primary,
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              // Desde
-              Expanded(
-                child: InkWell(
-                  onTap: _pickDesde,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'Desde',
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      suffixIcon: Icon(Icons.calendar_today, size: 16),
+          Expanded(
+            child: InkWell(
+              onTap: _pickFecha,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Column(
+                  children: [
+                    Text(
+                      _fmt.format(_fecha),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: _loading
+                            ? AppTheme.textSecondary
+                            : AppTheme.textPrimary,
+                      ),
                     ),
-                    child: Text(
-                      _desde != null ? _fmt.format(_desde!) : '-',
-                      style: const TextStyle(fontSize: 13),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          diaCapitalizado,
+                          style: const TextStyle(
+                              fontSize: 12, color: AppTheme.textSecondary),
+                        ),
+                        if (_esHoy) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'Hoy',
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: AppTheme.primary,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                  ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              // Hasta
-              Expanded(
-                child: InkWell(
-                  onTap: _pickHasta,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'Hasta',
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      suffixIcon: Icon(Icons.calendar_today, size: 16),
-                    ),
-                    child: Text(
-                      _hasta != null ? _fmt.format(_hasta!) : '-',
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.clear, color: AppTheme.textSecondary),
-                tooltip: 'Limpiar filtros',
-                onPressed: _clearFiltros,
-              ),
-            ],
+            ),
           ),
-          if (_reservas.isNotEmpty)
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            tooltip: 'Día siguiente',
+            onPressed: _loading ? null : () => _irDia(1),
+            color: AppTheme.primary,
+          ),
+          if (!_esHoy)
+            TextButton(
+              onPressed: _loading ? null : _irHoy,
+              style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8)),
+              child: const Text('Hoy',
+                  style: TextStyle(fontSize: 12, color: AppTheme.primary)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFiltrosColapsables() {
+    final hayFiltrosActivos =
+        _localFiltro != null || _lsFiltro != null || _idEstadoFiltro != null;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      color: Colors.white,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: _loading
+                ? null
+                : () =>
+                    setState(() => _filtrosExpanded = !_filtrosExpanded),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.filter_list,
+                    size: 16,
+                    color: hayFiltrosActivos
+                        ? AppTheme.primary
+                        : AppTheme.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      () {
+                        final parts = [
+                          if (_localFiltro != null) _localFiltro!.nombre,
+                          if (_lsFiltro != null)
+                            _lsFiltro!.servicio?.nombre ?? '',
+                          if (_idEstadoFiltro != null)
+                            _estados
+                                .firstWhere((e) => e.id == _idEstadoFiltro,
+                                    orElse: () =>
+                                        EstadoAgenda(id: 0, nombre: ''))
+                                .nombre,
+                        ].where((s) => s.isNotEmpty).join(' · ');
+                        return parts.isNotEmpty ? parts : 'Filtros';
+                      }(),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: hayFiltrosActivos
+                            ? AppTheme.primary
+                            : AppTheme.textSecondary,
+                        fontWeight: hayFiltrosActivos
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                  if (_reservas.isNotEmpty)
+                    Text(
+                      '${_reservas.length} reserva${_reservas.length == 1 ? '' : 's'}',
+                      style: const TextStyle(
+                          fontSize: 11, color: AppTheme.textSecondary),
+                    ),
+                  const SizedBox(width: 6),
+                  if (hayFiltrosActivos)
+                    GestureDetector(
+                      onTap: _loading ? null : _resetFiltros,
+                      child: const Icon(Icons.clear,
+                          size: 16, color: AppTheme.textSecondary),
+                    )
+                  else
+                    Icon(
+                      _filtrosExpanded
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                      size: 18,
+                      color: AppTheme.textSecondary,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (_filtrosExpanded)
             Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  '${_reservas.length} reserva${_reservas.length == 1 ? '' : 's'}',
-                  style: const TextStyle(
-                      fontSize: 12, color: AppTheme.textSecondary),
-                ),
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              child: Column(
+                children: [
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<Local?>(
+                          value: _localFiltro,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Local',
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            const DropdownMenuItem(
+                                value: null, child: Text('Todos')),
+                            ..._locales.map((l) => DropdownMenuItem(
+                                value: l,
+                                child: Text(l.nombre,
+                                    overflow: TextOverflow.ellipsis))),
+                          ],
+                          onChanged: _loading ? null : _onLocalChange,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<LocalServicio?>(
+                          value: _lsFiltro,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Servicio',
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            const DropdownMenuItem(
+                                value: null, child: Text('Todos')),
+                            ..._localServicios.map((ls) => DropdownMenuItem(
+                                value: ls,
+                                child: Text(ls.servicio?.nombre ?? '',
+                                    overflow: TextOverflow.ellipsis))),
+                          ],
+                          onChanged: _loading
+                              ? null
+                              : (v) {
+                                  setState(() {
+                                    _lsFiltro = v;
+                                    _filtrosExpanded = false;
+                                  });
+                                  _load();
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_estados.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        _EstadoChip(
+                          label: 'Todos',
+                          selected: _idEstadoFiltro == null,
+                          onTap: _loading
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _idEstadoFiltro = null;
+                                    _filtrosExpanded = false;
+                                  });
+                                  _load();
+                                },
+                        ),
+                        ..._estados.map((e) => _EstadoChip(
+                              label: e.nombre[0].toUpperCase() +
+                                  e.nombre.substring(1),
+                              selected: _idEstadoFiltro == e.id,
+                              onTap: _loading
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _idEstadoFiltro = e.id;
+                                        _filtrosExpanded = false;
+                                      });
+                                      _load();
+                                    },
+                            )),
+                      ],
+                    ),
+                  ],
+                ],
               ),
             ),
         ],
@@ -867,6 +986,12 @@ class _ReservasScreenState extends State<ReservasScreen> {
             else
               _infoRow('Teléfono', '-'),
             if (r.cantidad > 1) _infoRow('Cantidad', '${r.cantidad}'),
+            if (r.precioTotal != null && r.precioTotal! > 0)
+              _infoRow(
+                'Precio',
+                PrecioReserva.formatear(
+                    r.precioTotal!, r.moneda ?? 'USD'),
+              ),
             if (esTercero) _infoRow('Para tercero', 'Sí'),
             for (final c in cols)
               if (_valorDato(r, c.clave) != '-')
@@ -888,7 +1013,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
                 if (esActiva) ...[
                   TextButton.icon(
                     icon: const Icon(Icons.check_circle_outline, size: 16),
-                    label: const Text('Completar'),
+                    label: const Text('Confirmar consumido'),
                     style: TextButton.styleFrom(
                       foregroundColor: AppTheme.primary,
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -983,7 +1108,50 @@ class _ReservasScreenState extends State<ReservasScreen> {
           const SizedBox(height: 12),
           const Text('Sin reservas para los filtros aplicados',
               style: TextStyle(color: AppTheme.textSecondary)),
+          const SizedBox(height: 6),
+          Text(
+            _fmt.format(_fecha),
+            style: const TextStyle(
+                fontSize: 12, color: AppTheme.textSecondary),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _EstadoChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+  const _EstadoChip({required this.label, required this.selected, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppTheme.primary
+              : AppTheme.primary.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected
+                ? AppTheme.primary
+                : AppTheme.primary.withOpacity(0.2),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: selected ? Colors.white : AppTheme.primary,
+          ),
+        ),
       ),
     );
   }

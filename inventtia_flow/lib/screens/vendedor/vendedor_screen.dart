@@ -21,6 +21,7 @@ import '../../services/agenda_admin_service.dart';
 import '../../services/agenda_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
+import '../../utils/precio_reserva.dart';
 import '../../widgets/totales_datos_adicionales.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -123,12 +124,12 @@ class _VendedorScreenState extends State<VendedorScreen> {
   Future<void> _completarReserva(Agenda r) => _confirmarCambioEstado(
         r,
         idEstado: 3,
-        titulo: 'Completar reserva',
-        pregunta: '¿Marcar como completada la reserva de '
+        titulo: 'Confirmar consumo',
+        pregunta: '¿Confirmar que el cliente consumió la reserva de '
             '${r.cliente?.nombreCompleto ?? 'este cliente'}?',
-        accion: 'Sí, completar',
+        accion: 'Sí, confirmar',
         color: AppTheme.primary,
-        okMsg: 'Reserva marcada como completada',
+        okMsg: 'Consumo de reserva confirmado',
       );
 
   Future<void> _cancelarReserva(Agenda r) => _confirmarCambioEstado(
@@ -296,6 +297,11 @@ class _VendedorScreenState extends State<VendedorScreen> {
     return v == null ? '-' : '$v';
   }
 
+  String _precioExport(Agenda r) {
+    if (r.precioTotal == null || r.precioTotal! <= 0) return '-';
+    return PrecioReserva.formatear(r.precioTotal!, r.moneda ?? 'USD');
+  }
+
   String _buildFiltroDesc() {
     final parts = <String>[];
     if (_localFiltro != null) parts.add('Local: ${_localFiltro!.nombre}');
@@ -355,7 +361,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
                 cellHeight: 22,
                 headers: [
                   'Servicio', 'Fecha reserva',
-                  'Nombre', 'Apellidos', 'CI', 'Telefono', 'Cant.',
+                  'Nombre', 'Apellidos', 'CI', 'Telefono', 'Cant.', 'Precio',
                   if (conTerceros) 'Tercero',
                   ...cols.map((c) => c.etiqueta),
                 ],
@@ -372,6 +378,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
                     cli?.ci ?? '-',
                     cli?.telefono ?? '-',
                     '${r.cantidad}',
+                    _precioExport(r),
                     if (conTerceros) (esTercero ? 'Sí' : 'No'),
                     ...cols.map((c) => _valorDato(r, c.clave)),
                   ];
@@ -400,7 +407,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
 
     final headers = [
       'Local', 'Servicio', 'Fecha reserva',
-      'Nombre', 'Apellidos', 'CI', 'Telefono', 'Cantidad',
+      'Nombre', 'Apellidos', 'CI', 'Telefono', 'Cantidad', 'Precio',
       if (conTerceros) 'Para tercero',
       ...cols.map((c) => c.etiqueta),
     ];
@@ -428,6 +435,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
           cli?.ci ?? '',
           cli?.telefono ?? '',
           '${ag.cantidad}',
+          _precioExport(ag),
           if (conTerceros) (esTercero ? 'Sí' : 'No'),
           ...cols.map((c) => _valorDato(ag, c.clave)),
         ];
@@ -949,6 +957,12 @@ class _VendedorScreenState extends State<VendedorScreen> {
             else
               _infoRow('Teléfono', '-'),
             if (r.cantidad > 1) _infoRow('Cantidad', '${r.cantidad}'),
+            if (r.precioTotal != null && r.precioTotal! > 0)
+              _infoRow(
+                'Precio',
+                PrecioReserva.formatear(
+                    r.precioTotal!, r.moneda ?? 'USD'),
+              ),
             if (esTercero) _infoRow('Para tercero', 'Sí'),
             for (final c in cols)
               if (_valorDato(r, c.clave) != '-')
@@ -960,7 +974,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
                 if (esActiva) ...[
                   TextButton.icon(
                     icon: const Icon(Icons.check_circle_outline, size: 16),
-                    label: const Text('Completar'),
+                    label: const Text('Confirmar consumido'),
                     style: TextButton.styleFrom(
                       foregroundColor: AppTheme.primary,
                       padding:

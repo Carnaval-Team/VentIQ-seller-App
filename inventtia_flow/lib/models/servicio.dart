@@ -1,4 +1,5 @@
 import 'campo_adicional.dart';
+import 'config_precio.dart';
 
 class Servicio {
   final int id;
@@ -8,6 +9,7 @@ class Servicio {
   final DateTime createdAt;
   final List<CampoAdicional> camposAdicionales;
   final bool permiteTercero;
+  final ConfigPrecio configPrecio;
 
   Servicio({
     required this.id,
@@ -17,7 +19,9 @@ class Servicio {
     required this.createdAt,
     List<CampoAdicional>? camposAdicionales,
     this.permiteTercero = false,
-  }) : camposAdicionales = camposAdicionales ?? [];
+    ConfigPrecio? configPrecio,
+  })  : camposAdicionales = camposAdicionales ?? [],
+        configPrecio = configPrecio ?? ConfigPrecio();
 
   factory Servicio.fromJson(Map<String, dynamic> json) => Servicio(
         id: (json['id'] as num).toInt(),
@@ -33,6 +37,8 @@ class Servicio {
                 .toList() ??
             [],
         permiteTercero: (json['permite_tercero'] as bool?) ?? false,
+        configPrecio: ConfigPrecio.fromJson(
+            json['config_precio'] as Map<String, dynamic>?),
       );
 }
 
@@ -111,13 +117,20 @@ class LocalServicio {
   factory LocalServicio.fromJson(Map<String, dynamic> json) {
     // Soporta formato RPC (id_local_servicio, local, servicio)
     // y formato PostgREST (id, app_dat_locales, app_dat_servicios)
-    final id = (json['id_local_servicio'] ?? json['id']) as int;
+    final idRaw = json['id_local_servicio'] ?? json['id'];
+    final id = (idRaw as num).toInt();
     final localRaw = json['local'] ?? json['app_dat_locales'];
     final servicioRaw = json['servicio'] ?? json['app_dat_servicios'];
     return LocalServicio(
       id: id,
-      idLocal: (json['id_local'] as int?) ?? (localRaw != null ? (localRaw as Map<String,dynamic>)['id'] as int : 0),
-      idServicio: (json['id_servicio'] as int?) ?? (servicioRaw != null ? (servicioRaw as Map<String,dynamic>)['id'] as int : 0),
+      idLocal: (json['id_local'] as num?)?.toInt() ??
+          (localRaw != null
+              ? ((localRaw as Map<String, dynamic>)['id'] as num).toInt()
+              : 0),
+      idServicio: (json['id_servicio'] as num?)?.toInt() ??
+          (servicioRaw != null
+              ? ((servicioRaw as Map<String, dynamic>)['id'] as num).toInt()
+              : 0),
       local: localRaw != null
           ? Local.fromJson(localRaw as Map<String, dynamic>)
           : null,

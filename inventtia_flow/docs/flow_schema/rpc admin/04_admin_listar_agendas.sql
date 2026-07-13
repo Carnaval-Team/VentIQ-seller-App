@@ -3,6 +3,8 @@
 -- Join completo: agenda -> local_servicio -> local -> servicio -> entidad
 --                agenda -> nom_estado_agenda
 --                agenda.uuid_usuario -> perfil (TODOS los datos del cliente)
+-- SECURITY DEFINER: necesario para leer agenda de terceros cuando hay RLS.
+-- La seguridad la garantiza el JOIN con admin_entidades_de_usuario.
 -- Filtros opcionales: p_id_entidad, p_id_local, p_id_local_servicio,
 --                     p_id_estado, p_desde, p_hasta (rango de fecha_hora_reserva)
 -- Devuelve: jsonb (array de reservas)
@@ -20,13 +22,15 @@ create or replace function flow.admin_listar_agendas(
 returns jsonb
 language sql
 stable
-security invoker
+security definer
 set search_path = flow, public
 as $$
   select coalesce(
     jsonb_agg(
       jsonb_build_object(
         'id',                  a.id,
+        'uuid_usuario',        a.uuid_usuario,
+        'id_estado',           a.id_estado,
         'fecha_hora_reserva',  a.fecha_hora_reserva,
         'fecha_hora_atencion', a.fecha_hora_atencion,
         'created_at',          a.created_at,
@@ -34,6 +38,8 @@ as $$
         'cantidad',            a.cantidad,
         'datos_adicionales',   a.datos_adicionales,
         'reservado_por',       a.reservado_por,
+        'precio_total',        a.precio_total,
+        'moneda',              a.moneda,
         'estado', jsonb_build_object(
           'id',          es.id,
           'nombre',      es.nombre,
@@ -92,8 +98,8 @@ as $$
     and (p_id_local          is null or ls.id_local          = p_id_local)
     and (p_id_local_servicio is null or a.id_local_servicio  = p_id_local_servicio)
     and (p_id_estado         is null or a.id_estado          = p_id_estado)
-    and (p_desde             is null or a.fecha_hora_reserva >= p_desde)
-    and (p_hasta             is null or a.fecha_hora_reserva <= p_hasta);
+    and (p_desde             is null or a.fecha_hora_reserva::date >= p_desde::date)
+    and (p_hasta             is null or a.fecha_hora_reserva::date <= p_hasta::date);
 $$;
 
 grant execute on function flow.admin_listar_agendas(uuid, integer, integer, integer, integer, timestamp without time zone, timestamp without time zone) to authenticated;

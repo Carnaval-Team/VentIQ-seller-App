@@ -11,6 +11,7 @@ import '../services/agenda_admin_service.dart';
 import '../services/agenda_service.dart';
 import '../services/auth_service.dart';
 import '../services/catalogo_service.dart';
+import '../utils/precio_reserva.dart';
 import '../widgets/datos_adicionales_view.dart';
 import '../widgets/notificaciones_bell.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -170,10 +171,10 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
   Future<void> _completarStaff(Agenda ticket) => _cambiarEstadoStaff(
         ticket,
         3,
-        titulo: 'Completar reserva',
-        mensaje: '¿Marcar esta reserva como completada?',
-        confirmar: 'Completar',
-        okMsg: 'Reserva completada',
+        titulo: 'Confirmar consumo',
+        mensaje: '¿Confirmar que el cliente consumió esta reserva?',
+        confirmar: 'Confirmar consumido',
+        okMsg: 'Consumo confirmado',
         colorConfirmar: AppTheme.success,
       );
 
@@ -1054,6 +1055,15 @@ class _TicketCard extends StatelessWidget {
                         color: AppTheme.accent,
                       ),
                     ],
+                    if (ticket.precioTotal != null && ticket.precioTotal! > 0) ...[
+                      const SizedBox(height: 6),
+                      _InfoLinea(
+                        icon: Icons.payments_outlined,
+                        texto: PrecioReserva.formatear(
+                            ticket.precioTotal!, ticket.moneda ?? 'USD'),
+                        color: AppTheme.primary,
+                      ),
+                    ],
                     if (esTercero) ...[
                       const SizedBox(height: 6),
                       _InfoLinea(
@@ -1159,7 +1169,7 @@ class _TicketCard extends StatelessWidget {
                                   : () => onCompletarStaff!(ticket),
                               icon: const Icon(Icons.check_circle_outline,
                                   size: 18),
-                              label: const Text('Completar'),
+                              label: const Text('Confirmar consumido'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppTheme.success,
                                 foregroundColor: Colors.white,

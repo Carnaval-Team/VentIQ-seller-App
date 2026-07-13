@@ -37,7 +37,8 @@ as $$
           'descripcion',        s.descripcion,
           'foto',               s.foto,
           'campos_adicionales', s.campos_adicionales,
-          'permite_tercero',    s.permite_tercero
+          'permite_tercero',    s.permite_tercero,
+          'config_precio',      s.config_precio
         ),
         'local', jsonb_build_object(
           'id',               l.id,

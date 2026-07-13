@@ -30,7 +30,8 @@ create or replace function flow.cliente_reservar_directo(
   p_t_nombre          text    default null,
   p_t_apellidos       text    default null,
   p_t_ci              text    default null,
-  p_t_telefono        text    default null
+  p_t_telefono        text    default null,
+  p_moneda            text    default null
 )
 returns jsonb
 language plpgsql
@@ -52,6 +53,9 @@ declare
   v_nombre_local    text;
   v_saludo          text;
   v_cant            integer;
+  v_id_servicio     integer;
+  v_precio_total    numeric;
+  v_moneda          varchar;
 begin
   if p_uuid_usuario is null or p_id_local_servicio is null or p_fecha is null then
     return jsonb_build_object('ok', false, 'error', 'parametros obligatorios faltantes');
@@ -63,8 +67,9 @@ begin
   -- ¿El servicio permite reserva directa? (y, si aplica, terceros)
   select ls.permite_reserva_directa,
          ls.cantidad_default,
-         ls.cantidad_max_capacidad
-    into v_permite, v_cantidad_default, v_cantidad_max
+         ls.cantidad_max_capacidad,
+         ls.id_servicio
+    into v_permite, v_cantidad_default, v_cantidad_max, v_id_servicio
   from flow.local_servicio ls
   where ls.id = p_id_local_servicio;
 
@@ -146,12 +151,18 @@ begin
                                 extract(month from p_fecha)::int,
                                 extract(day from p_fecha)::int, 12, 0, 0));
 
+  select cp.precio_total, cp.moneda
+    into v_precio_total, v_moneda
+  from flow.calcular_precio_reserva(
+    v_id_servicio, coalesce(p_datos_adicionales, '{}'::jsonb), p_moneda, v_cant
+  ) cp;
+
   insert into flow.agenda
     (uuid_usuario, id_local_servicio, id_estado, fecha_hora_reserva,
-     cantidad, datos_adicionales, reservado_por)
+     cantidad, datos_adicionales, reservado_por, precio_total, moneda)
   values
     (v_titular, p_id_local_servicio, v_estado, v_fecha_ts,
-     v_cant, p_datos_adicionales, p_uuid_usuario)
+     v_cant, p_datos_adicionales, p_uuid_usuario, v_precio_total, v_moneda)
   returning id into v_id_agenda;
 
   update flow.plan_servicios
@@ -215,8 +226,8 @@ exception
 end;
 $$;
 
-revoke all on function flow.cliente_reservar_directo(uuid, integer, date, integer, jsonb, boolean, text, text, text, text) from public;
-grant execute on function flow.cliente_reservar_directo(uuid, integer, date, integer, jsonb, boolean, text, text, text, text) to authenticated;
+revoke all on function flow.cliente_reservar_directo(uuid, integer, date, integer, jsonb, boolean, text, text, text, text, text) from public;
+grant execute on function flow.cliente_reservar_directo(uuid, integer, date, integer, jsonb, boolean, text, text, text, text, text) to authenticated;
 
 -- Uso:
 --   select flow.cliente_reservar_directo('00000000-...', 7, '2026-07-03');                       -- 1 turno, para si

@@ -12,7 +12,7 @@ create or replace function flow.admin_entidades_de_usuario(
 returns table (id_entidad integer)
 language sql
 stable
-security invoker
+security definer
 set search_path = flow, public
 as $$
   select ea.id_entidad

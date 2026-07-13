@@ -34,6 +34,7 @@ declare
   v_nombre_servicio text;
   v_nombre_local    text;
   v_saludo          text;
+  v_id_servicio     integer;
 begin
   -- Lee el plan y BLOQUEA esa fila (evita doble procesamiento del mismo plan)
   select ps.id_local_servicio, ps.fecha, (ps.cantidad - ps.agendados)
@@ -69,8 +70,8 @@ begin
 
   -- Datos para las notificaciones de "reservacion confirmada":
   -- nombres legibles del servicio/local y saludo segun la hora del servidor.
-  select s.nombre, l.nombre
-    into v_nombre_servicio, v_nombre_local
+  select s.nombre, l.nombre, ls.id_servicio
+    into v_nombre_servicio, v_nombre_local, v_id_servicio
   from flow.local_servicio ls
   join flow.app_dat_servicios s on s.id = ls.id_servicio
   join flow.app_dat_locales   l on l.id = ls.id_local
@@ -112,10 +113,17 @@ begin
   insertados as (
     insert into flow.agenda
       (uuid_usuario, id_local_servicio, id_estado, fecha_hora_reserva,
-       cantidad, datos_adicionales, reservado_por)
+       cantidad, datos_adicionales, reservado_por, precio_total, moneda)
     select c.uuid_usuario, v_ls, v_estado, v_fecha,
-           1, c.datos_adicionales, c.reservado_por
+           1, c.datos_adicionales, c.reservado_por,
+           cp.precio_total, cp.moneda
     from candidatos c
+    cross join lateral flow.calcular_precio_reserva(
+      v_id_servicio,
+      coalesce(c.datos_adicionales, '{}'::jsonb),
+      null,
+      1
+    ) cp
     returning uuid_usuario, id, fecha_hora_reserva
   ),
   borrados as (

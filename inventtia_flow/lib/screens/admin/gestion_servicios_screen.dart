@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
 import '../../models/campo_adicional.dart';
+import '../../models/config_precio.dart';
 import '../../models/entidad.dart';
 import '../../models/servicio.dart';
 import '../../providers/auth_provider.dart';
@@ -13,6 +14,7 @@ import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/imagen_service.dart';
 import '../../widgets/net_image.dart';
+import '../../widgets/opciones_list_editor.dart';
 
 class GestionServiciosScreen extends StatefulWidget {
   final Entidad entidad;
@@ -197,9 +199,13 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
   String? _fotoUrl;
   bool _saving = false;
 
-  // Datos adicionales + terceros
+  // Datos adicionales + terceros + precio
   bool _permiteTercero = false;
   late List<_CampoEditable> _campos;
+  List<String> _monedasHabilitadas = ['USD'];
+  String _monedaDefault = 'USD';
+  final Map<String, TextEditingController> _precioBaseCtrls = {};
+  final List<_ReglaPrecioEditable> _reglasPrecio = [];
 
   @override
   void initState() {
@@ -213,6 +219,59 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
     _campos = (widget.servicio?.camposAdicionales ?? [])
         .map(_CampoEditable.fromModel)
         .toList();
+    final cfg = widget.servicio?.configPrecio ?? ConfigPrecio();
+    _monedasHabilitadas = cfg.monedas.isEmpty ? ['USD'] : [...cfg.monedas];
+    _monedaDefault = cfg.monedaDefault;
+    if (!_monedasHabilitadas.contains(_monedaDefault)) {
+      _monedaDefault = _monedasHabilitadas.first;
+    }
+    for (final m in _monedasHabilitadas) {
+      _precioBaseCtrls[m] = TextEditingController(
+        text: _fmtPrecio(cfg.preciosBase[m]),
+      );
+    }
+    _reglasPrecio.addAll(
+      cfg.reglas.map((r) => _ReglaPrecioEditable.fromModel(
+            r,
+            monedas: _monedasHabilitadas,
+          )),
+    );
+  }
+
+  String _fmtPrecio(double? v) {
+    if (v == null || v == 0) return '';
+    return v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+  }
+
+  void _syncPrecioCtrls() {
+    for (final m in List<String>.from(_precioBaseCtrls.keys)) {
+      if (!_monedasHabilitadas.contains(m)) {
+        _precioBaseCtrls.remove(m)?.dispose();
+      }
+    }
+    for (final m in _monedasHabilitadas) {
+      _precioBaseCtrls.putIfAbsent(
+        m,
+        () => TextEditingController(),
+      );
+    }
+    for (final r in _reglasPrecio) {
+      r.syncMonedas(_monedasHabilitadas);
+    }
+  }
+
+  void _toggleMoneda(String m, bool on) {
+    setState(() {
+      if (on) {
+        if (!_monedasHabilitadas.contains(m)) {
+          _monedasHabilitadas.add(m);
+        }
+      } else if (_monedasHabilitadas.length > 1) {
+        _monedasHabilitadas.remove(m);
+        if (_monedaDefault == m) _monedaDefault = _monedasHabilitadas.first;
+      }
+      _syncPrecioCtrls();
+    });
   }
 
   @override
@@ -221,6 +280,12 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
     _descCtrl.dispose();
     for (final c in _campos) {
       c.dispose();
+    }
+    for (final c in _precioBaseCtrls.values) {
+      c.dispose();
+    }
+    for (final r in _reglasPrecio) {
+      r.dispose();
     }
     super.dispose();
   }
@@ -265,11 +330,7 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
     for (final c in _campos) {
       final etiqueta = c.etiquetaCtrl.text.trim();
       final opciones = c.tipo == TipoCampo.select
-          ? c.opcionesCtrl.text
-              .split(',')
-              .map((e) => e.trim())
-              .where((e) => e.isNotEmpty)
-              .toList()
+          ? [...c.opciones]
           : <String>[];
       if (c.tipo == TipoCampo.select && opciones.isEmpty) {
         _campoError = '"$etiqueta": un seleccionable necesita opciones';
@@ -320,6 +381,83 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
 
   String? _campoError;
 
+  Map<String, dynamic>? _configPrecioToJson(Map<_CampoEditable, String> claves) {
+    final base = <String, double>{};
+    for (final m in _monedasHabilitadas) {
+      final t = _precioBaseCtrls[m]?.text.trim() ?? '';
+      if (t.isNotEmpty) {
+        final v = double.tryParse(t.replaceAll(',', '.'));
+        if (v == null) {
+          _campoError = 'Precio base inválido para $m';
+          return null;
+        }
+        base[m] = v;
+      }
+    }
+
+    final reglasOut = <Map<String, dynamic>>[];
+    for (final r in _reglasPrecio) {
+      if (r.siClave == null || r.siClave!.isEmpty) continue;
+
+      final preciosOpcion = <String, Map<String, double>>{};
+      for (final opcion in r.preciosPorOpcion.keys) {
+        final pmap = <String, double>{};
+        for (final m in _monedasHabilitadas) {
+          final t = r.preciosPorOpcion[opcion]?[m]?.text.trim() ?? '';
+          if (t.isEmpty) continue;
+          final v = double.tryParse(t.replaceAll(',', '.'));
+          if (v == null) {
+            _campoError = 'Precio inválido para "$opcion"';
+            return null;
+          }
+          pmap[m] = v;
+        }
+        if (pmap.isNotEmpty) preciosOpcion[opcion] = pmap;
+      }
+      if (preciosOpcion.isEmpty) continue;
+
+      String? claveFinal;
+      for (final e in claves.entries) {
+        if (CampoAdicional.slug(e.key.etiquetaCtrl.text.trim()) == r.siClave ||
+            e.value == r.siClave) {
+          claveFinal = e.value;
+          break;
+        }
+      }
+      reglasOut.add({
+        'si_clave': claveFinal ?? r.siClave,
+        'precios_opcion': preciosOpcion,
+      });
+    }
+
+    return ConfigPrecio(
+      monedaDefault: _monedaDefault,
+      monedas: _monedasHabilitadas,
+      preciosBase: base,
+      reglas: reglasOut
+          .map((e) => ReglaPrecio.fromJson(e))
+          .toList(),
+    ).toJson();
+  }
+
+  List<({String slug, String clave, String etiqueta, List<String> opciones})>
+      _camposSelectParaPrecio(Map<_CampoEditable, String> claves) {
+    final out = <({String slug, String clave, String etiqueta, List<String> opciones})>[];
+    for (final e in claves.entries) {
+      final c = e.key;
+      if (c.tipo != TipoCampo.select) continue;
+      final etq = c.etiquetaCtrl.text.trim();
+      if (etq.isEmpty || c.opciones.isEmpty) continue;
+      out.add((
+        slug: CampoAdicional.slug(etq),
+        clave: e.value,
+        etiqueta: etq,
+        opciones: [...c.opciones],
+      ));
+    }
+    return out;
+  }
+
   Future<void> _pickImagen(ImageSource source) async {
     final file = await ImagenService.seleccionarImagen(source: source);
     if (file != null) setState(() => _imagenFile = file);
@@ -358,10 +496,35 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
     if (!_formKey.currentState!.validate()) return;
     final campos = _camposToJson();
     if (campos == null) {
-      setState(() {}); // refresca para mostrar _campoError
+      setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text(_campoError ?? 'Revisa los datos adicionales'),
+            backgroundColor: AppTheme.error),
+      );
+      return;
+    }
+    final claves = <_CampoEditable, String>{};
+    final usadas = <String>{};
+    for (final c in _campos) {
+      final etiqueta = c.etiquetaCtrl.text.trim();
+      if (etiqueta.isEmpty) continue;
+      var clave = CampoAdicional.slug(etiqueta);
+      final base = clave;
+      var n = 2;
+      while (usadas.contains(clave)) {
+        clave = '${base}_$n';
+        n++;
+      }
+      usadas.add(clave);
+      claves[c] = clave;
+    }
+    final configPrecio = _configPrecioToJson(claves);
+    if (configPrecio == null) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(_campoError ?? 'Revisa la configuración de precio'),
             backgroundColor: AppTheme.error),
       );
       return;
@@ -415,6 +578,7 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
         idServicio: idServicio,
         campos: campos,
         permiteTercero: _permiteTercero,
+        configPrecio: configPrecio,
       );
       if (!mounted) return;
       Navigator.pop(context);
@@ -549,6 +713,135 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
             ),
             const Divider(),
 
+            // ── Precio del servicio ───────────────────────
+            const Text('Precio del servicio',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+            const SizedBox(height: 8),
+            const Text('Monedas disponibles',
+                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final m in MonedasApp.todas)
+                  FilterChip(
+                    label: Text(MonedasApp.etiqueta(m),
+                        style: const TextStyle(fontSize: 11)),
+                    selected: _monedasHabilitadas.contains(m),
+                    onSelected: (v) => _toggleMoneda(m, v),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              value: _monedaDefault,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Moneda por defecto',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+              items: _monedasHabilitadas
+                  .map((m) => DropdownMenuItem(
+                        value: m,
+                        child: Text(MonedasApp.etiqueta(m)),
+                      ))
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) setState(() => _monedaDefault = v);
+              },
+            ),
+            const SizedBox(height: 10),
+            const Text('Precio base',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            for (final m in _monedasHabilitadas)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: TextField(
+                  controller: _precioBaseCtrls[m],
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: 'Precio base (${MonedasApp.simbolo(m)})',
+                    isDense: true,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('Reglas de precio por dato adicional',
+                      style:
+                          TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                ),
+                TextButton.icon(
+                  onPressed: () {
+                    setState(() => _reglasPrecio.add(
+                          _ReglaPrecioEditable.nueva(_monedasHabilitadas),
+                        ));
+                  },
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Regla'),
+                ),
+              ],
+            ),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 6),
+              child: Text(
+                'Configura un precio distinto para cada opción del campo seleccionable.',
+                style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+              ),
+            ),
+            Builder(builder: (context) {
+              final claves = <_CampoEditable, String>{};
+              final usadas = <String>{};
+              for (final c in _campos) {
+                final etq = c.etiquetaCtrl.text.trim();
+                if (etq.isEmpty) continue;
+                var clave = CampoAdicional.slug(etq);
+                final base = clave;
+                var n = 2;
+                while (usadas.contains(clave)) {
+                  clave = '${base}_$n';
+                  n++;
+                }
+                usadas.add(clave);
+                claves[c] = clave;
+              }
+              final selects = _camposSelectParaPrecio(claves);
+              if (selects.isEmpty && _reglasPrecio.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Agrega campos tipo seleccionable para definir reglas.',
+                    style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                  ),
+                );
+              }
+              return Column(
+                children: [
+                  for (var i = 0; i < _reglasPrecio.length; i++)
+                    _ReglaPrecioTile(
+                      regla: _reglasPrecio[i],
+                      camposSelect: selects,
+                      monedas: _monedasHabilitadas,
+                      onChanged: () => setState(() {}),
+                      onRemove: () {
+                        setState(() {
+                          _reglasPrecio[i].dispose();
+                          _reglasPrecio.removeAt(i);
+                        });
+                      },
+                    ),
+                ],
+              );
+            }),
+            const Divider(),
+
             // ── Datos adicionales ─────────────────────────
             Row(
               children: [
@@ -612,6 +905,214 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
   }
 }
 
+/// Regla editable: un campo select con precio por cada opción y moneda.
+class _ReglaPrecioEditable {
+  String? siClave;
+  /// opción → moneda → controlador
+  final Map<String, Map<String, TextEditingController>> preciosPorOpcion = {};
+
+  _ReglaPrecioEditable({this.siClave});
+
+  factory _ReglaPrecioEditable.nueva(List<String> monedas) =>
+      _ReglaPrecioEditable();
+
+  factory _ReglaPrecioEditable.fromModel(
+    ReglaPrecio r, {
+    required List<String> monedas,
+    List<String>? opcionesCampo,
+  }) {
+    final editable = _ReglaPrecioEditable(siClave: r.siClave);
+    final opciones = opcionesCampo ?? r.preciosOpcion.keys.toList();
+    editable.syncCampo(opciones, monedas);
+    for (final opcion in r.preciosOpcion.entries) {
+      for (final precio in opcion.value.entries) {
+        final ctrl = editable.preciosPorOpcion[opcion.key]?[precio.key];
+        if (ctrl == null) continue;
+        final v = precio.value;
+        ctrl.text = v == 0
+            ? ''
+            : (v == v.roundToDouble() ? v.toInt().toString() : v.toString());
+      }
+    }
+    return editable;
+  }
+
+  void syncCampo(List<String> opciones, List<String> monedas) {
+    for (final o in List<String>.from(preciosPorOpcion.keys)) {
+      if (!opciones.contains(o)) {
+        for (final c in preciosPorOpcion[o]!.values) {
+          c.dispose();
+        }
+        preciosPorOpcion.remove(o);
+      }
+    }
+    for (final o in opciones) {
+      preciosPorOpcion.putIfAbsent(o, () => {});
+      final map = preciosPorOpcion[o]!;
+      for (final m in List<String>.from(map.keys)) {
+        if (!monedas.contains(m)) map.remove(m)?.dispose();
+      }
+      for (final m in monedas) {
+        map.putIfAbsent(m, () => TextEditingController());
+      }
+    }
+  }
+
+  void syncMonedas(List<String> monedas) {
+    syncCampo(preciosPorOpcion.keys.toList(), monedas);
+  }
+
+  void dispose() {
+    for (final map in preciosPorOpcion.values) {
+      for (final c in map.values) {
+        c.dispose();
+      }
+    }
+    preciosPorOpcion.clear();
+  }
+}
+
+class _ReglaPrecioTile extends StatefulWidget {
+  final _ReglaPrecioEditable regla;
+  final List<({String slug, String clave, String etiqueta, List<String> opciones})>
+      camposSelect;
+  final List<String> monedas;
+  final VoidCallback onChanged;
+  final VoidCallback onRemove;
+
+  const _ReglaPrecioTile({
+    required this.regla,
+    required this.camposSelect,
+    required this.monedas,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  @override
+  State<_ReglaPrecioTile> createState() => _ReglaPrecioTileState();
+}
+
+class _ReglaPrecioTileState extends State<_ReglaPrecioTile> {
+  ({String slug, String clave, String etiqueta, List<String> opciones})?
+      _campoActual() {
+    for (final c in widget.camposSelect) {
+      if (c.slug == widget.regla.siClave || c.clave == widget.regla.siClave) {
+        return c;
+      }
+    }
+    return null;
+  }
+
+  void _syncOpciones() {
+    final campo = _campoActual();
+    widget.regla.syncCampo(campo?.opciones ?? [], widget.monedas);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _syncOpciones();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ReglaPrecioTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncOpciones();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final campoActual = _campoActual();
+    final opcionesDisp = campoActual?.opciones ?? const <String>[];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: widget.camposSelect.any((c) => c.slug == widget.regla.siClave)
+                      ? widget.regla.siClave
+                      : (widget.camposSelect
+                              .any((c) => c.clave == widget.regla.siClave)
+                          ? widget.camposSelect
+                              .firstWhere((c) => c.clave == widget.regla.siClave)
+                              .slug
+                          : null),
+                  isDense: true,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Campo',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  items: widget.camposSelect
+                      .map((c) => DropdownMenuItem(
+                            value: c.slug,
+                            child: Text(c.etiqueta,
+                                overflow: TextOverflow.ellipsis),
+                          ))
+                      .toList(),
+                  onChanged: (v) {
+                    widget.regla.siClave = v;
+                    _syncOpciones();
+                    widget.onChanged();
+                  },
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18, color: AppTheme.error),
+                onPressed: widget.onRemove,
+              ),
+            ],
+          ),
+          if (opcionesDisp.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'Selecciona un campo con opciones definidas.',
+                style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+              ),
+            )
+          else
+            for (final opcion in opcionesDisp) ...[
+              const Divider(height: 16),
+              Text(opcion,
+                  style: const TextStyle(
+                      fontSize: 12.5, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              for (final m in widget.monedas)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: TextField(
+                    controller:
+                        widget.regla.preciosPorOpcion[opcion]?[m],
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: 'Precio (${MonedasApp.simbolo(m)})',
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => widget.onChanged(),
+                  ),
+                ),
+            ],
+        ],
+      ),
+    );
+  }
+}
+
 /// Estado mutable de una regla de default condicional mientras se edita.
 class _ReglaEditable {
   String? siClave; // slug base del campo del que depende (etiqueta -> slug)
@@ -631,7 +1132,7 @@ class _ReglaEditable {
 /// Estado mutable de un campo adicional mientras se edita en el formulario.
 class _CampoEditable {
   final TextEditingController etiquetaCtrl;
-  final TextEditingController opcionesCtrl; // CSV para select
+  List<String> opciones;
   TipoCampo tipo;
   bool requerido;
   int? min;
@@ -657,7 +1158,7 @@ class _CampoEditable {
     this.contabilizar = false,
     List<_ReglaEditable>? reglas,
   })  : etiquetaCtrl = TextEditingController(text: etiqueta),
-        opcionesCtrl = TextEditingController(text: opciones.join(', ')),
+        opciones = [...opciones],
         minCtrl = TextEditingController(text: min?.toString() ?? ''),
         maxCtrl = TextEditingController(text: max?.toString() ?? ''),
         defaultCtrl = TextEditingController(text: defaultTexto),
@@ -693,7 +1194,6 @@ class _CampoEditable {
 
   void dispose() {
     etiquetaCtrl.dispose();
-    opcionesCtrl.dispose();
     minCtrl.dispose();
     maxCtrl.dispose();
     defaultCtrl.dispose();
@@ -760,11 +1260,7 @@ class _CampoEditableTile extends StatelessWidget {
       );
     }
     if (campo.tipo == TipoCampo.select) {
-      final opciones = campo.opcionesCtrl.text
-          .split(',')
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
+      final opciones = campo.opciones;
       final current = campo.defaultCtrl.text.trim();
       return DropdownButtonFormField<String>(
         value: opciones.contains(current) ? current : null,
@@ -978,15 +1474,12 @@ class _CampoEditableTile extends StatelessWidget {
           ),
           if (campo.tipo == TipoCampo.select) ...[
             const SizedBox(height: 8),
-            TextField(
-              controller: campo.opcionesCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Opciones (separadas por coma)',
-                hintText: 'Casado, Viudo, Soltero',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (_) => onChanged(),
+            OpcionesListEditor(
+              opciones: campo.opciones,
+              onChanged: (next) {
+                campo.opciones = next;
+                onChanged();
+              },
             ),
           ],
           if (campo.tipo == TipoCampo.numero || campo.tipo == TipoCampo.texto) ...[

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/agenda.dart';
 import 'auth_service.dart';
@@ -5,6 +6,41 @@ import 'auth_service.dart';
 class AgendaAdminService {
   static final SupabaseClient _supabase = Supabase.instance.client;
   static const String _schema = 'flow';
+
+  /// Timestamp sin zona horaria para columnas `timestamp without time zone` en PG.
+  static String? _tsParam(DateTime? dt) {
+    if (dt == null) return null;
+    final l = dt.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${l.year}-${two(l.month)}-${two(l.day)} '
+        '${two(l.hour)}:${two(l.minute)}:${two(l.second)}';
+  }
+
+  static List<dynamic> _parseJsonbList(dynamic res) {
+    if (res == null) return [];
+    if (res is List) return res;
+    if (res is String) {
+      final decoded = jsonDecode(res);
+      if (decoded is List) return decoded;
+    }
+    throw Exception(
+      'Respuesta inesperada al listar reservas (${res.runtimeType})',
+    );
+  }
+
+  static List<Agenda> _mapAgendas(List<dynamic> raw) {
+    final out = <Agenda>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      try {
+        out.add(Agenda.fromJson(Map<String, dynamic>.from(item)));
+      } catch (e) {
+        // No abortar todo el listado por un registro mal formado.
+        print('[flow] AgendaAdminService: omitiendo reserva id=${item['id']}: $e');
+      }
+    }
+    return out;
+  }
 
   static Future<List<Agenda>> listarAgendas({
     required String uuidUsuario,
@@ -15,20 +51,32 @@ class AgendaAdminService {
     DateTime? desde,
     DateTime? hasta,
   }) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'admin_listar_agendas',
-      params: {
+    try {
+      final params = {
         'p_uuid_usuario': uuidUsuario,
         if (idEntidad != null) 'p_id_entidad': idEntidad,
         if (idLocal != null) 'p_id_local': idLocal,
         if (idLocalServicio != null) 'p_id_local_servicio': idLocalServicio,
         if (idEstado != null) 'p_id_estado': idEstado,
-        if (desde != null) 'p_desde': desde.toIso8601String(),
-        if (hasta != null) 'p_hasta': hasta.toIso8601String(),
-      },
-    );
-    final list = res as List;
-    return list.map((e) => Agenda.fromJson(e as Map<String, dynamic>)).toList();
+        if (desde != null) 'p_desde': _tsParam(desde),
+        if (hasta != null) 'p_hasta': _tsParam(hasta),
+      };
+      print('[flow] listarAgendas params=$params');
+      final res = await _supabase.schema(_schema).rpc(
+        'admin_listar_agendas',
+        params: params,
+      );
+      final raw = _parseJsonbList(res);
+      final mapped = _mapAgendas(raw);
+      print('[flow] listarAgendas raw=${raw.length} parsed=${mapped.length}');
+      if (raw.isNotEmpty && mapped.isEmpty) {
+        print('[flow] listarAgendas: la RPC devolvió datos pero ninguno parseó');
+      }
+      return mapped;
+    } catch (e, st) {
+      print('[flow] listarAgendas ERROR: $e\n$st');
+      rethrow;
+    }
   }
 
   static Future<void> crearReservaDirecta({
@@ -108,8 +156,8 @@ class AgendaAdminService {
         if (idLocal != null) 'p_id_local': idLocal,
         if (idLocalServicio != null) 'p_id_local_servicio': idLocalServicio,
         if (idEstado != null) 'p_id_estado': idEstado,
-        if (desde != null) 'p_desde': desde.toIso8601String(),
-        if (hasta != null) 'p_hasta': hasta.toIso8601String(),
+        if (desde != null) 'p_desde': _tsParam(desde),
+        if (hasta != null) 'p_hasta': _tsParam(hasta),
       };
       print('[vendedor] listarAgendasVendedor params=$params');
       final res = await _supabase.schema(_schema).rpc(
@@ -117,8 +165,7 @@ class AgendaAdminService {
         params: params,
       );
       print('[vendedor] listarAgendasVendedor res=${res?.runtimeType} len=${res is List ? (res as List).length : res}');
-      final list = res as List;
-      return list.map((e) => Agenda.fromJson(e as Map<String, dynamic>)).toList();
+      return _mapAgendas(_parseJsonbList(res));
     } catch (e, st) {
       print('[vendedor] listarAgendasVendedor ERROR: $e\n$st');
       rethrow;

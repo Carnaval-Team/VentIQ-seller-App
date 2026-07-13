@@ -9,7 +9,7 @@ class EstadoAgenda {
   EstadoAgenda({required this.id, required this.nombre, this.descripcion});
 
   factory EstadoAgenda.fromJson(Map<String, dynamic> json) => EstadoAgenda(
-        id: json['id'] as int,
+        id: (json['id'] as num).toInt(),
         nombre: json['nombre'] as String,
         descripcion: json['descripcion'] as String?,
       );
@@ -65,6 +65,8 @@ class Agenda {
   final int cantidad;
   final Map<String, dynamic>? datosAdicionales;
   final String? reservadoPor;
+  final double? precioTotal;
+  final String? moneda;
 
   Agenda({
     required this.id,
@@ -82,6 +84,8 @@ class Agenda {
     this.cantidad = 1,
     this.datosAdicionales,
     this.reservadoPor,
+    this.precioTotal,
+    this.moneda,
   });
 
   /// True si la reserva la hizo el usuario [uuid] para un tercero (titular ≠ quien reservó).
@@ -131,6 +135,8 @@ class Agenda {
       cantidad: (json['cantidad'] as num?)?.toInt() ?? 1,
       datosAdicionales: (json['datos_adicionales'] as Map?)?.cast<String, dynamic>(),
       reservadoPor: json['reservado_por'] as String?,
+      precioTotal: (json['precio_total'] as num?)?.toDouble(),
+      moneda: json['moneda'] as String?,
     );
   }
 }

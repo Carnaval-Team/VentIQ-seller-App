@@ -311,6 +311,7 @@ class CatalogoService {
     required int idServicio,
     required List<Map<String, dynamic>> campos,
     required bool permiteTercero,
+    Map<String, dynamic>? configPrecio,
   }) async {
     final res = await _supabase.schema(_schema).rpc(
       'admin_guardar_datos_servicio',
@@ -319,6 +320,7 @@ class CatalogoService {
         'p_id_servicio': idServicio,
         'p_campos': campos,
         'p_permite_tercero': permiteTercero,
+        'p_config_precio': configPrecio ?? {},
       },
     );
     final json = res as Map<String, dynamic>;
