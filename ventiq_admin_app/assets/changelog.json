@@ -1,9 +1,31 @@
 {
-  "current_version": "2.3.1",
-  "build": 231,
+  "current_version": "2.3.2",
+  "build": 232,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.3.2",
+      "date": "2026-07-13",
+      "title": "Cambios menores de permisos",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Supervisor: recepciones y transferencias",
+          "description": "El rol supervisor ahora puede registrar recepciones de productos y transferencias entre almacenes desde Inventario."
+        },
+        {
+          "type": "improvement",
+          "title": "Supervisor: gestión de trabajadores",
+          "description": "Los supervisores pueden crear, editar y eliminar trabajadores, además de consultarlos."
+        },
+        {
+          "type": "improvement",
+          "title": "Supervisor: configuración Global y Carnaval App",
+          "description": "Se habilita el acceso a Configuración para el supervisor, con las pestañas Global y Carnaval App."
+        }
+      ]
+    },
     {
       "version": "2.3.1",
       "date": "2026-07-08",

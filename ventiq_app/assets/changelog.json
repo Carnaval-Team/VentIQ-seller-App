@@ -1,9 +1,21 @@
 {
-  "current_version": "2.3.4",
-  "build": 836,
+  "current_version": "2.3.5",
+  "build": 837,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.3.5",
+      "date": "2026-07-13",
+      "title": "📶 Impresión Bluetooth más estable",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Impresión por lotes sin cortes a mitad",
+          "description": "Las facturas en lote se envían en grupos pequeños con pausas entre envíos, para que la impresora térmica no se sature y el ticket no se corte a medias."
+        }
+      ]
+    },
     {
       "version": "2.3.4",
       "date": "2026-06-09",

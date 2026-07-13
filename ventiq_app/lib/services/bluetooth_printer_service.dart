@@ -179,7 +179,11 @@ class BluetoothPrinterService {
     }
   }
 
-  /// Print multiple customer receipts in a single job (no warehouse slip)
+  /// Print multiple customer receipts without flooding the BT buffer.
+  ///
+  /// Envía por lotes pequeños (varias facturas por write) con pausas entre
+  /// envíos. Un único `writeBytes` gigante + disconnect inmediato suele
+  /// cortar la impresión a mitad en impresoras térmicas Bluetooth.
   Future<bool> printCustomerReceiptsBatch(List<Order> orders) async {
     if (!_isConnected || _selectedDevice == null) {
       debugPrint('❌ Printer not connected');
@@ -198,38 +202,81 @@ class BluetoothPrinterService {
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
       final storeInfo = await _getStorePrintInfo();
-      List<int> bytes = [];
+      final usdRate = await _getUsdRateForPrint();
 
-      bytes += _addStoreHeader(generator, storeInfo);
-      bytes += generator.text(
+      // Cabecera del lote
+      List<int> header = [];
+      header += _addStoreHeader(generator, storeInfo);
+      header += generator.text(
         'FACTURAS POR LOTE',
         styles: PosStyles(align: PosAlign.center, bold: true),
       );
-      bytes += generator.text(
+      header += generator.text(
         '----------------------------',
         styles: PosStyles(align: PosAlign.center),
       );
-      bytes += generator.emptyLines(1);
+      header += generator.emptyLines(1);
 
-      final usdRate = await _getUsdRateForPrint();
+      var headerOk = await _sendToPrinterWithRetry(
+        header,
+        'Batch Header',
+        settleAfter: false,
+      );
+      if (!headerOk) return false;
 
-      for (int i = 0; i < orders.length; i++) {
-        bytes += _addCustomerReceipt(
-          generator,
-          orders[i],
-          storeInfo,
-          includeHeader: false,
-          usdRate: usdRate,
+      // Agrupar facturas para no abrir demasiados writes ni saturar el buffer.
+      const ordersPerChunk = 3;
+      var totalBytes = header.length;
+
+      for (var start = 0; start < orders.length; start += ordersPerChunk) {
+        final end =
+            start + ordersPerChunk > orders.length
+                ? orders.length
+                : start + ordersPerChunk;
+        final slice = orders.sublist(start, end);
+        List<int> chunk = [];
+
+        for (var i = 0; i < slice.length; i++) {
+          final globalIndex = start + i;
+          chunk += _addCustomerReceipt(
+            generator,
+            slice[i],
+            storeInfo,
+            includeHeader: false,
+            usdRate: usdRate,
+          );
+          if (globalIndex < orders.length - 1) {
+            chunk += _addDottedLineSeparator(generator);
+          }
+        }
+
+        // Corte de papel al final de cada grupo (y del lote).
+        if (end >= orders.length) {
+          chunk += generator.cut();
+        }
+
+        debugPrint(
+          '📤 Batch chunk orders ${start + 1}-$end '
+          '(${chunk.length} bytes)',
         );
-        if (i < orders.length - 1) {
-          bytes += _addDottedLineSeparator(generator);
+        final ok = await _sendToPrinterWithRetry(
+          chunk,
+          'Batch Receipts ${start + 1}-$end',
+          settleAfter: false,
+        );
+        if (!ok) return false;
+
+        totalBytes += chunk.length;
+
+        // Dar tiempo al buffer de la impresora entre grupos.
+        if (end < orders.length) {
+          await Future.delayed(const Duration(milliseconds: 700));
         }
       }
 
-      bytes += generator.cut();
-
-      debugPrint('📤 Sending batch customer receipts (${bytes.length} bytes)');
-      return await _sendToPrinterWithRetry(bytes, 'Batch Customer Receipts');
+      await waitForPrinterBufferDrain(totalBytes);
+      debugPrint('✅ Batch customer print finished ($totalBytes bytes)');
+      return true;
     } catch (e) {
       debugPrint('❌ Error printing batch receipts: $e');
       return false;
@@ -530,6 +577,15 @@ class BluetoothPrinterService {
   /// Connect to a specific Bluetooth device
   Future<bool> connectToDevice(BluetoothInfo device) async {
     try {
+      // Si quedó un stream a medias de un job anterior, forzar cierre limpio.
+      try {
+        final alreadyConnected = await PrintBluetoothThermal.connectionStatus;
+        if (alreadyConnected) {
+          await PrintBluetoothThermal.disconnect;
+          await Future.delayed(const Duration(milliseconds: 400));
+        }
+      } catch (_) {}
+
       bool connected = await PrintBluetoothThermal.connect(
         macPrinterAddress: device.macAdress,
       );
@@ -555,6 +611,25 @@ class BluetoothPrinterService {
     }
   }
 
+  /// Espera a que la impresora consuma el buffer BT antes de cortar el socket.
+  /// [totalBytes] es el tamaño aproximado del job ESC/POS enviado.
+  Future<void> waitForPrinterBufferDrain(int totalBytes) async {
+    // ~20 ms por cada 100 bytes, mínimo 2s, máximo 20s.
+    final ms = ((totalBytes / 100) * 20).round().clamp(2000, 20000);
+    debugPrint(
+      '⏳ Waiting ${ms}ms for printer buffer drain ($totalBytes bytes)...',
+    );
+    await Future.delayed(Duration(milliseconds: ms));
+  }
+
+  /// Envío público con troceo + reintentos (p. ej. resumenes grandes).
+  Future<bool> writeBytesSafe(
+    List<int> bytes, {
+    String jobName = 'Print Job',
+  }) {
+    return _sendToPrinterWithRetry(bytes, jobName, settleAfter: true);
+  }
+
   /// Print invoice for an order with customer receipt and warehouse picking slip
   Future<bool> printInvoice(Order order) async {
     if (!_isConnected || _selectedDevice == null) {
@@ -577,6 +652,7 @@ class BluetoothPrinterService {
         generator,
         order,
         storeInfo,
+        settleAfter: false,
       );
 
       if (!customerResult) {
@@ -594,6 +670,7 @@ class BluetoothPrinterService {
         generator,
         order,
         storeInfo,
+        settleAfter: false,
       );
 
       if (!warehouseResult) {
@@ -614,6 +691,7 @@ class BluetoothPrinterService {
         order,
         storeInfo,
         title: 'RECIBO VENDEDOR',
+        settleAfter: true,
       );
 
       if (!sellerResult) {
@@ -634,6 +712,7 @@ class BluetoothPrinterService {
     Order order,
     _StorePrintInfo storeInfo, {
     String title = 'FACTURA',
+    bool settleAfter = true,
   }) async {
     try {
       final usdRate = await _getUsdRateForPrint();
@@ -651,7 +730,11 @@ class BluetoothPrinterService {
 
       debugPrint('📤 Sending $title (${bytes.length} bytes)...');
 
-      return await _sendToPrinterWithRetry(bytes, title);
+      return await _sendToPrinterWithRetry(
+        bytes,
+        title,
+        settleAfter: settleAfter,
+      );
     } catch (e) {
       debugPrint('❌ Error creating $title: $e');
       return false;
@@ -662,8 +745,9 @@ class BluetoothPrinterService {
   Future<bool> _printWarehouseSlip(
     Generator generator,
     Order order,
-    _StorePrintInfo storeInfo,
-  ) async {
+    _StorePrintInfo storeInfo, {
+    bool settleAfter = true,
+  }) async {
     try {
       final usdRate = await _getUsdRateForPrint();
       List<int> bytes = [];
@@ -679,32 +763,95 @@ class BluetoothPrinterService {
 
       debugPrint('📤 Sending warehouse slip (${bytes.length} bytes)...');
 
-      return await _sendToPrinterWithRetry(bytes, 'Warehouse Slip');
+      return await _sendToPrinterWithRetry(
+        bytes,
+        'Warehouse Slip',
+        settleAfter: settleAfter,
+      );
     } catch (e) {
       debugPrint('❌ Error creating warehouse slip: $e');
       return false;
     }
   }
 
-  /// Send bytes to printer with retry logic
-  Future<bool> _sendToPrinterWithRetry(List<int> bytes, String jobName) async {
-    bool result = false;
-    int attempts = 0;
+  // Chunks pequeños: muchas térmicas BT fallan con ráfagas grandes.
+  static const int _btChunkSize = 512;
+  static const Duration _btChunkDelay = Duration(milliseconds: 60);
+
+  /// Escribe en trozos con pausa entre ellos para no saturar el buffer SPP.
+  Future<bool> _writeBytesChunked(List<int> bytes) async {
+    if (bytes.isEmpty) return true;
+
+    for (var offset = 0; offset < bytes.length; offset += _btChunkSize) {
+      final end = (offset + _btChunkSize > bytes.length)
+          ? bytes.length
+          : offset + _btChunkSize;
+      final chunk = bytes.sublist(offset, end);
+      final ok = await PrintBluetoothThermal.writeBytes(chunk);
+      if (!ok) {
+        debugPrint(
+          '❌ BT chunk write failed at $offset/${bytes.length} bytes',
+        );
+        return false;
+      }
+      if (end < bytes.length) {
+        await Future.delayed(_btChunkDelay);
+      }
+    }
+    return true;
+  }
+
+  Future<bool> _reconnectSelectedDevice() async {
+    final device = _selectedDevice;
+    if (device == null) return false;
+    try {
+      try {
+        await PrintBluetoothThermal.disconnect;
+      } catch (_) {}
+      await Future.delayed(const Duration(milliseconds: 600));
+      final connected = await PrintBluetoothThermal.connect(
+        macPrinterAddress: device.macAdress,
+      );
+      _isConnected = connected;
+      debugPrint(
+        connected
+            ? '🔄 Reconectado a ${device.name}'
+            : '❌ No se pudo reconectar a ${device.name}',
+      );
+      return connected;
+    } catch (e) {
+      debugPrint('❌ Error reconectando Bluetooth: $e');
+      _isConnected = false;
+      return false;
+    }
+  }
+
+  /// Send bytes to printer with chunking + retry (+ reconnect on failure).
+  Future<bool> _sendToPrinterWithRetry(
+    List<int> bytes,
+    String jobName, {
+    bool settleAfter = true,
+  }) async {
+    var result = false;
+    var attempts = 0;
     const maxAttempts = 3;
 
     while (!result && attempts < maxAttempts) {
       attempts++;
-      debugPrint('🔄 $jobName - Print attempt $attempts of $maxAttempts');
+      debugPrint(
+        '🔄 $jobName - Print attempt $attempts of $maxAttempts '
+        '(${bytes.length} bytes)',
+      );
 
       try {
-        result = await PrintBluetoothThermal.writeBytes(bytes);
+        result = await _writeBytesChunked(bytes);
         if (result) {
           debugPrint('✅ $jobName - Print successful on attempt $attempts');
         } else {
           debugPrint('❌ $jobName - Print failed on attempt $attempts');
           if (attempts < maxAttempts) {
-            debugPrint('⏳ Waiting 2 seconds before retry...');
-            await Future.delayed(const Duration(seconds: 2));
+            await _reconnectSelectedDevice();
+            await Future.delayed(const Duration(seconds: 1));
           }
         }
       } catch (printError) {
@@ -712,17 +859,21 @@ class BluetoothPrinterService {
           '❌ $jobName - Print error on attempt $attempts: $printError',
         );
         if (attempts < maxAttempts) {
-          debugPrint('⏳ Waiting 3 seconds before retry...');
-          await Future.delayed(const Duration(seconds: 3));
+          await _reconnectSelectedDevice();
+          await Future.delayed(const Duration(seconds: 2));
         }
       }
     }
 
     if (!result) {
       debugPrint('❌ $jobName - All print attempts failed');
+      return false;
     }
 
-    return result;
+    if (settleAfter) {
+      await waitForPrinterBufferDrain(bytes.length);
+    }
+    return true;
   }
 
   Future<_StorePrintInfo> _getStorePrintInfo() async {

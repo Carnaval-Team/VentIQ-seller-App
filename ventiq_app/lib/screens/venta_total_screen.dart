@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
@@ -1647,7 +1646,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         );
       }
 
-      // Desconectar
+      // Margen extra tras el drain interno, luego desconectar
+      if (printed) {
+        await Future.delayed(const Duration(milliseconds: 800));
+      }
       await _printerService.disconnect();
     } catch (e) {
       Navigator.pop(context);
@@ -1885,8 +1887,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       bytes += generator.emptyLines(3);
       bytes += generator.cut();
 
-      // Enviar a la impresora
-      bool result = await PrintBluetoothThermal.writeBytes(bytes);
+      // Enviar a la impresora (troceado + espera antes de cortar BT)
+      bool result = await _printerService.writeBytesSafe(
+        bytes,
+        jobName: 'Resumen Detallado',
+      );
       return result;
     } catch (e) {
       debugPrint('Error printing detailed summary: $e');

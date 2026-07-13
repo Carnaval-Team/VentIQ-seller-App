@@ -38,7 +38,9 @@ class SalesScreen extends StatefulWidget {
 
 class _SalesScreenState extends State<SalesScreen>
     with TickerProviderStateMixin {
-  late TabController _tabController;
+  TabController? _tabController;
+  bool _canViewRealTime = true;
+  bool _tabsReady = false;
   List<Sale> _sales = [];
   List<SalesVendorReport> _vendorReports = [];
   List<ProductSalesReport> _productSalesReports = [];
@@ -189,7 +191,14 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Widget _buildGeneratePdfFab() {
-    if (_tabController.index == 5 || _tabController.index == 6) {
+    final tabController = _tabController;
+    if (tabController == null) return const SizedBox.shrink();
+
+    // Mapear al índice “lógico” (con Tiempo Real = 0) para reutilizar el switch.
+    final logicalIndex =
+        _canViewRealTime ? tabController.index : tabController.index + 1;
+
+    if (logicalIndex == 5 || logicalIndex == 6) {
       // 5 = Paquetería, 6 = Analista — sin FAB.
       return const SizedBox.shrink();
     }
@@ -201,10 +210,10 @@ class _SalesScreenState extends State<SalesScreen>
     Future<void> Function()? action;
 
     /* debugPrint(
-      '🔍 FAB: Tab ${_tabController.index}, SupplierReports: ${_supplierReports.length}',
+      '🔍 FAB: Tab ${tabController.index}, SupplierReports: ${_supplierReports.length}',
     ); */
 
-    switch (_tabController.index) {
+    switch (logicalIndex) {
       case 0: // Tiempo Real
         isPdfAction = true;
         isLoading = _isGeneratingPdf;
@@ -1731,13 +1740,29 @@ class _SalesScreenState extends State<SalesScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this);
-    _tabController.addListener(_onTabChanged);
     _analystController = SalesAnalystController();
     _analystController.addListener(_handleAnalystUpdates);
     _analystMessageCount = _analystController.messages.length;
-    _loadAdvancedPlanStatus();
     _initializeDateRange();
+    _initTabsAndData();
+  }
+
+  Future<void> _initTabsAndData() async {
+    final canViewRealTime =
+        await PermissionsService().canPerformAction('sales.view_realtime');
+    if (!mounted) return;
+    _tabController?.dispose();
+    final controller = TabController(
+      length: canViewRealTime ? 7 : 6,
+      vsync: this,
+    );
+    controller.addListener(_onTabChanged);
+    setState(() {
+      _canViewRealTime = canViewRealTime;
+      _tabController = controller;
+      _tabsReady = true;
+    });
+    _loadAdvancedPlanStatus();
     _loadWarehouses();
     _loadSalesData();
   }
@@ -1748,16 +1773,21 @@ class _SalesScreenState extends State<SalesScreen>
     _endDate = DateTime(now.year, now.month, now.day, 23, 59, 59);
   }
 
+  int get _logicalTabIndex {
+    final index = _tabController?.index ?? 0;
+    return _canViewRealTime ? index : index + 1;
+  }
+
   void _onTabChanged() {
-    if (_tabController.indexIsChanging || !_tabController.indexIsChanging) {
-      // Forzar reconstrucción del FAB cuando cambias de tab
+    final tabController = _tabController;
+    if (tabController == null) return;
+    if (tabController.indexIsChanging || !tabController.indexIsChanging) {
       setState(() {
         _isPdfFabExpanded = false;
       });
 
-      switch (_tabController.index) {
+      switch (_logicalTabIndex) {
         case 2: // Suppliers
-          // _loadSupplierReports se ejecuta automáticamente tras _loadProductSalesData
           break;
         case 3: // Desglose ventas
           if (_salesBreakdownFuture == null) {
@@ -1776,7 +1806,6 @@ class _SalesScreenState extends State<SalesScreen>
             if (!_isLoadingAnalysis && _productAnalysis.isEmpty) {
               _loadProductAnalysis();
             }
-            // _loadSupplierReports se ejecuta automáticamente tras _loadProductSalesData
           }
           break;
       }
@@ -1806,7 +1835,7 @@ class _SalesScreenState extends State<SalesScreen>
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController?.dispose();
     _analystController.removeListener(_handleAnalystUpdates);
     _analystController.dispose();
     _analystQuestionController.dispose();
@@ -1822,7 +1851,7 @@ class _SalesScreenState extends State<SalesScreen>
     });
     
     // Si estamos en la pestaña de desglose, recargar inmediatamente
-    if (_tabController.index == 3) {
+    if (_logicalTabIndex == 3) {
       _salesBreakdownFuture = _fetchSalesBreakdown();
     }
 
@@ -2083,6 +2112,48 @@ class _SalesScreenState extends State<SalesScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (!_tabsReady || _tabController == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+      );
+    }
+
+    final tabs = <Widget>[
+      if (_canViewRealTime)
+        const Tab(
+          text: 'Tiempo Real',
+          icon: Icon(Icons.timeline, size: 18),
+        ),
+      const Tab(text: 'TPVs', icon: Icon(Icons.point_of_sale, size: 18)),
+      const Tab(
+        text: 'Proveedores',
+        icon: Icon(Icons.inventory, size: 18),
+      ),
+      const Tab(
+        text: 'Desglose',
+        icon: Icon(Icons.receipt_long, size: 18),
+      ),
+      const Tab(text: 'Análisis', icon: Icon(Icons.analytics, size: 18)),
+      const Tab(
+        text: 'Paquetería',
+        icon: Icon(Icons.local_shipping_outlined, size: 18),
+      ),
+      const Tab(
+        text: 'Analista',
+        icon: Icon(Icons.smart_toy, size: 18),
+      ),
+    ];
+
+    final tabViews = <Widget>[
+      if (_canViewRealTime) _buildRealTimeTab(),
+      _buildTPVsTab(),
+      _buildSuppliersTab(),
+      _buildSalesBreakdownTab(),
+      _buildAnalyticsTab(),
+      const PaqueteriaTab(),
+      _buildAnalystGateTab(),
+    ];
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -2118,30 +2189,8 @@ class _SalesScreenState extends State<SalesScreen>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           indicatorColor: Colors.white,
-          tabs: [
-            const Tab(
-              text: 'Tiempo Real',
-              icon: Icon(Icons.timeline, size: 18),
-            ),
-            const Tab(text: 'TPVs', icon: Icon(Icons.point_of_sale, size: 18)),
-            const Tab(
-              text: 'Proveedores',
-              icon: Icon(Icons.inventory, size: 18),
-            ),
-            const Tab(
-              text: 'Desglose',
-              icon: Icon(Icons.receipt_long, size: 18),
-            ),
-            const Tab(text: 'Análisis', icon: Icon(Icons.analytics, size: 18)),
-            const Tab(
-              text: 'Paquetería',
-              icon: Icon(Icons.local_shipping_outlined, size: 18),
-            ),
-            Tab(
-              text: 'Analista',
-              icon: Icon(Icons.smart_toy, size: 18),
-            ),
-          ],
+          isScrollable: true,
+          tabs: tabs,
         ),
       ),
       body:
@@ -2149,15 +2198,7 @@ class _SalesScreenState extends State<SalesScreen>
               ? _buildLoadingState()
               : TabBarView(
                 controller: _tabController,
-                children: [
-                  _buildRealTimeTab(),
-                  _buildTPVsTab(),
-                  _buildSuppliersTab(),
-                  _buildSalesBreakdownTab(),
-                  _buildAnalyticsTab(),
-                  const PaqueteriaTab(),
-                  _buildAnalystGateTab(),
-                ],
+                children: tabViews,
               ),
       floatingActionButton: _buildGeneratePdfFab(),
       endDrawer: const AdminDrawer(),
@@ -5208,10 +5249,10 @@ class _SalesScreenState extends State<SalesScreen>
         );
       });
 
-      // Solo en el tab de TPVs (índice 1) preguntamos si se debe mostrar
+      // Solo en el tab de TPVs (índice lógico 1) preguntamos si se debe mostrar
       // hasta el cierre del turno. En cualquier otro tab se mantiene el
       // comportamiento actual (false).
-      if (_tabController.index == 1) {
+      if (_logicalTabIndex == 1) {
         final mostrarHastaCierre = await _askMostrarHastaCierreTurno();
         _tpvHastaCierreTurno = mostrarHastaCierre;
       } else {

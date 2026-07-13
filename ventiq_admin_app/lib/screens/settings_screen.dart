@@ -20,6 +20,7 @@ import '../services/store_data_service.dart';
 import '../services/store_service.dart';
 import '../services/catalogo_service.dart';
 import '../services/warehouse_service.dart';
+import '../services/permissions_service.dart';
 import '../models/warehouse.dart';
 import '../utils/screen_protection_mixin.dart';
 import '../utils/navigation_guard.dart';
@@ -37,7 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     with SingleTickerProviderStateMixin, ScreenProtectionMixin {
   @override
   String get protectedRoute => '/settings';
-  late TabController _tabController;
+  TabController? _tabController;
   final GlobalKey<State<GlobalConfigTabView>> _globalConfigTabKey =
       GlobalKey<State<GlobalConfigTabView>>();
   final GlobalKey<State<CategoriesTabView>> _categoriesTabKey =
@@ -54,29 +55,46 @@ class _SettingsScreenState extends State<SettingsScreen>
   final StoreDataService _storeDataService = StoreDataService();
   final CatalogoService _catalogoService = CatalogoService();
   final WarehouseService _warehouseService = WarehouseService();
+  final PermissionsService _permissionsService = PermissionsService();
   Map<String, dynamic>? _storeData;
   bool _loadingStoreData = true;
   int? _storeId;
   bool _canEditSettings = false;
+  bool _isSupervisor = false;
+  bool _tabsReady = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 11, vsync: this, initialIndex: 1);
-    _loadPermissions();
+    _loadPermissionsAndTabs();
   }
 
-  Future<void> _loadPermissions() async {
-    final canEdit = await NavigationGuard.canPerformAction('settings.edit');
+  Future<void> _loadPermissionsAndTabs() async {
+    final results = await Future.wait([
+      NavigationGuard.canPerformAction('settings.edit'),
+      _permissionsService.getUserRole(),
+    ]);
     if (!mounted) return;
+    final canEdit = results[0] as bool;
+    final role = results[1] as UserRole;
+    final isSupervisor = role == UserRole.supervisor;
+    final tabCount = isSupervisor ? 2 : 11;
+    _tabController?.dispose();
     setState(() {
       _canEditSettings = canEdit;
+      _isSupervisor = isSupervisor;
+      _tabController = TabController(
+        length: tabCount,
+        vsync: this,
+        initialIndex: isSupervisor ? 0 : 1,
+      );
+      _tabsReady = true;
     });
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController?.dispose();
     super.dispose();
   }
 
@@ -90,6 +108,50 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (!hasAccess) {
       return buildAccessDeniedWidget();
     }
+
+    if (!_tabsReady || _tabController == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final tabs = _isSupervisor
+        ? const [
+            Tab(text: 'Global', icon: Icon(Icons.settings_applications)),
+            Tab(text: 'Carnaval App', icon: Icon(Icons.storefront)),
+          ]
+        : const [
+            Tab(text: 'Tienda', icon: Icon(Icons.store)),
+            Tab(text: 'Global', icon: Icon(Icons.settings_applications)),
+            Tab(text: 'Categorías', icon: Icon(Icons.category)),
+            Tab(text: 'Variantes', icon: Icon(Icons.format_shapes)),
+            Tab(text: 'Presentaciones', icon: Icon(Icons.format_paint)),
+            Tab(text: 'Unidades', icon: Icon(Icons.straighten)),
+            Tab(text: 'Precios', icon: Icon(Icons.sell)),
+            Tab(text: 'Tasas pers.', icon: Icon(Icons.currency_exchange)),
+            Tab(text: 'Precios Carnaval', icon: Icon(Icons.price_check)),
+            Tab(text: 'Carnaval App', icon: Icon(Icons.storefront)),
+            Tab(text: 'Márgenes', icon: Icon(Icons.trending_up)),
+          ];
+
+    final tabViews = _isSupervisor
+        ? [
+            GlobalConfigTabView(key: _globalConfigTabKey),
+            CarnavalTabView(key: _carnavalTabKey),
+          ]
+        : [
+            GlobalConfigTabView(key: _globalConfigTabKey),
+            _buildStoreDataTab(),
+            CategoriesTabView(key: _categoriesTabKey, canEdit: _canEditSettings),
+            VariantsTabView(key: _variantsTabKey),
+            PresentationsTabView(key: _presentationsTabKey),
+            UnitsTabView(key: _unitsTabKey),
+            PriceManagementTabView(),
+            PersonalRatesTabView(canEdit: _canEditSettings),
+            const CarnavalPricesTabView(),
+            CarnavalTabView(key: _carnavalTabKey),
+            const MarginsTabView(),
+          ];
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -122,36 +184,12 @@ class _SettingsScreenState extends State<SettingsScreen>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           isScrollable: true,
-          tabs: const [
-            Tab(text: 'Tienda', icon: Icon(Icons.store)),
-            Tab(text: 'Global', icon: Icon(Icons.settings_applications)),
-            Tab(text: 'Categorías', icon: Icon(Icons.category)),
-            Tab(text: 'Variantes', icon: Icon(Icons.format_shapes)),
-            Tab(text: 'Presentaciones', icon: Icon(Icons.format_paint)),
-            Tab(text: 'Unidades', icon: Icon(Icons.straighten)),
-            Tab(text: 'Precios', icon: Icon(Icons.sell)),
-            Tab(text: 'Tasas pers.', icon: Icon(Icons.currency_exchange)),
-            Tab(text: 'Precios Carnaval', icon: Icon(Icons.price_check)),
-            Tab(text: 'Carnaval App', icon: Icon(Icons.storefront)),
-            Tab(text: 'Márgenes', icon: Icon(Icons.trending_up)),
-          ],
+          tabs: tabs,
         ),
       ),
       body: TabBarView(
         controller: _tabController,
-        children: [
-          GlobalConfigTabView(key: _globalConfigTabKey),
-          _buildStoreDataTab(),
-          CategoriesTabView(key: _categoriesTabKey, canEdit: _canEditSettings),
-          VariantsTabView(key: _variantsTabKey),
-          PresentationsTabView(key: _presentationsTabKey),
-          UnitsTabView(key: _unitsTabKey),
-          PriceManagementTabView(),
-          PersonalRatesTabView(canEdit: _canEditSettings),
-          const CarnavalPricesTabView(),
-          CarnavalTabView(key: _carnavalTabKey),
-          const MarginsTabView(),
-        ],
+        children: tabViews,
       ),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
@@ -159,10 +197,10 @@ class _SettingsScreenState extends State<SettingsScreen>
         onTap: _onBottomNavTap,
       ),
       floatingActionButton:
-          !_canEditSettings
+          !_canEditSettings || _isSupervisor
               ? null
               : AnimatedBuilder(
-                animation: _tabController,
+                animation: _tabController!,
                 builder: (context, child) {
                   // Ocultar FAB en pestañas donde no aplica agregar:
                   // - Unidades (índice 5)
@@ -170,12 +208,12 @@ class _SettingsScreenState extends State<SettingsScreen>
                   // - Tasas pers. (índice 7) se gestiona con su propio botón
                   // - Carnaval (índice 8)
                   final isHidden =
-                      _tabController.index == 5 ||
-                      _tabController.index == 6 ||
-                      _tabController.index == 7 ||
-                      _tabController.index == 8 ||
-                      _tabController.index == 9 ||
-                      _tabController.index == 10;
+                      _tabController!.index == 5 ||
+                      _tabController!.index == 6 ||
+                      _tabController!.index == 7 ||
+                      _tabController!.index == 8 ||
+                      _tabController!.index == 9 ||
+                      _tabController!.index == 10;
                   return isHidden
                       ? const SizedBox.shrink()
                       : FloatingActionButton(
@@ -692,7 +730,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   void _showAddDialog() {
-    final currentTab = _tabController.index;
+    final currentTab = _tabController?.index ?? 0;
     switch (currentTab) {
       case 0:
         // Tab Tienda - no tiene funcionalidad de agregar

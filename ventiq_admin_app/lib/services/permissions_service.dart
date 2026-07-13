@@ -544,9 +544,17 @@ class PermissionsService {
       UserRole.auditor,
       UserRole.almacenero,
     ],
-    '/inventory-reception': [UserRole.gerente, UserRole.almacenero],
+    '/inventory-reception': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.almacenero,
+    ],
     '/inventory-extraction': [UserRole.gerente],
-    '/inventory-transfer': [UserRole.gerente, UserRole.almacenero],
+    '/inventory-transfer': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.almacenero,
+    ],
     '/inventory-adjustment': [UserRole.gerente, UserRole.supervisor],
     '/inventory-history': [
       UserRole.gerente,
@@ -628,8 +636,8 @@ class PermissionsService {
     '/hr-salary-report': [UserRole.gerente, UserRole.recursosHumanos],
     '/hr-worker-config': [UserRole.gerente, UserRole.recursosHumanos],
 
-    // Configuración (Solo Gerente)
-    '/settings': [UserRole.gerente],
+    // Configuración (Gerente y Supervisor)
+    '/settings': [UserRole.gerente, UserRole.supervisor],
     '/excel-import': [UserRole.gerente],
 
     // Consignaciones
@@ -661,9 +669,17 @@ class PermissionsService {
     ],
 
     // Inventario
-    'inventory.create_reception': [UserRole.gerente, UserRole.almacenero],
+    'inventory.create_reception': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.almacenero,
+    ],
     'inventory.create_extraction': [UserRole.gerente],
-    'inventory.create_transfer': [UserRole.gerente, UserRole.almacenero],
+    'inventory.create_transfer': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.almacenero,
+    ],
     'inventory.create_adjustment': [UserRole.gerente],
     'inventory.approve_adjustment': [UserRole.gerente, UserRole.supervisor],
     'inventory.view': [
@@ -685,13 +701,14 @@ class PermissionsService {
     ],
 
     // Trabajadores
-    'worker.create': [UserRole.gerente],
-    'worker.edit': [UserRole.gerente],
-    'worker.delete': [UserRole.gerente],
+    'worker.create': [UserRole.gerente, UserRole.supervisor],
+    'worker.edit': [UserRole.gerente, UserRole.supervisor],
+    'worker.delete': [UserRole.gerente, UserRole.supervisor],
     'worker.view': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
 
     // Ventas
     'sales.view': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+    'sales.view_realtime': [UserRole.gerente, UserRole.auditor],
     'sales.modify': [UserRole.gerente],
 
     // Proveedores
@@ -705,8 +722,8 @@ class PermissionsService {
     'financial.edit': [UserRole.gerente],
 
     // Configuración
-    'settings.view': [UserRole.gerente],
-    'settings.edit': [UserRole.gerente],
+    'settings.view': [UserRole.gerente, UserRole.supervisor],
+    'settings.edit': [UserRole.gerente, UserRole.supervisor],
 
     // TPVs
     'tpv.create': [UserRole.gerente, UserRole.supervisor],
