@@ -19,9 +19,9 @@ import '../../services/agenda_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../utils/precio_reserva.dart';
+import '../../utils/telefono_contacto.dart';
 import '../../widgets/datos_adicionales_form.dart';
 import '../../widgets/totales_datos_adicionales.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class ReservasScreen extends StatefulWidget {
   final Entidad entidad;
@@ -583,6 +583,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
                 const Divider(height: 1),
                 Expanded(
                   child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onHorizontalDragEnd: (details) {
                       if (_loading) return;
                       final v = details.primaryVelocity ?? 0;
@@ -966,9 +967,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
               _infoRowWidget(
                 'Teléfono',
                 GestureDetector(
-                  onTap: () async {
-                    try { await launchUrl(Uri(scheme: 'tel', path: telefono)); } catch (_) {}
-                  },
+                  onTap: () => TelefonoContacto.mostrarOpciones(context, telefono),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1098,23 +1097,44 @@ class _ReservasScreenState extends State<ReservasScreen> {
       );
 
   Widget _buildEmpty() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.event_busy_outlined,
-              size: 64,
-              color: AppTheme.textSecondary.withOpacity(0.35)),
-          const SizedBox(height: 12),
-          const Text('Sin reservas para los filtros aplicados',
-              style: TextStyle(color: AppTheme.textSecondary)),
-          const SizedBox(height: 6),
-          Text(
-            _fmt.format(_fecha),
-            style: const TextStyle(
-                fontSize: 12, color: AppTheme.textSecondary),
-          ),
-        ],
+    return SizedBox.expand(
+      child: RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            SizedBox(height: MediaQuery.of(context).size.height * 0.18),
+            Center(
+              child: Column(
+                children: [
+                  Icon(Icons.event_busy_outlined,
+                      size: 64,
+                      color: AppTheme.textSecondary.withOpacity(0.35)),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Sin reservas para los filtros aplicados',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppTheme.textSecondary),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _fmt.format(_fecha),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppTheme.textSecondary),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Desliza para cambiar de día',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 11, color: AppTheme.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1577,12 +1597,7 @@ class _PhoneRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: GestureDetector(
-        onTap: () async {
-          final uri = Uri(scheme: 'tel', path: telefono);
-          try {
-            await launchUrl(uri);
-          } catch (_) {}
-        },
+        onTap: () => TelefonoContacto.mostrarOpciones(context, telefono),
         child: Row(
           children: [
             const Icon(Icons.phone, size: 13, color: AppTheme.primary),

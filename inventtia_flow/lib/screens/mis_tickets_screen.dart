@@ -12,9 +12,9 @@ import '../services/agenda_service.dart';
 import '../services/auth_service.dart';
 import '../services/catalogo_service.dart';
 import '../utils/precio_reserva.dart';
+import '../utils/telefono_contacto.dart';
 import '../widgets/datos_adicionales_view.dart';
 import '../widgets/notificaciones_bell.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class MisTicketsScreen extends StatefulWidget {
   const MisTicketsScreen({super.key});
@@ -391,6 +391,7 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
             _buildSearchBar(),
             Expanded(
               child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onHorizontalDragEnd: (details) {
                   if (_isLoading || !_esVendedor) return;
                   final v = details.primaryVelocity ?? 0;
@@ -800,47 +801,55 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
   }
 
   Widget _buildEmptyState() {
-    return RefreshIndicator(
-      onRefresh: _load,
-      color: AppTheme.primary,
-      child: ListView(
-        children: [
-          SizedBox(height: MediaQuery.of(context).size.height * 0.12),
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 104,
-                  height: 104,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppTheme.primary.withValues(alpha: 0.10),
-                        AppTheme.accent.withValues(alpha: 0.10),
-                      ],
+    return SizedBox.expand(
+      child: RefreshIndicator(
+        onRefresh: _load,
+        color: AppTheme.primary,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            SizedBox(height: MediaQuery.of(context).size.height * 0.12),
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 104,
+                    height: 104,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppTheme.primary.withValues(alpha: 0.10),
+                          AppTheme.accent.withValues(alpha: 0.10),
+                        ],
+                      ),
+                      shape: BoxShape.circle,
                     ),
-                    shape: BoxShape.circle,
+                    child: Icon(Icons.confirmation_number_rounded,
+                        size: 46,
+                        color: AppTheme.primary.withValues(alpha: 0.55)),
                   ),
-                  child: Icon(Icons.confirmation_number_rounded,
-                      size: 46, color: AppTheme.primary.withValues(alpha: 0.55)),
-                ),
-                const SizedBox(height: 18),
-                const Text('No hay reservas',
-                    style: TextStyle(
-                        color: AppTheme.textPrimary,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700)),
-                const SizedBox(height: 6),
-                const Text('Tus turnos reservados aparecerán aquí',
-                    style:
-                        TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-              ],
+                  const SizedBox(height: 18),
+                  const Text('No hay reservas',
+                      style: TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  Text(
+                    _esVendedor
+                        ? 'Desliza para cambiar de día'
+                        : 'Tus turnos reservados aparecerán aquí',
+                    style: const TextStyle(
+                        color: AppTheme.textSecondary, fontSize: 13),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1298,12 +1307,7 @@ class _TelefonoRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: GestureDetector(
-        onTap: () async {
-          final uri = Uri(scheme: 'tel', path: telefono);
-          try {
-            await launchUrl(uri);
-          } catch (_) {}
-        },
+        onTap: () => TelefonoContacto.mostrarOpciones(context, telefono),
         child: Row(
           children: [
             const Icon(Icons.phone_outlined, size: 13, color: AppTheme.primary),

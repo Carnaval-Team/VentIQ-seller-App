@@ -1,8 +1,25 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.4.2",
-  "build": 10,
+  "current_version": "1.4.3",
+  "build": 11,
   "changelogs": [
+    {
+      "version": "1.4.3",
+      "date": "2026-07-15",
+      "title": "📞 Contacto al cliente y swipe de fechas más fiable",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Llamar o WhatsApp al tocar el teléfono",
+          "description": "En las reservas de administrador y trabajador, al tocar el teléfono del cliente aparece un diálogo para llamar o abrir WhatsApp. Funciona en la app y en la web."
+        },
+        {
+          "type": "fix",
+          "title": "Swipe entre días sin reservas",
+          "description": "Corregido el deslizamiento horizontal cuando el día no tiene reservas: ahora puedes cambiar de fecha desde toda el área vacía, no solo sobre el texto."
+        }
+      ]
+    },
     {
       "version": "1.4.2",
       "date": "2026-07-13",
