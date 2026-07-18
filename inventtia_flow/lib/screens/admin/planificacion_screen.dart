@@ -14,6 +14,7 @@ import '../../services/plan_servicio_service.dart';
 import '../../services/agenda_admin_service.dart';
 import '../../widgets/datos_adicionales_form.dart';
 import 'config_plan_mensual_screen.dart';
+import 'config_recursos_screen.dart';
 
 class PlanificacionScreen extends StatefulWidget {
   final Entidad entidad;
@@ -399,6 +400,15 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
     ).then((_) => _cargarPlanes());
   }
 
+  void _abrirConfigRecursos() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ConfigRecursosScreen(localServicio: widget.ls),
+      ),
+    ).then((_) => _cargarPlanes());
+  }
+
   void _abrirConfigCapacidades() {
     showModalBottomSheet(
       context: context,
@@ -644,6 +654,23 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
                   foregroundColor: AppTheme.accent,
                   side: BorderSide(
                       color: AppTheme.accent.withValues(alpha: 0.4)),
+                  minimumSize: const Size.fromHeight(40),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+            // Configuración de recursos y turnos
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: OutlinedButton.icon(
+                onPressed: _abrirConfigRecursos,
+                icon: const Icon(Icons.directions_car_outlined, size: 18),
+                label: const Text('Recursos y turnos'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.primaryDark,
+                  side: BorderSide(
+                      color: AppTheme.primaryDark.withValues(alpha: 0.4)),
                   minimumSize: const Size.fromHeight(40),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10)),

@@ -233,7 +233,8 @@ class _LocalServicioDetailScreenState
     }
     if (!mounted) return;
 
-    final sel = await showModalBottomSheet<({DateTime fecha, int cantidad})>(
+    final sel = await showModalBottomSheet<
+        ({DateTime fecha, int cantidad, int? idTurno})>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
@@ -249,11 +250,12 @@ class _LocalServicioDetailScreenState
     final datos = await _recolectarDatosReserva(cantidad: sel.cantidad);
     if (datos == null || !mounted) return;
 
-    await _confirmarReservaDirecta(uuid, sel.fecha, sel.cantidad, datos);
+    await _confirmarReservaDirecta(
+        uuid, sel.fecha, sel.cantidad, datos, sel.idTurno);
   }
 
-  Future<void> _confirmarReservaDirecta(
-      String uuid, DateTime fecha, int cantidad, _DatosReserva datos) async {
+  Future<void> _confirmarReservaDirecta(String uuid, DateTime fecha,
+      int cantidad, _DatosReserva datos, int? idTurno) async {
     setState(() => _isActing = true);
     try {
       await AgendaService.reservarDirecto(
@@ -269,6 +271,7 @@ class _LocalServicioDetailScreenState
         terceroCi: datos.tCi,
         terceroTelefono: datos.tTelefono,
         moneda: datos.moneda,
+        idTurno: idTurno,
       );
       await _load();
       if (mounted) {
@@ -1685,19 +1688,36 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
     if (disp == null || disp.disponibles <= 0) return;
     final fecha = DateTime(day.year, day.month, day.day);
 
+    // Si el día ofrece turnos (servicio con recursos), primero elegimos turno.
+    TurnoDisponible? turnoSel;
+    int disponiblesTurno = disp.disponibles;
+    if (disp.tieneTurnos) {
+      final elegido = await showModalBottomSheet<TurnoDisponible>(
+        context: context,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (_) => _TurnoPickerSheet(fecha: fecha, dia: disp),
+      );
+      if (elegido == null || !mounted) return;
+      turnoSel = elegido;
+      disponiblesTurno = elegido.disponibles;
+    }
+
     final ls = widget.localServicio;
     final cantidadDefault = ls.cantidadDefault;
     final cantidadMax = ls.cantidadMaxCapacidad;
-    final disponibles = disp.disponibles;
 
     // Si solo hay 1 cupo o el máximo configurado es 1, no preguntamos cantidad.
-    if (disponibles <= 1 || cantidadMax <= 1) {
+    if (disponiblesTurno <= 1 || cantidadMax <= 1) {
       if (!mounted) return;
-      Navigator.pop(context, (fecha: fecha, cantidad: 1));
+      Navigator.pop(context,
+          (fecha: fecha, cantidad: 1, idTurno: turnoSel?.idTurno));
       return;
     }
 
-    final maxCant = cantidadMax < disponibles ? cantidadMax : disponibles;
+    final maxCant =
+        cantidadMax < disponiblesTurno ? cantidadMax : disponiblesTurno;
     final cantidad = await showDialog<int>(
       context: context,
       builder: (_) => _CantidadDialog(
@@ -1707,7 +1727,8 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
       ),
     );
     if (cantidad == null || !mounted) return;
-    Navigator.pop(context, (fecha: fecha, cantidad: cantidad));
+    Navigator.pop(context,
+        (fecha: fecha, cantidad: cantidad, idTurno: turnoSel?.idTurno));
   }
 
   @override
@@ -1902,12 +1923,102 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
                 'Toca un día con cupo para reservar. El número indica los turnos libres.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    fontSize: 14, 
+                    fontSize: 14,
                     color: AppTheme.textSecondary,
                     fontWeight: FontWeight.w500),
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Selector de turno para un día concreto (servicios con recursos). Agrupa los
+/// turnos por recurso y muestra la disponibilidad de cada uno. Devuelve el
+/// [TurnoDisponible] elegido.
+class _TurnoPickerSheet extends StatelessWidget {
+  final DateTime fecha;
+  final DisponibilidadDia dia;
+
+  const _TurnoPickerSheet({required this.fecha, required this.dia});
+
+  @override
+  Widget build(BuildContext context) {
+    // Agrupa turnos por recurso conservando el orden de llegada.
+    final porRecurso = <int, List<TurnoDisponible>>{};
+    final nombreRecurso = <int, String>{};
+    for (final t in dia.turnos) {
+      porRecurso.putIfAbsent(t.idRecurso, () => []).add(t);
+      nombreRecurso[t.idRecurso] = t.recurso;
+    }
+
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                const Icon(Icons.confirmation_number_outlined,
+                    size: 20, color: AppTheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Elige un turno · ${DateFormat('dd/MM/yyyy').format(fecha)}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 16),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+              children: [
+                for (final idRec in porRecurso.keys) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
+                    child: Text(
+                      nombreRecurso[idRec] ?? 'Recurso',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textSecondary),
+                    ),
+                  ),
+                  for (final t in porRecurso[idRec]!)
+                    Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      child: ListTile(
+                        title: Text(t.turno,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text('${t.disponibles} disponibles'),
+                        trailing: const Icon(Icons.chevron_right,
+                            color: AppTheme.primary),
+                        onTap: () => Navigator.pop(context, t),
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );

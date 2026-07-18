@@ -23,7 +23,7 @@
       "Bash(command -v mkdir)"
     ]
   },
-  "disabledMcpjsonServers": [
+  "enabledMcpjsonServers": [
     "supabase"
   ]
 }
