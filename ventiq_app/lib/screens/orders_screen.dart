@@ -5652,7 +5652,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
 
   void _setAddQuantity(double quantity) {
     if (quantity <= 0) return;
-    setState(() => _addQuantity = quantity.clamp(1, 9999).toDouble());
+    setState(() => _addQuantity = quantity.clamp(0.01, 9999).toDouble());
   }
 
   void _removeItemLocal(OrderItem item) {
@@ -5851,6 +5851,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
   // ── confirmar: aplicar todos los cambios a Supabase ──────────
 
   Future<void> _commit() async {
+    // Asegurar que el campo de cantidad en edición se confirme antes de guardar
+    FocusScope.of(context).unfocus();
+    await Future<void>.delayed(Duration.zero);
+
     if (!_hasPendingChanges) {
       Navigator.pop(context);
       return;
@@ -6933,7 +6937,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                 icon: Icons.remove,
                 color: const Color(0xFF6B7280),
                 enabled: !_isSaving,
-                onTap: () => _updateQtyLocal(item, -1),
+                onTap: () {
+                  final step = item.cantidad % 1 != 0 ? 0.5 : 1.0;
+                  _updateQtyLocal(item, -step);
+                },
               ),
               const SizedBox(width: 6),
               _QuantityTextField(
@@ -6948,7 +6955,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                 icon: Icons.add,
                 color: const Color(0xFF0EA5E9),
                 enabled: !_isSaving,
-                onTap: () => _updateQtyLocal(item, 1),
+                onTap: () {
+                  final step = item.cantidad % 1 != 0 ? 0.5 : 1.0;
+                  _updateQtyLocal(item, step);
+                },
               ),
             ],
           ),
@@ -7479,8 +7489,11 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                 _CtrlButton(
                   icon: Icons.remove,
                   color: const Color(0xFF6B7280),
-                  enabled: _addQuantity > 1,
-                  onTap: () => _setAddQuantity(_addQuantity - 1),
+                  enabled: _addQuantity > 0.01,
+                  onTap: () {
+                    final step = _addQuantity % 1 != 0 ? 0.5 : 1.0;
+                    _setAddQuantity(_addQuantity - step);
+                  },
                 ),
                 const SizedBox(width: 12),
                 _QuantityTextField(
@@ -7495,7 +7508,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                   icon: Icons.add,
                   color: const Color(0xFF0EA5E9),
                   enabled: true,
-                  onTap: () => _setAddQuantity(_addQuantity + 1),
+                  onTap: () {
+                    final step = _addQuantity % 1 != 0 ? 0.5 : 1.0;
+                    _setAddQuantity(_addQuantity + step);
+                  },
                 ),
               ],
             ),
@@ -7744,7 +7760,9 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
   }
 }
 
-// Campo compacto para capturar cantidades manuales sin perder los botones +/-.
+// Campo compacto para capturar cantidades manuales (enteros o decimales).
+// No emite onChanged en cada tecla: eso provocaba setState del padre y
+// impedía escribir el separador decimal (p. ej. "1." / "1,5").
 class _QuantityTextField extends StatefulWidget {
   final double value;
   final bool enabled;
@@ -7786,6 +7804,8 @@ class _QuantityTextFieldState extends State<_QuantityTextField> {
   @override
   void didUpdateWidget(covariant _QuantityTextField oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Solo sincronizar desde el padre si el campo no está en edición
+    // (p. ej. botones +/-), para no pisar "1." mientras se escribe.
     if (!_focusNode.hasFocus && oldWidget.value != widget.value) {
       _controller.text = _formatQuantity(widget.value);
     }
@@ -7820,15 +7840,9 @@ class _QuantityTextFieldState extends State<_QuantityTextField> {
 
     final nextValue = parsed.clamp(0.01, 9999).toDouble();
     _controller.text = _formatQuantity(nextValue);
-    widget.onChanged(nextValue);
-  }
-
-  void _emitLiveValue(String value) {
-    final parsed = double.tryParse(value.trim().replaceAll(',', '.'));
-    if (parsed == null || parsed <= 0) return;
-
-    final nextValue = parsed.clamp(0.01, 9999).toDouble();
-    widget.onChanged(nextValue);
+    if (nextValue != widget.value) {
+      widget.onChanged(nextValue);
+    }
   }
 
   @override
@@ -7841,10 +7855,20 @@ class _QuantityTextFieldState extends State<_QuantityTextField> {
         focusNode: _focusNode,
         enabled: widget.enabled,
         textAlign: TextAlign.center,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        keyboardType: const TextInputType.numberWithOptions(
+          decimal: true,
+          signed: false,
+        ),
         textInputAction: TextInputAction.done,
         inputFormatters: [
-          FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+          TextInputFormatter.withFunction((oldValue, newValue) {
+            final text = newValue.text;
+            // Un solo separador decimal (punto o coma)
+            final separators = RegExp(r'[.,]').allMatches(text).length;
+            if (separators > 1) return oldValue;
+            return newValue;
+          }),
         ],
         style: TextStyle(
           fontSize: widget.fontSize,
@@ -7873,7 +7897,6 @@ class _QuantityTextFieldState extends State<_QuantityTextField> {
           ),
         ),
         onSubmitted: (_) => _commitValue(),
-        onChanged: _emitLiveValue,
       ),
     );
   }

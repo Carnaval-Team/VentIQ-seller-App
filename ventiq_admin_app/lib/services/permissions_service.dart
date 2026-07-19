@@ -629,12 +629,32 @@ class PermissionsService {
       UserRole.auditor,
     ],
 
-    // Recursos Humanos (Gerente y Recursos Humanos tienen acceso)
-    '/hr-dashboard': [UserRole.gerente, UserRole.recursosHumanos],
-    '/hr-checkin': [UserRole.gerente, UserRole.recursosHumanos],
-    '/hr-checkout': [UserRole.gerente, UserRole.recursosHumanos],
-    '/hr-salary-report': [UserRole.gerente, UserRole.recursosHumanos],
-    '/hr-worker-config': [UserRole.gerente, UserRole.recursosHumanos],
+    // Recursos Humanos (Gerente, Supervisor y Recursos Humanos)
+    '/hr-dashboard': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    '/hr-checkin': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    '/hr-checkout': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    '/hr-salary-report': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    '/hr-worker-config': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
 
     // Configuración (Gerente y Supervisor)
     '/settings': [UserRole.gerente, UserRole.supervisor],
@@ -769,11 +789,31 @@ class PermissionsService {
     'printers.edit': [UserRole.gerente],
 
     // Recursos Humanos
-    'hr.checkin': [UserRole.gerente, UserRole.recursosHumanos],
-    'hr.checkout': [UserRole.gerente, UserRole.recursosHumanos],
-    'hr.salary_report': [UserRole.gerente, UserRole.recursosHumanos],
-    'hr.worker_config': [UserRole.gerente, UserRole.recursosHumanos],
-    'hr.dashboard': [UserRole.gerente, UserRole.recursosHumanos],
+    'hr.checkin': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    'hr.checkout': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    'hr.salary_report': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    'hr.worker_config': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    'hr.dashboard': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
   };
 }
 

@@ -22,6 +22,7 @@ import '../../services/agenda_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../utils/precio_reserva.dart';
+import '../../utils/telefono_contacto.dart';
 import '../../widgets/totales_datos_adicionales.dart';
 import '../../widgets/totales_recurso_turno.dart';
 import '../../widgets/cancelado_ribbon.dart';
@@ -579,6 +580,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
                 const Divider(height: 1),
                 Expanded(
                   child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onHorizontalDragEnd: (details) {
                       if (_loading) return;
                       final v = details.primaryVelocity ?? 0;
@@ -965,9 +967,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
               _infoRowWidget(
                 'Teléfono',
                 GestureDetector(
-                  onTap: () async {
-                    try { await launchUrl(Uri(scheme: 'tel', path: telefono)); } catch (_) {}
-                  },
+                  onTap: () => TelefonoContacto.mostrarOpciones(context, telefono),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1088,17 +1088,37 @@ class _VendedorScreenState extends State<VendedorScreen> {
       );
 
   Widget _buildEmpty() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.event_busy_outlined,
-              size: 64,
-              color: AppTheme.textSecondary.withOpacity(0.35)),
-          const SizedBox(height: 12),
-          const Text('Sin reservas para los filtros aplicados',
-              style: TextStyle(color: AppTheme.textSecondary)),
-        ],
+    return SizedBox.expand(
+      child: RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            SizedBox(height: MediaQuery.of(context).size.height * 0.18),
+            Center(
+              child: Column(
+                children: [
+                  Icon(Icons.event_busy_outlined,
+                      size: 64,
+                      color: AppTheme.textSecondary.withOpacity(0.35)),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Sin reservas para los filtros aplicados',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppTheme.textSecondary),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Desliza para cambiar de día',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 11, color: AppTheme.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

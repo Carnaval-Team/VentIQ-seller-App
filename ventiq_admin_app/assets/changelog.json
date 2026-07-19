@@ -23,6 +23,11 @@
           "type": "improvement",
           "title": "Supervisor: configuración Global y Carnaval App",
           "description": "Se habilita el acceso a Configuración para el supervisor, con las pestañas Global y Carnaval App."
+        },
+        {
+          "type": "improvement",
+          "title": "Supervisor: módulo de Recursos Humanos",
+          "description": "El supervisor puede entrar al módulo de RRHH (dashboard, check-in, check-out, reporte de salarios y configuración de trabajadores)."
         }
       ]
     },
