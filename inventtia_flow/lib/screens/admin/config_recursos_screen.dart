@@ -369,7 +369,8 @@ class _RecursoCard extends StatelessWidget {
                       Text(recurso.nombre,
                           style: const TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 15)),
-                      Text('Capacidad base: ${recurso.capacidad}',
+                      Text('${recurso.tramos.length} tramo(s) · '
+                          '${recurso.turnos.length} turno(s)',
                           style: const TextStyle(
                               color: AppTheme.textSecondary, fontSize: 12)),
                     ],
@@ -400,7 +401,7 @@ class _RecursoCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Tramos (capacidad)',
+                const Text('Tramos',
                     style: TextStyle(
                         fontWeight: FontWeight.w600, fontSize: 13)),
                 TextButton.icon(
@@ -424,9 +425,8 @@ class _RecursoCard extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: recurso.tramos.map((t) {
-                  final cap = t.capacidad ?? recurso.capacidad;
                   return InputChip(
-                    label: Text('${t.nombre} · $cap'),
+                    label: Text(t.nombre),
                     onPressed: () => onEditTramo(t),
                     onDeleted: () => onDeleteTramo(t),
                     backgroundColor:
@@ -514,27 +514,19 @@ class _RecursoFormSheet extends StatefulWidget {
 class _RecursoFormSheetState extends State<_RecursoFormSheet> {
   late final TextEditingController _nombre =
       TextEditingController(text: widget.recurso?.nombre ?? '');
-  late final TextEditingController _cap = TextEditingController(
-      text: (widget.recurso?.capacidad ?? 1).toString());
   late bool _activo = widget.recurso?.activo ?? true;
   bool _saving = false;
 
   @override
   void dispose() {
     _nombre.dispose();
-    _cap.dispose();
     super.dispose();
   }
 
   Future<void> _guardar() async {
     final nombre = _nombre.text.trim();
-    final cap = int.tryParse(_cap.text.trim());
     if (nombre.isEmpty) {
       _err('El nombre es obligatorio');
-      return;
-    }
-    if (cap == null || cap < 1) {
-      _err('La capacidad debe ser un número ≥ 1');
       return;
     }
     setState(() => _saving = true);
@@ -543,7 +535,9 @@ class _RecursoFormSheetState extends State<_RecursoFormSheet> {
         uuidUsuario: widget.uuid,
         idLocalServicio: widget.idLocalServicio,
         nombre: nombre,
-        capacidad: cap,
+        // La capacidad ya no se define aquí: se fija al planificar (por día).
+        // Se conserva el valor previo (o 1) solo porque la RPC lo exige.
+        capacidad: widget.recurso?.capacidad ?? 1,
         activo: _activo,
         id: widget.recurso?.id,
       );
@@ -574,14 +568,26 @@ class _RecursoFormSheetState extends State<_RecursoFormSheet> {
             border: OutlineInputBorder(),
           ),
         ),
-        const SizedBox(height: 14),
-        TextField(
-          controller: _cap,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Capacidad base *',
-            helperText: 'Plazas por defecto de cada tramo (ej: 15)',
-            border: OutlineInputBorder(),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppTheme.primary.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.info_outline, size: 18, color: AppTheme.primary),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'La capacidad se define al planificar (por día), no aquí. '
+                  'Este recurso solo agrupa tramos y turnos.',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 8),
@@ -614,15 +620,12 @@ class _TramoFormSheet extends StatefulWidget {
 class _TramoFormSheetState extends State<_TramoFormSheet> {
   late final TextEditingController _nombre =
       TextEditingController(text: widget.tramo?.nombre ?? '');
-  late final TextEditingController _cap = TextEditingController(
-      text: widget.tramo?.capacidad?.toString() ?? '');
   late bool _activo = widget.tramo?.activo ?? true;
   bool _saving = false;
 
   @override
   void dispose() {
     _nombre.dispose();
-    _cap.dispose();
     super.dispose();
   }
 
@@ -632,22 +635,14 @@ class _TramoFormSheetState extends State<_TramoFormSheet> {
       _err('El nombre es obligatorio');
       return;
     }
-    final capText = _cap.text.trim();
-    int? cap;
-    if (capText.isNotEmpty) {
-      cap = int.tryParse(capText);
-      if (cap == null || cap < 0) {
-        _err('La capacidad debe ser un número ≥ 0');
-        return;
-      }
-    }
     setState(() => _saving = true);
     try {
       await RecursoService.guardarTramo(
         uuidUsuario: widget.uuid,
         idRecurso: widget.recurso.id,
         nombre: nombre,
-        capacidad: cap, // null = hereda recurso
+        // La capacidad ya no se define aquí: se fija al planificar (por día).
+        capacidad: widget.tramo?.capacidad,
         activo: _activo,
         id: widget.tramo?.id,
       );
@@ -676,17 +671,6 @@ class _TramoFormSheetState extends State<_TramoFormSheet> {
             labelText: 'Nombre *',
             hintText: 'Ej: Ida, Vuelta',
             border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 14),
-        TextField(
-          controller: _cap,
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(
-            labelText: 'Capacidad',
-            hintText: 'Vacío = usar base (${widget.recurso.capacidad})',
-            helperText: 'Plazas de este tramo por día',
-            border: const OutlineInputBorder(),
           ),
         ),
         const SizedBox(height: 8),
@@ -793,14 +777,12 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
         ),
         const SizedBox(height: 8),
         ...tramos.map((t) {
-          final cap = t.capacidad ?? widget.recurso.capacidad;
           return CheckboxListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
             value: _tramosSel.contains(t.id),
             activeColor: AppTheme.primary,
             title: Text(t.nombre),
-            subtitle: Text('Capacidad: $cap'),
             onChanged: (v) => setState(() {
               if (v == true) {
                 _tramosSel.add(t.id);

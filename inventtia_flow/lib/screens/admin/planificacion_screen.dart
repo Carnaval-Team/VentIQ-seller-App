@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../../config/app_theme.dart';
 import '../../models/entidad.dart';
-import '../../models/plan_servicio.dart';
+import '../../models/plan_dia.dart';
+import '../../models/disponibilidad_dia.dart';
+import '../../models/recurso.dart';
 import '../../models/servicio.dart';
-import '../../providers/auth_provider.dart';
 import '../../services/agenda_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
+import '../../services/plan_config_service.dart';
 import '../../services/plan_servicio_service.dart';
+import '../../services/recurso_service.dart';
 import '../../services/agenda_admin_service.dart';
 import '../../widgets/datos_adicionales_form.dart';
 import 'config_plan_mensual_screen.dart';
@@ -339,12 +341,15 @@ class _ServicioCalendarTile extends StatefulWidget {
 }
 
 class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
-  List<PlanServicio> _planes = [];
+  List<PlanDia> _planes = [];
+  List<Recurso> _recursos = []; // recursos activos (vacío = servicio sin recursos)
   bool _loadingPlanes = false;
   bool _expanded = false;
   DateTime _focusedDay = DateTime.now();
   late bool _permiteDirecta;
   bool _togglingDirecta = false;
+
+  String get _uuid => AuthService.currentUserId ?? '';
 
   @override
   void initState() {
@@ -436,24 +441,38 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 
-  Map<String, List<PlanServicio>> get _porDia {
-    final map = <String, List<PlanServicio>>{};
+  Map<String, PlanDia> get _porDia {
+    final map = <String, PlanDia>{};
     for (final p in _planes) {
-      if (p.fecha == null) continue;
-      map.putIfAbsent(_dayKey(p.fecha!), () => []).add(p);
+      map[_dayKey(p.fecha)] = p;
     }
     return map;
   }
 
-  List<PlanServicio> _planesDelDia(DateTime day) =>
-      _porDia[_dayKey(day)] ?? [];
+  /// eventLoader del calendario: lista de 0 o 1 PlanDia para ese día.
+  List<PlanDia> _planesDelDia(DateTime day) {
+    final p = _porDia[_dayKey(day)];
+    return p == null ? const [] : [p];
+  }
 
   Future<void> _cargarPlanes() async {
     setState(() => _loadingPlanes = true);
     try {
-      final planes =
-          await PlanServicioService.getByLocalServicio(widget.ls.id);
-      if (mounted) setState(() => _planes = planes);
+      // Recursos activos: definen si el servicio planifica por recurso.
+      final recursos = await RecursoService.listar(
+        uuidUsuario: _uuid,
+        idLocalServicio: widget.ls.id,
+      );
+      final planes = await PlanConfigService.getPlanDias(
+        uuidUsuario: _uuid,
+        idLocalServicio: widget.ls.id,
+      );
+      if (mounted) {
+        setState(() {
+          _recursos = recursos.where((r) => r.activo).toList();
+          _planes = planes;
+        });
+      }
     } catch (_) {
     } finally {
       if (mounted) setState(() => _loadingPlanes = false);
@@ -461,15 +480,12 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
   }
 
   void _onDayTapped(DateTime day) {
-    final planes = _planesDelDia(day);
-    if (planes.isNotEmpty) {
-      _mostrarOpcionesDia(day, planes);
-    } else {
-      _mostrarOpcionesDia(day, []);
-    }
+    final plan = _porDia[_dayKey(day)];
+    _mostrarOpcionesDia(day, plan);
   }
 
-  void _mostrarOpcionesDia(DateTime dia, List<PlanServicio> planes) {
+  void _mostrarOpcionesDia(DateTime dia, PlanDia? plan) {
+    final tienePlan = plan != null && plan.cantidad > 0;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -477,14 +493,10 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _DayOptionsSheet(
         dia: dia,
-        planes: planes,
+        tienePlan: tienePlan,
         onVerPlanificacion: () {
           Navigator.pop(context);
-          if (planes.isNotEmpty) {
-            _mostrarInfoDia(dia, planes);
-          } else {
-            _mostrarCrearPlan(dia);
-          }
+          _mostrarPlanificarDia(dia, plan);
         },
         onReservar: () {
           Navigator.pop(context);
@@ -510,30 +522,18 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
     );
   }
 
-  void _mostrarInfoDia(DateTime dia, List<PlanServicio> planes) {
+  void _mostrarPlanificarDia(DateTime dia, PlanDia? plan) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _DayInfoSheet(
-        dia: dia,
-        planes: planes,
-        onUpdated: _cargarPlanes,
-      ),
-    );
-  }
-
-  void _mostrarCrearPlan(DateTime fecha) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _CrearPlanSheet(
+      builder: (_) => _PlanificarDiaSheet(
         ls: widget.ls,
-        fechaInicial: fecha,
-        onCreated: _cargarPlanes,
+        fecha: dia,
+        recursos: _recursos,
+        planActual: plan,
+        onSaved: _cargarPlanes,
       ),
     );
   }
@@ -685,7 +685,6 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
               )
             else
               _CalendarioConPlanes(
-                planes: _planes,
                 focusedDay: _focusedDay,
                 planesDelDia: _planesDelDia,
                 onDayTapped: _onDayTapped,
@@ -700,14 +699,12 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
 
 // ── Calendario con marcadores ─────────────────────────────────
 class _CalendarioConPlanes extends StatelessWidget {
-  final List<PlanServicio> planes;
   final DateTime focusedDay;
-  final List<PlanServicio> Function(DateTime) planesDelDia;
+  final List<PlanDia> Function(DateTime) planesDelDia;
   final void Function(DateTime) onDayTapped;
   final void Function(DateTime) onPageChanged;
 
   const _CalendarioConPlanes({
-    required this.planes,
     required this.focusedDay,
     required this.planesDelDia,
     required this.onDayTapped,
@@ -718,7 +715,7 @@ class _CalendarioConPlanes extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        TableCalendar<PlanServicio>(
+        TableCalendar<PlanDia>(
           locale: 'es_ES',
           firstDay: DateTime.utc(2024, 1, 1),
           lastDay: DateTime.utc(2027, 12, 31),
@@ -744,7 +741,8 @@ class _CalendarioConPlanes extends StatelessWidget {
           calendarBuilders: CalendarBuilders(
             markerBuilder: (context, day, events) {
               if (events.isEmpty) return null;
-              final plan = events.first as PlanServicio;
+              final plan = events.first;
+              if (plan.cantidad <= 0) return null;
               final color = plan.estaLleno
                   ? AppTheme.error
                   : plan.disponibles < (plan.cantidad * 0.2).ceil()
@@ -812,356 +810,155 @@ class _LegendaDot extends StatelessWidget {
   }
 }
 
-// ── Sheet: info del día (planes existentes) ───────────────────
-class _DayInfoSheet extends StatefulWidget {
-  final DateTime dia;
-  final List<PlanServicio> planes;
-  final VoidCallback onUpdated;
-
-  const _DayInfoSheet(
-      {required this.dia,
-      required this.planes,
-      required this.onUpdated});
-
-  @override
-  State<_DayInfoSheet> createState() => _DayInfoSheetState();
-}
-
-class _DayInfoSheetState extends State<_DayInfoSheet> {
-  bool _saving = false;
-
-  Future<void> _editarCantidad(PlanServicio plan) async {
-    final ctrl =
-        TextEditingController(text: plan.cantidad.toString());
-    final result = await showDialog<int>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Modificar cantidad'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Agendados: ${plan.agendados}  ·  Mínimo: ${plan.agendados}',
-              style: const TextStyle(
-                  fontSize: 12, color: AppTheme.textSecondary),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Nueva cantidad',
-                border: OutlineInputBorder(),
-              ),
-              autofocus: true,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar')),
-          ElevatedButton(
-            onPressed: () {
-              final v = int.tryParse(ctrl.text.trim());
-              if (v == null || v < plan.agendados) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content:
-                      Text('Mínimo permitido: ${plan.agendados}'),
-                  backgroundColor: AppTheme.error,
-                ));
-                return;
-              }
-              Navigator.pop(context, v);
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
-    );
-    if (result == null || !mounted) return;
-    setState(() => _saving = true);
-    try {
-      await PlanServicioService.update(
-          id: plan.id, fecha: plan.fecha, cantidad: result);
-      widget.onUpdated();
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: AppTheme.error));
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  Future<void> _eliminar(PlanServicio plan) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Eliminar plan'),
-        content: const Text('¿Eliminar este plan del día?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar')),
-          ElevatedButton(
-            style:
-                ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    setState(() => _saving = true);
-    try {
-      await PlanServicioService.delete(plan.id);
-      widget.onUpdated();
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: AppTheme.error));
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 12),
-          Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 14),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                const Icon(Icons.calendar_today,
-                    size: 18, color: AppTheme.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    DateFormat('EEEE, dd \'de\' MMMM yyyy', 'es')
-                        .format(widget.dia),
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 15),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (_saving)
-            const Padding(
-              padding: EdgeInsets.all(20),
-              child: CircularProgressIndicator(),
-            )
-          else
-            ListView.separated(
-              shrinkWrap: true,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-              itemCount: widget.planes.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (_, i) {
-                final plan = widget.planes[i];
-                final pct = plan.cantidad > 0
-                    ? plan.agendados / plan.cantidad
-                    : 0.0;
-                final color = pct >= 1.0
-                    ? AppTheme.error
-                    : pct >= 0.8
-                        ? AppTheme.warning
-                        : AppTheme.success;
-                return Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: Colors.grey.shade200)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: color.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                '${plan.agendados} / ${plan.cantidad}',
-                                style: TextStyle(
-                                    color: color,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 14),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: LinearProgressIndicator(
-                                  value: pct.clamp(0.0, 1.0),
-                                  backgroundColor:
-                                      color.withOpacity(0.1),
-                                  valueColor:
-                                      AlwaysStoppedAnimation(color),
-                                  minHeight: 6,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              icon: const Icon(Icons.edit_outlined,
-                                  color: AppTheme.primary, size: 18),
-                              tooltip: 'Editar cantidad',
-                              onPressed: () => _editarCantidad(plan),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                  minWidth: 28, minHeight: 28),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline,
-                                  color: AppTheme.error, size: 18),
-                              tooltip: 'Eliminar plan',
-                              onPressed: () => _eliminar(plan),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                  minWidth: 28, minHeight: 28),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '${plan.disponibles} turnos disponibles',
-                          style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.textSecondary),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Sheet: crear plan para un día vacío ───────────────────────
-class _CrearPlanSheet extends StatefulWidget {
+// ── Sheet: planificar un día (crear o editar) ─────────────────
+// Unifica el antiguo "crear plan" e "info del día". Dos modos:
+//  • CON recursos: un campo de capacidad por recurso (todos los tramos del
+//    recurso reciben esa cantidad ese día). 0 = cerrar el recurso ese día.
+//  • SIN recursos: un único campo de cantidad de turnos del día.
+class _PlanificarDiaSheet extends StatefulWidget {
   final LocalServicio ls;
-  final DateTime fechaInicial;
-  final VoidCallback onCreated;
+  final DateTime fecha;
+  final List<Recurso> recursos; // vacío = servicio sin recursos
+  final PlanDia? planActual; // null o cantidad 0 = día sin planificar
+  final VoidCallback onSaved;
 
-  const _CrearPlanSheet({
+  const _PlanificarDiaSheet({
     required this.ls,
-    required this.fechaInicial,
-    required this.onCreated,
+    required this.fecha,
+    required this.recursos,
+    required this.planActual,
+    required this.onSaved,
   });
 
   @override
-  State<_CrearPlanSheet> createState() => _CrearPlanSheetState();
+  State<_PlanificarDiaSheet> createState() => _PlanificarDiaSheetState();
 }
 
-class _CrearPlanSheetState extends State<_CrearPlanSheet> {
-  final _cantidadCtrl = TextEditingController(text: '10');
+class _PlanificarDiaSheetState extends State<_PlanificarDiaSheet> {
+  // Modo SIN recursos.
+  late final TextEditingController _cantidadCtrl;
+  // Modo CON recursos: un controlador por recurso.
+  final Map<int, TextEditingController> _recCtrls = {};
+  // Agendados actuales por recurso (mínimo permitido al bajar la capacidad).
+  final Map<int, int> _recAgendados = {};
+  int _agendadosSimple = 0;
   bool _saving = false;
+
+  bool get _porRecurso => widget.recursos.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_porRecurso) {
+      // Precargar con la capacidad actual de cada recurso ese día (si existe).
+      final actualPorRecurso = <int, RecursoDia>{
+        for (final r in widget.planActual?.recursos ?? const []) r.idRecurso: r,
+      };
+      for (final r in widget.recursos) {
+        final actual = actualPorRecurso[r.id];
+        _recCtrls[r.id] = TextEditingController(
+            text: actual != null ? actual.cantidad.toString() : '');
+        _recAgendados[r.id] = actual?.agendados ?? 0;
+      }
+    } else {
+      final actual = widget.planActual;
+      _agendadosSimple = actual?.agendados ?? 0;
+      _cantidadCtrl = TextEditingController(
+          text: (actual != null && actual.cantidad > 0)
+              ? actual.cantidad.toString()
+              : '10');
+    }
+  }
 
   @override
   void dispose() {
-    _cantidadCtrl.dispose();
+    if (_porRecurso) {
+      for (final c in _recCtrls.values) {
+        c.dispose();
+      }
+    } else {
+      _cantidadCtrl.dispose();
+    }
     super.dispose();
   }
 
-  Future<void> _submit() async {
-    final cantidad = int.tryParse(_cantidadCtrl.text.trim());
-    if (cantidad == null || cantidad <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Ingresa una cantidad válida mayor a 0'),
-        backgroundColor: AppTheme.error,
-      ));
-      return;
-    }
+  Future<void> _guardar() async {
+    Map<int, int>? caps;
+    int? cantidad;
 
-    // Doble verificación: diálogo de confirmación
-    final confirmado = await showDialog<bool>(
-      context: context,
-      builder: (_) => _ConfirmDialog(
-        local: widget.ls.local,
-        servicio: widget.ls.servicio,
-        fecha: widget.fechaInicial,
-        cantidad: cantidad,
-      ),
-    );
-    if (confirmado != true || !mounted) return;
+    if (_porRecurso) {
+      caps = {};
+      for (final r in widget.recursos) {
+        final txt = _recCtrls[r.id]!.text.trim();
+        final v = txt.isEmpty ? 0 : int.tryParse(txt);
+        if (v == null || v < 0) {
+          _err('Capacidad inválida en "${r.nombre}" (usa un número ≥ 0)');
+          return;
+        }
+        final min = _recAgendados[r.id] ?? 0;
+        if (v > 0 && v < min) {
+          _err('"${r.nombre}": no puedes bajar de $min ya reservado(s)');
+          return;
+        }
+        caps[r.id] = v;
+      }
+    } else {
+      cantidad = int.tryParse(_cantidadCtrl.text.trim());
+      if (cantidad == null || cantidad <= 0) {
+        _err('Ingresa una cantidad válida mayor a 0');
+        return;
+      }
+      if (cantidad < _agendadosSimple) {
+        _err('No puedes bajar de $_agendadosSimple ya reservado(s)');
+        return;
+      }
+    }
 
     setState(() => _saving = true);
     try {
-      await PlanServicioService.create(
+      await PlanConfigService.planificarDia(
+        uuidUsuario: AuthService.currentUserId ?? '',
         idLocalServicio: widget.ls.id,
-        fecha: widget.fechaInicial,
+        fecha: widget.fecha,
+        capsPorRecurso: caps,
         cantidad: cantidad,
       );
-      widget.onCreated();
+      widget.onSaved();
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Plan creado correctamente'),
+          content: Text('Planificación guardada'),
           backgroundColor: AppTheme.success,
         ));
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: AppTheme.error));
-      }
+      _err('$e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
+  void _err(String m) => ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(m), backgroundColor: AppTheme.error));
+
   @override
   Widget build(BuildContext context) {
     final fechaStr = DateFormat('EEEE, dd \'de\' MMMM yyyy', 'es')
-        .format(widget.fechaInicial);
+        .format(widget.fecha);
+    final yaPlanificado =
+        widget.planActual != null && widget.planActual!.cantidad > 0;
 
     return Padding(
       padding: EdgeInsets.only(
         left: 20,
         right: 20,
-        top: 20,
+        top: 16,
         bottom: MediaQuery.of(context).viewInsets.bottom + 20,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Handle
           Center(
             child: Container(
                 width: 40,
@@ -1171,89 +968,131 @@ class _CrearPlanSheetState extends State<_CrearPlanSheet> {
                     borderRadius: BorderRadius.circular(2))),
           ),
           const SizedBox(height: 16),
-
-          // Título
           Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: AppTheme.success.withOpacity(0.12),
+                  color: AppTheme.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.add_circle_outline,
-                    color: AppTheme.success, size: 20),
+                child: const Icon(Icons.event_available_outlined,
+                    color: AppTheme.primary, size: 20),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Planificar día',
+                    const Text('Planificar día',
                         style: TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold)),
-                    Text('Sin planificación aún',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: AppTheme.textSecondary)),
+                    Text(fechaStr,
+                        style: const TextStyle(
+                            fontSize: 12, color: AppTheme.textSecondary)),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-
-          // Info del día
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.primary.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                  color: AppTheme.primary.withOpacity(0.15)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.calendar_today,
-                    size: 16, color: AppTheme.primary),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(fechaStr,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                              color: AppTheme.primary)),
-                      Text(
-                        '${widget.ls.servicio?.nombre ?? ''} · ${widget.ls.local?.nombre ?? ''}',
-                        style: const TextStyle(
-                            fontSize: 11,
-                            color: AppTheme.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Campo cantidad
-          TextField(
-            controller: _cantidadCtrl,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Cantidad de turnos *',
-              prefixIcon: Icon(Icons.group_outlined),
-              hintText: 'Ej: 20',
-            ),
+          const SizedBox(height: 4),
+          Text(
+            '${widget.ls.servicio?.nombre ?? ''} · ${widget.ls.local?.nombre ?? ''}',
+            style: const TextStyle(
+                fontSize: 12, color: AppTheme.textSecondary),
           ),
           const SizedBox(height: 20),
 
+          if (_porRecurso) ...[
+            const Text(
+              'Capacidad por recurso ese día. Todos los tramos del recurso '
+              'reciben esta cantidad. Pon 0 para cerrar el recurso ese día.',
+              style:
+                  TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 14),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.4),
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    for (final r in widget.recursos)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.widgets_outlined,
+                                size: 18, color: AppTheme.primary),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text(r.nombre,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14)),
+                                  if ((_recAgendados[r.id] ?? 0) > 0)
+                                    Text(
+                                      '${_recAgendados[r.id]} reservado(s)',
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppTheme.textSecondary),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(
+                              width: 90,
+                              child: TextField(
+                                controller: _recCtrls[r.id],
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  hintText: '0',
+                                  contentPadding:
+                                      const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 10),
+                                  border: OutlineInputBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ] else ...[
+            if (yaPlanificado)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '${widget.planActual!.agendados} / ${widget.planActual!.cantidad} reservado(s)',
+                  style: const TextStyle(
+                      fontSize: 12.5, color: AppTheme.textSecondary),
+                ),
+              ),
+            TextField(
+              controller: _cantidadCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Cantidad de turnos *',
+                prefixIcon: Icon(Icons.group_outlined),
+                hintText: 'Ej: 20',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
           ElevatedButton.icon(
-            onPressed: _saving ? null : _submit,
+            onPressed: _saving ? null : _guardar,
             icon: _saving
                 ? const SizedBox(
                     width: 18,
@@ -1261,213 +1100,14 @@ class _CrearPlanSheetState extends State<_CrearPlanSheet> {
                     child: CircularProgressIndicator(
                         color: Colors.white, strokeWidth: 2))
                 : const Icon(Icons.check_circle_outline, size: 18),
-            label: Text(_saving ? 'Creando...' : 'Crear plan',
+            label: Text(
+                _saving
+                    ? 'Guardando...'
+                    : (yaPlanificado ? 'Guardar cambios' : 'Planificar día'),
                 style: const TextStyle(fontSize: 15)),
           ),
         ],
       ),
-    );
-  }
-}
-
-// ── Diálogo de confirmación ───────────────────────────────────
-class _ConfirmDialog extends StatelessWidget {
-  final dynamic local;
-  final dynamic servicio;
-  final DateTime fecha;
-  final int cantidad;
-
-  const _ConfirmDialog({
-    required this.local,
-    required this.servicio,
-    required this.fecha,
-    required this.cantidad,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final fechaStr =
-        DateFormat('EEEE dd \'de\' MMMM yyyy', 'es').format(fecha);
-
-    return Dialog(
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      insetPadding:
-          const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.fact_check_outlined,
-                      color: AppTheme.primary, size: 22),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Confirmar plan',
-                          style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.bold)),
-                      Text('Revisa antes de crear',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.textSecondary)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            const Divider(height: 1),
-            const SizedBox(height: 16),
-            _ConfirmRow(
-                icon: Icons.store_outlined,
-                label: 'Local',
-                value: local?.nombre ?? '-',
-                color: const Color(0xFF4F7FFA)),
-            const SizedBox(height: 12),
-            _ConfirmRow(
-                icon: Icons.miscellaneous_services_outlined,
-                label: 'Servicio',
-                value: servicio?.nombre ?? '-',
-                color: const Color(0xFF7C5CFC)),
-            const SizedBox(height: 12),
-            _ConfirmRow(
-                icon: Icons.calendar_month_outlined,
-                label: 'Fecha',
-                value: fechaStr,
-                color: AppTheme.success),
-            const SizedBox(height: 16),
-            const Divider(height: 1),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  vertical: 14, horizontal: 18),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: AppTheme.primary.withOpacity(0.18)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withOpacity(0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.group_outlined,
-                        color: AppTheme.primary, size: 20),
-                  ),
-                  const SizedBox(width: 14),
-                  const Text('Cantidad de turnos',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.textSecondary)),
-                  const Spacer(),
-                  Text('$cantidad',
-                      style: const TextStyle(
-                          fontSize: 34,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.primary)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 22),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    style: OutlinedButton.styleFrom(
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 13),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12))),
-                    child: const Text('Cancelar'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: ElevatedButton.icon(
-                    onPressed: () => Navigator.pop(context, true),
-                    icon: const Icon(Icons.check_circle_outline,
-                        size: 17),
-                    label: const Text('Confirmar',
-                        style: TextStyle(fontSize: 15)),
-                    style: ElevatedButton.styleFrom(
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 13),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12))),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ConfirmRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-
-  const _ConfirmRow(
-      {required this.icon,
-      required this.label,
-      required this.value,
-      required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: color, size: 15),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 11, color: AppTheme.textSecondary)),
-              const SizedBox(height: 1),
-              Text(value,
-                  style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary)),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }
@@ -1922,13 +1562,13 @@ class _ConfigCapacidadesSheetState extends State<_ConfigCapacidadesSheet> {
 // ── Day Options Sheet ─────────────────────────────────────
 class _DayOptionsSheet extends StatelessWidget {
   final DateTime dia;
-  final List<PlanServicio> planes;
+  final bool tienePlan;
   final VoidCallback onVerPlanificacion;
   final VoidCallback onReservar;
 
   const _DayOptionsSheet({
     required this.dia,
-    required this.planes,
+    required this.tienePlan,
     required this.onVerPlanificacion,
     required this.onReservar,
   });
@@ -1969,7 +1609,7 @@ class _DayOptionsSheet extends StatelessWidget {
           ElevatedButton.icon(
             onPressed: onVerPlanificacion,
             icon: const Icon(Icons.calendar_today_outlined),
-            label: Text(planes.isNotEmpty ? 'Ver Planificación' : 'Crear Planificación'),
+            label: Text(tienePlan ? 'Ver / editar planificación' : 'Planificar día'),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.primary,
               foregroundColor: Colors.white,
@@ -2031,7 +1671,14 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
   bool _loading = false;
   bool _saving = false;
 
+  // Disponibilidad del día para el servicio elegido. Si trae turnos, el
+  // servicio usa recursos y el admin debe elegir un turno antes de reservar.
+  DisponibilidadDia? _dispDia;
+  bool _loadingDisp = false;
+  TurnoDisponible? _turnoSel;
+
   bool get _servicioPreseleccionado => widget.localServicio != null;
+  bool get _usaRecursos => _dispDia?.tieneTurnos ?? false;
 
   @override
   void initState() {
@@ -2040,6 +1687,7 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
       _selectedLocalServicio = widget.localServicio;
     }
     _loadLocalesServicios();
+    if (_selectedLocalServicio != null) _loadDisponibilidad();
   }
 
   @override
@@ -2088,8 +1736,61 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
     }
   }
 
+  /// Carga la disponibilidad del día del servicio elegido para saber si usa
+  /// recursos (turnos) y, en ese caso, ofrecer el selector de turno.
+  Future<void> _loadDisponibilidad() async {
+    final ls = _selectedLocalServicio;
+    if (ls == null) return;
+    setState(() {
+      _loadingDisp = true;
+      _dispDia = null;
+      _turnoSel = null;
+    });
+    try {
+      final dias = await AgendaService.getDisponibilidad(ls.id);
+      final key = widget.dia.toIso8601String().substring(0, 10);
+      DisponibilidadDia? match;
+      for (final d in dias) {
+        if (d.fecha.toIso8601String().substring(0, 10) == key) {
+          match = d;
+          break;
+        }
+      }
+      if (mounted) setState(() => _dispDia = match);
+    } catch (_) {
+      // Sin disponibilidad: se trata como servicio sin turnos.
+    } finally {
+      if (mounted) setState(() => _loadingDisp = false);
+    }
+  }
+
+  Future<void> _elegirTurno() async {
+    final dia = _dispDia;
+    if (dia == null || !dia.tieneTurnos) return;
+    final elegido = await showModalBottomSheet<TurnoDisponible>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _AdminTurnoPickerSheet(fecha: widget.dia, dia: dia),
+    );
+    if (elegido != null && mounted) setState(() => _turnoSel = elegido);
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate() || _selectedLocalServicio == null) return;
+
+    // Servicios con recursos: exigir turno elegido.
+    if (_usaRecursos && _turnoSel == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona un turno para este servicio'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
 
     final camposAdicionales = _selectedLocalServicio!.servicio?.camposAdicionales ?? [];
     if (camposAdicionales.isNotEmpty &&
@@ -2117,6 +1818,7 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
         fecha: widget.dia,
         cantidad: _cantidad,
         datosAdicionales: datosAdicionales,
+        idTurno: _turnoSel?.idTurno,
       );
 
       if (mounted) {
@@ -2220,15 +1922,57 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
                         child: Text('${ls.local?.nombre ?? ''} - ${ls.servicio?.nombre ?? ''}'),
                       );
                     }).toList(),
-                    onChanged: (value) => setState(() {
-                      _selectedLocalServicio = value;
-                      _datosAdicionalesValores = {};
-                      _datosAdicionalesKey = GlobalKey<DatosAdicionalesFormState>();
-                    }),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedLocalServicio = value;
+                        _datosAdicionalesValores = {};
+                        _datosAdicionalesKey =
+                            GlobalKey<DatosAdicionalesFormState>();
+                        _turnoSel = null;
+                        _dispDia = null;
+                      });
+                      if (value != null) _loadDisponibilidad();
+                    },
                     validator: (value) => value == null ? 'Selecciona un local-servicio' : null,
                   ),
                 ],
                 const SizedBox(height: 16),
+
+                // Selector de turno (solo servicios con recursos)
+                if (_loadingDisp)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 16),
+                    child: LinearProgressIndicator(minHeight: 2),
+                  )
+                else if (_usaRecursos) ...[
+                  InkWell(
+                    onTap: _elegirTurno,
+                    borderRadius: BorderRadius.circular(4),
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Turno *',
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(
+                            Icons.confirmation_number_outlined),
+                        errorText: _turnoSel == null
+                            ? 'Selecciona un turno'
+                            : null,
+                      ),
+                      child: Text(
+                        _turnoSel == null
+                            ? 'Elegir turno'
+                            : '${_turnoSel!.recurso} · ${_turnoSel!.turno}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: _turnoSel == null
+                              ? AppTheme.textSecondary
+                              : AppTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
                 // ── Datos del cliente ──
                 // CI
@@ -2292,23 +2036,25 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
                 ),
                 const SizedBox(height: 16),
 
-                // Cantidad
-                Row(
-                  children: [
-                    const Text('Cantidad:'),
-                    const Spacer(),
-                    IconButton(
-                      onPressed: _cantidad > 1 ? () => setState(() => _cantidad--) : null,
-                      icon: const Icon(Icons.remove),
-                    ),
-                    Text(_cantidad.toString()),
-                    IconButton(
-                      onPressed: () => setState(() => _cantidad++),
-                      icon: const Icon(Icons.add),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
+                // Cantidad (servicios con recursos reservan 1 turno)
+                if (!_usaRecursos) ...[
+                  Row(
+                    children: [
+                      const Text('Cantidad:'),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: _cantidad > 1 ? () => setState(() => _cantidad--) : null,
+                        icon: const Icon(Icons.remove),
+                      ),
+                      Text(_cantidad.toString()),
+                      IconButton(
+                        onPressed: () => setState(() => _cantidad++),
+                        icon: const Icon(Icons.add),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
                 // Notas
                 TextFormField(
@@ -2369,6 +2115,97 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Selector de turno para la reserva administrativa (servicios con recursos).
+/// Agrupa los turnos por recurso y devuelve el [TurnoDisponible] elegido.
+class _AdminTurnoPickerSheet extends StatelessWidget {
+  final DateTime fecha;
+  final DisponibilidadDia dia;
+
+  const _AdminTurnoPickerSheet({required this.fecha, required this.dia});
+
+  @override
+  Widget build(BuildContext context) {
+    final porRecurso = <int, List<TurnoDisponible>>{};
+    final nombreRecurso = <int, String>{};
+    for (final t in dia.turnos) {
+      porRecurso.putIfAbsent(t.idRecurso, () => []).add(t);
+      nombreRecurso[t.idRecurso] = t.recurso;
+    }
+
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                const Icon(Icons.confirmation_number_outlined,
+                    size: 20, color: AppTheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Elige un turno · ${DateFormat('dd/MM/yyyy').format(fecha)}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 16),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+              children: [
+                for (final idRec in porRecurso.keys) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
+                    child: Text(
+                      nombreRecurso[idRec] ?? 'Recurso',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textSecondary),
+                    ),
+                  ),
+                  for (final t in porRecurso[idRec]!)
+                    Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      child: ListTile(
+                        enabled: t.disponibles > 0,
+                        title: Text(t.turno,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text('${t.disponibles} disponibles'),
+                        trailing: const Icon(Icons.chevron_right,
+                            color: AppTheme.primary),
+                        onTap: t.disponibles > 0
+                            ? () => Navigator.pop(context, t)
+                            : null,
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

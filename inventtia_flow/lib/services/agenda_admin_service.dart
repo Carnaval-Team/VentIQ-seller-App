@@ -84,6 +84,7 @@ class AgendaAdminService {
     required DateTime fecha,
     int? cantidad,
     Map<String, dynamic>? datosAdicionales,
+    int? idTurno,
   }) async {
     try {
       // Usar método robusto con fallback para obtener UUID
@@ -91,7 +92,7 @@ class AgendaAdminService {
       if (uuid == null) {
         throw Exception('No se pudo obtener el usuario autenticado');
       }
-      
+
       final res = await _supabase.schema(_schema).rpc(
         'admin_crear_reserva_directa',
         params: {
@@ -100,6 +101,7 @@ class AgendaAdminService {
           if (cantidad != null) 'p_cantidad': cantidad,
           if (datosAdicionales != null) 'p_datos_adicionales': datosAdicionales,
           'p_uuid_admin': uuid, // Siempre enviar el UUID
+          if (idTurno != null) 'p_id_turno': idTurno,
         },
       );
       final json = res as Map<String, dynamic>;

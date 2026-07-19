@@ -1,20 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
 import '../../models/plan_config.dart';
-import '../../models/recurso.dart';
 import '../../models/servicio.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/plan_config_service.dart';
-import '../../services/recurso_service.dart';
 
 /// Configuración recurrente de capacidades por día de la semana para un
-/// local_servicio + generación de los planes de un mes en lote.
-///
-/// Dos modos, según el servicio use o no recursos:
-///  • SIN recursos: una capacidad por defecto + override por día (cupo único).
-///  • CON recursos: una capacidad por recurso (por defecto + override por día).
-///    Todos los tramos del recurso reciben esa capacidad ese día.
+/// local_servicio + generación de los plan_servicios de un mes en lote.
 class ConfigPlanMensualScreen extends StatefulWidget {
   final LocalServicio localServicio;
   const ConfigPlanMensualScreen({super.key, required this.localServicio});
@@ -35,17 +30,11 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
     'Domingo',
   ];
 
-  // ── Modo SIN recursos ──
   final _defaultCtrl = TextEditingController(text: '30');
+  // ISO 1..7 -> controlador (vacío = usar default)
   final Map<int, TextEditingController> _diaCtrls = {
     for (var d = 1; d <= 7; d++) d: TextEditingController(),
   };
-
-  // ── Modo CON recursos ──
-  List<Recurso> _recursos = [];
-  final Map<int, _RecursoCtrls> _recCtrls = {};
-
-  bool get _porRecurso => _recursos.isNotEmpty;
 
   bool _loading = true;
   bool _saving = false;
@@ -69,45 +58,17 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
     for (final c in _diaCtrls.values) {
       c.dispose();
     }
-    for (final rc in _recCtrls.values) {
-      rc.dispose();
-    }
     super.dispose();
   }
 
   Future<void> _cargar() async {
     setState(() => _loading = true);
     try {
-      // 1) ¿El servicio usa recursos? Determina el modo de la pantalla.
-      final recursos = await RecursoService.listar(
-        uuidUsuario: _uuid,
-        idLocalServicio: widget.localServicio.id,
-      );
-      final activos = recursos.where((r) => r.activo).toList();
-
-      // 2) Config guardada (si la hay).
       final cfg = await PlanConfigService.obtenerConfig(
         uuidUsuario: _uuid,
         idLocalServicio: widget.localServicio.id,
       );
-
-      if (!mounted) return;
-
-      _recursos = activos;
-
-      if (_porRecurso) {
-        for (final r in activos) {
-          final rc = _RecursoCtrls();
-          final saved = cfg?.porRecurso[r.id];
-          rc.defaultCtrl.text = (saved?.porDefecto ?? 1).toString();
-          for (var d = 1; d <= 7; d++) {
-            rc.diaCtrls[d]!.text = (saved != null && saved.porDia.containsKey(d))
-                ? saved.porDia[d].toString()
-                : '';
-          }
-          _recCtrls[r.id] = rc;
-        }
-      } else if (cfg != null) {
+      if (cfg != null && mounted) {
         _defaultCtrl.text = cfg.porDefecto.toString();
         for (var d = 1; d <= 7; d++) {
           _diaCtrls[d]!.text =
@@ -128,27 +89,6 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
   }
 
   PlanConfig _buildConfig() {
-    if (_porRecurso) {
-      final porRecurso = <int, RecursoPlanConfig>{};
-      for (final entry in _recCtrls.entries) {
-        final rc = entry.value;
-        final def = int.tryParse(rc.defaultCtrl.text.trim()) ?? 0;
-        final porDia = <int, int>{};
-        for (var d = 1; d <= 7; d++) {
-          final txt = rc.diaCtrls[d]!.text.trim();
-          if (txt.isEmpty) continue; // vacío = usar default
-          final v = int.tryParse(txt);
-          if (v != null) porDia[d] = v;
-        }
-        porRecurso[entry.key] =
-            RecursoPlanConfig(porDefecto: def, porDia: porDia);
-      }
-      return PlanConfig(
-        idLocalServicio: widget.localServicio.id,
-        porRecurso: porRecurso,
-      );
-    }
-
     final porDefecto = int.tryParse(_defaultCtrl.text.trim()) ?? 0;
     final porDia = <int, int>{};
     for (var d = 1; d <= 7; d++) {
@@ -165,15 +105,13 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
   }
 
   Future<void> _guardar() async {
-    if (!_porRecurso) {
-      final porDefecto = int.tryParse(_defaultCtrl.text.trim());
-      if (porDefecto == null || porDefecto < 0) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Ingresa una capacidad por defecto válida (≥ 0)'),
-          backgroundColor: AppTheme.error,
-        ));
-        return;
-      }
+    final porDefecto = int.tryParse(_defaultCtrl.text.trim());
+    if (porDefecto == null || porDefecto < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Ingresa una capacidad por defecto válida (≥ 0)'),
+        backgroundColor: AppTheme.error,
+      ));
+      return;
     }
     setState(() => _saving = true);
     try {
@@ -215,6 +153,7 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
   }
 
   Future<void> _generar() async {
+    // Guarda primero para que la generación use lo que se ve en pantalla.
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -267,16 +206,12 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _ResumenRow(
-                    label: _porRecurso ? 'Tramos-día creados' : 'Creados',
-                    valor: res.creados,
-                    color: AppTheme.success),
-                if (!_porRecurso) ...[
-                  const SizedBox(height: 6),
-                  _ResumenRow(
-                      label: 'Actualizados',
-                      valor: res.actualizados,
-                      color: AppTheme.primary),
-                ],
+                    label: 'Creados', valor: res.creados, color: AppTheme.success),
+                const SizedBox(height: 6),
+                _ResumenRow(
+                    label: 'Actualizados',
+                    valor: res.actualizados,
+                    color: AppTheme.primary),
                 const SizedBox(height: 6),
                 _ResumenRow(
                     label: 'Días sin cupo (cerrados)',
@@ -330,7 +265,51 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
               children: [
-                if (_porRecurso) ..._buildRecursoSection() else ..._buildSimpleSection(),
+                _sectionTitle('Capacidades por día'),
+                const SizedBox(height: 4),
+                const Text(
+                  'Define la capacidad por defecto y, opcionalmente, una distinta '
+                  'por día. Deja un día vacío para usar el valor por defecto, o pon '
+                  '0 para no abrir ese día.',
+                  style: TextStyle(
+                      fontSize: 12.5, color: AppTheme.textSecondary),
+                ),
+                const SizedBox(height: 14),
+                // Capacidad por defecto
+                TextField(
+                  controller: _defaultCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Capacidad por defecto *',
+                    prefixIcon: Icon(Icons.tune),
+                    hintText: 'Ej: 30',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(color: Colors.grey.shade200),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 6),
+                    child: Column(
+                      children: [
+                        for (var d = 1; d <= 7; d++) ...[
+                          if (d > 1)
+                            Divider(height: 1, color: Colors.grey.shade100),
+                          _DiaRow(
+                            nombre: _nombresDia[d - 1],
+                            controller: _diaCtrls[d]!,
+                            hintDefault: _defaultCtrl.text.trim(),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
                   onPressed: _saving ? null : _guardar,
@@ -343,6 +322,7 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
                       : const Icon(Icons.save_outlined),
                   label: Text(_saving ? 'Guardando...' : 'Guardar configuración'),
                 ),
+
                 const SizedBox(height: 28),
                 _sectionTitle('Planificar mes'),
                 const SizedBox(height: 4),
@@ -415,76 +395,6 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
     );
   }
 
-  // ── Sección modo SIN recursos ──
-  List<Widget> _buildSimpleSection() => [
-        _sectionTitle('Capacidades por día'),
-        const SizedBox(height: 4),
-        const Text(
-          'Define la capacidad por defecto y, opcionalmente, una distinta '
-          'por día. Deja un día vacío para usar el valor por defecto, o pon '
-          '0 para no abrir ese día.',
-          style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
-        ),
-        const SizedBox(height: 14),
-        TextField(
-          controller: _defaultCtrl,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Capacidad por defecto *',
-            prefixIcon: Icon(Icons.tune),
-            hintText: 'Ej: 30',
-          ),
-          onChanged: (_) => setState(() {}), // refresca los hints de los días
-        ),
-        const SizedBox(height: 16),
-        Card(
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: BorderSide(color: Colors.grey.shade200),
-          ),
-          child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            child: Column(
-              children: [
-                for (var d = 1; d <= 7; d++) ...[
-                  if (d > 1)
-                    Divider(height: 1, color: Colors.grey.shade100),
-                  _DiaRow(
-                    nombre: _nombresDia[d - 1],
-                    controller: _diaCtrls[d]!,
-                    hintDefault: _defaultCtrl.text.trim(),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ];
-
-  // ── Sección modo CON recursos (una tarjeta por recurso) ──
-  List<Widget> _buildRecursoSection() => [
-        _sectionTitle('Capacidad por recurso y día'),
-        const SizedBox(height: 4),
-        const Text(
-          'Define la capacidad de cada recurso: un valor por defecto y, '
-          'opcionalmente, uno distinto por día. Deja un día vacío para usar el '
-          'valor por defecto, o pon 0 para cerrar ese recurso ese día.',
-          style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
-        ),
-        const SizedBox(height: 14),
-        for (final r in _recursos) ...[
-          _RecursoConfigCard(
-            recurso: r,
-            ctrls: _recCtrls[r.id]!,
-            nombresDia: _nombresDia,
-            onDefaultChanged: () => setState(() {}),
-          ),
-          const SizedBox(height: 12),
-        ],
-      ];
-
   Widget _sectionTitle(String t) => Text(
         t.toUpperCase(),
         style: const TextStyle(
@@ -494,94 +404,6 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
           color: AppTheme.textSecondary,
         ),
       );
-}
-
-/// Controladores de la config de un recurso (default + 7 días).
-class _RecursoCtrls {
-  final TextEditingController defaultCtrl = TextEditingController(text: '1');
-  final Map<int, TextEditingController> diaCtrls = {
-    for (var d = 1; d <= 7; d++) d: TextEditingController(),
-  };
-
-  void dispose() {
-    defaultCtrl.dispose();
-    for (final c in diaCtrls.values) {
-      c.dispose();
-    }
-  }
-}
-
-/// Tarjeta de configuración de un recurso: capacidad por defecto + por día.
-class _RecursoConfigCard extends StatelessWidget {
-  final Recurso recurso;
-  final _RecursoCtrls ctrls;
-  final List<String> nombresDia;
-  final VoidCallback onDefaultChanged;
-
-  const _RecursoConfigCard({
-    required this.recurso,
-    required this.ctrls,
-    required this.nombresDia,
-    required this.onDefaultChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: Colors.grey.shade200),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.widgets_outlined,
-                      color: AppTheme.primary, size: 18),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(recurso.nombre,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 15)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrls.defaultCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Capacidad por defecto *',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (_) => onDefaultChanged(),
-            ),
-            const SizedBox(height: 6),
-            for (var d = 1; d <= 7; d++) ...[
-              if (d > 1) Divider(height: 1, color: Colors.grey.shade100),
-              _DiaRow(
-                nombre: nombresDia[d - 1],
-                controller: ctrls.diaCtrls[d]!,
-                hintDefault: ctrls.defaultCtrl.text.trim(),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _DiaRow extends StatelessWidget {
