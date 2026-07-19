@@ -81,6 +81,17 @@ class _VendedorScreenState extends State<VendedorScreen> {
     return true; // Reservado
   }
 
+  /// Se puede descancelar (reactivar a Reservado) si está cancelada y su fecha
+  /// es de hoy o futura (no tiene sentido reactivar una reserva ya vencida).
+  bool _puedeDescancelar(Agenda r) {
+    if (r.estado?.esCancelado != true) return false;
+    final now = DateTime.now();
+    final hoy = DateTime(now.year, now.month, now.day);
+    final f = r.fechaHoraReserva;
+    final dia = DateTime(f.year, f.month, f.day);
+    return !dia.isBefore(hoy);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -164,6 +175,18 @@ class _VendedorScreenState extends State<VendedorScreen> {
         accion: 'Sí, cancelar',
         color: AppTheme.error,
         okMsg: 'Reserva cancelada y cliente notificado',
+      );
+
+  Future<void> _descancelarReserva(Agenda r) => _confirmarCambioEstado(
+        r,
+        idEstado: 1,
+        titulo: 'Reactivar reserva',
+        pregunta: '¿Reactivar la reserva de '
+            '${r.cliente?.nombreCompleto ?? 'este cliente'}?'
+            '\n\nVolverá a estado Reservado y ocupará capacidad de nuevo.',
+        accion: 'Sí, reactivar',
+        color: AppTheme.primary,
+        okMsg: 'Reserva reactivada y cliente notificado',
       );
 
   Future<void> _confirmarCambioEstado(
@@ -1011,6 +1034,18 @@ class _VendedorScreenState extends State<VendedorScreen> {
                     ),
                     onPressed: () => _completarReserva(r),
                   ),
+                if (_puedeDescancelar(r))
+                  TextButton.icon(
+                    icon: const Icon(Icons.restore, size: 16),
+                    label: const Text('Reactivar'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.primary,
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () => _descancelarReserva(r),
+                  ),
                 if (esActiva)
                   TextButton.icon(
                     icon: const Icon(Icons.cancel_outlined, size: 16),
@@ -1023,7 +1058,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
                     ),
                     onPressed: () => _cancelarReserva(r),
                   ),
-                if (!esActiva && !_puedeCompletar(r))
+                if (!esActiva && !_puedeCompletar(r) && !_puedeDescancelar(r))
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Text(

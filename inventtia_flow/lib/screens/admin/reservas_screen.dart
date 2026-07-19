@@ -79,6 +79,17 @@ class _ReservasScreenState extends State<ReservasScreen> {
     return !diaReserva.isAfter(hoy);
   }
 
+  /// ¿Se puede descancelar (reactivar a Reservado)? Solo reservas canceladas
+  /// cuya fecha sea de hoy o futura (no tiene sentido reactivar una vencida).
+  bool _puedeDescancelar(Agenda r) {
+    if (r.estado?.esCancelado != true) return false;
+    final now = DateTime.now();
+    final hoy = DateTime(now.year, now.month, now.day);
+    final f = r.fechaHoraReserva;
+    final diaReserva = DateTime(f.year, f.month, f.day);
+    return !diaReserva.isBefore(hoy);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -222,6 +233,36 @@ class _ReservasScreenState extends State<ReservasScreen> {
     await _cambiarEstado(reserva, 2, 'Reserva cancelada y cliente notificado');
   }
 
+  Future<void> _descancelarReserva(Agenda reserva) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Reactivar reserva'),
+        content: Text(
+          '¿Reactivar la reserva de '
+          '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
+          'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?'
+          '\n\nVolverá a estado Reservado y ocupará capacidad de nuevo.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.primary),
+            child: const Text('Sí, reactivar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+    // Estado 1 = Reservado. La RPC re-consume la capacidad y notifica al cliente.
+    await _cambiarEstado(reserva, 1, 'Reserva reactivada y cliente notificado');
+  }
+
   Future<void> _completarReserva(Agenda reserva) async {
     final eraCancelada = reserva.estado?.esCancelado == true;
     final confirm = await showDialog<bool>(
@@ -258,7 +299,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
             : 'Consumo de reserva confirmado');
   }
 
-  /// Cambia el estado de una reserva vía RPC y refresca. [idEstado] 2=Cancelado, 3=Completado.
+  /// Cambia el estado de una reserva vía RPC y refresca. [idEstado] 1=Reservado, 2=Cancelado, 3=Completado.
   Future<void> _cambiarEstado(Agenda reserva, int idEstado, String okMsg) async {
     setState(() => _loading = true);
     try {
@@ -1055,6 +1096,17 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     ),
                     onPressed: () => _completarReserva(r),
                   ),
+                if (_puedeDescancelar(r))
+                  TextButton.icon(
+                    icon: const Icon(Icons.restore, size: 16),
+                    label: const Text('Reactivar'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () => _descancelarReserva(r),
+                  ),
                 if (esActiva)
                   TextButton.icon(
                     icon: const Icon(Icons.cancel_outlined, size: 16),
@@ -1066,7 +1118,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     ),
                     onPressed: () => _cancelarReserva(r),
                   ),
-                if (!esActiva && !_puedeCompletar(r))
+                if (!esActiva && !_puedeCompletar(r) && !_puedeDescancelar(r))
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Text(
