@@ -67,6 +67,9 @@ class Agenda {
   final String? reservadoPor;
   final double? precioTotal;
   final String? moneda;
+  final int? idTurno;
+  final String? turnoNombre;
+  final String? recursoNombre;
 
   Agenda({
     required this.id,
@@ -86,6 +89,9 @@ class Agenda {
     this.reservadoPor,
     this.precioTotal,
     this.moneda,
+    this.idTurno,
+    this.turnoNombre,
+    this.recursoNombre,
   });
 
   /// True si la reserva la hizo el usuario [uuid] para un tercero (titular ≠ quien reservó).
@@ -110,6 +116,16 @@ class Agenda {
     Entidad? entidad;
     if (json['entidad'] != null) {
       entidad = Entidad.fromJson(json['entidad'] as Map<String, dynamic>);
+    }
+
+    // Turno reservado (recursos). Bloque 'turno' = { id, nombre, recurso:{...} }.
+    String? turnoNombre;
+    String? recursoNombre;
+    final turnoRaw = json['turno'];
+    if (turnoRaw is Map) {
+      turnoNombre = turnoRaw['nombre'] as String?;
+      final recursoRaw = turnoRaw['recurso'];
+      if (recursoRaw is Map) recursoNombre = recursoRaw['nombre'] as String?;
     }
 
     return Agenda(
@@ -137,6 +153,9 @@ class Agenda {
       reservadoPor: json['reservado_por'] as String?,
       precioTotal: (json['precio_total'] as num?)?.toDouble(),
       moneda: json['moneda'] as String?,
+      idTurno: (json['id_turno'] as num?)?.toInt(),
+      turnoNombre: turnoNombre,
+      recursoNombre: recursoNombre,
     );
   }
 }

@@ -21,6 +21,8 @@ import '../../services/catalogo_service.dart';
 import '../../utils/precio_reserva.dart';
 import '../../widgets/datos_adicionales_form.dart';
 import '../../widgets/totales_datos_adicionales.dart';
+import '../../widgets/totales_recurso_turno.dart';
+import '../../widgets/cancelado_ribbon.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ReservasScreen extends StatefulWidget {
@@ -59,6 +61,21 @@ class _ReservasScreenState extends State<ReservasScreen> {
     return _fecha.year == now.year &&
         _fecha.month == now.month &&
         _fecha.day == now.day;
+  }
+
+  /// ¿La reserva se puede confirmar como consumida? Las activas siempre; las
+  /// canceladas solo si su fecha es de hoy o anterior (aún se puede sellar el
+  /// consumo de un servicio ya prestado que se había cancelado).
+  bool _puedeCompletar(Agenda r) {
+    final esCancelada = r.estado?.esCancelado == true;
+    final esCompletada = r.estado?.esCompletado == true;
+    if (esCompletada) return false;
+    if (!esCancelada) return true; // activa (Reservado)
+    final now = DateTime.now();
+    final hoy = DateTime(now.year, now.month, now.day);
+    final f = r.fechaHoraReserva;
+    final diaReserva = DateTime(f.year, f.month, f.day);
+    return !diaReserva.isAfter(hoy);
   }
 
   @override
@@ -205,6 +222,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
   }
 
   Future<void> _completarReserva(Agenda reserva) async {
+    final eraCancelada = reserva.estado?.esCancelado == true;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -212,7 +230,8 @@ class _ReservasScreenState extends State<ReservasScreen> {
         content: Text(
           '¿Confirmar que el cliente consumió la reserva de '
           '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
-          'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?',
+          'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?'
+          '${eraCancelada ? '\n\nEsta reserva estaba cancelada; al confirmar se reactiva como completada y vuelve a ocupar capacidad.' : ''}',
         ),
         actions: [
           TextButton(
@@ -230,7 +249,12 @@ class _ReservasScreenState extends State<ReservasScreen> {
 
     if (confirm != true || !mounted) return;
     // Estado 3 = Completado.
-    await _cambiarEstado(reserva, 3, 'Consumo de reserva confirmado');
+    await _cambiarEstado(
+        reserva,
+        3,
+        eraCancelada
+            ? 'Reserva reactivada y marcada como completada'
+            : 'Consumo de reserva confirmado');
   }
 
   /// Cambia el estado de una reserva vía RPC y refresca. [idEstado] 2=Cancelado, 3=Completado.
@@ -750,12 +774,15 @@ class _ReservasScreenState extends State<ReservasScreen> {
                       ),
                     ),
                   ),
-                  if (_reservas.isNotEmpty)
+                  if (_reservas.isNotEmpty) ...[
+                    TotalesRecursoTurnoBadge(reservas: _reservas),
+                    const SizedBox(width: 8),
                     Text(
                       '${_reservas.length} reserva${_reservas.length == 1 ? '' : 's'}',
                       style: const TextStyle(
                           fontSize: 11, color: AppTheme.textSecondary),
                     ),
+                  ],
                   const SizedBox(width: 6),
                   if (hayFiltrosActivos)
                     GestureDetector(
@@ -985,6 +1012,13 @@ class _ReservasScreenState extends State<ReservasScreen> {
               )
             else
               _infoRow('Teléfono', '-'),
+            if (r.turnoNombre != null)
+              _infoRow(
+                'Turno',
+                r.recursoNombre != null
+                    ? '${r.recursoNombre} · ${r.turnoNombre}'
+                    : r.turnoNombre!,
+              ),
             if (r.cantidad > 1) _infoRow('Cantidad', '${r.cantidad}'),
             if (r.precioTotal != null && r.precioTotal! > 0)
               _infoRow(
@@ -1010,7 +1044,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
                   ),
                   onPressed: () => _editarReserva(r),
                 ),
-                if (esActiva) ...[
+                if (_puedeCompletar(r))
                   TextButton.icon(
                     icon: const Icon(Icons.check_circle_outline, size: 16),
                     label: const Text('Confirmar consumido'),
@@ -1021,6 +1055,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     ),
                     onPressed: () => _completarReserva(r),
                   ),
+                if (esActiva)
                   TextButton.icon(
                     icon: const Icon(Icons.cancel_outlined, size: 16),
                     label: const Text('Cancelar'),
@@ -1031,7 +1066,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     ),
                     onPressed: () => _cancelarReserva(r),
                   ),
-                ] else
+                if (!esActiva && !_puedeCompletar(r))
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Text(
@@ -1050,10 +1085,10 @@ class _ReservasScreenState extends State<ReservasScreen> {
       ),
     );
 
-    // Cancelada: se muestra atenuada (como deshabilitada) pero aún permite
-    // interacción de solo lectura (editar sigue disponible desde el estado).
+    // Cancelada: cinta diagonal roja "CANCELADO" sobre la tarjeta. Sigue
+    // permitiendo editar y, si es de hoy o antes, confirmar consumo.
     if (esCancelada) {
-      return Opacity(opacity: 0.55, child: card);
+      return CanceladoRibbon(child: card);
     }
     return card;
   }

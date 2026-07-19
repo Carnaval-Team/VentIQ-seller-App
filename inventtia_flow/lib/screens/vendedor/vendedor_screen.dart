@@ -23,6 +23,8 @@ import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../utils/precio_reserva.dart';
 import '../../widgets/totales_datos_adicionales.dart';
+import '../../widgets/totales_recurso_turno.dart';
+import '../../widgets/cancelado_ribbon.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class VendedorScreen extends StatefulWidget {
@@ -62,6 +64,20 @@ class _VendedorScreenState extends State<VendedorScreen> {
     return _fecha.year == now.year &&
         _fecha.month == now.month &&
         _fecha.day == now.day;
+  }
+
+  /// Se puede completar si está activa (Reservado) o si está cancelada pero su
+  /// fecha es de hoy o anterior (recuperación de una reserva cancelada).
+  bool _puedeCompletar(Agenda r) {
+    if (r.estado?.esCompletado == true) return false;
+    if (r.estado?.esCancelado == true) {
+      final now = DateTime.now();
+      final hoy = DateTime(now.year, now.month, now.day);
+      final f = r.fechaHoraReserva;
+      final dia = DateTime(f.year, f.month, f.day);
+      return !dia.isAfter(hoy);
+    }
+    return true; // Reservado
   }
 
   @override
@@ -121,16 +137,22 @@ class _VendedorScreenState extends State<VendedorScreen> {
     }
   }
 
-  Future<void> _completarReserva(Agenda r) => _confirmarCambioEstado(
-        r,
-        idEstado: 3,
-        titulo: 'Confirmar consumo',
-        pregunta: '¿Confirmar que el cliente consumió la reserva de '
-            '${r.cliente?.nombreCompleto ?? 'este cliente'}?',
-        accion: 'Sí, confirmar',
-        color: AppTheme.primary,
-        okMsg: 'Consumo de reserva confirmado',
-      );
+  Future<void> _completarReserva(Agenda r) {
+    final eraCancelada = r.estado?.esCancelado == true;
+    return _confirmarCambioEstado(
+      r,
+      idEstado: 3,
+      titulo: 'Confirmar consumo',
+      pregunta: '¿Confirmar que el cliente consumió la reserva de '
+          '${r.cliente?.nombreCompleto ?? 'este cliente'}?'
+          '${eraCancelada ? '\n\nEsta reserva estaba cancelada; al confirmar se reactiva como completada y vuelve a ocupar capacidad.' : ''}',
+      accion: 'Sí, confirmar',
+      color: AppTheme.primary,
+      okMsg: eraCancelada
+          ? 'Reserva reactivada y marcada como completada'
+          : 'Consumo de reserva confirmado',
+    );
+  }
 
   Future<void> _cancelarReserva(Agenda r) => _confirmarCambioEstado(
         r,
@@ -721,12 +743,15 @@ class _VendedorScreenState extends State<VendedorScreen> {
                       ),
                     ),
                   ),
-                  if (_reservas.isNotEmpty)
+                  if (_reservas.isNotEmpty) ...[
+                    TotalesRecursoTurnoBadge(reservas: _reservas),
+                    const SizedBox(width: 8),
                     Text(
                       '${_reservas.length} reserva${_reservas.length == 1 ? '' : 's'}',
                       style: const TextStyle(
                           fontSize: 11, color: AppTheme.textSecondary),
                     ),
+                  ],
                   const SizedBox(width: 6),
                   if (hayFiltrosActivos)
                     GestureDetector(
@@ -933,6 +958,9 @@ class _VendedorScreenState extends State<VendedorScreen> {
             const SizedBox(height: 6),
             _infoRow('Nombre', '${cli?.nombre ?? '-'} ${cli?.apellidos ?? ''}'),
             _infoRow('CI', cli?.ci ?? '-'),
+            if (r.turnoNombre != null)
+              _infoRow('Recurso · Turno',
+                  '${r.recursoNombre ?? ''} · ${r.turnoNombre}'),
             if (telefono != '-' && telefono.isNotEmpty)
               _infoRowWidget(
                 'Teléfono',
@@ -971,7 +999,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                if (esActiva) ...[
+                if (_puedeCompletar(r))
                   TextButton.icon(
                     icon: const Icon(Icons.check_circle_outline, size: 16),
                     label: const Text('Confirmar consumido'),
@@ -983,6 +1011,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
                     ),
                     onPressed: () => _completarReserva(r),
                   ),
+                if (esActiva)
                   TextButton.icon(
                     icon: const Icon(Icons.cancel_outlined, size: 16),
                     label: const Text('Cancelar'),
@@ -994,7 +1023,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
                     ),
                     onPressed: () => _cancelarReserva(r),
                   ),
-                ] else
+                if (!esActiva && !_puedeCompletar(r))
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Text(
@@ -1014,7 +1043,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
     );
 
     if (esCancelada) {
-      return Opacity(opacity: 0.55, child: card);
+      return CanceladoRibbon(child: card);
     }
     return card;
   }
