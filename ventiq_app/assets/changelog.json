@@ -1,9 +1,21 @@
 {
-  "current_version": "2.3.5",
-  "build": 837,
+  "current_version": "2.3.6",
+  "build": 838,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.3.6",
+      "date": "2026-07-21",
+      "title": "📶 Corrección de errores.",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Corrección y cambios menores",
+          "description": "Corrección y cambios menores propuestos por nuestros clientes."
+        }
+      ]
+    },
     {
       "version": "2.3.5",
       "date": "2026-07-13",
