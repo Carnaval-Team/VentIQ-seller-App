@@ -532,7 +532,7 @@ class PermissionsService {
       UserRole.auditor,
       UserRole.almacenero,
     ],
-    '/add-product': [UserRole.gerente],
+    '/add-product': [UserRole.gerente, UserRole.supervisor],
     '/categories': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
     '/tpv-prices': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
 
@@ -678,8 +678,8 @@ class PermissionsService {
   // =====================================================
   static const Map<String, List<UserRole>> _actionPermissions = {
     // Productos
-    'product.create': [UserRole.gerente],
-    'product.edit': [UserRole.gerente],
+    'product.create': [UserRole.gerente, UserRole.supervisor],
+    'product.edit': [UserRole.gerente, UserRole.supervisor],
     'product.delete': [UserRole.gerente],
     'product.view': [
       UserRole.gerente,

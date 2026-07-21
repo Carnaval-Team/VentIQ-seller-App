@@ -78,7 +78,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     final canEdit = results[0] as bool;
     final role = results[1] as UserRole;
     final isSupervisor = role == UserRole.supervisor;
-    final tabCount = isSupervisor ? 2 : 11;
+    // Supervisor: Tienda + Global + Carnaval App. Gerente: todas.
+    final tabCount = isSupervisor ? 3 : 11;
     _tabController?.dispose();
     setState(() {
       _canEditSettings = canEdit;
@@ -86,7 +87,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       _tabController = TabController(
         length: tabCount,
         vsync: this,
-        initialIndex: isSupervisor ? 0 : 1,
+        initialIndex: 0,
       );
       _tabsReady = true;
     });
@@ -117,6 +118,7 @@ class _SettingsScreenState extends State<SettingsScreen>
 
     final tabs = _isSupervisor
         ? const [
+            Tab(text: 'Tienda', icon: Icon(Icons.store)),
             Tab(text: 'Global', icon: Icon(Icons.settings_applications)),
             Tab(text: 'Carnaval App', icon: Icon(Icons.storefront)),
           ]
@@ -136,12 +138,13 @@ class _SettingsScreenState extends State<SettingsScreen>
 
     final tabViews = _isSupervisor
         ? [
+            _buildStoreDataTab(),
             GlobalConfigTabView(key: _globalConfigTabKey),
             CarnavalTabView(key: _carnavalTabKey),
           ]
         : [
-            GlobalConfigTabView(key: _globalConfigTabKey),
             _buildStoreDataTab(),
+            GlobalConfigTabView(key: _globalConfigTabKey),
             CategoriesTabView(key: _categoriesTabKey, canEdit: _canEditSettings),
             VariantsTabView(key: _variantsTabKey),
             PresentationsTabView(key: _presentationsTabKey),
