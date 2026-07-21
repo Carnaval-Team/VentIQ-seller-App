@@ -1,11 +1,11 @@
 {
-  "current_version": "2.3.2",
-  "build": 232,
+  "current_version": "2.3.3",
+  "build": 233,
 
   "app_name": "ventiq_admin",
   "changelogs": [
     {
-      "version": "2.3.2",
+      "version": "2.3.3",
       "date": "2026-07-13",
       "title": "Cambios menores de permisos",
       "changes": [
