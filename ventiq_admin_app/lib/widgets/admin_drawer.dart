@@ -126,6 +126,22 @@ class _AdminDrawerState extends State<AdminDrawer> {
     }
   }
 
+  /// Verificar si el usuario puede acceder al módulo de Recursos Humanos
+  Future<bool> _canAccessHR(BuildContext context) async {
+    try {
+      final hasPermission = await NavigationGuard.canNavigate(
+        '/hr-dashboard',
+        context,
+        showDialog: false,
+      );
+      if (!hasPermission) return false;
+      return await SubscriptionService().hasProPlanInAnyStore();
+    } catch (e) {
+      print('❌ Error verificando acceso a RRHH: $e');
+      return false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Drawer(
@@ -531,6 +547,34 @@ class _AdminDrawerState extends State<AdminDrawer> {
                               NavigationGuard.navigateWithPermission(
                                 context,
                                 '/workers',
+                              );
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+
+                // Recursos Humanos (Gerente, Supervisor y RRHH con plan Pro)
+                FutureBuilder<bool>(
+                  future: _canAccessHR(context),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.badge_outlined,
+                            title: 'Recursos Humanos',
+                            subtitle: 'Fichar entrada, salida y reportes',
+                            onTap: () {
+                              Navigator.pop(context);
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/hr-dashboard',
                               );
                             },
                           ),
