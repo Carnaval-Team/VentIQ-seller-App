@@ -1,8 +1,45 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.4.3",
-  "build": 11,
+  "current_version": "1.4.4",
+  "build": 12,
   "changelogs": [
+    {
+      "version": "1.4.4",
+      "date": "2026-07-22",
+      "title": "🚌 Pasajes ómnibus: precios, turnos y listado unificado",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Reserva de pasaje por tipo y fechas",
+          "description": "El pasajero elige solo el tipo (ida, vuelta o ida y vuelta) y las fechas. El sistema asigna el turno automáticamente: solo-ida / solo-vuelta, o el paquete combinado cuando corresponde."
+        },
+        {
+          "type": "feature",
+          "title": "Precio ida y vuelta según el mismo día",
+          "description": "Por defecto el precio del turno combinado aplica solo si ida y vuelta son el mismo día; en fechas distintas se cobran por separado. En el servicio hay un checkbox para aplicar el precio de ida y vuelta a todos los pasajes."
+        },
+        {
+          "type": "feature",
+          "title": "Configuración mínima de turnos de transporte",
+          "description": "Cada vehículo exige al menos un turno Solo Ida y uno Solo Vuelta. El turno combinado es opcional. La pantalla de recursos avisa si falta alguno."
+        },
+        {
+          "type": "feature",
+          "title": "Reserva de pasaje desde administración",
+          "description": "Al reservar capacidad de un servicio ómnibus, el administrador usa el mismo flujo de tipo de pasaje, fechas, asignación de turnos y precio estimado que el cliente."
+        },
+        {
+          "type": "improvement",
+          "title": "Listado: una tarjeta para ida y vuelta el mismo día",
+          "description": "En reservas de admin y vendedor, un viaje ida+vuelta el mismo día se muestra como una sola reserva con tipo Ida y vuelta. Si las fechas son distintas, aparecen por separado como Ida y Vuelta."
+        },
+        {
+          "type": "improvement",
+          "title": "Totales sin doble conteo e importes correctos",
+          "description": "El resumen de reservas ya no cuenta dos veces un pasaje de ida y vuelta del mismo día, y suma los importes según los precios reales de cada tramo o del paquete."
+        }
+      ]
+    },
     {
       "version": "1.4.3",
       "date": "2026-07-15",
