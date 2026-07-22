@@ -13,13 +13,15 @@ class RecursoService {
     required String uuidUsuario,
     required int idLocalServicio,
   }) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'admin_listar_recursos',
-      params: {
-        'p_uuid_usuario': uuidUsuario,
-        'p_id_local_servicio': idLocalServicio,
-      },
-    );
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'admin_listar_recursos',
+          params: {
+            'p_uuid_usuario': uuidUsuario,
+            'p_id_local_servicio': idLocalServicio,
+          },
+        );
     final json = res as Map<String, dynamic>;
     if (json['ok'] != true) {
       throw Exception(json['error'] ?? 'No se pudieron listar los recursos');
@@ -42,18 +44,20 @@ class RecursoService {
     bool activo = true,
     int? id,
   }) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'admin_guardar_recurso',
-      params: {
-        'p_uuid_usuario': uuidUsuario,
-        'p_id_local_servicio': idLocalServicio,
-        'p_nombre': nombre,
-        'p_capacidad': capacidad,
-        'p_orden': orden,
-        'p_activo': activo,
-        'p_id': id,
-      },
-    );
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'admin_guardar_recurso',
+          params: {
+            'p_uuid_usuario': uuidUsuario,
+            'p_id_local_servicio': idLocalServicio,
+            'p_nombre': nombre,
+            'p_capacidad': capacidad,
+            'p_orden': orden,
+            'p_activo': activo,
+            'p_id': id,
+          },
+        );
     final json = res as Map<String, dynamic>;
     if (json['ok'] != true) {
       throw Exception(json['error'] ?? 'No se pudo guardar el recurso');
@@ -65,10 +69,12 @@ class RecursoService {
     required String uuidUsuario,
     required int id,
   }) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'admin_eliminar_recurso',
-      params: {'p_uuid_usuario': uuidUsuario, 'p_id': id},
-    );
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'admin_eliminar_recurso',
+          params: {'p_uuid_usuario': uuidUsuario, 'p_id': id},
+        );
     final json = res as Map<String, dynamic>;
     if (json['ok'] != true) {
       throw Exception(json['error'] ?? 'No se pudo eliminar el recurso');
@@ -87,21 +93,51 @@ class RecursoService {
     bool activo = true,
     int? id,
   }) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'admin_guardar_tramo',
-      params: {
-        'p_uuid_usuario': uuidUsuario,
-        'p_id_recurso': idRecurso,
-        'p_nombre': nombre,
-        'p_capacidad': capacidad,
-        'p_orden': orden,
-        'p_activo': activo,
-        'p_id': id,
-      },
-    );
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'admin_guardar_tramo',
+          params: {
+            'p_uuid_usuario': uuidUsuario,
+            'p_id_recurso': idRecurso,
+            'p_nombre': nombre,
+            'p_capacidad': capacidad,
+            'p_orden': orden,
+            'p_activo': activo,
+            'p_id': id,
+          },
+        );
     final json = res as Map<String, dynamic>;
     if (json['ok'] != true) {
       throw Exception(json['error'] ?? 'No se pudo guardar el tramo');
+    }
+    return (json['id'] as num).toInt();
+  }
+
+  static Future<int> guardarTramoTransporte({
+    required String uuidUsuario,
+    required int idRecurso,
+    required String nombre,
+    required String tipoTrayecto,
+    int? id,
+    bool activo = true,
+  }) async {
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'admin_guardar_tramo_transporte',
+          params: {
+            'p_uuid_usuario': uuidUsuario,
+            'p_id_recurso': idRecurso,
+            'p_nombre': nombre,
+            'p_tipo_trayecto': tipoTrayecto,
+            'p_id': id,
+            'p_activo': activo,
+          },
+        );
+    final json = res as Map<String, dynamic>;
+    if (json['ok'] != true) {
+      throw Exception(json['error'] ?? 'No se pudo guardar el trayecto');
     }
     return (json['id'] as num).toInt();
   }
@@ -110,10 +146,12 @@ class RecursoService {
     required String uuidUsuario,
     required int id,
   }) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'admin_eliminar_tramo',
-      params: {'p_uuid_usuario': uuidUsuario, 'p_id': id},
-    );
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'admin_eliminar_tramo',
+          params: {'p_uuid_usuario': uuidUsuario, 'p_id': id},
+        );
     final json = res as Map<String, dynamic>;
     if (json['ok'] != true) {
       throw Exception(json['error'] ?? 'No se pudo eliminar el tramo');
@@ -131,20 +169,24 @@ class RecursoService {
     required List<int> tramosIds,
     int orden = 0,
     bool activo = true,
+    Map<String, double>? precios,
     int? id,
   }) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'admin_guardar_turno',
-      params: {
-        'p_uuid_usuario': uuidUsuario,
-        'p_id_recurso': idRecurso,
-        'p_nombre': nombre,
-        'p_tramos': tramosIds,
-        'p_orden': orden,
-        'p_activo': activo,
-        'p_id': id,
-      },
-    );
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'admin_guardar_turno',
+          params: {
+            'p_uuid_usuario': uuidUsuario,
+            'p_id_recurso': idRecurso,
+            'p_nombre': nombre,
+            'p_tramos': tramosIds,
+            'p_orden': orden,
+            'p_activo': activo,
+            'p_id': id,
+            'p_precios': precios ?? const {},
+          },
+        );
     final json = res as Map<String, dynamic>;
     if (json['ok'] != true) {
       throw Exception(json['error'] ?? 'No se pudo guardar el turno');
@@ -156,10 +198,12 @@ class RecursoService {
     required String uuidUsuario,
     required int id,
   }) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'admin_eliminar_turno',
-      params: {'p_uuid_usuario': uuidUsuario, 'p_id': id},
-    );
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'admin_eliminar_turno',
+          params: {'p_uuid_usuario': uuidUsuario, 'p_id': id},
+        );
     final json = res as Map<String, dynamic>;
     if (json['ok'] != true) {
       throw Exception(json['error'] ?? 'No se pudo eliminar el turno');

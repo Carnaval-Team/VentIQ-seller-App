@@ -12,8 +12,10 @@ CREATE TABLE flow.app_dat_servicios (
   campos_adicionales jsonb NOT NULL DEFAULT '[]'::jsonb,
   permite_tercero boolean NOT NULL DEFAULT false,
   config_precio jsonb NOT NULL DEFAULT '{}'::jsonb,
+  id_tipo_actividad integer NOT NULL,
   CONSTRAINT app_dat_servicios_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_servicios_id_entidad_fkey FOREIGN KEY (id_entidad) REFERENCES flow.entidad(id)
+  CONSTRAINT app_dat_servicios_id_entidad_fkey FOREIGN KEY (id_entidad) REFERENCES flow.entidad(id),
+  CONSTRAINT app_dat_servicios_id_tipo_actividad_fkey FOREIGN KEY (id_tipo_actividad) REFERENCES flow.nom_tipo_actividad_servicio(id)
 );
 CREATE TABLE flow.app_dat_locales (
   id integer NOT NULL DEFAULT nextval('flow.app_dat_locales_id_seq'::regclass),
@@ -75,11 +77,15 @@ CREATE TABLE flow.agenda (
   datos_adicionales jsonb,
   reservado_por uuid,
   precio_total numeric,
-  moneda varchar(8),
+  moneda character varying,
+  id_turno integer,
+  id_viaje uuid,
+  tipo_trayecto character varying,
   CONSTRAINT agenda_pkey PRIMARY KEY (id),
   CONSTRAINT agenda_uuid_usuario_fkey FOREIGN KEY (uuid_usuario) REFERENCES flow.perfil(uuid_usuario),
   CONSTRAINT agenda_id_local_servicio_fkey FOREIGN KEY (id_local_servicio) REFERENCES flow.local_servicio(id),
-  CONSTRAINT agenda_id_estado_fkey FOREIGN KEY (id_estado) REFERENCES flow.nom_estado_agenda(id)
+  CONSTRAINT agenda_id_estado_fkey FOREIGN KEY (id_estado) REFERENCES flow.nom_estado_agenda(id),
+  CONSTRAINT agenda_id_turno_fkey FOREIGN KEY (id_turno) REFERENCES flow.turno(id)
 );
 CREATE TABLE flow.sala_espera (
   id integer NOT NULL DEFAULT nextval('flow.sala_espera_id_seq'::regclass),
@@ -90,9 +96,11 @@ CREATE TABLE flow.sala_espera (
   created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   datos_adicionales jsonb,
   reservado_por uuid,
+  id_turno integer,
   CONSTRAINT sala_espera_pkey PRIMARY KEY (id),
   CONSTRAINT sala_espera_uuid_usuario_fkey FOREIGN KEY (uuid_usuario) REFERENCES flow.perfil(uuid_usuario),
-  CONSTRAINT sala_espera_id_local_servicio_fkey FOREIGN KEY (id_local_servicio) REFERENCES flow.local_servicio(id)
+  CONSTRAINT sala_espera_id_local_servicio_fkey FOREIGN KEY (id_local_servicio) REFERENCES flow.local_servicio(id),
+  CONSTRAINT sala_espera_id_turno_fkey FOREIGN KEY (id_turno) REFERENCES flow.turno(id)
 );
 CREATE TABLE flow.ultimo_numero (
   id integer NOT NULL DEFAULT nextval('flow.ultimo_numero_id_seq'::regclass),
@@ -193,4 +201,65 @@ CREATE TABLE flow.entidad_vendedor (
   CONSTRAINT entidad_vendedor_id_entidad_fkey FOREIGN KEY (id_entidad) REFERENCES flow.entidad(id),
   CONSTRAINT entidad_vendedor_uuid_usuario_fkey FOREIGN KEY (uuid_usuario) REFERENCES auth.users(id),
   CONSTRAINT entidad_vendedor_asignado_por_fkey FOREIGN KEY (asignado_por) REFERENCES auth.users(id)
+);
+CREATE TABLE flow.nom_tipo_actividad_servicio (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  codigo character varying NOT NULL,
+  nombre character varying NOT NULL,
+  activo boolean NOT NULL DEFAULT true,
+  CONSTRAINT nom_tipo_actividad_servicio_pkey PRIMARY KEY (id),
+  CONSTRAINT nom_tipo_actividad_servicio_codigo_key UNIQUE (codigo)
+);
+CREATE TABLE flow.recurso (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_local_servicio integer NOT NULL,
+  nombre character varying NOT NULL,
+  capacidad integer NOT NULL DEFAULT 1,
+  orden integer NOT NULL DEFAULT 0,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT recurso_pkey PRIMARY KEY (id),
+  CONSTRAINT recurso_id_local_servicio_fkey FOREIGN KEY (id_local_servicio) REFERENCES flow.local_servicio(id)
+);
+CREATE TABLE flow.tramo (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_recurso integer NOT NULL,
+  nombre character varying NOT NULL,
+  capacidad integer,
+  tipo_trayecto character varying,
+  orden integer NOT NULL DEFAULT 0,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT tramo_pkey PRIMARY KEY (id),
+  CONSTRAINT tramo_id_recurso_fkey FOREIGN KEY (id_recurso) REFERENCES flow.recurso(id)
+);
+CREATE TABLE flow.turno (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_recurso integer NOT NULL,
+  nombre character varying NOT NULL,
+  orden integer NOT NULL DEFAULT 0,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT turno_pkey PRIMARY KEY (id),
+  CONSTRAINT turno_id_recurso_fkey FOREIGN KEY (id_recurso) REFERENCES flow.recurso(id)
+);
+CREATE TABLE flow.turno_tramo (
+  id_turno integer NOT NULL,
+  id_tramo integer NOT NULL,
+  CONSTRAINT turno_tramo_pkey PRIMARY KEY (id_turno, id_tramo),
+  CONSTRAINT turno_tramo_id_turno_fkey FOREIGN KEY (id_turno) REFERENCES flow.turno(id),
+  CONSTRAINT turno_tramo_id_tramo_fkey FOREIGN KEY (id_tramo) REFERENCES flow.tramo(id)
+);
+CREATE TABLE flow.plan_tramo (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_tramo integer NOT NULL,
+  fecha timestamp with time zone NOT NULL DEFAULT now(),
+  cantidad integer NOT NULL DEFAULT 0,
+  agendados integer NOT NULL DEFAULT 0,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT plan_tramo_pkey PRIMARY KEY (id),
+  CONSTRAINT plan_tramo_id_tramo_fkey FOREIGN KEY (id_tramo) REFERENCES flow.tramo(id)
 );

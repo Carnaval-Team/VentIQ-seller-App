@@ -79,6 +79,52 @@ class AgendaAdminService {
     }
   }
 
+  static Future<Map<String, dynamic>> reservarPasajeOmnibus({
+    required int idLocalServicio,
+    required String tipoViaje,
+    DateTime? fechaIda,
+    int? idTurnoIda,
+    DateTime? fechaVuelta,
+    int? idTurnoVuelta,
+    int cantidad = 1,
+    Map<String, dynamic>? datosAdicionales,
+    String? moneda,
+  }) async {
+    try {
+      final uuid = await AuthService.getCurrentUserId();
+      if (uuid == null) {
+        throw Exception('No se pudo obtener el usuario autenticado');
+      }
+
+      final res = await _supabase.schema(_schema).rpc(
+        'admin_reservar_pasaje_omnibus',
+        params: {
+          'p_uuid_admin': uuid,
+          'p_id_local_servicio': idLocalServicio,
+          'p_tipo_viaje': tipoViaje,
+          if (fechaIda != null)
+            'p_fecha_ida': fechaIda.toIso8601String().substring(0, 10),
+          if (idTurnoIda != null) 'p_id_turno_ida': idTurnoIda,
+          if (fechaVuelta != null)
+            'p_fecha_vuelta': fechaVuelta.toIso8601String().substring(0, 10),
+          if (idTurnoVuelta != null) 'p_id_turno_vuelta': idTurnoVuelta,
+          'p_cantidad': cantidad,
+          if (datosAdicionales != null)
+            'p_datos_adicionales': datosAdicionales,
+          if (moneda != null) 'p_moneda': moneda,
+        },
+      );
+      final json = Map<String, dynamic>.from(res as Map);
+      if (json['ok'] != true) {
+        throw Exception(json['error'] ?? 'No se pudo reservar el pasaje');
+      }
+      return Map<String, dynamic>.from(json['data'] as Map? ?? json);
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception(e.toString());
+    }
+  }
+
   static Future<void> crearReservaDirecta({
     required int idLocalServicio,
     required DateTime fecha,

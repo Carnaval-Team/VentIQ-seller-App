@@ -19,6 +19,7 @@ import '../../services/agenda_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../utils/precio_reserva.dart';
+import '../../utils/reserva_listado.dart';
 import '../../utils/telefono_contacto.dart';
 import '../../widgets/datos_adicionales_form.dart';
 import '../../widgets/totales_datos_adicionales.dart';
@@ -67,27 +68,27 @@ class _ReservasScreenState extends State<ReservasScreen> {
   /// ¿La reserva se puede confirmar como consumida? Las activas siempre; las
   /// canceladas solo si su fecha es de hoy o anterior (aún se puede sellar el
   /// consumo de un servicio ya prestado que se había cancelado).
-  bool _puedeCompletar(Agenda r) {
-    final esCancelada = r.estado?.esCancelado == true;
-    final esCompletada = r.estado?.esCompletado == true;
-    if (esCompletada) return false;
-    if (!esCancelada) return true; // activa (Reservado)
+  bool _puedeCompletar(ReservaListItem item) {
+    if (item.esCompletada) return false;
+    if (!item.esCancelada) return true;
     final now = DateTime.now();
     final hoy = DateTime(now.year, now.month, now.day);
-    final f = r.fechaHoraReserva;
-    final diaReserva = DateTime(f.year, f.month, f.day);
-    return !diaReserva.isAfter(hoy);
+    return item.agendas.any((r) {
+      final f = r.fechaHoraReserva;
+      final diaReserva = DateTime(f.year, f.month, f.day);
+      return !diaReserva.isAfter(hoy);
+    });
   }
 
-  /// ¿Se puede descancelar (reactivar a Reservado)? Solo reservas canceladas
-  /// cuya fecha sea de hoy o futura (no tiene sentido reactivar una vencida).
-  bool _puedeDescancelar(Agenda r) {
-    if (r.estado?.esCancelado != true) return false;
+  bool _puedeDescancelar(ReservaListItem item) {
+    if (!item.esCancelada) return false;
     final now = DateTime.now();
     final hoy = DateTime(now.year, now.month, now.day);
-    final f = r.fechaHoraReserva;
-    final diaReserva = DateTime(f.year, f.month, f.day);
-    return !diaReserva.isBefore(hoy);
+    return item.agendas.any((r) {
+      final f = r.fechaHoraReserva;
+      final diaReserva = DateTime(f.year, f.month, f.day);
+      return !diaReserva.isBefore(hoy);
+    });
   }
 
   @override
@@ -204,15 +205,20 @@ class _ReservasScreenState extends State<ReservasScreen> {
     _load();
   }
 
-  Future<void> _cancelarReserva(Agenda reserva) async {
+  Future<void> _cancelarReserva(ReservaListItem item) async {
+    final reserva = item.principal;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Cancelar reserva'),
         content: Text(
-          '¿Estás seguro de cancelar la reserva de '
-          '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
-          'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?',
+          item.esIdaVueltaMismoDia
+              ? '¿Cancelar el viaje de ida y vuelta de '
+                  '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
+                  '(se cancelan ambos tramos)?'
+              : '¿Estás seguro de cancelar la reserva de '
+                  '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
+                  'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?',
         ),
         actions: [
           TextButton(
@@ -229,11 +235,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
     );
 
     if (confirm != true || !mounted) return;
-    // Estado 2 = Cancelado. La RPC notifica al cliente y libera la capacidad.
-    await _cambiarEstado(reserva, 2, 'Reserva cancelada y cliente notificado');
+    await _cambiarEstadoItems(item, 2, 'Reserva cancelada y cliente notificado');
   }
 
-  Future<void> _descancelarReserva(Agenda reserva) async {
+  Future<void> _descancelarReserva(ReservaListItem item) async {
+    final reserva = item.principal;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -242,6 +248,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
           '¿Reactivar la reserva de '
           '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
           'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?'
+          '${item.esIdaVueltaMismoDia ? '\n\nSe reactivarán ambos tramos (ida y vuelta).' : ''}'
           '\n\nVolverá a estado Reservado y ocupará capacidad de nuevo.',
         ),
         actions: [
@@ -259,12 +266,12 @@ class _ReservasScreenState extends State<ReservasScreen> {
     );
 
     if (confirm != true || !mounted) return;
-    // Estado 1 = Reservado. La RPC re-consume la capacidad y notifica al cliente.
-    await _cambiarEstado(reserva, 1, 'Reserva reactivada y cliente notificado');
+    await _cambiarEstadoItems(item, 1, 'Reserva reactivada y cliente notificado');
   }
 
-  Future<void> _completarReserva(Agenda reserva) async {
-    final eraCancelada = reserva.estado?.esCancelado == true;
+  Future<void> _completarReserva(ReservaListItem item) async {
+    final reserva = item.principal;
+    final eraCancelada = item.agendas.any((a) => a.estado?.esCancelado == true);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -273,6 +280,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
           '¿Confirmar que el cliente consumió la reserva de '
           '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
           'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?'
+          '${item.esIdaVueltaMismoDia ? '\n\nSe marcarán como consumidos ambos tramos.' : ''}'
           '${eraCancelada ? '\n\nEsta reserva estaba cancelada; al confirmar se reactiva como completada y vuelve a ocupar capacidad.' : ''}',
         ),
         actions: [
@@ -290,23 +298,29 @@ class _ReservasScreenState extends State<ReservasScreen> {
     );
 
     if (confirm != true || !mounted) return;
-    // Estado 3 = Completado.
-    await _cambiarEstado(
-        reserva,
-        3,
-        eraCancelada
-            ? 'Reserva reactivada y marcada como completada'
-            : 'Consumo de reserva confirmado');
+    await _cambiarEstadoItems(
+      item,
+      3,
+      eraCancelada
+          ? 'Reserva reactivada y marcada como completada'
+          : 'Consumo de reserva confirmado',
+    );
   }
 
-  /// Cambia el estado de una reserva vía RPC y refresca. [idEstado] 1=Reservado, 2=Cancelado, 3=Completado.
-  Future<void> _cambiarEstado(Agenda reserva, int idEstado, String okMsg) async {
+  /// Cambia el estado de una o más agendas (par ida+vuelta mismo día).
+  Future<void> _cambiarEstadoItems(
+    ReservaListItem item,
+    int idEstado,
+    String okMsg,
+  ) async {
     setState(() => _loading = true);
     try {
-      await AgendaAdminService.marcarEstadoAgenda(
-        idAgenda: reserva.id,
-        idEstado: idEstado,
-      );
+      for (final agenda in item.agendas) {
+        await AgendaAdminService.marcarEstadoAgenda(
+          idAgenda: agenda.id,
+          idEstado: idEstado,
+        );
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(okMsg), backgroundColor: AppTheme.success),
@@ -321,9 +335,8 @@ class _ReservasScreenState extends State<ReservasScreen> {
             backgroundColor: AppTheme.error,
           ),
         );
+        setState(() => _loading = false);
       }
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -371,12 +384,32 @@ class _ReservasScreenState extends State<ReservasScreen> {
     return map;
   }
 
+  /// Ítems de listado (ida+vuelta mismo día = 1) agrupados por local.
+  Map<String, List<ReservaListItem>> _agruparItemsPorLocal() {
+    final map = <String, List<ReservaListItem>>{};
+    for (final item in agruparReservasParaListado(_reservas)) {
+      final key =
+          item.principal.localServicio?.local?.nombre ?? 'Sin local';
+      map.putIfAbsent(key, () => []).add(item);
+    }
+    return map;
+  }
+
+  List<ReservaListItem> get _itemsListado =>
+      agruparReservasParaListado(_reservas);
+
   /// Columnas dinámicas para datos adicionales: unión ordenada de claves que
   /// aparecen en las reservas listadas. Devuelve pares (clave, etiqueta).
   /// La etiqueta sale de campos_adicionales del servicio si está disponible.
   /// Se excluyen las claves que ya se muestran como columnas fijas.
   List<({String clave, String etiqueta})> _columnasDatos(List<Agenda> lista) {
-    const clavesFijas = {'nombre', 'apellidos', 'ci', 'telefono'};
+    const clavesFijas = {
+      'nombre',
+      'apellidos',
+      'ci',
+      'telefono',
+      'tipo_viaje',
+    };
     final etiquetas = <String, String>{};
     final orden = <String>[];
     for (final r in lista) {
@@ -821,7 +854,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     TotalesRecursoTurnoBadge(reservas: _reservas),
                     const SizedBox(width: 8),
                     Text(
-                      '${_reservas.length} reserva${_reservas.length == 1 ? '' : 's'}',
+                      '${_itemsListado.length} reserva${_itemsListado.length == 1 ? '' : 's'}',
                       style: const TextStyle(
                           fontSize: 11, color: AppTheme.textSecondary),
                     ),
@@ -954,7 +987,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
   }
 
   Widget _buildTabla() {
-    final grupos = _agruparPorLocal();
+    final grupos = _agruparItemsPorLocal();
     final cols = _columnasDatos(_reservas);
 
     return ListView(
@@ -977,20 +1010,26 @@ class _ReservasScreenState extends State<ReservasScreen> {
                 ],
               ),
             ),
-          ...entry.value.map((r) => _buildReservaCard(r, cols)),
+          ...entry.value.map((item) => _buildReservaCard(item, cols)),
         ],
       ],
     );
   }
 
-  Widget _buildReservaCard(Agenda r, List<({String clave, String etiqueta})> cols) {
+  Widget _buildReservaCard(
+    ReservaListItem item,
+    List<({String clave, String etiqueta})> cols,
+  ) {
+    final r = item.principal;
     final esTercero = r.reservadoPor != null &&
         r.uuidUsuario != null &&
         r.reservadoPor != r.uuidUsuario;
-    final esCancelada = r.estado?.esCancelado == true;
-    final esCompletada = r.estado?.esCompletado == true;
-    final esActiva = !esCancelada && !esCompletada; // 'Reservado'
+    final esCancelada = item.esCancelada;
+    final esCompletada = item.esCompletada;
+    final esActiva = item.esActiva;
     final telefono = _datoCliente(r, 'telefono');
+    final precio = item.precioTotal;
+    final tipoLabel = item.etiquetaTipo;
 
     final card = Card(
       elevation: 0,
@@ -1021,6 +1060,24 @@ class _ReservasScreenState extends State<ReservasScreen> {
                         color: AppTheme.textPrimary),
                   ),
                 ),
+                if (tipoLabel.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      tipoLabel,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 Text(
                   _fmt.format(r.fechaHoraReserva),
                   style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
@@ -1053,7 +1110,22 @@ class _ReservasScreenState extends State<ReservasScreen> {
               )
             else
               _infoRow('Teléfono', '-'),
-            if (r.turnoNombre != null)
+            if (item.esIdaVueltaMismoDia) ...[
+              if (r.turnoNombre != null)
+                _infoRow(
+                  'Ida',
+                  r.recursoNombre != null
+                      ? '${r.recursoNombre} · ${r.turnoNombre}'
+                      : r.turnoNombre!,
+                ),
+              if (item.pareja?.turnoNombre != null)
+                _infoRow(
+                  'Vuelta',
+                  item.pareja!.recursoNombre != null
+                      ? '${item.pareja!.recursoNombre} · ${item.pareja!.turnoNombre}'
+                      : item.pareja!.turnoNombre!,
+                ),
+            ] else if (r.turnoNombre != null)
               _infoRow(
                 'Turno',
                 r.recursoNombre != null
@@ -1061,11 +1133,10 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     : r.turnoNombre!,
               ),
             if (r.cantidad > 1) _infoRow('Cantidad', '${r.cantidad}'),
-            if (r.precioTotal != null && r.precioTotal! > 0)
+            if (precio != null)
               _infoRow(
                 'Precio',
-                PrecioReserva.formatear(
-                    r.precioTotal!, r.moneda ?? 'USD'),
+                PrecioReserva.formatear(precio, item.moneda ?? 'USD'),
               ),
             if (esTercero) _infoRow('Para tercero', 'Sí'),
             for (final c in cols)
@@ -1085,7 +1156,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
                   ),
                   onPressed: () => _editarReserva(r),
                 ),
-                if (_puedeCompletar(r))
+                if (_puedeCompletar(item))
                   TextButton.icon(
                     icon: const Icon(Icons.check_circle_outline, size: 16),
                     label: const Text('Confirmar consumido'),
@@ -1094,9 +1165,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       textStyle: const TextStyle(fontSize: 12),
                     ),
-                    onPressed: () => _completarReserva(r),
+                    onPressed: () => _completarReserva(item),
                   ),
-                if (_puedeDescancelar(r))
+                if (_puedeDescancelar(item))
                   TextButton.icon(
                     icon: const Icon(Icons.restore, size: 16),
                     label: const Text('Reactivar'),
@@ -1105,7 +1176,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       textStyle: const TextStyle(fontSize: 12),
                     ),
-                    onPressed: () => _descancelarReserva(r),
+                    onPressed: () => _descancelarReserva(item),
                   ),
                 if (esActiva)
                   TextButton.icon(
@@ -1116,9 +1187,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       textStyle: const TextStyle(fontSize: 12),
                     ),
-                    onPressed: () => _cancelarReserva(r),
+                    onPressed: () => _cancelarReserva(item),
                   ),
-                if (!esActiva && !_puedeCompletar(r) && !_puedeDescancelar(r))
+                if (!esActiva && !_puedeCompletar(item) && !_puedeDescancelar(item))
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Text(

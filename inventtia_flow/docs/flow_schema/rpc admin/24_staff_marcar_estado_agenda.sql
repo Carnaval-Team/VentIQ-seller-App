@@ -63,7 +63,7 @@ begin
 
   -- Cargar la reserva.
   select a.id, a.uuid_usuario, a.id_local_servicio, a.id_estado,
-         a.fecha_hora_reserva, a.cantidad
+         a.fecha_hora_reserva, a.cantidad, a.id_turno
     into v_agenda
     from flow.agenda a
    where a.id = p_id_agenda;
@@ -77,17 +77,27 @@ begin
 
   -- Al cancelar: liberar capacidad del plan del dia.
   if p_id_estado = 2 then
-    select ps.id into v_plan_id
-      from flow.plan_servicios ps
-     where ps.id_local_servicio = v_agenda.id_local_servicio
-       and (ps.fecha at time zone 'America/Havana')::date =
-           (v_agenda.fecha_hora_reserva at time zone 'America/Havana')::date
-     limit 1;
+    if v_agenda.id_turno is not null then
+      update flow.plan_tramo pt
+         set agendados = greatest(0, pt.agendados - v_agenda.cantidad)
+        from flow.turno_tramo tt
+       where tt.id_turno = v_agenda.id_turno
+         and pt.id_tramo = tt.id_tramo
+         and (pt.fecha at time zone 'America/Havana')::date =
+             (v_agenda.fecha_hora_reserva at time zone 'America/Havana')::date;
+    else
+      select ps.id into v_plan_id
+        from flow.plan_servicios ps
+       where ps.id_local_servicio = v_agenda.id_local_servicio
+         and (ps.fecha at time zone 'America/Havana')::date =
+             (v_agenda.fecha_hora_reserva at time zone 'America/Havana')::date
+       limit 1;
 
-    if v_plan_id is not null then
-      update flow.plan_servicios
-         set agendados = greatest(0, agendados - v_agenda.cantidad)
-       where id = v_plan_id;
+      if v_plan_id is not null then
+        update flow.plan_servicios
+           set agendados = greatest(0, agendados - v_agenda.cantidad)
+         where id = v_plan_id;
+      end if;
     end if;
   end if;
 

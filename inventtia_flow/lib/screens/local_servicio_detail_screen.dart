@@ -17,6 +17,7 @@ import '../services/catalogo_service.dart';
 import '../utils/precio_reserva.dart';
 import '../widgets/datos_adicionales_form.dart';
 import '../widgets/net_image.dart';
+import 'reserva_transporte_sheet.dart';
 
 class LocalServicioDetailScreen extends StatefulWidget {
   final LocalServicio localServicio;
@@ -28,8 +29,7 @@ class LocalServicioDetailScreen extends StatefulWidget {
       _LocalServicioDetailScreenState();
 }
 
-class _LocalServicioDetailScreenState
-    extends State<LocalServicioDetailScreen> {
+class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
   late LocalServicio _localServicio;
   bool _isLoading = true;
   bool _isActing = false;
@@ -58,7 +58,9 @@ class _LocalServicioDetailScreenState
     final servicio = _localServicio.servicio;
     if (servicio != null && servicio.camposAdicionales.isNotEmpty) return;
     try {
-      final refreshed = await CatalogoService.getLocalServicio(_localServicio.id);
+      final refreshed = await CatalogoService.getLocalServicio(
+        _localServicio.id,
+      );
       if (mounted) setState(() => _localServicio = refreshed);
     } catch (_) {
       // Si falla, seguimos con el objeto original.
@@ -95,20 +97,24 @@ class _LocalServicioDetailScreenState
   Future<void> _checkDisponibilidad() async {
     try {
       final dias = await AgendaService.getDisponibilidad(_localServicio.id);
-      
+
       // Check if there are available slots for future dates
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       bool hasAvailable = false;
-      
+
       for (final dia in dias) {
-        final selectedDay = DateTime(dia.fecha.year, dia.fecha.month, dia.fecha.day);
+        final selectedDay = DateTime(
+          dia.fecha.year,
+          dia.fecha.month,
+          dia.fecha.day,
+        );
         if (selectedDay.isAfter(today) && dia.disponibles > 0) {
           hasAvailable = true;
           break;
         }
       }
-      
+
       if (mounted) {
         setState(() => _hasDisponibilidad = hasAvailable);
       }
@@ -144,8 +150,9 @@ class _LocalServicioDetailScreenState
         uuidUsuario: uuid,
         idLocalServicio: _localServicio.id,
         fechaRegla: fecha,
-        datosAdicionales:
-            datos.datosAdicionales.isEmpty ? null : datos.datosAdicionales,
+        datosAdicionales: datos.datosAdicionales.isEmpty
+            ? null
+            : datos.datosAdicionales,
         paraTercero: datos.paraTercero,
         terceroNombre: datos.tNombre,
         terceroApellidos: datos.tApellidos,
@@ -157,7 +164,8 @@ class _LocalServicioDetailScreenState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                '✅ Anotado para el ${DateFormat('dd/MM/yyyy').format(fecha)}'),
+              '✅ Anotado para el ${DateFormat('dd/MM/yyyy').format(fecha)}',
+            ),
             backgroundColor: AppTheme.success,
             behavior: SnackBarBehavior.floating,
           ),
@@ -183,24 +191,55 @@ class _LocalServicioDetailScreenState
     final uuid = AuthService.currentUserId;
     if (uuid == null) return;
 
+    if (_localServicio.esTransporteOmnibus) {
+      final result = await showModalBottomSheet<Map<String, dynamic>>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (_) => ReservaTransporteSheet(
+          localServicio: _localServicio,
+          uuidUsuario: uuid,
+        ),
+      );
+      if (result != null && mounted) {
+        await _load();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Pasaje reservado correctamente'),
+            backgroundColor: AppTheme.success,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() => _isActing = true);
     List<DisponibilidadDia> dias;
     try {
       dias = await AgendaService.getDisponibilidad(_localServicio.id);
-      
+
       // Check if there are available slots for future dates
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       bool hasAvailable = false;
-      
+
       for (final dia in dias) {
-        final selectedDay = DateTime(dia.fecha.year, dia.fecha.month, dia.fecha.day);
+        final selectedDay = DateTime(
+          dia.fecha.year,
+          dia.fecha.month,
+          dia.fecha.day,
+        );
         if (selectedDay.isAfter(today) && dia.disponibles > 0) {
           hasAvailable = true;
           break;
         }
       }
-      
+
       if (!hasAvailable) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -214,7 +253,7 @@ class _LocalServicioDetailScreenState
         setState(() => _hasDisponibilidad = false);
         return;
       }
-      
+
       setState(() => _hasDisponibilidad = true);
     } catch (e) {
       if (mounted) {
@@ -233,29 +272,40 @@ class _LocalServicioDetailScreenState
     }
     if (!mounted) return;
 
-    final sel = await showModalBottomSheet<
-        ({DateTime fecha, int cantidad, int? idTurno})>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _DisponibilidadSheet(
-        localServicio: _localServicio,
-        dias: dias,
-      ),
-    );
+    final sel =
+        await showModalBottomSheet<
+          ({DateTime fecha, int cantidad, int? idTurno})
+        >(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.white,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          builder: (_) =>
+              _DisponibilidadSheet(localServicio: _localServicio, dias: dias),
+        );
     if (sel == null || !mounted) return;
 
     final datos = await _recolectarDatosReserva(cantidad: sel.cantidad);
     if (datos == null || !mounted) return;
 
     await _confirmarReservaDirecta(
-        uuid, sel.fecha, sel.cantidad, datos, sel.idTurno);
+      uuid,
+      sel.fecha,
+      sel.cantidad,
+      datos,
+      sel.idTurno,
+    );
   }
 
-  Future<void> _confirmarReservaDirecta(String uuid, DateTime fecha,
-      int cantidad, _DatosReserva datos, int? idTurno) async {
+  Future<void> _confirmarReservaDirecta(
+    String uuid,
+    DateTime fecha,
+    int cantidad,
+    _DatosReserva datos,
+    int? idTurno,
+  ) async {
     setState(() => _isActing = true);
     try {
       await AgendaService.reservarDirecto(
@@ -263,8 +313,9 @@ class _LocalServicioDetailScreenState
         idLocalServicio: _localServicio.id,
         fecha: fecha,
         cantidad: cantidad,
-        datosAdicionales:
-            datos.datosAdicionales.isEmpty ? null : datos.datosAdicionales,
+        datosAdicionales: datos.datosAdicionales.isEmpty
+            ? null
+            : datos.datosAdicionales,
         paraTercero: datos.paraTercero,
         terceroNombre: datos.tNombre,
         terceroApellidos: datos.tApellidos,
@@ -278,7 +329,8 @@ class _LocalServicioDetailScreenState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                '✅ Reservado ${cantidad > 1 ? '($cantidad turnos) ' : ''}para el ${DateFormat('dd/MM/yyyy').format(fecha)}'),
+              '✅ Reservado ${cantidad > 1 ? '($cantidad turnos) ' : ''}para el ${DateFormat('dd/MM/yyyy').format(fecha)}',
+            ),
             backgroundColor: AppTheme.success,
             behavior: SnackBarBehavior.floating,
           ),
@@ -319,7 +371,8 @@ class _LocalServicioDetailScreenState
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (_) => _DatosReservaSheet(
         campos: campos,
         permiteTercero: permiteTercero,
@@ -360,7 +413,8 @@ class _LocalServicioDetailScreenState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                '📅 Fecha actualizada al ${DateFormat('dd/MM/yyyy').format(fecha)}'),
+              '📅 Fecha actualizada al ${DateFormat('dd/MM/yyyy').format(fecha)}',
+            ),
             backgroundColor: AppTheme.success,
             behavior: SnackBarBehavior.floating,
           ),
@@ -387,14 +441,14 @@ class _LocalServicioDetailScreenState
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Salir de la lista'),
         content: const Text('¿Deseas salir de la cola de espera?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
@@ -541,7 +595,9 @@ class _LocalServicioDetailScreenState
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.92),
                         borderRadius: BorderRadius.circular(20),
@@ -549,12 +605,14 @@ class _LocalServicioDetailScreenState
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.storefront,
-                              size: 14, color: AppTheme.primary),
+                          const Icon(
+                            Icons.storefront,
+                            size: 14,
+                            color: AppTheme.primary,
+                          ),
                           const SizedBox(width: 5),
                           ConstrainedBox(
-                            constraints:
-                                const BoxConstraints(maxWidth: 220),
+                            constraints: const BoxConstraints(maxWidth: 220),
                             child: Text(
                               local.nombre,
                               maxLines: 1,
@@ -588,8 +646,7 @@ class _LocalServicioDetailScreenState
         ),
       ),
       child: Center(
-        child: Icon(Icons.storefront_outlined,
-            size: 64, color: Colors.white24),
+        child: Icon(Icons.storefront_outlined, size: 64, color: Colors.white24),
       ),
     );
   }
@@ -631,16 +688,21 @@ class _LocalServicioDetailScreenState
                 color: Colors.white.withValues(alpha: 0.18),
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.35), width: 1.5),
+                  color: Colors.white.withValues(alpha: 0.35),
+                  width: 1.5,
+                ),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text('N°',
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.8),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600)),
+                  Text(
+                    'N°',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   Text(
                     '${mi.numeroCola}',
                     style: const TextStyle(
@@ -660,8 +722,11 @@ class _LocalServicioDetailScreenState
                 children: [
                   Row(
                     children: [
-                      Icon(esTurno ? Icons.notifications_active : Icons.event_seat,
-                          color: Colors.white, size: 18),
+                      Icon(
+                        esTurno ? Icons.notifications_active : Icons.event_seat,
+                        color: Colors.white,
+                        size: 18,
+                      ),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
@@ -680,8 +745,8 @@ class _LocalServicioDetailScreenState
                     esTurno
                         ? 'Acércate, ya casi te toca'
                         : (delante <= 0
-                            ? 'Eres el siguiente'
-                            : '$delante ${delante == 1 ? 'persona' : 'personas'} delante de ti'),
+                              ? 'Eres el siguiente'
+                              : '$delante ${delante == 1 ? 'persona' : 'personas'} delante de ti'),
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.92),
                       fontSize: 13,
@@ -693,7 +758,9 @@ class _LocalServicioDetailScreenState
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 9, vertical: 4),
+                          horizontal: 9,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.18),
                           borderRadius: BorderRadius.circular(8),
@@ -701,8 +768,11 @@ class _LocalServicioDetailScreenState
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.calendar_today,
-                                color: Colors.white, size: 12),
+                            const Icon(
+                              Icons.calendar_today,
+                              color: Colors.white,
+                              size: 12,
+                            ),
                             const SizedBox(width: 5),
                             Text(
                               'Desde ${DateFormat('dd/MM/yyyy').format(mi.fechaRegla)}',
@@ -720,7 +790,9 @@ class _LocalServicioDetailScreenState
                         onTap: _isActing ? null : _cambiarFecha,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.18),
                             borderRadius: BorderRadius.circular(8),
@@ -728,8 +800,11 @@ class _LocalServicioDetailScreenState
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: const [
-                              Icon(Icons.edit_calendar,
-                                  color: Colors.white, size: 13),
+                              Icon(
+                                Icons.edit_calendar,
+                                color: Colors.white,
+                                size: 13,
+                              ),
                               SizedBox(width: 5),
                               Text(
                                 'Modificar fecha',
@@ -788,42 +863,67 @@ class _LocalServicioDetailScreenState
   Widget _buildInfoCard(Local? local, Servicio? servicio) {
     final rows = <Widget>[];
 
-    if (servicio?.descripcion != null &&
-        servicio!.descripcion!.isNotEmpty) {
-      rows.add(_InfoRow(
-        icon: Icons.design_services_outlined,
-        label: 'Sobre el servicio',
-        value: servicio.descripcion!,
-      ));
+    if (servicio?.tipoActividad != null &&
+        servicio!.tipoActividad!.isNotEmpty) {
+      rows.add(
+        _InfoRow(
+          icon: Icons.category_outlined,
+          label: 'Tipo de actividad',
+          value: servicio.tipoActividad!
+              .split('_')
+              .map(
+                (word) => word.isEmpty
+                    ? word
+                    : '${word[0].toUpperCase()}${word.substring(1)}',
+              )
+              .join(' '),
+        ),
+      );
     }
-    if (local?.horarioAtencion != null &&
-        local!.horarioAtencion!.isNotEmpty) {
-      rows.add(_InfoRow(
-        icon: Icons.access_time,
-        label: 'Horario de atención',
-        value: local.horarioAtencion!,
-      ));
+    if (servicio?.descripcion != null && servicio!.descripcion!.isNotEmpty) {
+      rows.add(
+        _InfoRow(
+          icon: Icons.design_services_outlined,
+          label: 'Sobre el servicio',
+          value: servicio.descripcion!,
+        ),
+      );
+    }
+    if (local?.horarioAtencion != null && local!.horarioAtencion!.isNotEmpty) {
+      rows.add(
+        _InfoRow(
+          icon: Icons.access_time,
+          label: 'Horario de atención',
+          value: local.horarioAtencion!,
+        ),
+      );
     }
     if (local?.direccion != null && local!.direccion!.isNotEmpty) {
-      rows.add(_InfoRow(
-        icon: Icons.location_on_outlined,
-        label: 'Dirección',
-        value: local.direccion!,
-      ));
+      rows.add(
+        _InfoRow(
+          icon: Icons.location_on_outlined,
+          label: 'Dirección',
+          value: local.direccion!,
+        ),
+      );
     }
     if (local?.ubicacion.isNotEmpty == true) {
-      rows.add(_InfoRow(
-        icon: Icons.location_city_outlined,
-        label: 'Ubicación',
-        value: local!.ubicacion,
-      ));
+      rows.add(
+        _InfoRow(
+          icon: Icons.location_city_outlined,
+          label: 'Ubicación',
+          value: local!.ubicacion,
+        ),
+      );
     }
     if (servicio?.camposAdicionales.isNotEmpty == true) {
-      rows.add(_InfoRow(
-        icon: Icons.format_list_bulleted_outlined,
-        label: 'Información adicional requerida',
-        value: servicio!.camposAdicionales.map((c) => c.etiqueta).join(', '),
-      ));
+      rows.add(
+        _InfoRow(
+          icon: Icons.format_list_bulleted_outlined,
+          label: 'Información adicional requerida',
+          value: servicio!.camposAdicionales.map((c) => c.etiqueta).join(', '),
+        ),
+      );
     }
 
     if (rows.isEmpty) return const SizedBox.shrink();
@@ -863,21 +963,29 @@ class _LocalServicioDetailScreenState
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Row(
                   children: [
-                    const Icon(Icons.description_outlined,
-                        size: 18, color: AppTheme.textSecondary),
+                    const Icon(
+                      Icons.description_outlined,
+                      size: 18,
+                      color: AppTheme.textSecondary,
+                    ),
                     const SizedBox(width: 10),
                     const Expanded(
-                      child: Text('Términos y condiciones',
-                          style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.textPrimary)),
+                      child: Text(
+                        'Términos y condiciones',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
                     ),
                     AnimatedRotation(
                       turns: _terminosExpanded ? 0.5 : 0,
                       duration: const Duration(milliseconds: 200),
-                      child: const Icon(Icons.expand_more,
-                          color: AppTheme.textSecondary),
+                      child: const Icon(
+                        Icons.expand_more,
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
                   ],
                 ),
@@ -890,9 +998,10 @@ class _LocalServicioDetailScreenState
                 child: Text(
                   terminos,
                   style: const TextStyle(
-                      fontSize: 13,
-                      height: 1.5,
-                      color: AppTheme.textSecondary),
+                    fontSize: 13,
+                    height: 1.5,
+                    color: AppTheme.textSecondary,
+                  ),
                 ),
               ),
               crossFadeState: _terminosExpanded
@@ -923,32 +1032,33 @@ class _LocalServicioDetailScreenState
     } else if (permiteDirecta) {
       // Reserva directa habilitada: acción primaria clara + alternativa secundaria.
       List<Widget> buttons = [];
-      
+
       // Solo mostrar el botón de "Reservar ahora" si hay disponibilidad
       if (_hasDisponibilidad) {
-        buttons.add(_ActionButton(
-          onPressed: _isActing ? null : _reservarAhora,
-          isLoading: _isActing,
-          icon: Icons.event_available,
-          label: 'Reservar ahora',
-          variant: _ButtonVariant.primary,
-        ));
+        buttons.add(
+          _ActionButton(
+            onPressed: _isActing ? null : _reservarAhora,
+            isLoading: _isActing,
+            icon: Icons.event_available,
+            label: 'Reservar ahora',
+            variant: _ButtonVariant.primary,
+          ),
+        );
         buttons.add(const SizedBox(height: 10));
       }
-      
+
       // Siempre mostrar el botón de "Anotarme en la lista"
-      buttons.add(_ActionButton(
-        onPressed: _isActing ? null : _anotarse,
-        isLoading: false,
-        icon: Icons.playlist_add,
-        label: 'Anotarme en la lista',
-        variant: _ButtonVariant.secondary,
-      ));
-      
-      child = Column(
-        mainAxisSize: MainAxisSize.min,
-        children: buttons,
+      buttons.add(
+        _ActionButton(
+          onPressed: _isActing ? null : _anotarse,
+          isLoading: false,
+          icon: Icons.playlist_add,
+          label: 'Anotarme en la lista',
+          variant: _ButtonVariant.secondary,
+        ),
       );
+
+      child = Column(mainAxisSize: MainAxisSize.min, children: buttons);
     } else {
       child = _ActionButton(
         onPressed: _isActing ? null : _anotarse,
@@ -965,7 +1075,9 @@ class _LocalServicioDetailScreenState
       switchInCurve: Curves.easeOut,
       switchOutCurve: Curves.easeIn,
       child: Container(
-        key: ValueKey('bottom-${enLista ? 'lista' : (permiteDirecta ? 'directa' : 'cola')}'),
+        key: ValueKey(
+          'bottom-${enLista ? 'lista' : (permiteDirecta ? 'directa' : 'cola')}',
+        ),
         child: child,
       ),
     );
@@ -1161,18 +1273,24 @@ class _InfoRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textSecondary)),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
               const SizedBox(height: 2),
-              Text(value,
-                  style: const TextStyle(
-                      fontSize: 14,
-                      height: 1.4,
-                      color: AppTheme.textPrimary,
-                      fontWeight: FontWeight.w500)),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: AppTheme.textPrimary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ],
           ),
         ),
@@ -1207,13 +1325,19 @@ class _StatItem extends StatelessWidget {
           child: Icon(icon, color: color, size: 22),
         ),
         const SizedBox(height: 6),
-        Text(value,
-            style: TextStyle(
-                fontSize: 22, fontWeight: FontWeight.bold, color: color)),
-        Text(label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-                fontSize: 12, color: AppTheme.textSecondary)),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+        ),
       ],
     );
   }
@@ -1275,7 +1399,9 @@ class _CantidadDialogState extends State<_CantidadDialog> {
           Text(
             '${DateFormat('dd/MM/yyyy').format(widget.fecha)} · ${widget.maximo} disponibles',
             style: const TextStyle(
-                fontSize: 12.5, color: AppTheme.textSecondary),
+              fontSize: 12.5,
+              color: AppTheme.textSecondary,
+            ),
           ),
           const SizedBox(height: 16),
           Row(
@@ -1293,7 +1419,9 @@ class _CantidadDialogState extends State<_CantidadDialog> {
                   '$_cantidad',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                      fontSize: 28, fontWeight: FontWeight.w800),
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
               IconButton.filledTonal(
@@ -1308,8 +1436,9 @@ class _CantidadDialogState extends State<_CantidadDialog> {
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar')),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
         ElevatedButton(
           onPressed: () => Navigator.pop(context, _cantidad),
           child: const Text('Continuar'),
@@ -1427,11 +1556,13 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
           children: [
             Center(
               child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2))),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
             ),
             const SizedBox(height: 16),
             Row(
@@ -1445,9 +1576,11 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                   ),
                 ),
                 const Expanded(
-                  child: Text('Datos de la reserva',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    'Datos de la reserva',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
                 ),
                 const SizedBox(width: 48), // Balance the back button
               ],
@@ -1456,19 +1589,23 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
 
             // ── ¿Para ti o alguien más? ──
             if (widget.permiteTercero) ...[
-              const Text('¿Para quién es la reserva?',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
+              const Text(
+                '¿Para quién es la reserva?',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               const SizedBox(height: 8),
               SegmentedButton<bool>(
                 segments: const [
                   ButtonSegment(
-                      value: false,
-                      label: Text('Para mí'),
-                      icon: Icon(Icons.person)),
+                    value: false,
+                    label: Text('Para mí'),
+                    icon: Icon(Icons.person),
+                  ),
                   ButtonSegment(
-                      value: true,
-                      label: Text('Para alguien más'),
-                      icon: Icon(Icons.group_add)),
+                    value: true,
+                    label: Text('Para alguien más'),
+                    icon: Icon(Icons.group_add),
+                  ),
                 ],
                 selected: {_paraTercero},
                 onSelectionChanged: (s) =>
@@ -1483,8 +1620,10 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (_paraTercero) ...[
-                    const Text('Datos de la persona',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    const Text(
+                      'Datos de la persona',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: _nombreCtrl,
@@ -1494,9 +1633,8 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                         prefixIcon: Icon(Icons.badge_outlined),
                         border: OutlineInputBorder(),
                       ),
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? 'Requerido'
-                          : null,
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Requerido' : null,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -1507,9 +1645,8 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                         prefixIcon: Icon(Icons.badge_outlined),
                         border: OutlineInputBorder(),
                       ),
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? 'Requerido'
-                          : null,
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Requerido' : null,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -1528,7 +1665,8 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                       validator: (v) {
                         final t = (v ?? '').trim();
                         if (t.isEmpty) return 'Requerido';
-                        if (t.length != 11) return 'El CI debe tener 11 dígitos';
+                        if (t.length != 11)
+                          return 'El CI debe tener 11 dígitos';
                         return null;
                       },
                     ),
@@ -1541,17 +1679,18 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                         prefixIcon: Icon(Icons.phone_outlined),
                         border: OutlineInputBorder(),
                       ),
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? 'Requerido'
-                          : null,
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Requerido' : null,
                     ),
                     if (widget.campos.isNotEmpty) const SizedBox(height: 16),
                   ],
 
                   // ── Datos adicionales del servicio ──
                   if (widget.campos.isNotEmpty) ...[
-                    const Text('Información adicional',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    const Text(
+                      'Información adicional',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     const SizedBox(height: 8),
                     DatosAdicionalesForm(
                       key: _datosKey,
@@ -1571,7 +1710,8 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                   color: AppTheme.primary.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color: AppTheme.primary.withValues(alpha: 0.2)),
+                    color: AppTheme.primary.withValues(alpha: 0.2),
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1586,46 +1726,59 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                           border: OutlineInputBorder(),
                         ),
                         items: monedas
-                            .map((m) => DropdownMenuItem(
-                                  value: m,
-                                  child: Text(MonedasApp.etiqueta(m)),
-                                ))
+                            .map(
+                              (m) => DropdownMenuItem(
+                                value: m,
+                                child: Text(MonedasApp.etiqueta(m)),
+                              ),
+                            )
                             .toList(),
                         onChanged: (v) {
-                          if (v != null) setState(() => _monedaSeleccionada = v);
+                          if (v != null)
+                            setState(() => _monedaSeleccionada = v);
                         },
                       ),
                       const SizedBox(height: 10),
                     ],
                     Row(
                       children: [
-                        const Icon(Icons.payments_outlined,
-                            color: AppTheme.primary, size: 22),
+                        const Icon(
+                          Icons.payments_outlined,
+                          color: AppTheme.primary,
+                          size: 22,
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Total de la reserva',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: AppTheme.textSecondary)),
+                              const Text(
+                                'Total de la reserva',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
                               Text(
                                 precio != null
                                     ? PrecioReserva.formatear(
-                                        precio.total, precio.moneda)
+                                        precio.total,
+                                        precio.moneda,
+                                      )
                                     : '—',
                                 style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppTheme.primary),
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppTheme.primary,
+                                ),
                               ),
                               if (widget.cantidad > 1 && precio != null)
                                 Text(
                                   '${PrecioReserva.formatear(precio.unitario, precio.moneda)} × ${widget.cantidad}',
                                   style: const TextStyle(
-                                      fontSize: 11,
-                                      color: AppTheme.textSecondary),
+                                    fontSize: 11,
+                                    color: AppTheme.textSecondary,
+                                  ),
                                 ),
                             ],
                           ),
@@ -1641,9 +1794,12 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
             ElevatedButton(
               onPressed: _confirmar,
               style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14)),
-              child: const Text('Continuar',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: const Text(
+                'Continuar',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
             ),
           ],
         ),
@@ -1677,8 +1833,9 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
     super.initState();
     _porDia = {for (final d in widget.dias) _key(d.fecha): d};
     // Enfoca el primer día con cupo (o hoy si la lista está vacía).
-    _focusedDay =
-        widget.dias.isNotEmpty ? widget.dias.first.fecha : DateTime.now();
+    _focusedDay = widget.dias.isNotEmpty
+        ? widget.dias.first.fecha
+        : DateTime.now();
   }
 
   DisponibilidadDia? _disp(DateTime day) => _porDia[_key(day)];
@@ -1696,7 +1853,8 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
         context: context,
         backgroundColor: Colors.white,
         shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
         builder: (_) => _TurnoPickerSheet(fecha: fecha, dia: disp),
       );
       if (elegido == null || !mounted) return;
@@ -1711,13 +1869,17 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
     // Si solo hay 1 cupo o el máximo configurado es 1, no preguntamos cantidad.
     if (disponiblesTurno <= 1 || cantidadMax <= 1) {
       if (!mounted) return;
-      Navigator.pop(context,
-          (fecha: fecha, cantidad: 1, idTurno: turnoSel?.idTurno));
+      Navigator.pop(context, (
+        fecha: fecha,
+        cantidad: 1,
+        idTurno: turnoSel?.idTurno,
+      ));
       return;
     }
 
-    final maxCant =
-        cantidadMax < disponiblesTurno ? cantidadMax : disponiblesTurno;
+    final maxCant = cantidadMax < disponiblesTurno
+        ? cantidadMax
+        : disponiblesTurno;
     final cantidad = await showDialog<int>(
       context: context,
       builder: (_) => _CantidadDialog(
@@ -1727,8 +1889,11 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
       ),
     );
     if (cantidad == null || !mounted) return;
-    Navigator.pop(context,
-        (fecha: fecha, cantidad: cantidad, idTurno: turnoSel?.idTurno));
+    Navigator.pop(context, (
+      fecha: fecha,
+      cantidad: cantidad,
+      idTurno: turnoSel?.idTurno,
+    ));
   }
 
   @override
@@ -1742,39 +1907,51 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
         : DateTime.now().add(const Duration(days: 90));
 
     return Padding(
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(height: 12),
           Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2))),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
           const SizedBox(height: 14),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                const Icon(Icons.event_available,
-                    size: 20, color: AppTheme.primary),
+                const Icon(
+                  Icons.event_available,
+                  size: 20,
+                  color: AppTheme.primary,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Reservar ahora',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w800, fontSize: 16)),
+                      const Text(
+                        'Reservar ahora',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                        ),
+                      ),
                       Text(
                         widget.localServicio.servicio?.nombre ?? 'Servicio',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontSize: 12, color: AppTheme.textSecondary),
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -1788,18 +1965,24 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
               padding: EdgeInsets.fromLTRB(24, 28, 24, 40),
               child: Column(
                 children: [
-                  Icon(Icons.event_busy_outlined,
-                      size: 56, color: AppTheme.textSecondary),
+                  Icon(
+                    Icons.event_busy_outlined,
+                    size: 56,
+                    color: AppTheme.textSecondary,
+                  ),
                   SizedBox(height: 12),
-                  Text('No hay turnos disponibles',
-                      style: TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w700)),
+                  Text(
+                    'No hay turnos disponibles',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                  ),
                   SizedBox(height: 6),
                   Text(
                     'Por ahora no quedan cupos para reservar.\nPuedes anotarte en la lista de espera.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        fontSize: 12.5, color: AppTheme.textSecondary),
+                      fontSize: 12.5,
+                      color: AppTheme.textSecondary,
+                    ),
                   ),
                 ],
               ),
@@ -1815,37 +1998,41 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
                 final now = DateTime.now();
                 final today = DateTime(now.year, now.month, now.day);
                 final selectedDay = DateTime(day.year, day.month, day.day);
-                
+
                 // Don't show events for current day
                 final isTomorrowOrLater = selectedDay.isAfter(today);
-                
-                return d != null && d.disponibles > 0 && isTomorrowOrLater ? [d] : [];
+
+                return d != null && d.disponibles > 0 && isTomorrowOrLater
+                    ? [d]
+                    : [];
               },
               enabledDayPredicate: (day) {
                 final d = _disp(day);
                 final now = DateTime.now();
                 final today = DateTime(now.year, now.month, now.day);
                 final selectedDay = DateTime(day.year, day.month, day.day);
-                
+
                 // Disable current day and only allow from tomorrow onwards
                 final isTomorrowOrLater = selectedDay.isAfter(today);
-                
+
                 return d != null && d.disponibles > 0 && isTomorrowOrLater;
               },
               calendarStyle: CalendarStyle(
                 outsideDaysVisible: false,
-                disabledTextStyle:
-                    TextStyle(color: Colors.grey.shade300, fontSize: 14),
+                disabledTextStyle: TextStyle(
+                  color: Colors.grey.shade300,
+                  fontSize: 14,
+                ),
                 defaultTextStyle: const TextStyle(fontSize: 15),
                 selectedTextStyle: const TextStyle(
-                  fontSize: 15, 
-                  fontWeight: FontWeight.bold, 
-                  color: Colors.white
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
                 todayTextStyle: const TextStyle(
-                  fontSize: 15, 
-                  fontWeight: FontWeight.bold, 
-                  color: AppTheme.primary
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.primary,
                 ),
                 weekendTextStyle: const TextStyle(fontSize: 15),
                 holidayTextStyle: const TextStyle(fontSize: 15),
@@ -1868,10 +2055,10 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
                 rowDecoration: BoxDecoration(
                   border: Border.symmetric(
                     horizontal: BorderSide(
-                      color: Colors.grey.shade200, 
-                      width: 0.5
-                    )
-                  )
+                      color: Colors.grey.shade200,
+                      width: 0.5,
+                    ),
+                  ),
                 ),
               ),
               calendarBuilders: CalendarBuilders(
@@ -1883,7 +2070,9 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
                     right: 2,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 1),
+                        horizontal: 4,
+                        vertical: 1,
+                      ),
                       decoration: BoxDecoration(
                         color: AppTheme.success,
                         borderRadius: BorderRadius.circular(6),
@@ -1923,9 +2112,10 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
                 'Toca un día con cupo para reservar. El número indica los turnos libres.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    fontSize: 14,
-                    color: AppTheme.textSecondary,
-                    fontWeight: FontWeight.w500),
+                  fontSize: 14,
+                  color: AppTheme.textSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
           ],
@@ -1960,24 +2150,31 @@ class _TurnoPickerSheet extends StatelessWidget {
         children: [
           const SizedBox(height: 12),
           Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2))),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
           const SizedBox(height: 14),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                const Icon(Icons.confirmation_number_outlined,
-                    size: 20, color: AppTheme.primary),
+                const Icon(
+                  Icons.confirmation_number_outlined,
+                  size: 20,
+                  color: AppTheme.primary,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'Elige un turno · ${DateFormat('dd/MM/yyyy').format(fecha)}',
                     style: const TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 16),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
               ],
@@ -1995,23 +2192,28 @@ class _TurnoPickerSheet extends StatelessWidget {
                     child: Text(
                       nombreRecurso[idRec] ?? 'Recurso',
                       style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.textSecondary),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
                   ),
                   for (final t in porRecurso[idRec]!)
                     Card(
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       child: ListTile(
-                        title: Text(t.turno,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w600)),
+                        title: Text(
+                          t.turno,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
                         subtitle: Text('${t.disponibles} disponibles'),
-                        trailing: const Icon(Icons.chevron_right,
-                            color: AppTheme.primary),
+                        trailing: const Icon(
+                          Icons.chevron_right,
+                          color: AppTheme.primary,
+                        ),
                         onTap: () => Navigator.pop(context, t),
                       ),
                     ),

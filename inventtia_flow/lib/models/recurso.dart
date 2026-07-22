@@ -13,6 +13,7 @@ class Tramo {
 
   /// Capacidad del tramo por día. `null` = hereda [Recurso.capacidad].
   final int? capacidad;
+  final String? tipoTrayecto;
   final int orden;
   final bool activo;
 
@@ -20,17 +21,19 @@ class Tramo {
     required this.id,
     required this.nombre,
     this.capacidad,
+    this.tipoTrayecto,
     this.orden = 0,
     this.activo = true,
   });
 
   factory Tramo.fromJson(Map<String, dynamic> json) => Tramo(
-        id: (json['id'] as num).toInt(),
-        nombre: json['nombre'] as String,
-        capacidad: (json['capacidad'] as num?)?.toInt(),
-        orden: (json['orden'] as num?)?.toInt() ?? 0,
-        activo: (json['activo'] as bool?) ?? true,
-      );
+    id: (json['id'] as num).toInt(),
+    nombre: json['nombre'] as String,
+    capacidad: (json['capacidad'] as num?)?.toInt(),
+    tipoTrayecto: json['tipo_trayecto'] as String?,
+    orden: (json['orden'] as num?)?.toInt() ?? 0,
+    activo: (json['activo'] as bool?) ?? true,
+  );
 }
 
 /// Opción reservable de un recurso; consume los tramos de [tramosIds].
@@ -39,6 +42,7 @@ class Turno {
   final String nombre;
   final int orden;
   final bool activo;
+  final Map<String, double> precios;
 
   /// Ids de los tramos que este turno consume (1 plaza de cada uno).
   final List<int> tramosIds;
@@ -48,19 +52,25 @@ class Turno {
     required this.nombre,
     this.orden = 0,
     this.activo = true,
+    Map<String, double>? precios,
     List<int>? tramosIds,
-  }) : tramosIds = tramosIds ?? [];
+  }) : precios = precios ?? {},
+       tramosIds = tramosIds ?? [];
 
   factory Turno.fromJson(Map<String, dynamic> json) => Turno(
-        id: (json['id'] as num).toInt(),
-        nombre: json['nombre'] as String,
-        orden: (json['orden'] as num?)?.toInt() ?? 0,
-        activo: (json['activo'] as bool?) ?? true,
-        tramosIds: (json['tramos'] as List?)
-                ?.map((e) => (e as num).toInt())
-                .toList() ??
-            [],
-      );
+    id: (json['id'] as num).toInt(),
+    nombre: json['nombre'] as String,
+    orden: (json['orden'] as num?)?.toInt() ?? 0,
+    activo: (json['activo'] as bool?) ?? true,
+    precios:
+        (json['precios'] as Map?)?.map(
+          (key, value) => MapEntry(key.toString(), (value as num).toDouble()),
+        ) ??
+        {},
+    tramosIds:
+        (json['tramos'] as List?)?.map((e) => (e as num).toInt()).toList() ??
+        [],
+  );
 }
 
 /// Unidad que presta el servicio (ej: Carro 1). Agrupa tramos y turnos.
@@ -85,25 +95,27 @@ class Recurso {
     this.activo = true,
     List<Tramo>? tramos,
     List<Turno>? turnos,
-  })  : tramos = tramos ?? [],
-        turnos = turnos ?? [];
+  }) : tramos = tramos ?? [],
+       turnos = turnos ?? [];
 
   factory Recurso.fromJson(Map<String, dynamic> json) => Recurso(
-        id: (json['id'] as num).toInt(),
-        idLocalServicio: (json['id_local_servicio'] as num?)?.toInt() ?? 0,
-        nombre: json['nombre'] as String,
-        capacidad: (json['capacidad'] as num?)?.toInt() ?? 1,
-        orden: (json['orden'] as num?)?.toInt() ?? 0,
-        activo: (json['activo'] as bool?) ?? true,
-        tramos: (json['tramos'] as List?)
-                ?.map((e) => Tramo.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            [],
-        turnos: (json['turnos'] as List?)
-                ?.map((e) => Turno.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            [],
-      );
+    id: (json['id'] as num).toInt(),
+    idLocalServicio: (json['id_local_servicio'] as num?)?.toInt() ?? 0,
+    nombre: json['nombre'] as String,
+    capacidad: (json['capacidad'] as num?)?.toInt() ?? 1,
+    orden: (json['orden'] as num?)?.toInt() ?? 0,
+    activo: (json['activo'] as bool?) ?? true,
+    tramos:
+        (json['tramos'] as List?)
+            ?.map((e) => Tramo.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [],
+    turnos:
+        (json['turnos'] as List?)
+            ?.map((e) => Turno.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [],
+  );
 
   /// Capacidad efectiva de un tramo (la suya o, si es null, la del recurso).
   int capacidadDe(Tramo t) => t.capacidad ?? capacidad;

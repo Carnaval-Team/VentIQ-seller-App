@@ -38,7 +38,12 @@ as $$
           'foto',               s.foto,
           'campos_adicionales', s.campos_adicionales,
           'permite_tercero',    s.permite_tercero,
-          'config_precio',      s.config_precio
+          'config_precio',      s.config_precio,
+          'id_tipo_actividad', s.id_tipo_actividad,
+          'tipo_actividad', case when ta.id is null then null else jsonb_build_object(
+            'id', ta.id,
+            'codigo', ta.codigo
+          ) end
         ),
         'local', jsonb_build_object(
           'id',               l.id,
@@ -65,6 +70,7 @@ as $$
   )
   from flow.local_servicio ls
   join flow.app_dat_servicios s on s.id = ls.id_servicio
+  left join flow.nom_tipo_actividad_servicio ta on ta.id = s.id_tipo_actividad
   join flow.app_dat_locales   l on l.id = ls.id_local
   left join flow.entidad     en on en.id = l.id_entidad
   where (p_id_local        is null or ls.id_local    = p_id_local)

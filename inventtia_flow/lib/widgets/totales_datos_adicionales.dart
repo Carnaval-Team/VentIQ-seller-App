@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import '../config/app_theme.dart';
 import '../models/agenda.dart';
 import '../models/campo_adicional.dart';
+import '../utils/precio_reserva.dart';
+import '../utils/reserva_listado.dart';
 
 /// Total calculado para un campo adicional marcado como "contabilizar".
 ///
@@ -38,11 +40,11 @@ bool _cuentaParaTotales(Agenda r) =>
     r.estado?.esCompletado == true || r.idEstado == 3;
 
 /// Calcula los totales de los campos contabilizables presentes en [reservas].
-/// Solo se contabilizan las reservas **Completadas**. Cada reserva pesa por su
-/// `cantidad` (una reserva de 3 turnos cuenta 3).
+/// Solo se contabilizan las reservas **Completadas**. Ida+vuelta mismo día
+/// cuenta una sola vez (usa la agenda representativa del ítem agrupado).
 List<TotalCampo> calcularTotales(List<Agenda> reservasTodas) {
-  final reservas = reservasTodas.where(_cuentaParaTotales).toList();
-  // 1. Config de campos contabilizables (unión por clave sobre todos los servicios).
+  final completadas = reservasTodas.where(_cuentaParaTotales).toList();
+  final reservas = agendasRepresentativas(completadas);
   final campos = <String, CampoAdicional>{};
   final orden = <String>[];
   for (final r in reservas) {
@@ -63,7 +65,6 @@ List<TotalCampo> calcularTotales(List<Agenda> reservasTodas) {
           clave: k, etiqueta: campos[k]!.etiqueta, tipo: campos[k]!.tipo),
   };
 
-  // 2. Acumular.
   for (final r in reservas) {
     final peso = r.cantidad <= 0 ? 1 : r.cantidad;
     final datos = r.datosAdicionales;
@@ -92,9 +93,7 @@ List<TotalCampo> calcularTotales(List<Agenda> reservasTodas) {
   return orden.map((k) => totales[k]!).toList();
 }
 
-/// Panel colapsable con los totales de los datos adicionales contabilizables.
-/// Muestra los totales globales (de la lista ya filtrada) y un desplegable con
-/// el desglose por día. Si no hay campos contabilizables, no renderiza nada.
+/// Panel con totales: conteo agrupado, importes y campos adicionales.
 class TotalesPanel extends StatelessWidget {
   final List<Agenda> reservas;
   const TotalesPanel({super.key, required this.reservas});
@@ -103,13 +102,17 @@ class TotalesPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Solo las reservas Completadas se contabilizan.
-    final completadas =
-        reservas.where((r) => r.estado?.esCompletado == true || r.idEstado == 3).toList();
+    final completadas = reservas.where(_cuentaParaTotales).toList();
     final totales = calcularTotales(completadas);
-    if (totales.isEmpty) return const SizedBox.shrink();
+    final importes = sumarPreciosReservas(reservas);
+    final nReservas =
+        contarReservasAgrupadas(reservas, excluirCanceladas: false);
+    final nActivas = contarReservasAgrupadas(reservas);
 
-    // Agrupar por día (fecha local de la reserva) para el desplegable.
+    if (totales.isEmpty && importes.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     final porDia = <DateTime, List<Agenda>>{};
     for (final r in completadas) {
       final f = r.fechaHoraReserva;
@@ -141,14 +144,26 @@ class TotalesPanel extends StatelessWidget {
                         fontSize: 13,
                         color: AppTheme.primary)),
                 const Spacer(),
-                Text('${reservas.length} reserva${reservas.length == 1 ? '' : 's'}',
-                    style: const TextStyle(
-                        fontSize: 11, color: AppTheme.textSecondary)),
+                Text(
+                  '$nActivas activas · $nReservas total',
+                  style: const TextStyle(
+                      fontSize: 11, color: AppTheme.textSecondary),
+                ),
               ],
             ),
-            const SizedBox(height: 8),
-            ..._buildTotales(totales),
-            if (dias.length > 1) ...[
+            if (importes.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              for (final e in importes.entries)
+                _fila(
+                  'Importe (${e.key})',
+                  PrecioReserva.formatear(e.value, e.key),
+                ),
+            ],
+            if (totales.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ..._buildTotales(totales),
+            ],
+            if (dias.length > 1 && (totales.isNotEmpty || importes.isNotEmpty)) ...[
               const SizedBox(height: 4),
               Theme(
                 data: Theme.of(context)
@@ -171,6 +186,12 @@ class TotalesPanel extends StatelessWidget {
                                 fontWeight: FontWeight.bold,
                                 color: AppTheme.textPrimary)),
                       ),
+                      for (final e
+                          in sumarPreciosReservas(porDia[dia]!).entries)
+                        _fila(
+                          'Importe (${e.key})',
+                          PrecioReserva.formatear(e.value, e.key),
+                        ),
                       ..._buildTotales(calcularTotales(porDia[dia]!)),
                     ],
                   ],

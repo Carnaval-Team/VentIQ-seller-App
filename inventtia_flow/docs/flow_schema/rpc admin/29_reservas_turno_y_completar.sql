@@ -49,6 +49,8 @@ as $function$
         'precio_total',        a.precio_total,
         'moneda',              a.moneda,
         'id_turno',            a.id_turno,
+        'id_viaje',            a.id_viaje,
+        'tipo_trayecto',       a.tipo_trayecto,
         'turno', case when t.id is null then null else jsonb_build_object(
           'id',     t.id,
           'nombre', t.nombre,
@@ -148,6 +150,8 @@ as $function$
         'moneda',              a.moneda,
         'id_estado',           a.id_estado,
         'id_turno',            a.id_turno,
+        'id_viaje',            a.id_viaje,
+        'tipo_trayecto',       a.tipo_trayecto,
         'turno', case when t.id is null then null else jsonb_build_object(
           'id',     t.id,
           'nombre', t.nombre,

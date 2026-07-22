@@ -75,6 +75,7 @@ begin
                     'id',        tr.id,
                     'nombre',    tr.nombre,
                     'capacidad', tr.capacidad,
+                    'tipo_trayecto', tr.tipo_trayecto,
                     'orden',     tr.orden,
                     'activo',    tr.activo
                   ) order by tr.orden, tr.id), '[]'::jsonb)
@@ -86,6 +87,7 @@ begin
                     'nombre',  t.nombre,
                     'orden',   t.orden,
                     'activo',  t.activo,
+                    'precios', t.precios,
                     'tramos', (
                       select coalesce(jsonb_agg(tt.id_tramo order by tt.id_tramo), '[]'::jsonb)
                       from flow.turno_tramo tt where tt.id_turno = t.id
@@ -240,6 +242,8 @@ grant execute on function flow.admin_eliminar_tramo(uuid, integer) to authentica
 --    p_tramos: array jsonb de ids de tramo, ej '[3,4]'. Reemplaza el set actual.
 --    Todos los tramos deben pertenecer al MISMO recurso del turno.
 -- ============================================================================
+drop function if exists flow.admin_guardar_turno(uuid, integer, text, jsonb, integer, boolean, integer);
+
 create or replace function flow.admin_guardar_turno(
   p_uuid_usuario uuid,
   p_id_recurso   integer,
@@ -247,7 +251,8 @@ create or replace function flow.admin_guardar_turno(
   p_tramos       jsonb   default '[]'::jsonb,
   p_orden        integer default 0,
   p_activo       boolean default true,
-  p_id           integer default null
+  p_id           integer default null,
+  p_precios      jsonb default '{}'::jsonb
 )
 returns jsonb
 language plpgsql volatile security invoker set search_path = flow, public
@@ -262,8 +267,8 @@ begin
       return jsonb_build_object('ok', false, 'error', 'recurso inexistente o sin permiso');
     end if;
     v_recurso := p_id_recurso;
-    insert into flow.turno (id_recurso, nombre, orden, activo)
-    values (p_id_recurso, p_nombre, coalesce(p_orden,0), coalesce(p_activo,true))
+    insert into flow.turno (id_recurso, nombre, orden, activo, precios)
+    values (p_id_recurso, p_nombre, coalesce(p_orden,0), coalesce(p_activo,true), coalesce(p_precios, '{}'::jsonb))
     returning id into v_id;
   else
     select t.id_recurso into v_recurso
@@ -276,6 +281,7 @@ begin
        set nombre = p_nombre,
            orden  = coalesce(p_orden, orden),
            activo = coalesce(p_activo, activo),
+           precios = coalesce(p_precios, '{}'::jsonb),
            updated_at = now()
      where id = p_id
     returning id into v_id;
@@ -305,7 +311,7 @@ begin
 end;
 $$;
 
-grant execute on function flow.admin_guardar_turno(uuid, integer, text, jsonb, integer, boolean, integer) to authenticated;
+grant execute on function flow.admin_guardar_turno(uuid, integer, text, jsonb, integer, boolean, integer, jsonb) to authenticated;
 
 create or replace function flow.admin_eliminar_turno(
   p_uuid_usuario uuid, p_id integer

@@ -115,7 +115,8 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                'Solo puedes cancelar hasta $horas horas antes de la reserva'),
+              'Solo puedes cancelar hasta $horas horas antes de la reserva',
+            ),
             backgroundColor: AppTheme.error,
           ),
         );
@@ -128,11 +129,14 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Cancelar reserva'),
-        content: const Text('¿Estás seguro de que quieres cancelar esta reserva?'),
+        content: const Text(
+          '¿Estás seguro de que quieres cancelar esta reserva?',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('No')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
             onPressed: () => Navigator.pop(context, true),
@@ -159,35 +163,32 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString()),
-          backgroundColor: AppTheme.error,
-        ),
+        SnackBar(content: Text(e.toString()), backgroundColor: AppTheme.error),
       );
     }
   }
 
   // ── Acciones de staff (solo vendedor): completar / cancelar una reserva ──
   Future<void> _completarStaff(Agenda ticket) => _cambiarEstadoStaff(
-        ticket,
-        3,
-        titulo: 'Confirmar consumo',
-        mensaje: '¿Confirmar que el cliente consumió esta reserva?',
-        confirmar: 'Confirmar consumido',
-        okMsg: 'Consumo confirmado',
-        colorConfirmar: AppTheme.success,
-      );
+    ticket,
+    3,
+    titulo: 'Confirmar consumo',
+    mensaje: '¿Confirmar que el cliente consumió esta reserva?',
+    confirmar: 'Confirmar consumido',
+    okMsg: 'Consumo confirmado',
+    colorConfirmar: AppTheme.success,
+  );
 
   Future<void> _cancelarStaff(Agenda ticket) => _cambiarEstadoStaff(
-        ticket,
-        2,
-        titulo: 'Cancelar reserva',
-        mensaje:
-            '¿Cancelar esta reserva? Se liberará el turno y se notificará al cliente.',
-        confirmar: 'Cancelar reserva',
-        okMsg: 'Reserva cancelada',
-        colorConfirmar: AppTheme.error,
-      );
+    ticket,
+    2,
+    titulo: 'Cancelar reserva',
+    mensaje:
+        '¿Cancelar esta reserva? Se liberará el turno y se notificará al cliente.',
+    confirmar: 'Cancelar reserva',
+    okMsg: 'Reserva cancelada',
+    colorConfirmar: AppTheme.error,
+  );
 
   Future<void> _cambiarEstadoStaff(
     Agenda ticket,
@@ -206,8 +207,9 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
         content: Text(mensaje),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('No')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: colorConfirmar),
             onPressed: () => Navigator.pop(context, true),
@@ -277,7 +279,8 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
   void _resetFiltros() {
     if (_isLoading) return;
     setState(() {
-      _idEstadoFiltro = null; // Todos: muestra reservadas, completadas y canceladas.
+      _idEstadoFiltro =
+          null; // Todos: muestra reservadas, completadas y canceladas.
       _localFiltro = null;
       _lsFiltro = null;
       _localServicios = [];
@@ -326,8 +329,14 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
       if (_esVendedor) {
         final entidad = _entidad!;
         final desde = DateTime(_fecha.year, _fecha.month, _fecha.day);
-        final hasta =
-            DateTime(_fecha.year, _fecha.month, _fecha.day, 23, 59, 59);
+        final hasta = DateTime(
+          _fecha.year,
+          _fecha.month,
+          _fecha.day,
+          23,
+          59,
+          59,
+        );
         tickets = await AgendaAdminService.listarAgendasVendedor(
           uuidUsuario: uuid,
           idEntidad: entidad.id,
@@ -339,8 +348,9 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
         );
       } else {
         tickets = await AgendaService.getMisTickets(uuid);
-        tickets.sort((a, b) =>
-            a.fechaHoraReserva.compareTo(b.fechaHoraReserva));
+        tickets.sort(
+          (a, b) => a.fechaHoraReserva.compareTo(b.fechaHoraReserva),
+        );
       }
       if (!mounted) return;
       setState(() {
@@ -369,9 +379,12 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
         if (cli.nombreCompleto.toLowerCase().contains(q)) return true;
       }
       if (datos != null) {
-        if (datos['ci']?.toString().toLowerCase().contains(q) == true) return true;
-        if (datos['nombre']?.toString().toLowerCase().contains(q) == true) return true;
-        if (datos['apellidos']?.toString().toLowerCase().contains(q) == true) return true;
+        if (datos['ci']?.toString().toLowerCase().contains(q) == true)
+          return true;
+        if (datos['nombre']?.toString().toLowerCase().contains(q) == true)
+          return true;
+        if (datos['apellidos']?.toString().toLowerCase().contains(q) == true)
+          return true;
       }
       return false;
     }).toList();
@@ -401,32 +414,29 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                 child: _isLoading
                     ? _buildLoading()
                     : _filteredTickets.isEmpty
-                        ? _isSearching
-                            ? _buildNoResultsState()
-                            : _buildEmptyState()
-                        : RefreshIndicator(
-                            onRefresh: _load,
-                            color: AppTheme.primary,
-                            child: ListView.builder(
-                              padding:
-                                  const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                              itemCount: _filteredTickets.length,
-                              itemBuilder: (_, i) => _TicketCard(
-                                ticket: _filteredTickets[i],
-                                miUuid: context
-                                        .read<AuthProvider>()
-                                        .user
-                                        ?.id ??
-                                    '',
-                                onCancelar: null,
-                                esVendedor: _esVendedor,
-                                onCompletarStaff:
-                                    _esVendedor ? _completarStaff : null,
-                                onCancelarStaff:
-                                    _esVendedor ? _cancelarStaff : null,
-                              ),
-                            ),
+                    ? _isSearching
+                          ? _buildNoResultsState()
+                          : _buildEmptyState()
+                    : RefreshIndicator(
+                        onRefresh: _load,
+                        color: AppTheme.primary,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                          itemCount: _filteredTickets.length,
+                          itemBuilder: (_, i) => _TicketCard(
+                            ticket: _filteredTickets[i],
+                            miUuid: context.read<AuthProvider>().user?.id ?? '',
+                            onCancelar: null,
+                            esVendedor: _esVendedor,
+                            onCompletarStaff: _esVendedor
+                                ? _completarStaff
+                                : null,
+                            onCancelarStaff: _esVendedor
+                                ? _cancelarStaff
+                                : null,
                           ),
+                        ),
+                      ),
               ),
             ),
           ],
@@ -437,8 +447,7 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
 
   Widget _buildBarraFecha() {
     final diaSemana = _fmtDiaSemana.format(_fecha);
-    final diaCapitalizado =
-        diaSemana[0].toUpperCase() + diaSemana.substring(1);
+    final diaCapitalizado = diaSemana[0].toUpperCase() + diaSemana.substring(1);
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -455,8 +464,7 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
               onTap: _pickFecha,
               borderRadius: BorderRadius.circular(8),
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 child: Column(
                   children: [
                     Text(
@@ -476,13 +484,17 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                         Text(
                           diaCapitalizado,
                           style: const TextStyle(
-                              fontSize: 12, color: AppTheme.textSecondary),
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                          ),
                         ),
                         if (_esHoy) ...[
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 1),
+                              horizontal: 6,
+                              vertical: 1,
+                            ),
                             decoration: BoxDecoration(
                               color: AppTheme.primary.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(6),
@@ -490,9 +502,10 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                             child: const Text(
                               'Hoy',
                               style: TextStyle(
-                                  fontSize: 10,
-                                  color: AppTheme.primary,
-                                  fontWeight: FontWeight.w600),
+                                fontSize: 10,
+                                color: AppTheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],
@@ -513,9 +526,12 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
             TextButton(
               onPressed: _isLoading ? null : _irHoy,
               style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8)),
-              child: const Text('Hoy',
-                  style: TextStyle(fontSize: 12, color: AppTheme.primary)),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              child: const Text(
+                'Hoy',
+                style: TextStyle(fontSize: 12, color: AppTheme.primary),
+              ),
             ),
         ],
       ),
@@ -531,11 +547,9 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
           InkWell(
             onTap: _isLoading
                 ? null
-                : () =>
-                    setState(() => _filtrosExpanded = !_filtrosExpanded),
+                : () => setState(() => _filtrosExpanded = !_filtrosExpanded),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Row(
                 children: [
                   Icon(
@@ -556,9 +570,9 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                           if (_idEstadoFiltro != null)
                             _estados
                                 .firstWhere(
-                                    (e) => e.id == _idEstadoFiltro,
-                                    orElse: () =>
-                                        EstadoAgenda(id: 0, nombre: ''))
+                                  (e) => e.id == _idEstadoFiltro,
+                                  orElse: () => EstadoAgenda(id: 0, nombre: ''),
+                                )
                                 .nombre,
                         ].where((s) => s.isNotEmpty).join(' · ');
                         return parts.isNotEmpty ? parts : 'Filtros';
@@ -578,20 +592,23 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                     Text(
                       '${_filteredTickets.length} reserva${_filteredTickets.length == 1 ? '' : 's'}',
                       style: const TextStyle(
-                          fontSize: 11, color: AppTheme.textSecondary),
+                        fontSize: 11,
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
                   const SizedBox(width: 6),
                   if (_hayFiltrosActivos)
                     GestureDetector(
                       onTap: _isLoading ? null : _resetFiltros,
-                      child: const Icon(Icons.clear,
-                          size: 16, color: AppTheme.textSecondary),
+                      child: const Icon(
+                        Icons.clear,
+                        size: 16,
+                        color: AppTheme.textSecondary,
+                      ),
                     )
                   else
                     Icon(
-                      _filtrosExpanded
-                          ? Icons.expand_less
-                          : Icons.expand_more,
+                      _filtrosExpanded ? Icons.expand_less : Icons.expand_more,
                       size: 18,
                       color: AppTheme.textSecondary,
                     ),
@@ -616,17 +633,26 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                           decoration: const InputDecoration(
                             labelText: 'Local',
                             contentPadding: EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 8),
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
                             border: OutlineInputBorder(),
                             isDense: true,
                           ),
                           items: [
                             const DropdownMenuItem(
-                                value: null, child: Text('Todos')),
-                            ..._locales.map((l) => DropdownMenuItem(
+                              value: null,
+                              child: Text('Todos'),
+                            ),
+                            ..._locales.map(
+                              (l) => DropdownMenuItem(
                                 value: l,
-                                child: Text(l.nombre,
-                                    overflow: TextOverflow.ellipsis))),
+                                child: Text(
+                                  l.nombre,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
                           ],
                           onChanged: _isLoading ? null : _onLocalChange,
                         ),
@@ -639,17 +665,26 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                           decoration: const InputDecoration(
                             labelText: 'Servicio',
                             contentPadding: EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 8),
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
                             border: OutlineInputBorder(),
                             isDense: true,
                           ),
                           items: [
                             const DropdownMenuItem(
-                                value: null, child: Text('Todos')),
-                            ..._localServicios.map((ls) => DropdownMenuItem(
+                              value: null,
+                              child: Text('Todos'),
+                            ),
+                            ..._localServicios.map(
+                              (ls) => DropdownMenuItem(
                                 value: ls,
-                                child: Text(ls.servicio?.nombre ?? '',
-                                    overflow: TextOverflow.ellipsis))),
+                                child: Text(
+                                  ls.servicio?.nombre ?? '',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
                           ],
                           onChanged: _isLoading
                               ? null
@@ -681,18 +716,21 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                             _load();
                           },
                         ),
-                        ..._estados.map((e) => _FiltroChip(
-                              label: e.nombre[0].toUpperCase() +
-                                  e.nombre.substring(1),
-                              selected: _idEstadoFiltro == e.id,
-                              onTap: () {
-                                setState(() {
-                                  _idEstadoFiltro = e.id;
-                                  _filtrosExpanded = false;
-                                });
-                                _load();
-                              },
-                            )),
+                        ..._estados.map(
+                          (e) => _FiltroChip(
+                            label:
+                                e.nombre[0].toUpperCase() +
+                                e.nombre.substring(1),
+                            selected: _idEstadoFiltro == e.id,
+                            onTap: () {
+                              setState(() {
+                                _idEstadoFiltro = e.id;
+                                _filtrosExpanded = false;
+                              });
+                              _load();
+                            },
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -760,10 +798,10 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                       _isLoading
                           ? 'Cargando tus reservas...'
                           : n == 0
-                              ? 'No tienes reservas activas'
-                              : n == 1
-                                  ? 'Tienes 1 reserva activa'
-                                  : 'Tienes $n reservas activas',
+                          ? 'No tienes reservas activas'
+                          : n == 1
+                          ? 'Tienes 1 reserva activa'
+                          : 'Tienes $n reservas activas',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.82),
                         fontSize: 13.5,
@@ -793,8 +831,10 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
         children: [
           CircularProgressIndicator(color: AppTheme.primary),
           SizedBox(height: 16),
-          Text('Cargando tus reservas...',
-              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+          Text(
+            'Cargando tus reservas...',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          ),
         ],
       ),
     );
@@ -827,23 +867,30 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                       ),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(Icons.confirmation_number_rounded,
-                        size: 46,
-                        color: AppTheme.primary.withValues(alpha: 0.55)),
+                    child: Icon(
+                      Icons.confirmation_number_rounded,
+                      size: 46,
+                      color: AppTheme.primary.withValues(alpha: 0.55),
+                    ),
                   ),
                   const SizedBox(height: 18),
-                  const Text('No hay reservas',
-                      style: TextStyle(
-                          color: AppTheme.textPrimary,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700)),
+                  const Text(
+                    'No hay reservas',
+                    style: TextStyle(
+                      color: AppTheme.textPrimary,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   const SizedBox(height: 6),
                   Text(
                     _esVendedor
                         ? 'Desliza para cambiar de día'
                         : 'Tus turnos reservados aparecerán aquí',
                     style: const TextStyle(
-                        color: AppTheme.textSecondary, fontSize: 13),
+                      color: AppTheme.textSecondary,
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),
@@ -950,7 +997,9 @@ class _TicketCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: _esCompletada
             ? Border.all(
-                color: AppTheme.primary.withValues(alpha: 0.35), width: 1.5)
+                color: AppTheme.primary.withValues(alpha: 0.35),
+                width: 1.5,
+              )
             : null,
         boxShadow: [
           BoxShadow(
@@ -1006,8 +1055,11 @@ class _TicketCard extends StatelessWidget {
                                 const SizedBox(height: 5),
                                 Row(
                                   children: [
-                                    const Icon(Icons.design_services_outlined,
-                                        size: 12, color: AppTheme.accent),
+                                    const Icon(
+                                      Icons.design_services_outlined,
+                                      size: 12,
+                                      color: AppTheme.accent,
+                                    ),
                                     const SizedBox(width: 4),
                                     Flexible(
                                       child: Text(
@@ -1031,19 +1083,23 @@ class _TicketCard extends StatelessWidget {
                         // Chip de estado.
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
                           decoration: BoxDecoration(
                             color: color.withValues(alpha: 0.10),
                             borderRadius: BorderRadius.circular(20),
-                            border:
-                                Border.all(color: color.withValues(alpha: 0.30)),
+                            border: Border.all(
+                              color: color.withValues(alpha: 0.30),
+                            ),
                           ),
                           child: Text(
                             ticket.estado?.nombre ?? '',
                             style: TextStyle(
-                                color: color,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700),
+                              color: color,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ],
@@ -1056,6 +1112,15 @@ class _TicketCard extends StatelessWidget {
                       texto:
                           'Reserva: ${fmt.format(ticket.fechaHoraReserva.toLocal())}',
                     ),
+                    if (ticket.tipoTrayecto != null) ...[
+                      const SizedBox(height: 6),
+                      _InfoLinea(
+                        icon: Icons.directions_bus_outlined,
+                        texto:
+                            '${ticket.tipoTrayecto == 'ida' ? 'Ida' : 'Vuelta'}${ticket.recursoNombre == null ? '' : ' · ${ticket.recursoNombre}'}',
+                        color: AppTheme.accent,
+                      ),
+                    ],
                     if (ticket.cantidad > 1) ...[
                       const SizedBox(height: 6),
                       _InfoLinea(
@@ -1064,12 +1129,15 @@ class _TicketCard extends StatelessWidget {
                         color: AppTheme.accent,
                       ),
                     ],
-                    if (ticket.precioTotal != null && ticket.precioTotal! > 0) ...[
+                    if (ticket.precioTotal != null &&
+                        ticket.precioTotal! > 0) ...[
                       const SizedBox(height: 6),
                       _InfoLinea(
                         icon: Icons.payments_outlined,
                         texto: PrecioReserva.formatear(
-                            ticket.precioTotal!, ticket.moneda ?? 'USD'),
+                          ticket.precioTotal!,
+                          ticket.moneda ?? 'USD',
+                        ),
                         color: AppTheme.primary,
                       ),
                     ],
@@ -1097,17 +1165,23 @@ class _TicketCard extends StatelessWidget {
                     ],
                     () {
                       const clavesFijas = {
-                        'nombre', 'apellidos', 'ci',
-                        'telefono', 'email', 'notas',
+                        'nombre',
+                        'apellidos',
+                        'ci',
+                        'telefono',
+                        'email',
+                        'notas',
                       };
                       final datos = ticket.datosAdicionales;
                       if (datos == null) return const SizedBox.shrink();
                       final camposAdic = servicio?.camposAdicionales ?? [];
                       final extras = datos.entries
-                          .where((e) =>
-                              !clavesFijas.contains(e.key) &&
-                              e.value != null &&
-                              e.value.toString().trim().isNotEmpty)
+                          .where(
+                            (e) =>
+                                !clavesFijas.contains(e.key) &&
+                                e.value != null &&
+                                e.value.toString().trim().isNotEmpty,
+                          )
                           .toList();
                       if (extras.isEmpty) return const SizedBox.shrink();
                       return Column(
@@ -1130,16 +1204,18 @@ class _TicketCard extends StatelessWidget {
                                     fontSize: 9.5,
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: 1,
-                                    color: AppTheme.textSecondary
-                                        .withValues(alpha: 0.8),
+                                    color: AppTheme.textSecondary.withValues(
+                                      alpha: 0.8,
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 6),
                                 DatosAdicionalesView(
                                   valores: Map.fromEntries(extras),
                                   campos: camposAdic
-                                      .where((c) =>
-                                          !clavesFijas.contains(c.clave))
+                                      .where(
+                                        (c) => !clavesFijas.contains(c.clave),
+                                      )
                                       .toList(),
                                 ),
                               ],
@@ -1161,7 +1237,8 @@ class _TicketCard extends StatelessWidget {
                             side: const BorderSide(color: AppTheme.error),
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                         ),
                       ),
@@ -1176,17 +1253,21 @@ class _TicketCard extends StatelessWidget {
                               onPressed: onCompletarStaff == null
                                   ? null
                                   : () => onCompletarStaff!(ticket),
-                              icon: const Icon(Icons.check_circle_outline,
-                                  size: 18),
+                              icon: const Icon(
+                                Icons.check_circle_outline,
+                                size: 18,
+                              ),
                               label: const Text('Confirmar consumido'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppTheme.success,
                                 foregroundColor: Colors.white,
                                 elevation: 0,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                                 shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
                           ),
@@ -1201,10 +1282,12 @@ class _TicketCard extends StatelessWidget {
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: AppTheme.error,
                                 side: const BorderSide(color: AppTheme.error),
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                                 shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
                           ),
@@ -1251,11 +1334,13 @@ class _ClienteDataSection extends StatelessWidget {
     final email = _dato('email');
     final notas = _dato('notas');
 
-    final nombreCompleto = [nombre, apellidos]
-        .where((s) => s.isNotEmpty)
-        .join(' ');
+    final nombreCompleto = [
+      nombre,
+      apellidos,
+    ].where((s) => s.isNotEmpty).join(' ');
 
-    final hayDatos = nombreCompleto.isNotEmpty ||
+    final hayDatos =
+        nombreCompleto.isNotEmpty ||
         ci.isNotEmpty ||
         telefono.isNotEmpty ||
         email.isNotEmpty ||
@@ -1284,14 +1369,10 @@ class _ClienteDataSection extends StatelessWidget {
           const SizedBox(height: 8),
           if (nombreCompleto.isNotEmpty)
             _ClienteRow(Icons.person_outlined, nombreCompleto),
-          if (ci.isNotEmpty)
-            _ClienteRow(Icons.badge_outlined, 'CI: $ci'),
-          if (telefono.isNotEmpty)
-            _TelefonoRow(telefono),
-          if (email.isNotEmpty)
-            _ClienteRow(Icons.email_outlined, email),
-          if (notas.isNotEmpty)
-            _ClienteRow(Icons.notes_outlined, notas),
+          if (ci.isNotEmpty) _ClienteRow(Icons.badge_outlined, 'CI: $ci'),
+          if (telefono.isNotEmpty) _TelefonoRow(telefono),
+          if (email.isNotEmpty) _ClienteRow(Icons.email_outlined, email),
+          if (notas.isNotEmpty) _ClienteRow(Icons.notes_outlined, notas),
         ],
       ),
     );
@@ -1374,11 +1455,14 @@ class _ClienteRow extends StatelessWidget {
           Icon(icon, size: 13, color: AppTheme.textSecondary),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(text,
-                style: const TextStyle(
-                    fontSize: 12.5,
-                    color: AppTheme.textPrimary,
-                    fontWeight: FontWeight.w500)),
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 12.5,
+                color: AppTheme.textPrimary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ],
       ),
@@ -1390,8 +1474,11 @@ class _FiltroChip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _FiltroChip(
-      {required this.label, required this.selected, required this.onTap});
+  const _FiltroChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1399,8 +1486,7 @@ class _FiltroChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
           color: selected
               ? AppTheme.primary
@@ -1457,7 +1543,10 @@ extension _SearchWidgets on MisTicketsScreenState {
                 )
               : null,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
         ),
       ),
     );
@@ -1468,11 +1557,7 @@ extension _SearchWidgets on MisTicketsScreenState {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.search_off,
-            size: 64,
-            color: AppTheme.textSecondary,
-          ),
+          Icon(Icons.search_off, size: 64, color: AppTheme.textSecondary),
           const SizedBox(height: 16),
           Text(
             'No se encontraron resultados',
@@ -1485,10 +1570,7 @@ extension _SearchWidgets on MisTicketsScreenState {
           const SizedBox(height: 8),
           Text(
             'Intenta con otros términos de búsqueda',
-            style: TextStyle(
-              fontSize: 14,
-              color: AppTheme.textSecondary,
-            ),
+            style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
           ),
         ],
       ),

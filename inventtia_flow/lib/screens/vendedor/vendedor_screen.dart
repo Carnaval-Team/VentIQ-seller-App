@@ -22,6 +22,7 @@ import '../../services/agenda_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../utils/precio_reserva.dart';
+import '../../utils/reserva_listado.dart';
 import '../../utils/telefono_contacto.dart';
 import '../../widgets/totales_datos_adicionales.dart';
 import '../../widgets/totales_recurso_turno.dart';
@@ -69,27 +70,29 @@ class _VendedorScreenState extends State<VendedorScreen> {
 
   /// Se puede completar si está activa (Reservado) o si está cancelada pero su
   /// fecha es de hoy o anterior (recuperación de una reserva cancelada).
-  bool _puedeCompletar(Agenda r) {
-    if (r.estado?.esCompletado == true) return false;
-    if (r.estado?.esCancelado == true) {
-      final now = DateTime.now();
-      final hoy = DateTime(now.year, now.month, now.day);
+  bool _puedeCompletar(ReservaListItem item) {
+    if (item.esCompletada) return false;
+    if (!item.esCancelada) return true;
+    final now = DateTime.now();
+    final hoy = DateTime(now.year, now.month, now.day);
+    return item.agendas.any((r) {
       final f = r.fechaHoraReserva;
-      final dia = DateTime(f.year, f.month, f.day);
-      return !dia.isAfter(hoy);
-    }
-    return true; // Reservado
+      final diaReserva = DateTime(f.year, f.month, f.day);
+      return !diaReserva.isAfter(hoy);
+    });
   }
 
   /// Se puede descancelar (reactivar a Reservado) si está cancelada y su fecha
   /// es de hoy o futura (no tiene sentido reactivar una reserva ya vencida).
-  bool _puedeDescancelar(Agenda r) {
-    if (r.estado?.esCancelado != true) return false;
+  bool _puedeDescancelar(ReservaListItem item) {
+    if (!item.esCancelada) return false;
     final now = DateTime.now();
     final hoy = DateTime(now.year, now.month, now.day);
-    final f = r.fechaHoraReserva;
-    final dia = DateTime(f.year, f.month, f.day);
-    return !dia.isBefore(hoy);
+    return item.agendas.any((r) {
+      final f = r.fechaHoraReserva;
+      final diaReserva = DateTime(f.year, f.month, f.day);
+      return !diaReserva.isBefore(hoy);
+    });
   }
 
   @override
@@ -149,80 +152,118 @@ class _VendedorScreenState extends State<VendedorScreen> {
     }
   }
 
-  Future<void> _completarReserva(Agenda r) {
-    final eraCancelada = r.estado?.esCancelado == true;
-    return _confirmarCambioEstado(
-      r,
-      idEstado: 3,
-      titulo: 'Confirmar consumo',
-      pregunta: '¿Confirmar que el cliente consumió la reserva de '
-          '${r.cliente?.nombreCompleto ?? 'este cliente'}?'
+  Future<void> _cancelarReserva(ReservaListItem item) async {
+    final reserva = item.principal;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Cancelar reserva'),
+        content: Text(
+          item.esIdaVueltaMismoDia
+              ? '¿Cancelar el viaje de ida y vuelta de '
+                  '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
+                  '(se cancelan ambos tramos)?'
+              : '¿Cancelar la reserva de '
+                  '${reserva.cliente?.nombreCompleto ?? 'este cliente'}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.error),
+            child: const Text('Sí, cancelar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+    await _cambiarEstadoItems(item, 2, 'Reserva cancelada y cliente notificado');
+  }
+
+  Future<void> _descancelarReserva(ReservaListItem item) async {
+    final reserva = item.principal;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Reactivar reserva'),
+        content: Text(
+          '¿Reactivar la reserva de '
+          '${reserva.cliente?.nombreCompleto ?? 'este cliente'}?'
+          '${item.esIdaVueltaMismoDia ? '\n\nSe reactivarán ambos tramos (ida y vuelta).' : ''}'
+          '\n\nVolverá a estado Reservado y ocupará capacidad de nuevo.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.primary),
+            child: const Text('Sí, reactivar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+    await _cambiarEstadoItems(item, 1, 'Reserva reactivada y cliente notificado');
+  }
+
+  Future<void> _completarReserva(ReservaListItem item) async {
+    final reserva = item.principal;
+    final eraCancelada = item.agendas.any((a) => a.estado?.esCancelado == true);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Confirmar consumo'),
+        content: Text(
+          '¿Confirmar que el cliente consumió la reserva de '
+          '${reserva.cliente?.nombreCompleto ?? 'este cliente'}?'
+          '${item.esIdaVueltaMismoDia ? '\n\nSe marcarán como consumidos ambos tramos.' : ''}'
           '${eraCancelada ? '\n\nEsta reserva estaba cancelada; al confirmar se reactiva como completada y vuelve a ocupar capacidad.' : ''}',
-      accion: 'Sí, confirmar',
-      color: AppTheme.primary,
-      okMsg: eraCancelada
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.primary),
+            child: const Text('Sí, confirmar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+    await _cambiarEstadoItems(
+      item,
+      3,
+      eraCancelada
           ? 'Reserva reactivada y marcada como completada'
           : 'Consumo de reserva confirmado',
     );
   }
 
-  Future<void> _cancelarReserva(Agenda r) => _confirmarCambioEstado(
-        r,
-        idEstado: 2,
-        titulo: 'Cancelar reserva',
-        pregunta: '¿Cancelar la reserva de '
-            '${r.cliente?.nombreCompleto ?? 'este cliente'}?',
-        accion: 'Sí, cancelar',
-        color: AppTheme.error,
-        okMsg: 'Reserva cancelada y cliente notificado',
-      );
-
-  Future<void> _descancelarReserva(Agenda r) => _confirmarCambioEstado(
-        r,
-        idEstado: 1,
-        titulo: 'Reactivar reserva',
-        pregunta: '¿Reactivar la reserva de '
-            '${r.cliente?.nombreCompleto ?? 'este cliente'}?'
-            '\n\nVolverá a estado Reservado y ocupará capacidad de nuevo.',
-        accion: 'Sí, reactivar',
-        color: AppTheme.primary,
-        okMsg: 'Reserva reactivada y cliente notificado',
-      );
-
-  Future<void> _confirmarCambioEstado(
-    Agenda r, {
-    required int idEstado,
-    required String titulo,
-    required String pregunta,
-    required String accion,
-    required Color color,
-    required String okMsg,
-  }) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(titulo),
-        content: Text(pregunta),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('No')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: color),
-            child: Text(accion),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true || !mounted) return;
-
+  Future<void> _cambiarEstadoItems(
+    ReservaListItem item,
+    int idEstado,
+    String okMsg,
+  ) async {
     setState(() => _loading = true);
     try {
-      await AgendaAdminService.marcarEstadoAgenda(
-        idAgenda: r.id,
-        idEstado: idEstado,
-      );
+      for (final agenda in item.agendas) {
+        await AgendaAdminService.marcarEstadoAgenda(
+          idAgenda: agenda.id,
+          idEstado: idEstado,
+        );
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(okMsg), backgroundColor: AppTheme.success),
@@ -233,14 +274,12 @@ class _VendedorScreenState extends State<VendedorScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content:
-                Text('Error: ${e.toString().replaceFirst('Exception: ', '')}'),
+            content: Text('Error: ${e.toString().replaceFirst('Exception: ', '')}'),
             backgroundColor: AppTheme.error,
           ),
         );
+        setState(() => _loading = false);
       }
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -313,17 +352,40 @@ class _VendedorScreenState extends State<VendedorScreen> {
     return map;
   }
 
+  Map<String, List<ReservaListItem>> _agruparItemsPorLocal() {
+    final map = <String, List<ReservaListItem>>{};
+    for (final item in agruparReservasParaListado(_reservas)) {
+      final key =
+          item.principal.localServicio?.local?.nombre ?? 'Sin local';
+      map.putIfAbsent(key, () => []).add(item);
+    }
+    return map;
+  }
+
+  List<ReservaListItem> get _itemsListado =>
+      agruparReservasParaListado(_reservas);
+
   List<({String clave, String etiqueta})> _columnasDatos(List<Agenda> lista) {
+    const clavesFijas = {
+      'nombre',
+      'apellidos',
+      'ci',
+      'telefono',
+      'tipo_viaje',
+    };
     final etiquetas = <String, String>{};
     final orden = <String>[];
     for (final r in lista) {
       for (final c in r.localServicio?.servicio?.camposAdicionales ??
           const <CampoAdicional>[]) {
-        etiquetas[c.clave] = c.etiqueta;
+        if (!clavesFijas.contains(c.clave)) {
+          etiquetas[c.clave] = c.etiqueta;
+        }
       }
       final datos = r.datosAdicionales;
       if (datos != null) {
         for (final k in datos.keys) {
+          if (clavesFijas.contains(k)) continue;
           if (!orden.contains(k)) orden.add(k);
           etiquetas.putIfAbsent(k, () => k);
         }
@@ -772,7 +834,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
                     TotalesRecursoTurnoBadge(reservas: _reservas),
                     const SizedBox(width: 8),
                     Text(
-                      '${_reservas.length} reserva${_reservas.length == 1 ? '' : 's'}',
+                      '${_itemsListado.length} reserva${_itemsListado.length == 1 ? '' : 's'}',
                       style: const TextStyle(
                           fontSize: 11, color: AppTheme.textSecondary),
                     ),
@@ -905,7 +967,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
   }
 
   Widget _buildTabla() {
-    final grupos = _agruparPorLocal();
+    final grupos = _agruparItemsPorLocal();
     final cols = _columnasDatos(_reservas);
 
     return ListView(
@@ -928,21 +990,27 @@ class _VendedorScreenState extends State<VendedorScreen> {
                 ],
               ),
             ),
-          ...entry.value.map((r) => _buildReservaCard(r, cols)),
+          ...entry.value.map((item) => _buildReservaCard(item, cols)),
         ],
       ],
     );
   }
 
-  Widget _buildReservaCard(Agenda r, List<({String clave, String etiqueta})> cols) {
+  Widget _buildReservaCard(
+    ReservaListItem item,
+    List<({String clave, String etiqueta})> cols,
+  ) {
+    final r = item.principal;
     final cli = r.cliente;
     final esTercero = r.reservadoPor != null &&
         r.uuidUsuario != null &&
         r.reservadoPor != r.uuidUsuario;
-    final esCancelada = r.estado?.esCancelado == true;
-    final esCompletada = r.estado?.esCompletado == true;
-    final esActiva = !esCancelada && !esCompletada; // 'Reservado'
+    final esCancelada = item.esCancelada;
+    final esCompletada = item.esCompletada;
+    final esActiva = item.esActiva;
     final telefono = cli?.telefono ?? '-';
+    final precio = item.precioTotal;
+    final tipoLabel = item.etiquetaTipo;
 
     final card = Card(
       elevation: 0,
@@ -972,6 +1040,24 @@ class _VendedorScreenState extends State<VendedorScreen> {
                         color: AppTheme.textPrimary),
                   ),
                 ),
+                if (tipoLabel.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      tipoLabel,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 Text(
                   _fmt.format(r.fechaHoraReserva),
                   style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
@@ -983,9 +1069,28 @@ class _VendedorScreenState extends State<VendedorScreen> {
             const SizedBox(height: 6),
             _infoRow('Nombre', '${cli?.nombre ?? '-'} ${cli?.apellidos ?? ''}'),
             _infoRow('CI', cli?.ci ?? '-'),
-            if (r.turnoNombre != null)
-              _infoRow('Recurso · Turno',
-                  '${r.recursoNombre ?? ''} · ${r.turnoNombre}'),
+            if (item.esIdaVueltaMismoDia) ...[
+              if (r.turnoNombre != null)
+                _infoRow(
+                  'Ida',
+                  r.recursoNombre != null
+                      ? '${r.recursoNombre} · ${r.turnoNombre}'
+                      : r.turnoNombre!,
+                ),
+              if (item.pareja?.turnoNombre != null)
+                _infoRow(
+                  'Vuelta',
+                  item.pareja!.recursoNombre != null
+                      ? '${item.pareja!.recursoNombre} · ${item.pareja!.turnoNombre}'
+                      : item.pareja!.turnoNombre!,
+                ),
+            ] else if (r.turnoNombre != null)
+              _infoRow(
+                'Turno',
+                r.recursoNombre != null
+                    ? '${r.recursoNombre} · ${r.turnoNombre}'
+                    : r.turnoNombre!,
+              ),
             if (telefono != '-' && telefono.isNotEmpty)
               _infoRowWidget(
                 'Teléfono',
@@ -1008,11 +1113,10 @@ class _VendedorScreenState extends State<VendedorScreen> {
             else
               _infoRow('Teléfono', '-'),
             if (r.cantidad > 1) _infoRow('Cantidad', '${r.cantidad}'),
-            if (r.precioTotal != null && r.precioTotal! > 0)
+            if (precio != null)
               _infoRow(
                 'Precio',
-                PrecioReserva.formatear(
-                    r.precioTotal!, r.moneda ?? 'USD'),
+                PrecioReserva.formatear(precio, item.moneda ?? 'USD'),
               ),
             if (esTercero) _infoRow('Para tercero', 'Sí'),
             for (final c in cols)
@@ -1022,7 +1126,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                if (_puedeCompletar(r))
+                if (_puedeCompletar(item))
                   TextButton.icon(
                     icon: const Icon(Icons.check_circle_outline, size: 16),
                     label: const Text('Confirmar consumido'),
@@ -1032,9 +1136,9 @@ class _VendedorScreenState extends State<VendedorScreen> {
                           const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       textStyle: const TextStyle(fontSize: 12),
                     ),
-                    onPressed: () => _completarReserva(r),
+                    onPressed: () => _completarReserva(item),
                   ),
-                if (_puedeDescancelar(r))
+                if (_puedeDescancelar(item))
                   TextButton.icon(
                     icon: const Icon(Icons.restore, size: 16),
                     label: const Text('Reactivar'),
@@ -1044,7 +1148,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
                           const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       textStyle: const TextStyle(fontSize: 12),
                     ),
-                    onPressed: () => _descancelarReserva(r),
+                    onPressed: () => _descancelarReserva(item),
                   ),
                 if (esActiva)
                   TextButton.icon(
@@ -1056,9 +1160,9 @@ class _VendedorScreenState extends State<VendedorScreen> {
                           const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       textStyle: const TextStyle(fontSize: 12),
                     ),
-                    onPressed: () => _cancelarReserva(r),
+                    onPressed: () => _cancelarReserva(item),
                   ),
-                if (!esActiva && !_puedeCompletar(r) && !_puedeDescancelar(r))
+                if (!esActiva && !_puedeCompletar(item) && !_puedeDescancelar(item))
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Text(

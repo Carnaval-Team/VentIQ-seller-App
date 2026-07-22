@@ -92,11 +92,18 @@ class ConfigPrecio {
   final Map<String, double> preciosBase;
   final List<ReglaPrecio> reglas;
 
+  /// Transporte: si true, el precio del turno "ida y vuelta" aplica a todo
+  /// pasaje ida+vuelta (aunque las fechas sean distintas).
+  /// Si false (default), ese precio solo aplica cuando ambas fechas son el
+  /// mismo día; en fechas distintas se cobran ida + vuelta por separado.
+  final bool aplicaPrecioIdaVueltaTodos;
+
   ConfigPrecio({
     this.monedaDefault = 'USD',
     List<String>? monedas,
     Map<String, double>? preciosBase,
     List<ReglaPrecio>? reglas,
+    this.aplicaPrecioIdaVueltaTodos = false,
   })  : monedas = monedas ?? const ['USD'],
         preciosBase = preciosBase ?? const {},
         reglas = reglas ?? const [];
@@ -125,6 +132,8 @@ class ConfigPrecio {
               ?.map((e) => ReglaPrecio.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
+      aplicaPrecioIdaVueltaTodos:
+          json['aplica_precio_ida_vuelta_todos'] as bool? ?? false,
     );
   }
 
@@ -134,6 +143,7 @@ class ConfigPrecio {
         if (preciosBase.isNotEmpty)
           'precios_base': preciosBase.map((k, v) => MapEntry(k, v)),
         if (reglas.isNotEmpty) 'reglas': reglas.map((r) => r.toJson()).toList(),
+        'aplica_precio_ida_vuelta_todos': aplicaPrecioIdaVueltaTodos,
       };
 
   ConfigPrecio copyWith({
@@ -141,11 +151,14 @@ class ConfigPrecio {
     List<String>? monedas,
     Map<String, double>? preciosBase,
     List<ReglaPrecio>? reglas,
+    bool? aplicaPrecioIdaVueltaTodos,
   }) =>
       ConfigPrecio(
         monedaDefault: monedaDefault ?? this.monedaDefault,
         monedas: monedas ?? this.monedas,
         preciosBase: preciosBase ?? this.preciosBase,
         reglas: reglas ?? this.reglas,
+        aplicaPrecioIdaVueltaTodos:
+            aplicaPrecioIdaVueltaTodos ?? this.aplicaPrecioIdaVueltaTodos,
       );
 }

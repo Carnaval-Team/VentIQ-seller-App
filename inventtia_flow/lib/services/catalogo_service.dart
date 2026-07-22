@@ -8,19 +8,28 @@ class CatalogoService {
   /// Check if we have access to the flow schema
   static Future<bool> checkSchemaAccess() async {
     try {
-      await _supabase.schema(_schema).from('app_dat_servicios').select('id').limit(1);
+      await _supabase
+          .schema(_schema)
+          .from('app_dat_servicios')
+          .select('id')
+          .limit(1);
       return true;
     } catch (e) {
       print('[flow] CatalogoService.checkSchemaAccess ERROR: $e');
-      if (e.toString().contains('permission denied') || e.toString().contains('42501')) {
+      if (e.toString().contains('permission denied') ||
+          e.toString().contains('42501')) {
         print('[flow] ERROR CRÍTICO: Permiso denegado para el esquema "flow".');
         print('[flow] ================================================');
         print('[flow] SOLUCIÓN - Ejecutar estos comandos SQL en Supabase:');
         print('[flow] 1. GRANT USAGE ON SCHEMA flow TO authenticated;');
         print('[flow] 2. GRANT USAGE ON SCHEMA flow TO anon;');
-        print('[flow] 3. GRANT ALL ON ALL TABLES IN SCHEMA flow TO authenticated;');
+        print(
+          '[flow] 3. GRANT ALL ON ALL TABLES IN SCHEMA flow TO authenticated;',
+        );
         print('[flow] 4. GRANT ALL ON ALL TABLES IN SCHEMA flow TO anon;');
-        print('[flow] 5. GRANT ALL ON ALL SEQUENCES IN SCHEMA flow TO authenticated;');
+        print(
+          '[flow] 5. GRANT ALL ON ALL SEQUENCES IN SCHEMA flow TO authenticated;',
+        );
         print('[flow] 6. GRANT ALL ON ALL SEQUENCES IN SCHEMA flow TO anon;');
         print('[flow] ================================================');
       }
@@ -30,7 +39,8 @@ class CatalogoService {
 
   /// Handle schema permission errors with user-friendly messages
   static Exception handleSchemaPermissionError(Exception e) {
-    if (e.toString().contains('permission denied') || e.toString().contains('42501')) {
+    if (e.toString().contains('permission denied') ||
+        e.toString().contains('42501')) {
       return Exception(
         'ERROR DE PERMISOS DE BASE DE DATOS\n\n'
         'No se puede acceder al esquema "flow" de la base de datos.\n\n'
@@ -43,10 +53,22 @@ class CatalogoService {
         'GRANT ALL ON ALL TABLES IN SCHEMA flow TO anon;\n'
         'GRANT ALL ON ALL SEQUENCES IN SCHEMA flow TO authenticated;\n'
         'GRANT ALL ON ALL SEQUENCES IN SCHEMA flow TO anon;\n\n'
-        'Error original: ${e.toString()}'
+        'Error original: ${e.toString()}',
       );
     }
     return e;
+  }
+
+  static Future<List<Map<String, dynamic>>> getTiposActividadServicio() async {
+    final res = await _supabase
+        .schema(_schema)
+        .from('nom_tipo_actividad_servicio')
+        .select('id, codigo, nombre')
+        .eq('activo', true)
+        .order('id');
+    return (res as List)
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
   }
 
   static Future<List<Servicio>> getServicios() async {
@@ -81,6 +103,7 @@ class CatalogoService {
     String? descripcion,
     String? foto,
     required int idEntidad,
+    int? idTipoActividad,
   }) async {
     final res = await _supabase
         .schema(_schema)
@@ -90,6 +113,7 @@ class CatalogoService {
           'descripcion': descripcion,
           'foto': foto,
           'id_entidad': idEntidad,
+          if (idTipoActividad != null) 'id_tipo_actividad': idTipoActividad,
         })
         .select()
         .single();
@@ -101,11 +125,17 @@ class CatalogoService {
     required String nombre,
     String? descripcion,
     String? foto,
+    int? idTipoActividad,
   }) async {
     final res = await _supabase
         .schema(_schema)
         .from('app_dat_servicios')
-        .update({'nombre': nombre, 'descripcion': descripcion, if (foto != null) 'foto': foto})
+        .update({
+          'nombre': nombre,
+          'descripcion': descripcion,
+          if (foto != null) 'foto': foto,
+          if (idTipoActividad != null) 'id_tipo_actividad': idTipoActividad,
+        })
         .eq('id', id)
         .select()
         .single();
@@ -113,7 +143,11 @@ class CatalogoService {
   }
 
   static Future<void> deleteServicio(int id) async {
-    await _supabase.schema(_schema).from('app_dat_servicios').delete().eq('id', id);
+    await _supabase
+        .schema(_schema)
+        .from('app_dat_servicios')
+        .delete()
+        .eq('id', id);
   }
 
   static Future<List<Local>> getLocales() async {
@@ -200,7 +234,11 @@ class CatalogoService {
   }
 
   static Future<void> deleteLocal(int id) async {
-    await _supabase.schema(_schema).from('app_dat_locales').delete().eq('id', id);
+    await _supabase
+        .schema(_schema)
+        .from('app_dat_locales')
+        .delete()
+        .eq('id', id);
   }
 
   static Future<List<LocalServicio>> getLocalServicios({
@@ -212,31 +250,41 @@ class CatalogoService {
     String? pais,
     String? provincia,
   }) async {
-    final res = await _supabase.schema(_schema).rpc('cliente_obtener_servicios', params: {
-      if (idLocal != null) 'p_id_local': idLocal,
-      if (idServicio != null) 'p_id_servicio': idServicio,
-      if (idEntidad != null) 'p_id_entidad': idEntidad,
-      if (nombreLocal != null) 'p_nombre_local': nombreLocal,
-      if (nombreServicio != null) 'p_nombre_servicio': nombreServicio,
-      if (pais != null) 'p_pais': pais,
-      if (provincia != null) 'p_provincia': provincia,
-    });
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'cliente_obtener_servicios',
+          params: {
+            if (idLocal != null) 'p_id_local': idLocal,
+            if (idServicio != null) 'p_id_servicio': idServicio,
+            if (idEntidad != null) 'p_id_entidad': idEntidad,
+            if (nombreLocal != null) 'p_nombre_local': nombreLocal,
+            if (nombreServicio != null) 'p_nombre_servicio': nombreServicio,
+            if (pais != null) 'p_pais': pais,
+            if (provincia != null) 'p_provincia': provincia,
+          },
+        );
     final list = res as List;
-    return list.map((e) => LocalServicio.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => LocalServicio.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   static Future<LocalServicio> getLocalServicio(int id) async {
     final res = await _supabase
         .schema(_schema)
         .from('local_servicio')
-        .select('*, app_dat_locales(*), app_dat_servicios(*)')
+        .select(
+          '*, app_dat_locales(*), app_dat_servicios(*, tipo_actividad:nom_tipo_actividad_servicio(*))',
+        )
         .eq('id', id)
         .single();
     return LocalServicio.fromJson(res);
   }
 
   static Future<List<LocalServicio>> getLocalServiciosByEntidad(
-      int idEntidad) async {
+    int idEntidad,
+  ) async {
     try {
       final res = await _supabase
           .schema(_schema)
@@ -313,19 +361,23 @@ class CatalogoService {
     required bool permiteTercero,
     Map<String, dynamic>? configPrecio,
   }) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'admin_guardar_datos_servicio',
-      params: {
-        'p_uuid_usuario': uuidUsuario,
-        'p_id_servicio': idServicio,
-        'p_campos': campos,
-        'p_permite_tercero': permiteTercero,
-        'p_config_precio': configPrecio ?? {},
-      },
-    );
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'admin_guardar_datos_servicio',
+          params: {
+            'p_uuid_usuario': uuidUsuario,
+            'p_id_servicio': idServicio,
+            'p_campos': campos,
+            'p_permite_tercero': permiteTercero,
+            'p_config_precio': configPrecio ?? {},
+          },
+        );
     final json = res as Map<String, dynamic>;
     if (json['ok'] != true) {
-      throw Exception(json['error'] ?? 'No se pudieron guardar los datos del servicio');
+      throw Exception(
+        json['error'] ?? 'No se pudieron guardar los datos del servicio',
+      );
     }
   }
 
@@ -336,14 +388,16 @@ class CatalogoService {
     required int idLocalServicio,
     required bool permite,
   }) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'admin_set_reserva_directa',
-      params: {
-        'p_uuid_usuario': uuidUsuario,
-        'p_id_local_servicio': idLocalServicio,
-        'p_permite': permite,
-      },
-    );
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'admin_set_reserva_directa',
+          params: {
+            'p_uuid_usuario': uuidUsuario,
+            'p_id_local_servicio': idLocalServicio,
+            'p_permite': permite,
+          },
+        );
     final json = res as Map<String, dynamic>;
     if (json['ok'] != true) {
       throw Exception(json['error'] ?? 'No se pudo cambiar la reserva directa');

@@ -80,24 +80,35 @@ begin
     end if;
   end if;
 
-  -- Buscar plan del día para restar agendados (sin forzar: puede no existir si el plan fue borrado)
-  select ps.id
-    into v_plan_id
-  from flow.plan_servicios ps
-  where ps.id_local_servicio = v_agenda.id_local_servicio
-    and (ps.fecha at time zone 'America/Havana')::date = (v_agenda.fecha_hora_reserva at time zone 'America/Havana')::date
-  limit 1;
-
   -- Aplicar cancelación en una transacción implícita
   update flow.agenda
      set id_estado = v_estado_cancelado,
          updated_at = current_timestamp
    where id = p_id_agenda;
 
-  if v_plan_id is not null then
-    update flow.plan_servicios
-       set agendados = greatest(0, agendados - v_agenda.cantidad)
-     where id = v_plan_id;
+  if v_agenda.id_turno is not null then
+    update flow.plan_tramo pt
+       set agendados = greatest(0, pt.agendados - v_agenda.cantidad)
+      from flow.turno_tramo tt
+     where tt.id_turno = v_agenda.id_turno
+       and pt.id_tramo = tt.id_tramo
+       and (pt.fecha at time zone 'America/Havana')::date =
+           (v_agenda.fecha_hora_reserva at time zone 'America/Havana')::date;
+  else
+    -- Buscar plan del día para restar agendados (sin forzar: puede no existir si el plan fue borrado)
+    select ps.id
+      into v_plan_id
+    from flow.plan_servicios ps
+    where ps.id_local_servicio = v_agenda.id_local_servicio
+      and (ps.fecha at time zone 'America/Havana')::date =
+          (v_agenda.fecha_hora_reserva at time zone 'America/Havana')::date
+    limit 1;
+
+    if v_plan_id is not null then
+      update flow.plan_servicios
+         set agendados = greatest(0, agendados - v_agenda.cantidad)
+       where id = v_plan_id;
+    end if;
   end if;
 
   -- Notificación al cliente que canceló

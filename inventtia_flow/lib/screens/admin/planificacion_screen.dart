@@ -15,6 +15,7 @@ import '../../services/plan_servicio_service.dart';
 import '../../services/recurso_service.dart';
 import '../../services/agenda_admin_service.dart';
 import '../../widgets/datos_adicionales_form.dart';
+import 'admin_reserva_transporte_sheet.dart';
 import 'config_plan_mensual_screen.dart';
 import 'config_recursos_screen.dart';
 
@@ -507,6 +508,21 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
   }
 
   void _mostrarReservarCapacidad(DateTime dia) {
+    if (widget.ls.esTransporteOmnibus) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        enableDrag: false,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (_) => AdminReservaTransporteSheet(
+          localServicio: widget.ls,
+          diaInicial: dia,
+          onCreated: () => _cargarPlanes(),
+        ),
+      );
+      return;
+    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1923,6 +1939,23 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
                       );
                     }).toList(),
                     onChanged: (value) {
+                      if (value?.esTransporteOmnibus == true) {
+                        Navigator.pop(context);
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          enableDrag: false,
+                          shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(20))),
+                          builder: (_) => AdminReservaTransporteSheet(
+                            localServicio: value!,
+                            diaInicial: widget.dia,
+                            onCreated: widget.onReservationCreated,
+                          ),
+                        );
+                        return;
+                      }
                       setState(() {
                         _selectedLocalServicio = value;
                         _datosAdicionalesValores = {};
