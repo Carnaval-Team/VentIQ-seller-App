@@ -978,16 +978,27 @@ class _PreorderScreenState extends State<PreorderScreen> {
       }
     }
 
-    // Verificar configuración de tienda: si no se solicita datos del cliente
+    // Cargar la configuración completa antes de decidir cómo crear la orden.
     bool noSolicitarCliente = false;
     try {
       final userPrefs = UserPreferencesService();
       final storeId = await userPrefs.getIdTienda();
-      if (storeId != null) {
-        noSolicitarCliente = await StoreConfigService.getNoSolicitarCliente(storeId);
+      if (storeId == null) {
+        throw StateError('No se pudo identificar la tienda');
       }
+      final storeConfig = await StoreConfigService.getStoreConfig(storeId);
+      if (storeConfig == null) {
+        throw StateError('No se pudo cargar la configuración de la tienda');
+      }
+      noSolicitarCliente = storeConfig['no_solicitar_cliente'] == true;
     } catch (e) {
-      print('⚠️ Error leyendo config de tienda: $e');
+      if (!mounted) return;
+      AppSnackBar.showPersistent(
+        context,
+        message: 'No se pudo cargar la configuración de la tienda. Intenta nuevamente.',
+        backgroundColor: Colors.red[700],
+      );
+      return;
     }
 
     if (isOfflineModeEnabled) {

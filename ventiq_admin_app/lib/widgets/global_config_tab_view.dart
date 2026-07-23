@@ -32,6 +32,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _allowPrintPending = false;
   bool _allowSellerMakeOrderModifications = false;
   bool _precioVentaRegidoPorUsd = false;
+  bool _cambiarFechaCreacionOperacionAlCierre = false;
   String _metodoRedondeoPrecioVenta = 'NO_REDONDEAR';
   bool _hasMasterPassword = false;
   bool _showMasterPasswordField = false;
@@ -182,11 +183,36 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
     }
   }
 
+  Future<void> _updateCambiarFechaCreacionOperacionAlCierreSetting(
+    bool value,
+  ) async {
+    if (_storeId == null) return;
+
+    try {
+      await StoreConfigService.updateCambiarFechaCreacionOperacionAlCierre(
+        _storeId!,
+        value,
+      );
+      setState(() => _cambiarFechaCreacionOperacionAlCierre = value);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _updatePrecioVentaRegidoPorUsdSetting(bool value) async {
     if (_storeId == null) return;
 
     try {
-      print('🔧 Actualizando configuración precio_venta_regido_por_usd: $value');
+      print(
+        '🔧 Actualizando configuración precio_venta_regido_por_usd: $value',
+      );
 
       await StoreConfigService.updatePrecioVentaRegidoPorUsd(_storeId!, value);
 
@@ -260,9 +286,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
       print('✅ allow_seller_make_order_modifications actualizado');
     } catch (e) {
-      print(
-        '❌ Error al actualizar allow_seller_make_order_modifications: $e',
-      );
+      print('❌ Error al actualizar allow_seller_make_order_modifications: $e');
 
       setState(() {
         _allowSellerMakeOrderModifications = !value;
@@ -328,6 +352,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             config['allow_seller_make_order_modifications'] ?? false;
         _precioVentaRegidoPorUsd =
             config['precio_venta_regido_por_usd'] ?? false;
+        _cambiarFechaCreacionOperacionAlCierre =
+            config['cambiar_fecha_creacion_operacion_al_cierre'] ?? false;
         _metodoRedondeoPrecioVenta =
             config['metodo_redondeo_precio_venta'] ?? 'NO_REDONDEAR';
         _hasMasterPassword = hasMasterPassword;
@@ -1126,6 +1152,20 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
           const SizedBox(height: 16),
 
+          _buildConfigCard(
+            icon: Icons.schedule_outlined,
+            iconColor: Colors.deepPurple,
+            title: 'Cambiar fecha de creación al cierre',
+            subtitle:
+                _cambiarFechaCreacionOperacionAlCierre
+                    ? 'La fecha de creación se ajusta a 20 minutos antes de confirmar la operación'
+                    : 'La operación conserva su fecha original de creación',
+            value: _cambiarFechaCreacionOperacionAlCierre,
+            onChanged: _updateCambiarFechaCreacionOperacionAlCierreSetting,
+          ),
+
+          const SizedBox(height: 16),
+
           // Configuración de Precio Regido por USD
           _buildPrecioRegidoPorUsdCard(),
 
@@ -1633,9 +1673,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: _precioVentaRegidoPorUsd
-              ? Colors.green.withOpacity(0.4)
-              : Colors.grey.withOpacity(0.2),
+          color:
+              _precioVentaRegidoPorUsd
+                  ? Colors.green.withOpacity(0.4)
+                  : Colors.grey.withOpacity(0.2),
           width: 1.5,
         ),
         boxShadow: [
@@ -1683,11 +1724,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.info_outline,
-                    size: 16,
-                    color: Colors.green[700],
-                  ),
+                  Icon(Icons.info_outline, size: 16, color: Colors.green[700]),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(

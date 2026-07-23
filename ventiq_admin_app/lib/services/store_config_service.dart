@@ -66,6 +66,7 @@ class StoreConfigService {
     Map<String, dynamic>? tpvTrabajadorEncargadoCarnaval,
     bool? allowSellerMakeOrderModifications,
     bool? precioVentaRegidoPorUsd,
+    bool? cambiarFechaCreacionOperacionAlCierre,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
@@ -148,6 +149,14 @@ class StoreConfigService {
       if (precioVentaRegidoPorUsd != null) {
         updateData['precio_venta_regido_por_usd'] = precioVentaRegidoPorUsd;
         print('  - precio_venta_regido_por_usd: $precioVentaRegidoPorUsd');
+      }
+
+      if (cambiarFechaCreacionOperacionAlCierre != null) {
+        updateData['cambiar_fecha_creacion_operacion_al_cierre'] =
+            cambiarFechaCreacionOperacionAlCierre;
+        print(
+          '  - cambiar_fecha_creacion_operacion_al_cierre: $cambiarFechaCreacionOperacionAlCierre',
+        );
       }
 
       if (updateData.isEmpty) {
@@ -335,10 +344,7 @@ class StoreConfigService {
     int storeId,
     bool value,
   ) async {
-    await updateStoreConfig(
-      storeId,
-      allowSellerMakeOrderModifications: value,
-    );
+    await updateStoreConfig(storeId, allowSellerMakeOrderModifications: value);
   }
 
   /// Obtiene el método de redondeo configurado
@@ -382,6 +388,16 @@ class StoreConfigService {
     Map<String, dynamic>? value,
   ) async {
     await updateStoreConfig(storeId, tpvTrabajadorEncargadoCarnaval: value);
+  }
+
+  static Future<void> updateCambiarFechaCreacionOperacionAlCierre(
+    int storeId,
+    bool value,
+  ) async {
+    await updateStoreConfig(
+      storeId,
+      cambiarFechaCreacionOperacionAlCierre: value,
+    );
   }
 
   /// Obtiene el valor de precio_venta_regido_por_usd

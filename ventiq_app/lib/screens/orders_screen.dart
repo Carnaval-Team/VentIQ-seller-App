@@ -177,7 +177,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
     try {
       final storeId = await _userPreferencesService.getIdTienda();
       if (storeId == null) return;
-      final allow = await StoreConfigService.getAllowSellerMakeOrderModifications(storeId);
+      final allow =
+          await StoreConfigService.getAllowSellerMakeOrderModifications(
+            storeId,
+          );
       if (mounted) {
         setState(() {
           _allowSellerMakeOrderModifications = allow;
@@ -195,7 +198,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
         order.status == OrderStatus.pendienteDeSincronizacion;
   }
 
-  void _showDiscountSheet(Order order, {BuildContext? detailContext, VoidCallback? onDiscountApplied}) {
+  void _showDiscountSheet(
+    Order order, {
+    BuildContext? detailContext,
+    VoidCallback? onDiscountApplied,
+  }) {
     final baseTotal = order.total;
     final TextEditingController valueController = TextEditingController();
     int selectedType = 1; // 1 = %
@@ -1480,7 +1487,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
   String? _getPackageNumber(Order order) {
     final paq = order.paqueteria;
     if (paq == null || paq.isEmpty) return null;
-    final numero = paq['numero_paquete']?.toString() ??
+    final numero =
+        paq['numero_paquete']?.toString() ??
         (paq['paqueteria'] as Map<String, dynamic>?)?['paquete']?['numero']
             ?.toString();
     if (numero == null || numero.trim().isEmpty) return null;
@@ -1551,9 +1559,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 }
 
                 void refreshOrderData() {
-                  final updated = _orderService.orders
-                      .where((o) => o.id == currentOrder.id)
-                      .toList();
+                  final updated =
+                      _orderService.orders
+                          .where((o) => o.id == currentOrder.id)
+                          .toList();
                   setDetailState(() {
                     if (updated.isNotEmpty) currentOrder = updated.first;
                   });
@@ -1624,8 +1633,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         icon: Icons.info_outline,
                         child: Column(
                           children: [
-                            _buildDetailRowNew('Fecha', _formatDate(order.fechaCreacion)),
-                            _buildDetailRowNew('Productos', '${order.distinctItemCount}'),
+                            _buildDetailRowNew(
+                              'Fecha',
+                              _formatDate(order.fechaCreacion),
+                            ),
+                            _buildDetailRowNew(
+                              'Productos',
+                              '${order.distinctItemCount}',
+                            ),
                             _buildDetailRowNew(
                               'Total',
                               '\$${displayTotal.toStringAsFixed(2)}',
@@ -1703,12 +1718,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       // ── Datos del cliente / Remitente y destinatario ──────
                       const SizedBox(height: 12),
                       _buildDetailSection(
-                        title: _getPackageInfo(order) != null
-                            ? 'Remitente y Destinatario'
-                            : 'Datos del Cliente',
-                        icon: _getPackageInfo(order) != null
-                            ? Icons.swap_horiz
-                            : Icons.person_outline,
+                        title:
+                            _getPackageInfo(order) != null
+                                ? 'Remitente y Destinatario'
+                                : 'Datos del Cliente',
+                        icon:
+                            _getPackageInfo(order) != null
+                                ? Icons.swap_horiz
+                                : Icons.person_outline,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1717,25 +1734,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 title: 'Remitente',
                                 icon: Icons.outbox_outlined,
                                 color: const Color(0xFF4A90E2),
-                                data: _getPackageInfo(order)!['remitente']
-                                    as Map<String, dynamic>?,
+                                data:
+                                    _getPackageInfo(order)!['remitente']
+                                        as Map<String, dynamic>?,
                               ),
                               const SizedBox(height: 10),
                               _buildPartyBlock(
                                 title: 'Destinatario',
                                 icon: Icons.move_to_inbox_outlined,
                                 color: const Color(0xFF10B981),
-                                data: _getPackageInfo(order)!['destinatario']
-                                    as Map<String, dynamic>?,
+                                data:
+                                    _getPackageInfo(order)!['destinatario']
+                                        as Map<String, dynamic>?,
                               ),
                               const SizedBox(height: 4),
                             ] else if (order.buyerName != null ||
                                 order.buyerPhone != null) ...[
                               if (order.buyerName != null)
-                                _buildDetailRowNew(
-                                  'Nombre',
-                                  order.buyerName!,
-                                ),
+                                _buildDetailRowNew('Nombre', order.buyerName!),
                               if (order.buyerPhone != null &&
                                   order.buyerPhone!.isNotEmpty)
                                 _buildDetailRowNew(
@@ -1763,29 +1779,30 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               ),
                             if (_getCarnavalOrderId(order.notas) == null &&
                                 _getPackageInfo(order) == null)
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed: () => _showEditCustomerSheet(
-                                  order,
-                                  onCustomerUpdated: refreshOrderData,
-                                ),
-                                icon: const Icon(
-                                  Icons.edit_outlined,
-                                  size: 16,
-                                ),
-                                label: const Text('Editar datos del cliente'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFF4A90E2),
-                                  side: const BorderSide(
-                                    color: Color(0xFF4A90E2),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed:
+                                      () => _showEditCustomerSheet(
+                                        order,
+                                        onCustomerUpdated: refreshOrderData,
+                                      ),
+                                  icon: const Icon(
+                                    Icons.edit_outlined,
+                                    size: 16,
                                   ),
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 10,
+                                  label: const Text('Editar datos del cliente'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: const Color(0xFF4A90E2),
+                                    side: const BorderSide(
+                                      color: Color(0xFF4A90E2),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
                           ],
                         ),
                       ),
@@ -1817,321 +1834,421 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             icon: Icons.shopping_bag_outlined,
                             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                             child: Column(
-                              children: visibleItems.map(
-                                (item) => Container(
-                                      margin: const EdgeInsets.only(bottom: 8),
-                                      padding: const EdgeInsets.all(14),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(
-                                          color: Colors.grey[200]!,
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(
-                                              0.03,
-                                            ),
-                                            blurRadius: 4,
-                                            offset: const Offset(0, 1),
+                              children:
+                                  visibleItems
+                                      .map(
+                                        (item) => Container(
+                                          margin: const EdgeInsets.only(
+                                            bottom: 8,
                                           ),
-                                        ],
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
+                                          padding: const EdgeInsets.all(14),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.grey[200]!,
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black.withOpacity(
+                                                  0.03,
+                                                ),
+                                                blurRadius: 4,
+                                                offset: const Offset(0, 1),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Column(
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.start,
                                             children: [
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      item.nombre,
-                                                      style: const TextStyle(
-                                                        fontSize: 15,
-                                                        fontWeight: FontWeight.w600,
-                                                        color: Color(0xFF1F2937),
-                                                      ),
-                                                    ),
-                                                    if ((_isShowSkuEnabled || _userPreferencesService.isShowSkuEnabledSync) &&
-                                                        item.producto.sku != null &&
-                                                        item.producto.sku!.isNotEmpty) ...[
-                                                      const SizedBox(height: 2),
-                                                      Text(
-                                                        'SKU: ${item.producto.sku}',
-                                                        style: const TextStyle(
-                                                          fontSize: 11,
-                                                          color: Color(0xFF4A90E2),
-                                                          fontWeight: FontWeight.w500,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                    if ((_isShowSkuEnabled || _userPreferencesService.isShowSkuEnabledSync) &&
-                                                        item.producto.descripcion != null &&
-                                                        item.producto.descripcion!.isNotEmpty) ...[
-                                                      const SizedBox(height: 2),
-                                                      Text(
-                                                        item.producto.descripcion!,
-                                                        maxLines: 2,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: TextStyle(
-                                                          fontSize: 12,
-                                                          color: Colors.grey[500],
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Column(
-                                                crossAxisAlignment: CrossAxisAlignment.end,
-                                                children: [
-                                                  Text(
-                                                    '\$${item.subtotal.toStringAsFixed(2)}',
-                                                    style: const TextStyle(
-                                                      fontSize: 16,
-                                                      fontWeight: FontWeight.bold,
-                                                      color: Color(0xFF4A90E2),
-                                                    ),
-                                                  ),
-                                                  if (_usdRate > 0)
-                                                    Text(
-                                                      'USD ${(item.subtotal / _usdRate).toStringAsFixed(2)}',
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        color: Colors.grey[400],
-                                                      ),
-                                                    ),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.inventory_2_outlined,
-                                                size: 13,
-                                                color: Colors.grey[500],
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Expanded(
-                                                child: Text(
-                                                  '${PriceUtils.formatQuantity(item.cantidad)} unid. · \$${item.precioUnitario.toStringAsFixed(2)} c/u${_usdRate > 0 ? ' (USD ${(item.precioUnitario / _usdRate).toStringAsFixed(2)} c/u)' : ''} · ${item.ubicacionAlmacen}',
-                                                  style: TextStyle(
-                                                    fontSize: 13,
-                                                    color: Colors.grey[600],
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          // Ingredientes
-                                          if (item.ingredientes != null &&
-                                              item.ingredientes!.isNotEmpty) ...[
-                                            const SizedBox(height: 10),
-                                            Container(
-                                              padding: const EdgeInsets.all(10),
-                                              decoration: BoxDecoration(
-                                                color: Colors.orange[50],
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                border: Border.all(
-                                                  color: Colors.orange[200]!,
-                                                ),
-                                              ),
-                                              child: Column(
+                                              Row(
                                                 crossAxisAlignment:
                                                     CrossAxisAlignment.start,
                                                 children: [
-                                                  Row(
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Text(
+                                                          item.nombre,
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 15,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                                color: Color(
+                                                                  0xFF1F2937,
+                                                                ),
+                                                              ),
+                                                        ),
+                                                        if ((_isShowSkuEnabled ||
+                                                                _userPreferencesService
+                                                                    .isShowSkuEnabledSync) &&
+                                                            item.producto.sku !=
+                                                                null &&
+                                                            item
+                                                                .producto
+                                                                .sku!
+                                                                .isNotEmpty) ...[
+                                                          const SizedBox(
+                                                            height: 2,
+                                                          ),
+                                                          Text(
+                                                            'SKU: ${item.producto.sku}',
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontSize: 11,
+                                                                  color: Color(
+                                                                    0xFF4A90E2,
+                                                                  ),
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w500,
+                                                                ),
+                                                          ),
+                                                        ],
+                                                        if ((_isShowSkuEnabled ||
+                                                                _userPreferencesService
+                                                                    .isShowSkuEnabledSync) &&
+                                                            item
+                                                                    .producto
+                                                                    .descripcion !=
+                                                                null &&
+                                                            item
+                                                                .producto
+                                                                .descripcion!
+                                                                .isNotEmpty) ...[
+                                                          const SizedBox(
+                                                            height: 2,
+                                                          ),
+                                                          Text(
+                                                            item
+                                                                .producto
+                                                                .descripcion!,
+                                                            maxLines: 2,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                            style: TextStyle(
+                                                              fontSize: 12,
+                                                              color:
+                                                                  Colors
+                                                                      .grey[500],
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment.end,
                                                     children: [
-                                                      Icon(
-                                                        Icons.restaurant,
-                                                        size: 13,
-                                                        color:
-                                                            Colors.orange[700],
-                                                      ),
-                                                      const SizedBox(width: 4),
                                                       Text(
-                                                        'Ingredientes utilizados:',
-                                                        style: TextStyle(
-                                                          fontSize: 12,
+                                                        '\$${item.subtotal.toStringAsFixed(2)}',
+                                                        style: const TextStyle(
+                                                          fontSize: 16,
                                                           fontWeight:
-                                                              FontWeight.w600,
-                                                          color:
-                                                              Colors.orange[700],
+                                                              FontWeight.bold,
+                                                          color: Color(
+                                                            0xFF4A90E2,
+                                                          ),
                                                         ),
                                                       ),
+                                                      if (_usdRate > 0)
+                                                        Text(
+                                                          'USD ${(item.subtotal / _usdRate).toStringAsFixed(2)}',
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            color:
+                                                                Colors
+                                                                    .grey[400],
+                                                          ),
+                                                        ),
                                                     ],
                                                   ),
-                                                  const SizedBox(height: 6),
-                                                  ...item.ingredientes!.map(
-                                                    (ingrediente) => Padding(
-                                                      padding:
-                                                          const EdgeInsets.only(
-                                                            left: 17,
-                                                            bottom: 2,
-                                                          ),
-                                                      child: Text(
-                                                        '• ${ingrediente['nombre_ingrediente']} — ${ingrediente['cantidad_vendida']} ${ingrediente['unidad_medida'] ?? 'unidades'}',
-                                                        style: TextStyle(
-                                                          fontSize: 12,
-                                                          color:
-                                                              Colors.grey[700],
-                                                        ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Row(
+                                                children: [
+                                                  Icon(
+                                                    Icons.inventory_2_outlined,
+                                                    size: 13,
+                                                    color: Colors.grey[500],
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Expanded(
+                                                    child: Text(
+                                                      '${PriceUtils.formatQuantity(item.cantidad)} unid. · \$${item.precioUnitario.toStringAsFixed(2)} c/u${_usdRate > 0 ? ' (USD ${(item.precioUnitario / _usdRate).toStringAsFixed(2)} c/u)' : ''} · ${item.ubicacionAlmacen}',
+                                                      style: TextStyle(
+                                                        fontSize: 13,
+                                                        color: Colors.grey[600],
                                                       ),
                                                     ),
                                                   ),
                                                 ],
                                               ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                ),
-                              ).toList(),
+                                              // Ingredientes
+                                              if (item.ingredientes != null &&
+                                                  item
+                                                      .ingredientes!
+                                                      .isNotEmpty) ...[
+                                                const SizedBox(height: 10),
+                                                Container(
+                                                  padding: const EdgeInsets.all(
+                                                    10,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.orange[50],
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                    border: Border.all(
+                                                      color:
+                                                          Colors.orange[200]!,
+                                                    ),
+                                                  ),
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons.restaurant,
+                                                            size: 13,
+                                                            color:
+                                                                Colors
+                                                                    .orange[700],
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 4,
+                                                          ),
+                                                          Text(
+                                                            'Ingredientes utilizados:',
+                                                            style: TextStyle(
+                                                              fontSize: 12,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                              color:
+                                                                  Colors
+                                                                      .orange[700],
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      const SizedBox(height: 6),
+                                                      ...item.ingredientes!.map(
+                                                        (
+                                                          ingrediente,
+                                                        ) => Padding(
+                                                          padding:
+                                                              const EdgeInsets.only(
+                                                                left: 17,
+                                                                bottom: 2,
+                                                              ),
+                                                          child: Text(
+                                                            '• ${ingrediente['nombre_ingrediente']} — ${ingrediente['cantidad_vendida']} ${ingrediente['unidad_medida'] ?? 'unidades'}',
+                                                            style: TextStyle(
+                                                              fontSize: 12,
+                                                              color:
+                                                                  Colors
+                                                                      .grey[700],
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
                             ),
                           );
                         },
                       ),
 
                       // ── Productos por defecto no incluidos (solo órdenes activas) ─
-                      Builder(builder: (context) {
-                        if (order.status == OrderStatus.completada) {
-                          return const SizedBox.shrink();
-                        }
-                        final ghostItems = _defaultOrderItems.where((entry) {
-                          try {
-                            final p = Product.fromJson(
-                                entry['product'] as Map<String, dynamic>);
-                            final alreadyIn = order.items.any(
-                              (i) =>
-                                  i.producto.id == p.id && i.cantidad > 0,
-                            );
-                            return !alreadyIn;
-                          } catch (_) {
-                            return false;
+                      Builder(
+                        builder: (context) {
+                          if (order.status == OrderStatus.completada) {
+                            return const SizedBox.shrink();
                           }
-                        }).toList();
-                        if (ghostItems.isEmpty) return const SizedBox.shrink();
-                        return Column(
-                          children: [
-                            const SizedBox(height: 12),
-                            _buildDetailSection(
-                              title:
-                                  'Por defecto no incluidos (${ghostItems.length})',
-                              icon: Icons.playlist_add_check_outlined,
-                              padding:
-                                  const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                              child: Column(
-                                children: ghostItems.map((entry) {
+                          final ghostItems =
+                              _defaultOrderItems.where((entry) {
+                                try {
                                   final p = Product.fromJson(
-                                      entry['product']
-                                          as Map<String, dynamic>);
-                                  return Opacity(
-                                    opacity: 0.55,
-                                    child: Container(
-                                      margin: const EdgeInsets.only(bottom: 6),
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 14, vertical: 10),
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey[50],
-                                        borderRadius:
-                                            BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: Colors.grey[200]!,
-                                          style: BorderStyle.solid,
-                                        ),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
+                                    entry['product'] as Map<String, dynamic>,
+                                  );
+                                  final alreadyIn = order.items.any(
+                                    (i) =>
+                                        i.producto.id == p.id && i.cantidad > 0,
+                                  );
+                                  return !alreadyIn;
+                                } catch (_) {
+                                  return false;
+                                }
+                              }).toList();
+                          if (ghostItems.isEmpty)
+                            return const SizedBox.shrink();
+                          return Column(
+                            children: [
+                              const SizedBox(height: 12),
+                              _buildDetailSection(
+                                title:
+                                    'Por defecto no incluidos (${ghostItems.length})',
+                                icon: Icons.playlist_add_check_outlined,
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  8,
+                                  16,
+                                  8,
+                                ),
+                                child: Column(
+                                  children:
+                                      ghostItems.map((entry) {
+                                        final p = Product.fromJson(
+                                          entry['product']
+                                              as Map<String, dynamic>,
+                                        );
+                                        return Opacity(
+                                          opacity: 0.55,
+                                          child: Container(
+                                            margin: const EdgeInsets.only(
+                                              bottom: 6,
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 14,
+                                              vertical: 10,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey[50],
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: Colors.grey[200]!,
+                                                style: BorderStyle.solid,
+                                              ),
+                                            ),
+                                            child: Row(
                                               children: [
-                                                Text(
-                                                  p.denominacion,
-                                                  style: TextStyle(
-                                                    fontSize: 13,
-                                                    fontWeight:
-                                                        FontWeight.w600,
-                                                    color: Colors.grey[600],
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        p.denominacion,
+                                                        style: TextStyle(
+                                                          fontSize: 13,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color:
+                                                              Colors.grey[600],
+                                                        ),
+                                                      ),
+                                                      if ((_isShowSkuEnabled ||
+                                                              _userPreferencesService
+                                                                  .isShowSkuEnabledSync) &&
+                                                          p.sku != null &&
+                                                          p.sku!.isNotEmpty)
+                                                        Text(
+                                                          'SKU: ${p.sku}',
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 11,
+                                                                color: Color(
+                                                                  0xFF4A90E2,
+                                                                ),
+                                                              ),
+                                                        ),
+                                                      if ((_isShowSkuEnabled ||
+                                                              _userPreferencesService
+                                                                  .isShowSkuEnabledSync) &&
+                                                          p.descripcion !=
+                                                              null &&
+                                                          p
+                                                              .descripcion!
+                                                              .isNotEmpty)
+                                                        Text(
+                                                          p.descripcion!,
+                                                          maxLines: 2,
+                                                          overflow:
+                                                              TextOverflow
+                                                                  .ellipsis,
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            color:
+                                                                Colors
+                                                                    .grey[500],
+                                                          ),
+                                                        ),
+                                                      Text(
+                                                        '\$${p.precio.toStringAsFixed(2)} c/u',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          color:
+                                                              Colors.grey[500],
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ),
                                                 ),
-                                                if ((_isShowSkuEnabled ||
-                                                        _userPreferencesService
-                                                            .isShowSkuEnabledSync) &&
-                                                    p.sku != null &&
-                                                    p.sku!.isNotEmpty)
-                                                  Text(
-                                                    'SKU: ${p.sku}',
-                                                    style: const TextStyle(
-                                                        fontSize: 11,
-                                                        color: Color(
-                                                            0xFF4A90E2)),
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 3,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.grey
+                                                        .withOpacity(0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          4,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: Colors.grey
+                                                          .withOpacity(0.3),
+                                                    ),
                                                   ),
-                                                if ((_isShowSkuEnabled ||
-                                                        _userPreferencesService
-                                                            .isShowSkuEnabledSync) &&
-                                                    p.descripcion != null &&
-                                                    p.descripcion!.isNotEmpty)
-                                                  Text(
-                                                    p.descripcion!,
-                                                    maxLines: 2,
-                                                    overflow: TextOverflow.ellipsis,
+                                                  child: const Text(
+                                                    'NO INCLUIDO',
                                                     style: TextStyle(
-                                                        fontSize: 11,
-                                                        color: Colors.grey[500]),
+                                                      fontSize: 9,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      color: Colors.grey,
+                                                    ),
                                                   ),
-                                                Text(
-                                                  '\$${p.precio.toStringAsFixed(2)} c/u',
-                                                  style: TextStyle(
-                                                      fontSize: 11,
-                                                      color: Colors.grey[500]),
                                                 ),
                                               ],
                                             ),
                                           ),
-                                          Container(
-                                            padding:
-                                                const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 3),
-                                            decoration: BoxDecoration(
-                                              color: Colors.grey
-                                                  .withOpacity(0.1),
-                                              borderRadius:
-                                                  BorderRadius.circular(4),
-                                              border: Border.all(
-                                                  color: Colors.grey
-                                                      .withOpacity(0.3)),
-                                            ),
-                                            child: const Text(
-                                              'NO INCLUIDO',
-                                              style: TextStyle(
-                                                fontSize: 9,
-                                                fontWeight: FontWeight.w700,
-                                                color: Colors.grey,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                }).toList(),
+                                        );
+                                      }).toList(),
+                                ),
                               ),
-                            ),
-                          ],
-                        );
-                      }),
+                            ],
+                          );
+                        },
+                      ),
 
                       // ── Resumen de totales ────────────────────────────────
                       const SizedBox(height: 12),
@@ -2266,19 +2383,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Widget _buildPackageSection(Order order) {
     final info = _getPackageInfo(order);
     final paquete =
-        (info?['paquete'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
-    final numero = paquete['numero']?.toString() ??
+        (info?['paquete'] as Map<String, dynamic>?) ??
+        const <String, dynamic>{};
+    final numero =
+        paquete['numero']?.toString() ??
         order.paqueteria?['numero_paquete']?.toString();
-    final descripcion = paquete['descripcion']?.toString() ??
+    final descripcion =
+        paquete['descripcion']?.toString() ??
         order.paqueteria?['descripcion']?.toString();
     final fotoUrl = paquete['foto_url']?.toString();
     final fotosExtrasRaw = paquete['fotos_extras'];
-    final List<String> fotosExtras = fotosExtrasRaw is List
-        ? fotosExtrasRaw
-            .map((e) => e?.toString() ?? '')
-            .where((e) => e.trim().isNotEmpty)
-            .toList()
-        : <String>[];
+    final List<String> fotosExtras =
+        fotosExtrasRaw is List
+            ? fotosExtrasRaw
+                .map((e) => e?.toString() ?? '')
+                .where((e) => e.trim().isNotEmpty)
+                .toList()
+            : <String>[];
 
     return _buildDetailSection(
       title: 'Paquete',
@@ -2296,16 +2417,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   width: double.infinity,
                   height: 180,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 120,
-                    color: Colors.grey[100],
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.broken_image_outlined,
-                      color: Colors.grey[400],
-                      size: 40,
-                    ),
-                  ),
+                  errorBuilder:
+                      (_, __, ___) => Container(
+                        height: 120,
+                        color: Colors.grey[100],
+                        alignment: Alignment.center,
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.grey[400],
+                          size: 40,
+                        ),
+                      ),
                   loadingBuilder: (_, child, progress) {
                     if (progress == null) return child;
                     return Container(
@@ -2351,16 +2473,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         width: 80,
                         height: 80,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          width: 80,
-                          height: 80,
-                          color: Colors.grey[100],
-                          child: Icon(
-                            Icons.broken_image_outlined,
-                            color: Colors.grey[400],
-                            size: 24,
-                          ),
-                        ),
+                        errorBuilder:
+                            (_, __, ___) => Container(
+                              width: 80,
+                              height: 80,
+                              color: Colors.grey[100],
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                color: Colors.grey[400],
+                                size: 24,
+                              ),
+                            ),
                       ),
                     ),
                   );
@@ -2381,16 +2504,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
   void _showFullImage(String url) {
     showDialog(
       context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.black,
-        insetPadding: const EdgeInsets.all(12),
-        child: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: InteractiveViewer(
-            child: Image.network(url, fit: BoxFit.contain),
+      builder:
+          (_) => Dialog(
+            backgroundColor: Colors.black,
+            insetPadding: const EdgeInsets.all(12),
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: InteractiveViewer(
+                child: Image.network(url, fit: BoxFit.contain),
+              ),
+            ),
           ),
-        ),
-      ),
     );
   }
 
@@ -2408,10 +2532,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final direccion = data['direccion']?.toString();
     // Formato nuevo (GeoNames): pais_nombre / estado_nombre / ciudad_nombre.
     // Formato antiguo (carnavalapp): provincia_nombre / municipio_nombre.
-    final ciudad = (data['ciudad_nombre'] ?? data['municipio_nombre'])
-        ?.toString();
-    final estado = (data['estado_nombre'] ?? data['provincia_nombre'])
-        ?.toString();
+    final ciudad =
+        (data['ciudad_nombre'] ?? data['municipio_nombre'])?.toString();
+    final estado =
+        (data['estado_nombre'] ?? data['provincia_nombre'])?.toString();
     final pais = data['pais_nombre']?.toString();
     final ubicacion = [
       if (ciudad != null && ciudad.trim().isNotEmpty) ciudad,
@@ -2450,8 +2574,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             _buildDetailRowNew('Teléfono', telefono),
           if (direccion != null && direccion.trim().isNotEmpty)
             _buildDetailRowNew('Dirección', direccion),
-          if (ubicacion.isNotEmpty)
-            _buildDetailRowNew('Ubicación', ubicacion),
+          if (ubicacion.isNotEmpty) _buildDetailRowNew('Ubicación', ubicacion),
         ],
       ),
     );
@@ -2476,24 +2599,29 @@ class _OrdersScreenState extends State<OrdersScreen> {
       'notas': order.notas,
       'descuento': order.descuento,
       'pagos': order.pagos,
-      'items': order.items.map((item) => {
-        'id': item.id,
-        'nombre': item.nombre,
-        'cantidad': item.cantidad,
-        'precioUnitario': item.precioUnitario,
-        'precioBase': item.precioBase,
-        'subtotal': item.subtotal,
-        'ubicacionAlmacen': item.ubicacionAlmacen,
-        'cantidadInicial': item.cantidadInicial,
-        'cantidadFinal': item.cantidadFinal,
-        'entradasProducto': item.entradasProducto,
-        'inventoryData': item.inventoryData,
-        'promotionData': item.promotionData,
-        'paymentMethod': item.paymentMethod?.toJson(),
-        'ingredientes': item.ingredientes,
-        'producto': item.producto.toJson(),
-        'variante': item.variante?.toJson(),
-      }).toList(),
+      'items':
+          order.items
+              .map(
+                (item) => {
+                  'id': item.id,
+                  'nombre': item.nombre,
+                  'cantidad': item.cantidad,
+                  'precioUnitario': item.precioUnitario,
+                  'precioBase': item.precioBase,
+                  'subtotal': item.subtotal,
+                  'ubicacionAlmacen': item.ubicacionAlmacen,
+                  'cantidadInicial': item.cantidadInicial,
+                  'cantidadFinal': item.cantidadFinal,
+                  'entradasProducto': item.entradasProducto,
+                  'inventoryData': item.inventoryData,
+                  'promotionData': item.promotionData,
+                  'paymentMethod': item.paymentMethod?.toJson(),
+                  'ingredientes': item.ingredientes,
+                  'producto': item.producto.toJson(),
+                  'variante': item.variante?.toJson(),
+                },
+              )
+              .toList(),
     };
 
     String jsonText;
@@ -2606,21 +2734,21 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   _isGeneratingCustomerInvoice
                       ? null
                       : () {
-                          Navigator.pop(detailContext ?? context);
-                          Future.microtask(() => _generateCustomerInvoice(order));
-                        },
+                        Navigator.pop(detailContext ?? context);
+                        Future.microtask(() => _generateCustomerInvoice(order));
+                      },
               icon:
                   _isGeneratingCustomerInvoice
                       ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
                           ),
-                        )
+                        ),
+                      )
                       : const Icon(Icons.picture_as_pdf_outlined),
               label: Text(
                 _isGeneratingCustomerInvoice
@@ -2673,7 +2801,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: () => _showDiscountSheet(order, detailContext: detailContext, onDiscountApplied: onDiscountApplied),
+                onPressed:
+                    () => _showDiscountSheet(
+                      order,
+                      detailContext: detailContext,
+                      onDiscountApplied: onDiscountApplied,
+                    ),
                 icon: const Icon(Icons.percent),
                 label: const Text('Realizar descuento'),
                 style: ElevatedButton.styleFrom(
@@ -2855,7 +2988,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
         final storeConfig = await _userPreferencesService.getStoreConfig();
         if (storeConfig != null &&
             storeConfig['need_master_password_to_cancel'] == true) {
-          _showMasterPasswordDialog(order, newStatus, title, message, color, detailContext: detailContext);
+          _showMasterPasswordDialog(
+            order,
+            newStatus,
+            title,
+            message,
+            color,
+            detailContext: detailContext,
+          );
           return;
         }
       } catch (e) {
@@ -2880,7 +3020,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 onPressed: () {
                   _updateOrderStatus(order, newStatus);
                   Navigator.pop(context); // Cerrar diálogo
-                  if (detailContext != null) Navigator.pop(detailContext); // Cerrar pantalla de detalles
+                  if (detailContext != null)
+                    Navigator.pop(detailContext); // Cerrar pantalla de detalles
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: color,
@@ -4055,10 +4196,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     });
   }
 
-  void _showEditCustomerSheet(
-    Order order, {
-    VoidCallback? onCustomerUpdated,
-  }) {
+  void _showEditCustomerSheet(Order order, {VoidCallback? onCustomerUpdated}) {
     final nameController = TextEditingController(text: order.buyerName ?? '');
     final phoneController = TextEditingController(text: order.buyerPhone ?? '');
     final screenContext = context;
@@ -4099,7 +4237,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       left: 20,
                       right: 20,
                       top: 16,
-                      bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 24,
+                      bottom:
+                          MediaQuery.of(sheetContext).viewInsets.bottom + 24,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4173,7 +4312,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 onPressed:
                                     isSaving
                                         ? null
-                                        : () => Navigator.of(sheetContext).pop(),
+                                        : () =>
+                                            Navigator.of(sheetContext).pop(),
                                 child: const Text('Cancelar'),
                               ),
                             ),
@@ -4188,26 +4328,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                             isSaving = true;
                                             error = null;
                                           });
-                                          final result =
-                                              await _orderService
-                                                  .updateCustomerInfo(
-                                                    order: order,
-                                                    buyerName:
-                                                        nameController.text
-                                                                .trim()
-                                                                .isEmpty
-                                                            ? null
-                                                            : nameController.text
-                                                                .trim(),
-                                                    buyerPhone:
-                                                        phoneController.text
-                                                                .trim()
-                                                                .isEmpty
-                                                            ? null
-                                                            : phoneController
-                                                                .text
-                                                                .trim(),
-                                                  );
+                                          final result = await _orderService
+                                              .updateCustomerInfo(
+                                                order: order,
+                                                buyerName:
+                                                    nameController.text
+                                                            .trim()
+                                                            .isEmpty
+                                                        ? null
+                                                        : nameController.text
+                                                            .trim(),
+                                                buyerPhone:
+                                                    phoneController.text
+                                                            .trim()
+                                                            .isEmpty
+                                                        ? null
+                                                        : phoneController.text
+                                                            .trim(),
+                                              );
                                           setSheetState(() => isSaving = false);
                                           if (!mounted) return;
                                           if (result['success'] == true) {
@@ -4248,7 +4386,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                           ),
                                         )
                                         : const Icon(Icons.save_outlined),
-                                label: Text(isSaving ? 'Guardando...' : 'Guardar'),
+                                label: Text(
+                                  isSaving ? 'Guardando...' : 'Guardar',
+                                ),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF4A90E2),
                                   foregroundColor: Colors.white,
@@ -4388,11 +4528,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
         final storeId = await _userPreferencesService.getIdTienda();
         Map<String, dynamic>? storeData;
         if (storeId != null) {
-          storeData = await Supabase.instance.client
-              .from('app_dat_tienda')
-              .select('denominacion, direccion, ubicacion, imagen_url, phone')
-              .eq('id', storeId)
-              .maybeSingle();
+          storeData =
+              await Supabase.instance.client
+                  .from('app_dat_tienda')
+                  .select(
+                    'denominacion, direccion, ubicacion, imagen_url, phone',
+                  )
+                  .eq('id', storeId)
+                  .maybeSingle();
         }
         final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
         final storeAddress = storeData?['direccion'] as String? ?? '';
@@ -4402,8 +4545,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
         final logoBytes = await _downloadImageBytes(storeLogoUrl);
         final discountData = _getDiscountData(order);
         final hasDiscount = discountData['hasDiscount'] as bool;
-        final double originalTotal = (discountData['originalTotal'] as num?)?.toDouble() ?? order.total;
-        final double finalTotal = (discountData['finalTotal'] as num?)?.toDouble() ?? order.total;
+        final double originalTotal =
+            (discountData['originalTotal'] as num?)?.toDouble() ?? order.total;
+        final double finalTotal =
+            (discountData['finalTotal'] as num?)?.toDouble() ?? order.total;
         final double saved = (discountData['saved'] as num?)?.toDouble() ?? 0.0;
         final String discountLabel = discountData['label'] as String? ?? '';
         final items = order.items.where((item) => item.cantidad > 0).toList();
@@ -4620,176 +4765,355 @@ class _OrdersScreenState extends State<OrdersScreen> {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-        build: (context) => [
-          pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              if (logoBytes != null)
-                pw.Container(
-                  width: 72,
-                  height: 72,
-                  decoration: pw.BoxDecoration(
-                    borderRadius: pw.BorderRadius.circular(12),
-                    border: pw.Border.all(color: PdfColors.grey300, width: 1),
-                  ),
-                  child: pw.ClipRRect(
-                    horizontalRadius: 12,
-                    verticalRadius: 12,
-                    child: pw.Image(pw.MemoryImage(logoBytes), fit: pw.BoxFit.cover),
-                  ),
-                ),
-              if (logoBytes != null) pw.SizedBox(width: 16),
-              pw.Expanded(
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(storeName, style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
-                    if (storeAddress.isNotEmpty || storeLocation.isNotEmpty)
-                      pw.Text([if (storeAddress.isNotEmpty) storeAddress, if (storeLocation.isNotEmpty) storeLocation].join(' · '), style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
-                    if (storePhone.isNotEmpty)
-                      pw.Text('Tel: $storePhone', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
-                  ],
-                ),
-              ),
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.end,
+        build:
+            (context) => [
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Text('Factura Cliente', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0F172A'))),
-                  pw.SizedBox(height: 4),
-                  pw.Text('Orden: ${order.id}', style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
-                  pw.Text(_formatInvoiceDate(order.fechaCreacion), style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
-                ],
-              ),
-            ],
-          ),
-          pw.SizedBox(height: 24),
-          pw.Container(
-            padding: const pw.EdgeInsets.all(12),
-            decoration: pw.BoxDecoration(
-              color: PdfColor.fromHex('#F8FAFC'),
-              borderRadius: pw.BorderRadius.circular(12),
-              border: pw.Border.all(color: PdfColors.grey300, width: 1),
-            ),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text('Cliente', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#334155'))),
-                    pw.Text(
-                      order.buyerName?.isNotEmpty == true ? order.buyerName! : 'Cliente Final',
-                      style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
-                    ),
-                    if (order.buyerPhone != null && order.buyerPhone!.isNotEmpty)
-                      pw.Text(order.buyerPhone!, style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
-                  ],
-                ),
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
-                  children: [
-                    pw.Text('Estado', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#334155'))),
+                  if (logoBytes != null)
                     pw.Container(
-                      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: pw.BoxDecoration(color: PdfColor.fromHex('#DCFCE7'), borderRadius: pw.BorderRadius.circular(8)),
-                      child: pw.Text('Completada', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#15803D'))),
+                      width: 72,
+                      height: 72,
+                      decoration: pw.BoxDecoration(
+                        borderRadius: pw.BorderRadius.circular(12),
+                        border: pw.Border.all(
+                          color: PdfColors.grey300,
+                          width: 1,
+                        ),
+                      ),
+                      child: pw.ClipRRect(
+                        horizontalRadius: 12,
+                        verticalRadius: 12,
+                        child: pw.Image(
+                          pw.MemoryImage(logoBytes),
+                          fit: pw.BoxFit.cover,
+                        ),
+                      ),
                     ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          pw.SizedBox(height: 20),
-          pw.Text('Productos', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0F172A'))),
-          pw.SizedBox(height: 8),
-          pw.Table(
-            border: pw.TableBorder(
-              horizontalInside: pw.BorderSide(color: PdfColors.grey300, width: 0.4),
-              bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.6),
-            ),
-            columnWidths: {0: const pw.FlexColumnWidth(4), 1: const pw.FlexColumnWidth(1.3), 2: const pw.FlexColumnWidth(1.5), 3: const pw.FlexColumnWidth(1.7)},
-            children: [
-              pw.TableRow(children: [_pdfHeaderCell('Producto'), _pdfHeaderCell('Cant.'), _pdfHeaderCell('Precio'), _pdfHeaderCell('Subtotal')]),
-              ...items.expand((item) {
-                final List<pw.TableRow> rows = [
-                  pw.TableRow(children: [
-                    _pdfBodyCell(item.nombre),
-                    _pdfBodyCell(PriceUtils.formatQuantity(item.cantidad)),
-                    _pdfBodyCell('\$${item.displayPrice.toStringAsFixed(2)}'),
-                    _pdfBodyCell('\$${item.subtotal.toStringAsFixed(2)}', isBold: true),
-                  ]),
-                ];
-                final ingredientes = ingredientsByProduct[item.producto.id] ?? item.ingredientes;
-                if (ingredientes != null && ingredientes.isNotEmpty) {
-                  rows.add(pw.TableRow(children: [
-                    _pdfBodyCell('    Aditamentos', isBold: true, isIngredient: true),
-                    _pdfBodyCell('', isIngredient: true),
-                    _pdfBodyCell('', isIngredient: true),
-                    _pdfBodyCell('', isIngredient: true),
-                  ]));
-                  rows.addAll(ingredientes.map<pw.TableRow>((ingrediente) {
-                    final nombreIngrediente = (ingrediente['nombre_ingrediente'] ?? 'Ingrediente').toString();
-                    final double cantidadBase = (ingrediente['cantidad_necesaria'] ?? ingrediente['cantidad_vendida'] ?? 0) is num
-                        ? (ingrediente['cantidad_necesaria'] ?? ingrediente['cantidad_vendida']).toDouble()
-                        : 0;
-                    final unidad = (ingrediente['unidad_medida'] ?? 'unid').toString();
-                    final double cantidadTotal = (ingrediente['cantidad_vendida'] is num)
-                        ? (ingrediente['cantidad_vendida'] as num).toDouble()
-                        : (cantidadBase * item.cantidad);
-                    return pw.TableRow(children: [
-                      _pdfBodyCell('    $nombreIngrediente', isIngredient: true),
-                      _pdfBodyCell('${cantidadTotal.toStringAsFixed(2)} $unidad', isIngredient: true),
-                      _pdfBodyCell('', isIngredient: true),
-                      _pdfBodyCell('', isIngredient: true),
-                    ]);
-                  }));
-                }
-                return rows;
-              }),
-            ],
-          ),
-          pw.SizedBox(height: 18),
-          pw.Container(
-            padding: const pw.EdgeInsets.all(12),
-            decoration: pw.BoxDecoration(
-              color: PdfColor.fromHex('#F1F5F9'),
-              borderRadius: pw.BorderRadius.circular(12),
-              border: pw.Border.all(color: PdfColors.grey300, width: 1),
-            ),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    _pdfSummaryLabel('Total sin descuento'),
-                    _pdfSummaryValue('\$${originalTotal.toStringAsFixed(2)}'),
-                  ],
-                ),
-                if (hasDiscount) ...[  
-                  pw.SizedBox(height: 4),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  if (logoBytes != null) pw.SizedBox(width: 16),
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          storeName,
+                          style: pw.TextStyle(
+                            fontSize: 20,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                          ),
+                        ),
+                        if (storeAddress.isNotEmpty || storeLocation.isNotEmpty)
+                          pw.Text(
+                            [
+                              if (storeAddress.isNotEmpty) storeAddress,
+                              if (storeLocation.isNotEmpty) storeLocation,
+                            ].join(' · '),
+                            style: const pw.TextStyle(
+                              fontSize: 10,
+                              color: PdfColors.grey600,
+                            ),
+                          ),
+                        if (storePhone.isNotEmpty)
+                          pw.Text(
+                            'Tel: $storePhone',
+                            style: const pw.TextStyle(
+                              fontSize: 10,
+                              color: PdfColors.grey600,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
-                      _pdfSummaryLabel(discountLabel.isNotEmpty ? discountLabel : 'Descuento aplicado'),
-                      _pdfSummaryValue('- \$${saved.toStringAsFixed(2)}', color: PdfColor.fromHex('#DC2626')),
+                      pw.Text(
+                        'Factura Cliente',
+                        style: pw.TextStyle(
+                          fontSize: 16,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromHex('#0F172A'),
+                        ),
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        'Orden: ${order.id}',
+                        style: const pw.TextStyle(
+                          fontSize: 11,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
+                      pw.Text(
+                        _formatInvoiceDate(order.fechaCreacion),
+                        style: const pw.TextStyle(
+                          fontSize: 11,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
                     ],
                   ),
                 ],
-                pw.Divider(color: PdfColors.grey400, height: 14, thickness: 0.6),
-                pw.Row(
+              ),
+              pw.SizedBox(height: 24),
+              pw.Container(
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromHex('#F8FAFC'),
+                  borderRadius: pw.BorderRadius.circular(12),
+                  border: pw.Border.all(color: PdfColors.grey300, width: 1),
+                ),
+                child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    _pdfSummaryLabel('Total a pagar', fontSize: 13, isBold: true),
-                    _pdfSummaryValue('\$${finalTotal.toStringAsFixed(2)}', fontSize: 14, isBold: true, color: PdfColor.fromHex('#0F172A')),
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Cliente',
+                          style: pw.TextStyle(
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColor.fromHex('#334155'),
+                          ),
+                        ),
+                        pw.Text(
+                          order.buyerName?.isNotEmpty == true
+                              ? order.buyerName!
+                              : 'Cliente Final',
+                          style: const pw.TextStyle(
+                            fontSize: 11,
+                            color: PdfColors.grey700,
+                          ),
+                        ),
+                        if (order.buyerPhone != null &&
+                            order.buyerPhone!.isNotEmpty)
+                          pw.Text(
+                            order.buyerPhone!,
+                            style: const pw.TextStyle(
+                              fontSize: 10,
+                              color: PdfColors.grey600,
+                            ),
+                          ),
+                      ],
+                    ),
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      children: [
+                        pw.Text(
+                          'Estado',
+                          style: pw.TextStyle(
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColor.fromHex('#334155'),
+                          ),
+                        ),
+                        pw.Container(
+                          padding: const pw.EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: pw.BoxDecoration(
+                            color: PdfColor.fromHex('#DCFCE7'),
+                            borderRadius: pw.BorderRadius.circular(8),
+                          ),
+                          child: pw.Text(
+                            'Completada',
+                            style: pw.TextStyle(
+                              fontSize: 11,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromHex('#15803D'),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          pw.SizedBox(height: 16),
-          pw.Text('Gracias por su compra.', style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
-        ],
+              ),
+              pw.SizedBox(height: 20),
+              pw.Text(
+                'Productos',
+                style: pw.TextStyle(
+                  fontSize: 13,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromHex('#0F172A'),
+                ),
+              ),
+              pw.SizedBox(height: 8),
+              pw.Table(
+                border: pw.TableBorder(
+                  horizontalInside: pw.BorderSide(
+                    color: PdfColors.grey300,
+                    width: 0.4,
+                  ),
+                  bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.6),
+                ),
+                columnWidths: {
+                  0: const pw.FlexColumnWidth(4),
+                  1: const pw.FlexColumnWidth(1.3),
+                  2: const pw.FlexColumnWidth(1.5),
+                  3: const pw.FlexColumnWidth(1.7),
+                },
+                children: [
+                  pw.TableRow(
+                    children: [
+                      _pdfHeaderCell('Producto'),
+                      _pdfHeaderCell('Cant.'),
+                      _pdfHeaderCell('Precio'),
+                      _pdfHeaderCell('Subtotal'),
+                    ],
+                  ),
+                  ...items.expand((item) {
+                    final List<pw.TableRow> rows = [
+                      pw.TableRow(
+                        children: [
+                          _pdfBodyCell(item.nombre),
+                          _pdfBodyCell(
+                            PriceUtils.formatQuantity(item.cantidad),
+                          ),
+                          _pdfBodyCell(
+                            '\$${item.displayPrice.toStringAsFixed(2)}',
+                          ),
+                          _pdfBodyCell(
+                            '\$${item.subtotal.toStringAsFixed(2)}',
+                            isBold: true,
+                          ),
+                        ],
+                      ),
+                    ];
+                    final ingredientes =
+                        ingredientsByProduct[item.producto.id] ??
+                        item.ingredientes;
+                    if (ingredientes != null && ingredientes.isNotEmpty) {
+                      rows.add(
+                        pw.TableRow(
+                          children: [
+                            _pdfBodyCell(
+                              '    Aditamentos',
+                              isBold: true,
+                              isIngredient: true,
+                            ),
+                            _pdfBodyCell('', isIngredient: true),
+                            _pdfBodyCell('', isIngredient: true),
+                            _pdfBodyCell('', isIngredient: true),
+                          ],
+                        ),
+                      );
+                      rows.addAll(
+                        ingredientes.map<pw.TableRow>((ingrediente) {
+                          final nombreIngrediente =
+                              (ingrediente['nombre_ingrediente'] ??
+                                      'Ingrediente')
+                                  .toString();
+                          final double cantidadBase =
+                              (ingrediente['cantidad_necesaria'] ??
+                                          ingrediente['cantidad_vendida'] ??
+                                          0)
+                                      is num
+                                  ? (ingrediente['cantidad_necesaria'] ??
+                                          ingrediente['cantidad_vendida'])
+                                      .toDouble()
+                                  : 0;
+                          final unidad =
+                              (ingrediente['unidad_medida'] ?? 'unid')
+                                  .toString();
+                          final double cantidadTotal =
+                              (ingrediente['cantidad_vendida'] is num)
+                                  ? (ingrediente['cantidad_vendida'] as num)
+                                      .toDouble()
+                                  : (cantidadBase * item.cantidad);
+                          return pw.TableRow(
+                            children: [
+                              _pdfBodyCell(
+                                '    $nombreIngrediente',
+                                isIngredient: true,
+                              ),
+                              _pdfBodyCell(
+                                '${cantidadTotal.toStringAsFixed(2)} $unidad',
+                                isIngredient: true,
+                              ),
+                              _pdfBodyCell('', isIngredient: true),
+                              _pdfBodyCell('', isIngredient: true),
+                            ],
+                          );
+                        }),
+                      );
+                    }
+                    return rows;
+                  }),
+                ],
+              ),
+              pw.SizedBox(height: 18),
+              pw.Container(
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromHex('#F1F5F9'),
+                  borderRadius: pw.BorderRadius.circular(12),
+                  border: pw.Border.all(color: PdfColors.grey300, width: 1),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        _pdfSummaryLabel('Total sin descuento'),
+                        _pdfSummaryValue(
+                          '\$${originalTotal.toStringAsFixed(2)}',
+                        ),
+                      ],
+                    ),
+                    if (hasDiscount) ...[
+                      pw.SizedBox(height: 4),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          _pdfSummaryLabel(
+                            discountLabel.isNotEmpty
+                                ? discountLabel
+                                : 'Descuento aplicado',
+                          ),
+                          _pdfSummaryValue(
+                            '- \$${saved.toStringAsFixed(2)}',
+                            color: PdfColor.fromHex('#DC2626'),
+                          ),
+                        ],
+                      ),
+                    ],
+                    pw.Divider(
+                      color: PdfColors.grey400,
+                      height: 14,
+                      thickness: 0.6,
+                    ),
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        _pdfSummaryLabel(
+                          'Total a pagar',
+                          fontSize: 13,
+                          isBold: true,
+                        ),
+                        _pdfSummaryValue(
+                          '\$${finalTotal.toStringAsFixed(2)}',
+                          fontSize: 14,
+                          isBold: true,
+                          color: PdfColor.fromHex('#0F172A'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 16),
+              pw.Text(
+                'Gracias por su compra.',
+                style: const pw.TextStyle(
+                  fontSize: 11,
+                  color: PdfColors.grey700,
+                ),
+              ),
+            ],
       ),
     );
     return pdf;
@@ -5299,9 +5623,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
             showSkuEnabled: _isShowSkuEnabled,
             usdRate: _usdRate,
             defaultOrderItems: _defaultOrderItems,
-            pendingOrders: _orderService.orders
-                .where((o) => o.status == OrderStatus.enviada)
-                .toList(),
+            pendingOrders:
+                _orderService.orders
+                    .where((o) => o.status == OrderStatus.enviada)
+                    .toList(),
           ),
     );
   }
@@ -5417,7 +5742,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             Navigator.pop(
                               context,
                             ); // Cerrar diálogo de contraseña
-                            if (detailContext != null) Navigator.pop(detailContext); // Cerrar pantalla de detalles
+                            if (detailContext != null)
+                              Navigator.pop(
+                                detailContext,
+                              ); // Cerrar pantalla de detalles
                             _updateOrderStatus(order, newStatus);
                           } else {
                             // Contraseña incorrecta
@@ -5499,7 +5827,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
   //   { 'op': 'add',    'payload': Map, 'item': OrderItem }
   final List<Map<String, dynamic>> _pendingOps = [];
 
-  bool _isSaving = false;    // cargando mientras se commitean cambios
+  bool _isSaving = false; // cargando mientras se commitean cambios
   String? _errorMessage;
   bool _hasPendingChanges = false;
 
@@ -5519,7 +5847,8 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
   double _addQuantity = 1;
 
   // Búsqueda de productos por texto
-  final TextEditingController _productSearchController = TextEditingController();
+  final TextEditingController _productSearchController =
+      TextEditingController();
   List<Product> _searchResults = [];
   bool _isSearching = false;
   bool _showSearchResults = false;
@@ -5532,15 +5861,94 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
   // Orden activa (puede cambiar si el usuario busca y selecciona otra)
   late Order _activeOrder;
 
-  // Método de pago para el producto nuevo
-  List<PaymentMethod> _paymentMethods = [];
-  bool _loadingPaymentMethods = false;
+  // Método de pago heredado de la orden (no se pide al añadir producto)
   PaymentMethod? _selectedPaymentMethod;
 
   // Promociones para el producto seleccionado
   Map<String, dynamic>? _globalPromotion;
   List<Map<String, dynamic>>? _productPromotions;
   final _promotionService = PromotionService();
+
+  /// Método de pago dominante de la orden (ítems o desglose de pagos).
+  PaymentMethod _paymentMethodFromOrder(List<PaymentMethod> available) {
+    for (final item in _items) {
+      final pm = item.paymentMethod;
+      if (pm != null) {
+        final match = available.where((m) => m.id == pm.id);
+        return match.isNotEmpty ? match.first : pm;
+      }
+    }
+
+    for (final op in _pendingOps) {
+      if (op['op'] != 'add') continue;
+      final raw = (op['payload'] as Map?)?['id_medio_pago'];
+      final id = raw is int ? raw : int.tryParse('$raw');
+      if (id == null) continue;
+      final match = available.where((m) => m.id == id);
+      if (match.isNotEmpty) return match.first;
+      return PaymentMethod(
+        id: id,
+        denominacion: 'Método #$id',
+        esEfectivo: id == 1 || id == 999,
+        esDigital: false,
+        esActivo: true,
+      );
+    }
+
+    final pagos = _activeOrder.pagos;
+    if (pagos != null && pagos.isNotEmpty) {
+      int? bestId;
+      double bestMonto = -1;
+      String? bestName;
+      for (final raw in pagos) {
+        if (raw is! Map) continue;
+        final p = Map<String, dynamic>.from(raw);
+        final idRaw = p['id_medio_pago'] ?? p['medio_pago_id'];
+        final id = idRaw is int ? idRaw : int.tryParse('$idRaw');
+        if (id == null) continue;
+        final monto =
+            (p['monto'] as num?)?.toDouble() ??
+            (p['total'] as num?)?.toDouble() ??
+            0;
+        if (monto >= bestMonto) {
+          bestMonto = monto;
+          bestId = id;
+          bestName =
+              (p['medio_pago_denominacion'] ??
+                      p['medio_pago_nombre'] ??
+                      p['denominacion'] ??
+                      p['metodo_pago'] ??
+                      p['medio_pago'])
+                  ?.toString();
+        }
+      }
+      if (bestId != null) {
+        final match = available.where((m) => m.id == bestId);
+        if (match.isNotEmpty) return match.first;
+        return PaymentMethod(
+          id: bestId,
+          denominacion:
+              bestName?.isNotEmpty == true ? bestName! : 'Método #$bestId',
+          esEfectivo: bestId == 1 || bestId == 999,
+          esDigital: false,
+          esActivo: true,
+        );
+      }
+    }
+
+    if (available.isNotEmpty) {
+      final efectivo = available.where((m) => m.esEfectivo);
+      return efectivo.isNotEmpty ? efectivo.first : available.first;
+    }
+
+    return PaymentMethod(
+      id: 1,
+      denominacion: 'Efectivo',
+      esEfectivo: true,
+      esDigital: false,
+      esActivo: true,
+    );
+  }
 
   @override
   void initState() {
@@ -5557,27 +5965,29 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
     for (final entry in widget.defaultOrderItems) {
       try {
         final product = Product.fromJson(
-            entry['product'] as Map<String, dynamic>);
+          entry['product'] as Map<String, dynamic>,
+        );
         final defaultCantidad = (entry['cantidad'] as num).toDouble();
         final alreadyInOrder = _items.any(
           (i) => i.producto.id == product.id && i.cantidad > 0,
         );
         if (!alreadyInOrder) {
-          _items.add(OrderItem(
-            id: 'ITEM-DEFAULT-${product.id}',
-            producto: product,
-            cantidad: defaultCantidad,
-            precioUnitario: product.precio,
-            precioBase: product.precio,
-            ubicacionAlmacen: 'Por defecto',
-          ));
+          _items.add(
+            OrderItem(
+              id: 'ITEM-DEFAULT-${product.id}',
+              producto: product,
+              cantidad: defaultCantidad,
+              precioUnitario: product.precio,
+              precioBase: product.precio,
+              ubicacionAlmacen: 'Por defecto',
+            ),
+          );
         }
       } catch (_) {}
     }
   }
 
-  bool _isGhostItem(OrderItem item) =>
-      item.id.startsWith('ITEM-DEFAULT-');
+  bool _isGhostItem(OrderItem item) => item.id.startsWith('ITEM-DEFAULT-');
 
   @override
   void dispose() {
@@ -5719,9 +6129,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
 
     setState(() {
       // Remove ghost placeholder for this product (if any)
-      _items.removeWhere(
-        (i) => _isGhostItem(i) && i.producto.id == product.id,
-      );
+      _items.removeWhere((i) => _isGhostItem(i) && i.producto.id == product.id);
 
       if (existIdx != -1) {
         // Producto ya existe → sumar cantidad localmente
@@ -5941,7 +6349,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       _isSearching = false;
     });
 
-    // Cargar categorías y métodos de pago en paralelo
+    // Categorías + métodos (solo para resolver el de la orden; no se muestra selector)
     final futures = await Future.wait([
       _categoryService.getCategories().catchError((_) => <Category>[]),
       PaymentMethodService.getPaymentMethodsWithCache(
@@ -5953,7 +6361,6 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       setState(() {
         _categories = futures[0] as List<Category>;
         final online = futures[1] as List<PaymentMethod>;
-        // Anteponer "Pago Regular (Efectivo)" — efectivo sin descuento
         final pagoRegular = PaymentMethod(
           id: 999,
           denominacion: 'Efectivo (sin descuento)',
@@ -5961,11 +6368,9 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
           esDigital: false,
           esActivo: true,
         );
-        _paymentMethods = [pagoRegular, ...online];
+        final available = [pagoRegular, ...online];
+        _selectedPaymentMethod = _paymentMethodFromOrder(available);
         _loadingCategories = false;
-        if (_paymentMethods.length == 1) {
-          _selectedPaymentMethod = _paymentMethods.first;
-        }
       });
     }
   }
@@ -6001,26 +6406,27 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
     if (_hasPendingChanges) {
       showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Cambiar de orden'),
-          content: const Text(
-            'Tienes cambios sin guardar. ¿Descartar cambios y cambiar de orden?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
+        builder:
+            (ctx) => AlertDialog(
+              title: const Text('Cambiar de orden'),
+              content: const Text(
+                'Tienes cambios sin guardar. ¿Descartar cambios y cambiar de orden?',
               ),
-              child: const Text('Descartar y cambiar'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Descartar y cambiar'),
+                ),
+              ],
             ),
-          ],
-        ),
       ).then((confirmed) {
         if (confirmed == true && mounted) {
           _applyOrderSwitch(order);
@@ -6099,7 +6505,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
           if (grouped.containsKey(productId)) {
             final ex = grouped[productId]!;
             final exStock = (ex['stock_disponible'] as num?)?.toDouble() ?? 0.0;
-            final newStock = ((row['stock_disponible'] ?? row['cantidad_final']) as num?)?.toDouble() ?? 0.0;
+            final newStock =
+                ((row['stock_disponible'] ?? row['cantidad_final']) as num?)
+                    ?.toDouble() ??
+                0.0;
             ex['stock_disponible'] = exStock + newStock;
             final exRes = (ex['stock_reservado'] as num?)?.toDouble() ?? 0.0;
             final newRes = (row['stock_reservado'] as num?)?.toDouble() ?? 0.0;
@@ -6112,28 +6521,29 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
 
       print('Grouped data: $grouped');
 
-      final List<Product> products = grouped.values.map((row) {
-        print('Creating product from row: $row');
-        return Product(
-          id: (row['id_producto'] as num).toInt(),
-          denominacion: row['nombre_producto'] ?? 'Sin nombre',
-          descripcion: row['descripcion'],
-          sku: row['sku_producto'] ?? '', // Corrected debug print
-          foto: row['imagen'],
-          precio: (row['precio_venta'] as num?)?.toDouble() ?? 0.0,
-          cantidad: (row['stock_disponible'] as num?)?.toDouble() ?? 0.0,
-          esRefrigerado: row['es_refrigerado'] ?? false,
-          esFragil: row['es_fragil'] ?? false,
-          esPeligroso: row['es_peligroso'] ?? false,
-          esVendible: row['es_vendible'] ?? true,
-          esComprable: row['es_comprable'] ?? false,
-          esInventariable: row['es_inventariable'] ?? false,
-          esPorLotes: row['es_por_lotes'] ?? false,
-          esElaborado: row['es_elaborado'] ?? false,
-          esServicio: row['es_servicio'] ?? false,
-          categoria: row['categoria'],
-        );
-      }).toList();
+      final List<Product> products =
+          grouped.values.map((row) {
+            print('Creating product from row: $row');
+            return Product(
+              id: (row['id_producto'] as num).toInt(),
+              denominacion: row['nombre_producto'] ?? 'Sin nombre',
+              descripcion: row['descripcion'],
+              sku: row['sku_producto'] ?? '', // Corrected debug print
+              foto: row['imagen'],
+              precio: (row['precio_venta'] as num?)?.toDouble() ?? 0.0,
+              cantidad: (row['stock_disponible'] as num?)?.toDouble() ?? 0.0,
+              esRefrigerado: row['es_refrigerado'] ?? false,
+              esFragil: row['es_fragil'] ?? false,
+              esPeligroso: row['es_peligroso'] ?? false,
+              esVendible: row['es_vendible'] ?? true,
+              esComprable: row['es_comprable'] ?? false,
+              esInventariable: row['es_inventariable'] ?? false,
+              esPorLotes: row['es_por_lotes'] ?? false,
+              esElaborado: row['es_elaborado'] ?? false,
+              esServicio: row['es_servicio'] ?? false,
+              categoria: row['categoria'],
+            );
+          }).toList();
 
       setState(() {
         _searchResults = products;
@@ -6161,13 +6571,16 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
     });
   }
 
-  Future<void> _selectProduct(Product product) async {
+  Future<void> _selectProduct(
+    Product product, {
+    double? initialQuantity,
+  }) async {
     setState(() {
       _selectedProduct = product;
       _loadingDetail = true;
       _inventoryOptions = [];
       _selectedInventory = null;
-      _addQuantity = 1;
+      _addQuantity = initialQuantity ?? 1;
       _globalPromotion = null;
       _productPromotions = null;
     });
@@ -6178,8 +6591,8 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
         widget.isOfflineMode
             ? widget.userPreferencesService.getPromotionData()
             : _promotionService.getGlobalPromotion(
-                await widget.userPreferencesService.getIdTienda() ?? 0,
-              ),
+              await widget.userPreferencesService.getIdTienda() ?? 0,
+            ),
         widget.isOfflineMode
             ? widget.userPreferencesService.getProductPromotions(product.id)
             : _promotionService.getProductPromotions(product.id),
@@ -6188,8 +6601,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       if (mounted) {
         final detailed = results[0] as Product;
         final globalPromo = results[1] as Map<String, dynamic>?;
-        final productPromos =
-            results[2] as List<Map<String, dynamic>>?;
+        final productPromos = results[2] as List<Map<String, dynamic>>?;
 
         final options = <Map<String, dynamic>>[];
         if (detailed.variantes.isNotEmpty) {
@@ -6271,9 +6683,11 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
   void _confirmAddProduct() {
     if (_selectedProduct == null ||
         _selectedInventory == null ||
-        _selectedPaymentMethod == null) return;
+        _selectedPaymentMethod == null)
+      return;
     final precioBase =
-        ((_selectedInventory!['precio_venta'] ?? _selectedProduct!.precio) as num)
+        ((_selectedInventory!['precio_venta'] ?? _selectedProduct!.precio)
+                as num)
             .toDouble();
     final precioFinal = _calcFinalPrice(precioBase, _selectedPaymentMethod!.id);
     _addItemLocal(
@@ -6299,9 +6713,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
             decoration: const BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              boxShadow: [
-                BoxShadow(color: Colors.black26, blurRadius: 12),
-              ],
+              boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 12)],
             ),
             child: Column(
               children: [
@@ -6454,7 +6866,11 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.error_outline, color: Colors.red[600], size: 16),
+                        Icon(
+                          Icons.error_outline,
+                          color: Colors.red[600],
+                          size: 16,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -6492,15 +6908,17 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                           Icons.search,
                           color: Color(0xFF0EA5E9),
                         ),
-                        suffixIcon: _orderSearchQuery.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear, size: 20),
-                                onPressed: () => setState(() {
-                                  _orderSearchQuery = '';
-                                  _orderSearchController.clear();
-                                }),
-                              )
-                            : null,
+                        suffixIcon:
+                            _orderSearchQuery.isNotEmpty
+                                ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 20),
+                                  onPressed:
+                                      () => setState(() {
+                                        _orderSearchQuery = '';
+                                        _orderSearchController.clear();
+                                      }),
+                                )
+                                : null,
                         filled: true,
                         fillColor: Colors.grey[100],
                         contentPadding: const EdgeInsets.symmetric(
@@ -6613,19 +7031,24 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
 
   Widget _buildOrderSearchResults(ScrollController ctrl) {
     final query = _orderSearchQuery.toLowerCase().trim();
-    final filtered = widget.pendingOrders.where((o) {
-      if (query.isEmpty) return true;
-      final matchId = o.id.toLowerCase().contains(query);
-      final matchBuyer = (o.buyerName ?? '').toLowerCase().contains(query);
-      return matchId || matchBuyer;
-    }).toList();
+    final filtered =
+        widget.pendingOrders.where((o) {
+          if (query.isEmpty) return true;
+          final matchId = o.id.toLowerCase().contains(query);
+          final matchBuyer = (o.buyerName ?? '').toLowerCase().contains(query);
+          return matchId || matchBuyer;
+        }).toList();
 
     if (filtered.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey[300]),
+            Icon(
+              Icons.receipt_long_outlined,
+              size: 48,
+              color: Colors.grey[300],
+            ),
             const SizedBox(height: 8),
             Text(
               query.isEmpty
@@ -6647,11 +7070,15 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
         final o = filtered[i];
         final isActive = o.operationId == _activeOrder.operationId;
         return ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 4,
+            vertical: 4,
+          ),
           leading: CircleAvatar(
-            backgroundColor: isActive
-                ? const Color(0xFF0EA5E9).withOpacity(0.15)
-                : Colors.grey[100],
+            backgroundColor:
+                isActive
+                    ? const Color(0xFF0EA5E9).withOpacity(0.15)
+                    : Colors.grey[100],
             child: Icon(
               Icons.receipt_outlined,
               color: isActive ? const Color(0xFF0EA5E9) : Colors.grey[500],
@@ -6666,15 +7093,19 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: isActive
-                        ? const Color(0xFF0EA5E9)
-                        : const Color(0xFF1F2937),
+                    color:
+                        isActive
+                            ? const Color(0xFF0EA5E9)
+                            : const Color(0xFF1F2937),
                   ),
                 ),
               ),
               if (isActive)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFF0EA5E9).withOpacity(0.12),
                     borderRadius: BorderRadius.circular(4),
@@ -6704,9 +7135,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
               ),
             ],
           ),
-          trailing: isActive
-              ? null
-              : const Icon(Icons.chevron_right, color: Color(0xFF0EA5E9)),
+          trailing:
+              isActive
+                  ? null
+                  : const Icon(Icons.chevron_right, color: Color(0xFF0EA5E9)),
           onTap: isActive ? null : () => _switchToOrder(o),
         );
       },
@@ -6721,7 +7153,11 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.shopping_cart_outlined, size: 56, color: Colors.grey[300]),
+            Icon(
+              Icons.shopping_cart_outlined,
+              size: 56,
+              color: Colors.grey[300],
+            ),
             const SizedBox(height: 12),
             Text(
               'No hay productos en la orden',
@@ -6755,216 +7191,232 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
     final isNew = item.id.startsWith('ITEM-NEW-');
     final isGhost = _isGhostItem(item);
     // Detectar si la cantidad fue modificada respecto al original
-    final origItem = widget.order.items
-        .where((i) => i.producto.id == item.producto.id)
-        .firstOrNull;
+    final origItem =
+        widget.order.items
+            .where((i) => i.producto.id == item.producto.id)
+            .firstOrNull;
     final wasModified =
         origItem != null && origItem.cantidad != item.cantidad && !isNew;
 
     return Opacity(
       opacity: isGhost ? 0.55 : 1.0,
       child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Info producto
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        item.nombre,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: isGhost
-                              ? Colors.grey[500]
-                              : const Color(0xFF1F2937),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Info producto
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.nombre,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color:
+                                isGhost
+                                    ? Colors.grey[500]
+                                    : const Color(0xFF1F2937),
+                          ),
                         ),
+                      ),
+                      if (isGhost)
+                        Container(
+                          margin: const EdgeInsets.only(left: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: Colors.grey.withOpacity(0.3),
+                            ),
+                          ),
+                          child: const Text(
+                            'NO INCLUIDO',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ),
+                      if (isNew)
+                        Container(
+                          margin: const EdgeInsets.only(left: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0EA5E9).withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'NUEVO',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0EA5E9),
+                            ),
+                          ),
+                        ),
+                      if (wasModified)
+                        Container(
+                          margin: const EdgeInsets.only(left: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'EDITADO',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.orange,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  if ((widget.showSkuEnabled ||
+                          widget.userPreferencesService.isShowSkuEnabledSync) &&
+                      item.producto.sku != null &&
+                      item.producto.sku!.isNotEmpty)
+                    Text(
+                      'SKU: ${item.producto.sku}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF0EA5E9),
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                    if (isGhost)
-                      Container(
-                        margin: const EdgeInsets.only(left: 6),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
-                              color: Colors.grey.withOpacity(0.3)),
-                        ),
-                        child: const Text(
-                          'NO INCLUIDO',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ),
-                    if (isNew)
-                      Container(
-                        margin: const EdgeInsets.only(left: 6),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0EA5E9).withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'NUEVO',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF0EA5E9),
-                          ),
-                        ),
-                      ),
-                    if (wasModified)
-                      Container(
-                        margin: const EdgeInsets.only(left: 6),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'EDITADO',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.orange,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
-                    item.producto.sku != null &&
-                    item.producto.sku!.isNotEmpty)
-                  Text(
-                    'SKU: ${item.producto.sku}',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF0EA5E9),
-                      fontWeight: FontWeight.w500,
+                  if ((widget.showSkuEnabled ||
+                          widget.userPreferencesService.isShowSkuEnabledSync) &&
+                      item.producto.descripcion != null &&
+                      item.producto.descripcion!.isNotEmpty)
+                    Text(
+                      item.producto.descripcion!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                     ),
-                  ),
-                if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
-                    item.producto.descripcion != null &&
-                    item.producto.descripcion!.isNotEmpty)
                   Text(
-                    item.producto.descripcion!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                    '\$${item.precioUnitario.toStringAsFixed(2)} c/u · Total: \$${item.subtotal.toStringAsFixed(2)}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
-                Text(
-                  '\$${item.precioUnitario.toStringAsFixed(2)} c/u · Total: \$${item.subtotal.toStringAsFixed(2)}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-                if (widget.usdRate > 0)
-                  Text(
-                    'USD ${(item.subtotal / widget.usdRate).toStringAsFixed(2)} · ${(item.precioUnitario / widget.usdRate).toStringAsFixed(2)} c/u',
-                    style: TextStyle(fontSize: 11, color: Colors.grey[400]),
-                  ),
-              ],
+                  if (widget.usdRate > 0)
+                    Text(
+                      'USD ${(item.subtotal / widget.usdRate).toStringAsFixed(2)} · ${(item.precioUnitario / widget.usdRate).toStringAsFixed(2)} c/u',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                    ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          // Controles cantidad — ghost items get an "Agregar" button instead
-          if (isGhost)
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _isSaving
-                      ? null
-                      : () async {
-                          final product = item.producto;
-                          await _startAddProduct();
-                          await _selectProduct(product);
-                        },
-                  icon: const Icon(Icons.add, size: 14),
-                  label: const Text('Agregar',
-                      style: TextStyle(fontSize: 12)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0EA5E9),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6)),
+            const SizedBox(width: 8),
+            // Controles cantidad — ghost items get an "Agregar" button instead
+            if (isGhost)
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed:
+                        _isSaving
+                            ? null
+                            : () async {
+                              final product = item.producto;
+                              await _startAddProduct();
+                              await _selectProduct(
+                                product,
+                                initialQuantity: item.cantidad,
+                              );
+                            },
+                    icon: const Icon(Icons.add, size: 14),
+                    label: const Text(
+                      'Agregar',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0EA5E9),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                GestureDetector(
-                  onTap: () => _removeItemLocal(item),
-                  child: Text('Ocultar',
-                      style: TextStyle(
-                          fontSize: 10, color: Colors.grey[400])),
-                ),
-              ],
-            )
-          else
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Botón eliminar (tap largo en "-" o botón rojo)
-              _CtrlButton(
-                icon: Icons.delete_outline,
-                color: Colors.red[400]!,
-                enabled: !_isSaving,
-                onTap: () => _removeItemLocal(item),
+                  const SizedBox(height: 4),
+                  GestureDetector(
+                    onTap: () => _removeItemLocal(item),
+                    child: Text(
+                      'Ocultar',
+                      style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+                    ),
+                  ),
+                ],
+              )
+            else
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Botón eliminar (tap largo en "-" o botón rojo)
+                  _CtrlButton(
+                    icon: Icons.delete_outline,
+                    color: Colors.red[400]!,
+                    enabled: !_isSaving,
+                    onTap: () => _removeItemLocal(item),
+                  ),
+                  const SizedBox(width: 4),
+                  _CtrlButton(
+                    icon: Icons.remove,
+                    color: const Color(0xFF6B7280),
+                    enabled: !_isSaving,
+                    onTap: () {
+                      final step = item.cantidad % 1 != 0 ? 0.5 : 1.0;
+                      _updateQtyLocal(item, -step);
+                    },
+                  ),
+                  const SizedBox(width: 6),
+                  _QuantityTextField(
+                    value: item.cantidad,
+                    enabled: !_isSaving,
+                    width: 64,
+                    fontSize: 15,
+                    onChanged: (value) => _setQtyLocal(item, value),
+                  ),
+                  const SizedBox(width: 6),
+                  _CtrlButton(
+                    icon: Icons.add,
+                    color: const Color(0xFF0EA5E9),
+                    enabled: !_isSaving,
+                    onTap: () {
+                      final step = item.cantidad % 1 != 0 ? 0.5 : 1.0;
+                      _updateQtyLocal(item, step);
+                    },
+                  ),
+                ],
               ),
-              const SizedBox(width: 4),
-              _CtrlButton(
-                icon: Icons.remove,
-                color: const Color(0xFF6B7280),
-                enabled: !_isSaving,
-                onTap: () {
-                  final step = item.cantidad % 1 != 0 ? 0.5 : 1.0;
-                  _updateQtyLocal(item, -step);
-                },
-              ),
-              const SizedBox(width: 6),
-              _QuantityTextField(
-                value: item.cantidad,
-                enabled: !_isSaving,
-                width: 64,
-                fontSize: 15,
-                onChanged: (value) => _setQtyLocal(item, value),
-              ),
-              const SizedBox(width: 6),
-              _CtrlButton(
-                icon: Icons.add,
-                color: const Color(0xFF0EA5E9),
-                enabled: !_isSaving,
-                onTap: () {
-                  final step = item.cantidad % 1 != 0 ? 0.5 : 1.0;
-                  _updateQtyLocal(item, step);
-                },
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
-    ));
+    );
   }
 
   // ── flujo añadir producto ─────────────────────────────────────
@@ -6993,22 +7445,24 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
             decoration: InputDecoration(
               hintText: 'Buscar producto por nombre, SKU...',
               hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-              prefixIcon: _isSearching
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  : const Icon(Icons.search, color: Color(0xFF0EA5E9)),
-              suffixIcon: _productSearchController.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear, size: 20),
-                      onPressed: _clearSearch,
-                    )
-                  : null,
+              prefixIcon:
+                  _isSearching
+                      ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                      : const Icon(Icons.search, color: Color(0xFF0EA5E9)),
+              suffixIcon:
+                  _productSearchController.text.isNotEmpty
+                      ? IconButton(
+                        icon: const Icon(Icons.clear, size: 20),
+                        onPressed: _clearSearch,
+                      )
+                      : null,
               filled: true,
               fillColor: Colors.grey[100],
               contentPadding: const EdgeInsets.symmetric(
@@ -7038,9 +7492,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
         ),
         // Contenido: resultados de búsqueda o categorías
         Expanded(
-          child: _showSearchResults
-              ? _buildSearchResults(ctrl)
-              : _buildCategoryList(ctrl),
+          child:
+              _showSearchResults
+                  ? _buildSearchResults(ctrl)
+                  : _buildCategoryList(ctrl),
         ),
       ],
     );
@@ -7071,12 +7526,16 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       itemCount: _searchResults.length,
       itemBuilder: (_, i) {
         final p = _searchResults[i];
-        final showSkuSetting = widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync;
+        final showSkuSetting =
+            widget.showSkuEnabled ||
+            widget.userPreferencesService.isShowSkuEnabledSync;
         final hasSku = p.sku != null && p.sku!.isNotEmpty;
         print('🔍 DEBUG Producto $i: ${p.denominacion}');
         print('   - SKU: ${p.sku}');
         print('   - widget.showSkuEnabled: ${widget.showSkuEnabled}');
-        print('   - isShowSkuEnabledSync: ${widget.userPreferencesService.isShowSkuEnabledSync}');
+        print(
+          '   - isShowSkuEnabledSync: ${widget.userPreferencesService.isShowSkuEnabledSync}',
+        );
         print('   - showSkuSetting (OR result): $showSkuSetting');
         print('   - hasSku: $hasSku');
         print('   - Mostrar SKU: ${showSkuSetting && hasSku}');
@@ -7088,9 +7547,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
           leading: CircleAvatar(
             backgroundColor: const Color(0xFF0EA5E9).withOpacity(0.1),
             child: Text(
-              p.denominacion.isNotEmpty
-                  ? p.denominacion[0].toUpperCase()
-                  : '?',
+              p.denominacion.isNotEmpty ? p.denominacion[0].toUpperCase() : '?',
               style: const TextStyle(
                 color: Color(0xFF0EA5E9),
                 fontWeight: FontWeight.bold,
@@ -7099,10 +7556,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
           ),
           title: Text(
             p.denominacion,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
           ),
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -7124,10 +7578,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                   p.descripcion!,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.grey[500],
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.grey[500], fontSize: 12),
                 ),
               Row(
                 children: [
@@ -7142,10 +7593,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                   const SizedBox(width: 8),
                   Text(
                     'Stock: ${p.cantidad}',
-                    style: TextStyle(
-                      color: Colors.grey[500],
-                      fontSize: 11,
-                    ),
+                    style: TextStyle(color: Colors.grey[500], fontSize: 11),
                   ),
                 ],
               ),
@@ -7188,8 +7636,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
     if (_loadingProducts) {
       return const Center(child: CircularProgressIndicator());
     }
-    final allProducts =
-        _productsBySubcat.values.expand((l) => l).toList();
+    final allProducts = _productsBySubcat.values.expand((l) => l).toList();
     if (allProducts.isEmpty) {
       return Center(
         child: Text(
@@ -7228,9 +7675,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                       vertical: 2,
                     ),
                     leading: CircleAvatar(
-                      backgroundColor: const Color(
-                        0xFF0EA5E9,
-                      ).withOpacity(0.1),
+                      backgroundColor: const Color(0xFF0EA5E9).withOpacity(0.1),
                       child: Text(
                         p.denominacion.isNotEmpty
                             ? p.denominacion[0].toUpperCase()
@@ -7252,7 +7697,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+                        if ((widget.showSkuEnabled ||
+                                widget
+                                    .userPreferencesService
+                                    .isShowSkuEnabledSync) &&
                             p.sku != null &&
                             p.sku!.isNotEmpty)
                           Text(
@@ -7263,7 +7711,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                               fontSize: 11,
                             ),
                           ),
-                        if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+                        if ((widget.showSkuEnabled ||
+                                widget
+                                    .userPreferencesService
+                                    .isShowSkuEnabledSync) &&
                             p.descripcion != null &&
                             p.descripcion!.isNotEmpty)
                           Text(
@@ -7315,7 +7766,8 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
               color: Color(0xFF1F2937),
             ),
           ),
-          if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+          if ((widget.showSkuEnabled ||
+                  widget.userPreferencesService.isShowSkuEnabledSync) &&
               product.sku != null &&
               product.sku!.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -7328,7 +7780,8 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
               ),
             ),
           ],
-          if ((widget.showSkuEnabled || widget.userPreferencesService.isShowSkuEnabledSync) &&
+          if ((widget.showSkuEnabled ||
+                  widget.userPreferencesService.isShowSkuEnabledSync) &&
               product.descripcion != null &&
               product.descripcion!.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -7336,10 +7789,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
               product.descripcion!,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
             ),
           ],
           const SizedBox(height: 4),
@@ -7357,10 +7807,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                 const SizedBox(width: 8),
                 Text(
                   '/ USD ${(product.precio / widget.usdRate).toStringAsFixed(2)}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[400],
-                  ),
+                  style: TextStyle(fontSize: 13, color: Colors.grey[400]),
                 ),
               ],
             ],
@@ -7404,7 +7851,8 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
               final label =
                   variantNombre != null && variantNombre.isNotEmpty
                       ? '$variantNombre — ${inv['ubicacion_nombre'] ?? 'Sin ubicación'}'
-                      : '${inv['ubicacion_nombre'] ?? 'Sin ubicación'} / ${inv['almacen_nombre'] ?? ''}'.trim();
+                      : '${inv['ubicacion_nombre'] ?? 'Sin ubicación'} / ${inv['almacen_nombre'] ?? ''}'
+                          .trim();
               final stock =
                   (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0;
               final precio =
@@ -7517,117 +7965,20 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
             ),
             const SizedBox(height: 24),
 
-            // Método de pago
-            const Text(
-              'Método de pago:',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF374151),
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (_loadingPaymentMethods)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-              )
-            else if (_paymentMethods.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.orange[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.orange[200]!),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.warning_amber, color: Colors.orange[700], size: 18),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'No hay métodos de pago disponibles.',
-                        style: TextStyle(fontSize: 13),
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _paymentMethods.map((pm) {
-                  final isSelected = _selectedPaymentMethod?.id == pm.id;
-                  return GestureDetector(
-                    onTap: () => setState(() => _selectedPaymentMethod = pm),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 120),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? const Color(0xFF10B981).withOpacity(0.1)
-                            : Colors.grey[50],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: isSelected
-                              ? const Color(0xFF10B981)
-                              : Colors.grey[300]!,
-                          width: isSelected ? 1.8 : 1,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            pm.typeIcon,
-                            size: 16,
-                            color: isSelected
-                                ? const Color(0xFF10B981)
-                                : Colors.grey[600],
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            pm.denominacion,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: isSelected
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                              color: isSelected
-                                  ? const Color(0xFF10B981)
-                                  : const Color(0xFF374151),
-                            ),
-                          ),
-                          if (isSelected) ...[
-                            const SizedBox(width: 4),
-                            const Icon(
-                              Icons.check_circle,
-                              size: 14,
-                              color: Color(0xFF10B981),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            const SizedBox(height: 20),
-
-            // Resumen con precio ajustado por promoción + método de pago
+            // Resumen con precio ajustado por promoción + método de pago de la orden
             Builder(
               builder: (context) {
                 final precioBase =
                     ((_selectedInventory!['precio_venta'] ?? product.precio)
                             as num)
                         .toDouble();
-                final precioFinal = _selectedPaymentMethod != null
-                    ? _calcFinalPrice(precioBase, _selectedPaymentMethod!.id)
-                    : precioBase;
+                final precioFinal =
+                    _selectedPaymentMethod != null
+                        ? _calcFinalPrice(
+                          precioBase,
+                          _selectedPaymentMethod!.id,
+                        )
+                        : precioBase;
                 final hasDiscount =
                     (precioFinal - precioBase).abs() > 0.001 &&
                     _selectedPaymentMethod != null;
@@ -7636,18 +7987,20 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                 return Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: hasDiscount
-                        ? (isRecargo
-                            ? Colors.orange.withOpacity(0.06)
-                            : const Color(0xFF10B981).withOpacity(0.06))
-                        : const Color(0xFF0EA5E9).withOpacity(0.06),
+                    color:
+                        hasDiscount
+                            ? (isRecargo
+                                ? Colors.orange.withOpacity(0.06)
+                                : const Color(0xFF10B981).withOpacity(0.06))
+                            : const Color(0xFF0EA5E9).withOpacity(0.06),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: hasDiscount
-                          ? (isRecargo
-                              ? Colors.orange.withOpacity(0.3)
-                              : const Color(0xFF10B981).withOpacity(0.3))
-                          : const Color(0xFF0EA5E9).withOpacity(0.2),
+                      color:
+                          hasDiscount
+                              ? (isRecargo
+                                  ? Colors.orange.withOpacity(0.3)
+                                  : const Color(0xFF10B981).withOpacity(0.3))
+                              : const Color(0xFF0EA5E9).withOpacity(0.2),
                     ),
                   ),
                   child: Column(
@@ -7683,11 +8036,12 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                             '\$${(_addQuantity * precioFinal).toStringAsFixed(2)}',
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
-                              color: hasDiscount
-                                  ? (isRecargo
-                                      ? Colors.orange[700]
-                                      : const Color(0xFF10B981))
-                                  : const Color(0xFF0EA5E9),
+                              color:
+                                  hasDiscount
+                                      ? (isRecargo
+                                          ? Colors.orange[700]
+                                          : const Color(0xFF10B981))
+                                      : const Color(0xFF0EA5E9),
                               fontSize: 16,
                             ),
                           ),
@@ -7702,9 +8056,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                               : 'Descuento aplicado por método de pago',
                           style: TextStyle(
                             fontSize: 11,
-                            color: isRecargo
-                                ? Colors.orange[700]
-                                : const Color(0xFF10B981),
+                            color:
+                                isRecargo
+                                    ? Colors.orange[700]
+                                    : const Color(0xFF10B981),
                             fontStyle: FontStyle.italic,
                           ),
                         ),
@@ -7719,9 +8074,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: (_isSaving || _selectedPaymentMethod == null)
-                    ? null
-                    : _confirmAddProduct,
+                onPressed:
+                    (_isSaving || _selectedPaymentMethod == null)
+                        ? null
+                        : _confirmAddProduct,
                 icon:
                     _isSaving
                         ? const SizedBox(
@@ -7737,13 +8093,14 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                   _isSaving
                       ? 'Agregando...'
                       : _selectedPaymentMethod == null
-                      ? 'Selecciona un método de pago'
+                      ? 'Cargando método de pago...'
                       : 'Agregar a la orden',
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _selectedPaymentMethod == null
-                      ? Colors.grey[400]
-                      : const Color(0xFF10B981),
+                  backgroundColor:
+                      _selectedPaymentMethod == null
+                          ? Colors.grey[400]
+                          : const Color(0xFF10B981),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   textStyle: const TextStyle(
@@ -7931,11 +8288,7 @@ class _CtrlButton extends StatelessWidget {
             color: enabled ? color.withOpacity(0.4) : Colors.grey[200]!,
           ),
         ),
-        child: Icon(
-          icon,
-          size: 18,
-          color: enabled ? color : Colors.grey[400],
-        ),
+        child: Icon(icon, size: 18, color: enabled ? color : Colors.grey[400]),
       ),
     );
   }
