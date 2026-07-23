@@ -62,14 +62,14 @@ class WebPrinterServiceImpl {
                 .maybeSingle();
       }
 
-      final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+      final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
       final storeLogoUrl = storeData?['imagen_url'] as String?;
       final logoDataUrl = await _loadLogoDataUrl(storeLogoUrl);
 
       return _StorePrintInfo(name: storeName, logoDataUrl: logoDataUrl);
     } catch (e) {
       print('⚠️ No se pudo cargar datos de tienda para impresión web: $e');
-      return const _StorePrintInfo(name: 'VentIQ');
+      return const _StorePrintInfo(name: 'Inventtia');
     }
   }
 

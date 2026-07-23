@@ -201,7 +201,7 @@ class BluetoothPrinterService {
         title: Text('Permisos Denegados', style: Theme.of(context).textTheme.titleLarge),
         content: Text(
           'No se pueden usar las funciones de impresora Bluetooth sin los permisos necesarios. '
-          'Puedes habilitarlos manualmente en Configuración > Aplicaciones > Inventtia Admin > Permisos.',
+          'Puedes habilitarlos manualmente en Configuración > Aplicaciones > Inventtia Gestión > Permisos.',
           style: TextStyle(fontSize: 14, color: Colors.grey[700]),
         ),
         actions: [

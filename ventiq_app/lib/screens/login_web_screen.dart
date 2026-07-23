@@ -286,7 +286,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
 
                     // Título
                     /* const Text(
-                      'VentIQ POS',
+                      'Inventtia Caja',
                       style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,

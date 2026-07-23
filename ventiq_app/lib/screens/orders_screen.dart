@@ -1765,7 +1765,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   order.extraContacts!,
                                 ),
                               const SizedBox(height: 8),
-                            ] else
+                            ],
+                            if (order.operationId != null)
+                              _buildOperationPhotoDetail(order.operationId!),
+                            if (order.buyerName == null &&
+                                order.buyerPhone == null)
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
                                 child: Text(
@@ -2293,6 +2297,48 @@ class _OrdersScreenState extends State<OrdersScreen> {
             ),
       ),
     ).then((_) => setState(() {}));
+  }
+
+  Widget _buildOperationPhotoDetail(int operationId) {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future:
+          Supabase.instance.client
+              .from('app_dat_operacion_venta')
+              .select('foto_operacion_url')
+              .eq('id_operacion', operationId)
+              .maybeSingle(),
+      builder: (context, snapshot) {
+        final url = snapshot.data?['foto_operacion_url'] as String?;
+        if (url == null || url.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: InkWell(
+            onTap:
+                () => showDialog<void>(
+                  context: context,
+                  builder:
+                      (dialogContext) => Dialog(
+                        child: InteractiveViewer(child: Image.network(url)),
+                      ),
+                ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                url,
+                height: 160,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder:
+                    (_, __, ___) => const ListTile(
+                      leading: Icon(Icons.broken_image_outlined),
+                      title: Text('No se pudo cargar la foto de la operación'),
+                    ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildDetailSection({
@@ -4537,7 +4583,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   .eq('id', storeId)
                   .maybeSingle();
         }
-        final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+        final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
         final storeAddress = storeData?['direccion'] as String? ?? '';
         final storeLocation = storeData?['ubicacion'] as String? ?? '';
         final storePhone = storeData?['phone'] as String? ?? '';
@@ -4649,7 +4695,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 .maybeSingle();
       }
 
-      final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+      final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
       final storeAddress = storeData?['direccion'] as String? ?? '';
       final storeLocation = storeData?['ubicacion'] as String? ?? '';
       final storePhone = storeData?['phone'] as String? ?? '';

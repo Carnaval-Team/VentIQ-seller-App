@@ -571,7 +571,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         title: const Text(
-          'Categorías - VentIQ POS',
+          'Categorías - Inventtia Caja',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w600,

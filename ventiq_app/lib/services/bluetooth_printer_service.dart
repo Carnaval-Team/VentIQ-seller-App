@@ -458,7 +458,7 @@ class BluetoothPrinterService {
             content: ScrollingText(
               text:
                   'No se pueden usar las funciones de impresora Bluetooth sin los permisos necesarios. '
-                  'Puedes habilitarlos manualmente en Configuración > Aplicaciones > VentIQ > Permisos.',
+                  'Puedes habilitarlos manualmente en Configuración > Aplicaciones > Inventtia Caja > Permisos.',
               style: TextStyle(fontSize: 14, color: Colors.grey[700]),
             ),
             actions: [
@@ -690,7 +690,7 @@ class BluetoothPrinterService {
         generator,
         order,
         storeInfo,
-        title: 'RECIBO VENDEDOR',
+        title: 'RECIBO CAJA',
         settleAfter: true,
       );
 
@@ -913,7 +913,7 @@ class BluetoothPrinterService {
                 .maybeSingle();
       }
 
-      final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+      final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
       final storeLogoUrl = storeData?['imagen_url'] as String?;
       final logoBytes = await _downloadImageBytes(storeLogoUrl);
 
@@ -922,7 +922,7 @@ class BluetoothPrinterService {
       debugPrint(
         '⚠️ No se pudo cargar datos de tienda para impresión Bluetooth: $e',
       );
-      return const _StorePrintInfo(name: 'VentIQ');
+      return const _StorePrintInfo(name: 'Inventtia');
     }
   }
 

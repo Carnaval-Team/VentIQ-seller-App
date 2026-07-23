@@ -75,7 +75,7 @@ class _SplashScreenState extends State<SplashScreen> {
               const SizedBox(height: 32),
               // App name
               const Text(
-                'Inventtia Admin',
+                'Inventtia Gestión',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 28,
@@ -85,7 +85,7 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Sistema de Administración',
+                'Sistema de Gestión',
                 style: TextStyle(
                   color: Colors.white70,
                   fontSize: 16,
@@ -101,7 +101,7 @@ class _SplashScreenState extends State<SplashScreen> {
               const SizedBox(height: 24),
               // Loading text
               const Text(
-                'Iniciando Inventtia Admin...',
+                'Iniciando Inventtia Gestión...',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 16,

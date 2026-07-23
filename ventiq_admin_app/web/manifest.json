@@ -1,11 +1,11 @@
 {
-    "name": "ventiq_admin_app",
-    "short_name": "ventiq_admin_app",
+    "name": "Inventtia Gestión",
+    "short_name": "Inventtia Gestión",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Inventtia Gestión - Administración de inventarios, productos y ventas.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

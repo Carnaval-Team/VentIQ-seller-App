@@ -645,7 +645,7 @@ class WiFiPrinterService {
                 .maybeSingle();
       }
 
-      final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+      final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
       final storeLogoUrl = storeData?['imagen_url'] as String?;
       final logoBytes = await _downloadImageBytes(storeLogoUrl);
 
@@ -654,7 +654,7 @@ class WiFiPrinterService {
       debugPrint(
         '⚠️ No se pudo cargar datos de tienda para impresión WiFi: $e',
       );
-      return const _StorePrintInfo(name: 'VentIQ');
+      return const _StorePrintInfo(name: 'Inventtia');
     }
   }
 

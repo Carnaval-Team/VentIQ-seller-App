@@ -170,7 +170,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 24),
         const Text(
-          'Inventtia Admin',
+          'Inventtia Gestión',
           style: TextStyle(
             fontSize: 32,
             fontWeight: FontWeight.bold,
@@ -179,7 +179,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 8),
         const Text(
-          'Panel de Administración',
+          'Panel de Gestión',
           style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
         ),
       ],

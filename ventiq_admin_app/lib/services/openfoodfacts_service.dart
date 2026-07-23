@@ -13,7 +13,7 @@ class OpenFoodFactsService {
       final response = await http.get(
         Uri.parse(url),
         headers: {
-          'User-Agent': 'VentIQ-Admin/1.0 (contact@ventiq.com)',
+          'User-Agent': 'Inventtia-Gestion/1.0 (contact@inventtia.com)',
         },
       ).timeout(const Duration(seconds: 10));
 

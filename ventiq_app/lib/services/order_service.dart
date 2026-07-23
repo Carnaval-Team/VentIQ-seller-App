@@ -1,7 +1,7 @@
 import '../models/order.dart';
 import '../models/product.dart';
 import '../models/payment_method.dart';
- import '../models/mesa_cuenta.dart';
+import '../models/mesa_cuenta.dart';
 import '../utils/promotion_rules.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
@@ -95,22 +95,27 @@ class OrderService {
           cantidad: cantidad,
           precioUnitario: precio,
           idVariante: variante?.id,
-          idOpcionVariante: inv['id_opcion_variante'] is num
-              ? (inv['id_opcion_variante'] as num).toInt()
-              : null,
-          idPresentacion: inv['id_presentacion'] is num
-              ? (inv['id_presentacion'] as num).toInt()
-              : null,
-          idUbicacion: inv['id_ubicacion'] is num
-              ? (inv['id_ubicacion'] as num).toInt()
-              : null,
+          idOpcionVariante:
+              inv['id_opcion_variante'] is num
+                  ? (inv['id_opcion_variante'] as num).toInt()
+                  : null,
+          idPresentacion:
+              inv['id_presentacion'] is num
+                  ? (inv['id_presentacion'] as num).toInt()
+                  : null,
+          idUbicacion:
+              inv['id_ubicacion'] is num
+                  ? (inv['id_ubicacion'] as num).toInt()
+                  : null,
           precioBase: precioOriginal,
           promotionData: promotionData,
           inventoryData: inventoryData,
           skuProducto: producto.sku,
           skuUbicacion: inv['sku_ubicacion'] as String?,
         );
-        print('🍽️ Item "${producto.denominacion}" agregado a cuenta $idCuentaActiva');
+        print(
+          '🍽️ Item "${producto.denominacion}" agregado a cuenta $idCuentaActiva',
+        );
       } catch (e) {
         print('❌ Error agregando item a cuenta de mesa: $e');
         rethrow;
@@ -374,15 +379,19 @@ class OrderService {
     try {
       final operationId = order.operationId;
       if (operationId == null) {
-        return {'success': false, 'error': 'La orden no tiene operación válida'};
+        return {
+          'success': false,
+          'error': 'La orden no tiene operación válida',
+        };
       }
 
       // Buscar id_cliente de la operación
-      final operation = await Supabase.instance.client
-          .from('app_dat_operacion_venta')
-          .select('id_cliente')
-          .eq('id_operacion', operationId)
-          .maybeSingle();
+      final operation =
+          await Supabase.instance.client
+              .from('app_dat_operacion_venta')
+              .select('id_cliente')
+              .eq('id_operacion', operationId)
+              .maybeSingle();
 
       final idCliente = operation?['id_cliente'] as int?;
 
@@ -415,7 +424,10 @@ class OrderService {
       return {'success': true};
     } catch (e) {
       print('❌ Error al actualizar datos del cliente: $e');
-      return {'success': false, 'error': 'Error al actualizar: ${e.toString()}'};
+      return {
+        'success': false,
+        'error': 'Error al actualizar: ${e.toString()}',
+      };
     }
   }
 
@@ -525,7 +537,7 @@ class OrderService {
           'monto': amount,
           'tipo_pago': tipoPago,
           'referencia_pago':
-              'Ajuste App Vendedor - ${DateTime.now().millisecondsSinceEpoch}',
+              'Ajuste Inventtia Caja - ${DateTime.now().millisecondsSinceEpoch}',
           'creado_por': userId,
         });
       }
@@ -638,7 +650,9 @@ class OrderService {
               idCuenta: idCuentaActiva,
               idOperacionVenta: opId,
             );
-            print('🍽️ Cuenta $idCuentaActiva cerrada y vinculada a operación $opId');
+            print(
+              '🍽️ Cuenta $idCuentaActiva cerrada y vinculada a operación $opId',
+            );
           } catch (e) {
             print('⚠️ Error marcando cuenta cerrada (venta sí registrada): $e');
           }
@@ -730,24 +744,27 @@ class OrderService {
         if (ci.idUbicacion != null) 'id_ubicacion': ci.idUbicacion,
         if (ci.idPresentacion != null) 'id_presentacion': ci.idPresentacion,
         if (ci.idVariante != null) 'id_variante': ci.idVariante,
-        if (ci.idOpcionVariante != null) 'id_opcion_variante': ci.idOpcionVariante,
+        if (ci.idOpcionVariante != null)
+          'id_opcion_variante': ci.idOpcionVariante,
         if (ci.skuProducto != null) 'sku_producto': ci.skuProducto,
         if (ci.skuUbicacion != null) 'sku_ubicacion': ci.skuUbicacion,
         // Marcador para que sepamos que esto vino de una cuenta abierta.
         'from_cuenta_item_id': ci.id,
       };
 
-      items.add(OrderItem(
-        id: 'CUENTAITEM-${ci.id}',
-        producto: product,
-        variante: variante,
-        cantidad: ci.cantidad,
-        precioUnitario: ci.precioUnitario,
-        precioBase: ci.precioBase,
-        ubicacionAlmacen: ci.ubicacionNombre ?? '',
-        inventoryData: invData,
-        promotionData: ci.promotionData,
-      ));
+      items.add(
+        OrderItem(
+          id: 'CUENTAITEM-${ci.id}',
+          producto: product,
+          variante: variante,
+          cantidad: ci.cantidad,
+          precioUnitario: ci.precioUnitario,
+          precioBase: ci.precioBase,
+          ubicacionAlmacen: ci.ubicacionNombre ?? '',
+          inventoryData: invData,
+          promotionData: ci.promotionData,
+        ),
+      );
     }
 
     _currentOrder = Order(
@@ -771,7 +788,9 @@ class OrderService {
       mesaZona: cuenta.mesaZona,
     );
 
-    print('🍽️ Preorden hidratada desde cuenta ${cuenta.id} con ${items.length} items');
+    print(
+      '🍽️ Preorden hidratada desde cuenta ${cuenta.id} con ${items.length} items',
+    );
   }
 
   // Obtener orden por ID
@@ -1049,9 +1068,10 @@ class OrderService {
       // Preparar parámetros base. Si la orden está asociada a una mesa,
       // usamos `fn_registrar_venta_mesa` (que acepta p_id_mesa); si no,
       // mantenemos el flujo original con `fn_registrar_venta`.
-      final int? idMesa = (orderData['idMesa'] is num)
-          ? (orderData['idMesa'] as num).toInt()
-          : null;
+      final int? idMesa =
+          (orderData['idMesa'] is num)
+              ? (orderData['idMesa'] as num).toInt()
+              : null;
       final bool useMesaRpc = idMesa != null;
 
       // En `fn_registrar_venta_mesa` el `id_variante` que viaja desde la app
@@ -1072,16 +1092,18 @@ class OrderService {
       String denominacion;
       if (useMesaRpc) {
         final cuentaSvc = MesaCuentaService();
-        final numero = order.mesaNumero ??
+        final numero =
+            order.mesaNumero ??
             cuentaSvc.activeMesaNumero ??
             _activeMesaNumero ??
             idMesa.toString();
         final zona = cuentaSvc.activeMesaZona;
-        denominacion = (zona != null && zona.trim().isNotEmpty)
-            ? 'Mesa $numero - Zona $zona'
-            : 'Mesa $numero';
+        denominacion =
+            (zona != null && zona.trim().isNotEmpty)
+                ? 'Mesa $numero - Zona $zona'
+                : 'Mesa $numero';
       } else {
-        denominacion = 'Venta App Vendedor - ${order.id}';
+        denominacion = 'Venta Inventtia Caja - ${order.id}';
       }
 
       final rpcParams = <String, dynamic>{
@@ -1097,7 +1119,8 @@ class OrderService {
         if (useMesaRpc) 'p_id_mesa': idMesa,
       };
 
-      final rpcName = useMesaRpc ? 'fn_registrar_venta_mesa' : 'fn_registrar_venta';
+      final rpcName =
+          useMesaRpc ? 'fn_registrar_venta_mesa' : 'fn_registrar_venta';
 
       print('=== PARAMETROS RPC $rpcName ===');
       print('p_codigo_promocion: ${rpcParams['p_codigo_promocion']}');
@@ -1128,6 +1151,14 @@ class OrderService {
             'error': 'No se recibió ID de operación válido del servidor',
           };
         }
+        final fotoOperacionUrl = orderData['fotoOperacionUrl'] as String?;
+        if (fotoOperacionUrl != null && fotoOperacionUrl.isNotEmpty) {
+          await Supabase.instance.client
+              .from('app_dat_operacion_venta')
+              .update({'foto_operacion_url': fotoOperacionUrl})
+              .eq('id_operacion', operationId);
+        }
+
         final paymentResult = await _registerPaymentsInSupabase(
           order,
           operationId,
@@ -1237,7 +1268,7 @@ class OrderService {
           'monto': entry.value,
           'tipo_pago': paymentTypeByMethod[entry.key] ?? 1, // Agregar tipo_pago
           'referencia_pago':
-              'Pago App Vendedor - ${DateTime.now().millisecondsSinceEpoch}',
+              'Pago Inventtia Caja - ${DateTime.now().millisecondsSinceEpoch}',
         });
       }
 
@@ -1557,11 +1588,13 @@ class OrderService {
               variante: variant,
               cantidad: (item['cantidad'] ?? 1).toDouble(),
               precioUnitario: (item['precio_unitario'] ?? 0.0).toDouble(),
-              ubicacionAlmacen: item['nombre_ubicacion'] as String? ?? 'Principal',
+              ubicacionAlmacen:
+                  item['nombre_ubicacion'] as String? ?? 'Principal',
               // Guardar id_extraccion para permitir edición de órdenes pendientes.
               // id_extraccion llega desde listar_ordenes cuando el parche está aplicado.
               inventoryData: {
-                'id_extraccion': item['id_extraccion'],  // null si el parche aún no se aplicó
+                'id_extraccion':
+                    item['id_extraccion'], // null si el parche aún no se aplicó
                 'id_variante': item['variante']?['id'],
                 'id_ubicacion': item['id_ubicacion'],
                 'id_presentacion': item['id_presentacion'],
@@ -1640,8 +1673,7 @@ class OrderService {
           sellerName: supabaseOrder['usuario_nombre']?.toString(),
           tpvName: supabaseOrder['tpv_nombre']?.toString(),
           paqueteria:
-              supabaseOrder['detalles']?['paqueteria']
-                  as Map<String, dynamic>?,
+              supabaseOrder['detalles']?['paqueteria'] as Map<String, dynamic>?,
           idMesa: idMesa,
           mesaNumero: mesaNumero,
         );
@@ -1911,7 +1943,8 @@ class OrderService {
 
   /// Guardar preorden actual en persistencia
   Future<void> _savePersistentPreorder() async {
-    final hasRealItems = _currentOrder != null &&
+    final hasRealItems =
+        _currentOrder != null &&
         _currentOrder!.items.any((i) => i.cantidad > 0);
     if (!hasRealItems) {
       // Si no hay orden o todos los ítems tienen cantidad 0, limpiar persistencia
@@ -2022,10 +2055,7 @@ class OrderService {
 
       final response = await Supabase.instance.client.rpc(
         'fn_eliminar_producto_orden',
-        params: {
-          'p_id_extraccion': idExtraccion,
-          'p_uuid_usuario': userId,
-        },
+        params: {'p_id_extraccion': idExtraccion, 'p_uuid_usuario': userId},
       );
 
       if (response != null && response['status'] == 'success') {

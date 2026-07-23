@@ -128,7 +128,7 @@ class WebSummaryPrinterServiceImpl {
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Resumen Detallado - VentIQ</title>
+    <title>Resumen Detallado - Inventtia Caja</title>
     <style>
         @media print {
             body { margin: 0; }

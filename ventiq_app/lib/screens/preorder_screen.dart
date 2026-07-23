@@ -72,8 +72,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
       // Si la orden está vacía (nueva), aplicar los productos por defecto
       final currentOrder = _orderService.currentOrder;
-      final hasRealItems = currentOrder != null &&
-          currentOrder.items.any((i) => i.cantidad > 0);
+      final hasRealItems =
+          currentOrder != null && currentOrder.items.any((i) => i.cantidad > 0);
       if (!hasRealItems) {
         await _applyDefaultOrderItems();
       }
@@ -90,17 +90,18 @@ class _PreorderScreenState extends State<PreorderScreen> {
   /// Aplica los productos por defecto configurados por el vendedor a la preorden actual.
   Future<void> _applyDefaultOrderItems() async {
     try {
-      final defaultItems =
-          await _userPreferencesService.getDefaultOrderItems();
+      final defaultItems = await _userPreferencesService.getDefaultOrderItems();
       if (defaultItems.isEmpty) return;
 
       print(
-          '🛒 PreorderScreen: Aplicando ${defaultItems.length} productos por defecto');
+        '🛒 PreorderScreen: Aplicando ${defaultItems.length} productos por defecto',
+      );
 
       for (final entry in defaultItems) {
         try {
-          final product =
-              Product.fromJson(entry['product'] as Map<String, dynamic>);
+          final product = Product.fromJson(
+            entry['product'] as Map<String, dynamic>,
+          );
           final cantidad = (entry['cantidad'] as num).toDouble();
           if (cantidad <= 0) continue;
 
@@ -110,7 +111,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
             ubicacionAlmacen: 'Por defecto',
           );
           print(
-              '✅ Producto por defecto agregado: ${product.denominacion} x$cantidad');
+            '✅ Producto por defecto agregado: ${product.denominacion} x$cantidad',
+          );
         } catch (e) {
           print('⚠️ Error agregando producto por defecto: $e');
         }
@@ -490,11 +492,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    onPressed:
-                        () {
-                          final step = (item.cantidad % 1 != 0) ? _fractionStep : 1.0;
-                          _updateItemQuantity(item.id, item.cantidad - step);
-                        },
+                    onPressed: () {
+                      final step =
+                          (item.cantidad % 1 != 0) ? _fractionStep : 1.0;
+                      _updateItemQuantity(item.id, item.cantidad - step);
+                    },
                     icon: const Icon(Icons.remove_circle_outline),
                     color: Colors.red,
                     constraints: const BoxConstraints(
@@ -504,11 +506,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   ),
                   const SizedBox(width: 8),
                   IconButton(
-                    onPressed:
-                        () {
-                          final step = (item.cantidad % 1 != 0) ? _fractionStep : 1.0;
-                          _updateItemQuantity(item.id, item.cantidad + step);
-                        },
+                    onPressed: () {
+                      final step =
+                          (item.cantidad % 1 != 0) ? _fractionStep : 1.0;
+                      _updateItemQuantity(item.id, item.cantidad + step);
+                    },
                     icon: const Icon(Icons.add_circle_outline),
                     color: const Color(0xFF4A90E2),
                     constraints: const BoxConstraints(
@@ -595,7 +597,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
               Expanded(
                 flex: 2,
                 child: ElevatedButton(
-                  onPressed: (_elaboratingProducts || _isCheckingInventory) ? null : _finalizeOrder,
+                  onPressed:
+                      (_elaboratingProducts || _isCheckingInventory)
+                          ? null
+                          : _finalizeOrder,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF4A90E2),
                     foregroundColor: Colors.white,
@@ -604,29 +609,38 @@ class _PreorderScreenState extends State<PreorderScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: _isCheckingInventory
-                      ? Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  child:
+                      _isCheckingInventory
+                          ? Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
                               ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Verificando inventario...',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          )
+                          : const Text(
+                            'Enviar Orden',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
                             ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Verificando inventario...',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                            ),
-                          ],
-                        )
-                      : const Text(
-                          'Enviar Orden',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                        ),
+                          ),
                 ),
               ),
             ],
@@ -944,7 +958,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
     try {
       // Verificar disponibilidad en inventario (en modo online y offline)
-      final stockProblems = await _checkInventoryAvailability(currentOrder.items);
+      final stockProblems = await _checkInventoryAvailability(
+        currentOrder.items,
+      );
       if (!mounted) return;
 
       if (stockProblems.isNotEmpty) {
@@ -980,6 +996,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
     // Cargar la configuración completa antes de decidir cómo crear la orden.
     bool noSolicitarCliente = false;
+    bool solicitarImagenOperacion = false;
     try {
       final userPrefs = UserPreferencesService();
       final storeId = await userPrefs.getIdTienda();
@@ -991,11 +1008,14 @@ class _PreorderScreenState extends State<PreorderScreen> {
         throw StateError('No se pudo cargar la configuración de la tienda');
       }
       noSolicitarCliente = storeConfig['no_solicitar_cliente'] == true;
+      solicitarImagenOperacion =
+          storeConfig['solicitar_imagen_operacion'] == true;
     } catch (e) {
       if (!mounted) return;
       AppSnackBar.showPersistent(
         context,
-        message: 'No se pudo cargar la configuración de la tienda. Intenta nuevamente.',
+        message:
+            'No se pudo cargar la configuración de la tienda. Intenta nuevamente.',
         backgroundColor: Colors.red[700],
       );
       return;
@@ -1003,9 +1023,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
     if (isOfflineModeEnabled) {
       // MODO OFFLINE: Respetar configuración no_solicitar_cliente
-      if (noSolicitarCliente) {
+      if (noSolicitarCliente && !solicitarImagenOperacion) {
         // No solicitar cliente en modo offline tampoco
-        print('🔌 Modo offline + no_solicitar_cliente - Creando orden directamente');
+        print(
+          '🔌 Modo offline + no_solicitar_cliente - Creando orden directamente',
+        );
         currentOrder.isOfflineOrder = true;
         await _processElaboratedProducts(currentOrder);
         await _submitOrderDirect(currentOrder);
@@ -1024,7 +1046,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
           setState(() {});
         });
       }
-    } else if (noSolicitarCliente) {
+    } else if (noSolicitarCliente && !solicitarImagenOperacion) {
       // MODO DIRECTO: No se requieren datos del cliente, crear orden inmediatamente
       print('⚡ No se solicita cliente - Creando orden directamente');
       await _processElaboratedProducts(currentOrder);
@@ -1061,7 +1083,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
       final offlineData = await _userPreferencesService.getOfflineData();
       if (offlineData == null || offlineData['products'] == null) return null;
 
-      final productsData = Map<String, dynamic>.from(offlineData['products'] as Map);
+      final productsData = Map<String, dynamic>.from(
+        offlineData['products'] as Map,
+      );
 
       for (final categoryProducts in productsData.values) {
         final productList = List<dynamic>.from(categoryProducts as List);
@@ -1069,10 +1093,13 @@ class _PreorderScreenState extends State<PreorderScreen> {
           final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
           if ((prodData['id'] as int?) != idProducto) continue;
 
-          final detalles = prodData['detalles_completos'] as Map<String, dynamic>?;
+          final detalles =
+              prodData['detalles_completos'] as Map<String, dynamic>?;
           if (detalles == null) continue;
 
-          final inventarioList = List<dynamic>.from(detalles['inventario'] as List? ?? []);
+          final inventarioList = List<dynamic>.from(
+            detalles['inventario'] as List? ?? [],
+          );
 
           for (final invRaw in inventarioList) {
             final inv = Map<String, dynamic>.from(invRaw as Map);
@@ -1084,9 +1111,12 @@ class _PreorderScreenState extends State<PreorderScreen> {
             final invVarianteId = variante?['id'] as int?;
             final invPresentacionId = presentacion?['id'] as int?;
 
-            final ubicacionMatch = idUbicacion == null || invUbicacionId == idUbicacion;
-            final varianteMatch = idVariante == null || invVarianteId == idVariante;
-            final presentacionMatch = idPresentacion == null || invPresentacionId == idPresentacion;
+            final ubicacionMatch =
+                idUbicacion == null || invUbicacionId == idUbicacion;
+            final varianteMatch =
+                idVariante == null || invVarianteId == idVariante;
+            final presentacionMatch =
+                idPresentacion == null || invPresentacionId == idPresentacion;
 
             if (ubicacionMatch && varianteMatch && presentacionMatch) {
               return (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
@@ -1113,32 +1143,44 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
     for (final item in items) {
       try {
-        final isElaboradoOrServicio = item.producto.esElaborado || item.producto.esServicio;
+        final isElaboradoOrServicio =
+            item.producto.esElaborado || item.producto.esServicio;
 
         if (isElaboradoOrServicio) {
-          print('🍽️ Verificando ingredientes para producto elaborado/servicio: ${item.nombre} (offline=$isOfflineMode)');
+          print(
+            '🍽️ Verificando ingredientes para producto elaborado/servicio: ${item.nombre} (offline=$isOfflineMode)',
+          );
 
           if (isOfflineMode) {
             // OFFLINE: buscar receta del elaborado en cache
             final offlineData = await _userPreferencesService.getOfflineData();
-            final productsData = offlineData?['products'] as Map<String, dynamic>?;
+            final productsData =
+                offlineData?['products'] as Map<String, dynamic>?;
             List<dynamic>? ingredientesCache;
 
             if (productsData != null) {
               outer:
               for (final categoryProducts in productsData.values) {
-                for (final prodDataRaw in List<dynamic>.from(categoryProducts as List)) {
-                  final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
+                for (final prodDataRaw in List<dynamic>.from(
+                  categoryProducts as List,
+                )) {
+                  final prodData = Map<String, dynamic>.from(
+                    prodDataRaw as Map,
+                  );
                   if ((prodData['id'] as int?) != item.producto.id) continue;
-                  final detalles = prodData['detalles_completos'] as Map<String, dynamic>?;
-                  ingredientesCache = detalles?['ingredientes'] as List<dynamic>?;
+                  final detalles =
+                      prodData['detalles_completos'] as Map<String, dynamic>?;
+                  ingredientesCache =
+                      detalles?['ingredientes'] as List<dynamic>?;
                   break outer;
                 }
               }
             }
 
             if (ingredientesCache == null || ingredientesCache.isEmpty) {
-              print('⚠️ Elaborado/servicio ${item.nombre} sin receta en cache offline, se permite continuar');
+              print(
+                '⚠️ Elaborado/servicio ${item.nombre} sin receta en cache offline, se permite continuar',
+              );
               continue;
             }
 
@@ -1147,10 +1189,16 @@ class _PreorderScreenState extends State<PreorderScreen> {
               final idIngrediente = ing['producto_id'] as int?;
               if (idIngrediente == null) continue;
 
-              final cantidadNecesaria = ((ing['cantidad_necesaria'] as num?)?.toDouble() ?? 0.0) * item.cantidad;
-              final nombreIngrediente = ing['producto_nombre'] as String? ?? 'Ingrediente desconocido';
+              final cantidadNecesaria =
+                  ((ing['cantidad_necesaria'] as num?)?.toDouble() ?? 0.0) *
+                  item.cantidad;
+              final nombreIngrediente =
+                  ing['producto_nombre'] as String? ??
+                  'Ingrediente desconocido';
 
-              final stockIngrediente = await _getStockFromCache(idProducto: idIngrediente);
+              final stockIngrediente = await _getStockFromCache(
+                idProducto: idIngrediente,
+              );
               final cantidadDisponible = stockIngrediente ?? 0.0;
 
               if (cantidadDisponible < cantidadNecesaria) {
@@ -1166,18 +1214,28 @@ class _PreorderScreenState extends State<PreorderScreen> {
             }
           } else {
             // ONLINE: verificar stock de cada ingrediente en Supabase
-            final ingredientes = await _productDetailService.getProductIngredients(item.producto.id);
+            final ingredientes = await _productDetailService
+                .getProductIngredients(item.producto.id);
 
             if (ingredientes.isEmpty) {
-              print('⚠️ Producto elaborado/servicio ${item.nombre} sin ingredientes definidos, se permite continuar');
+              print(
+                '⚠️ Producto elaborado/servicio ${item.nombre} sin ingredientes definidos, se permite continuar',
+              );
               continue;
             }
 
             for (final ingrediente in ingredientes) {
               final idIngrediente = ingrediente['producto_id'] as int?;
-              final cantidadNecesaria = ((ingrediente['cantidad_necesaria'] as num?)?.toDouble() ?? 0.0) * item.cantidad;
-              final cantidadDisponible = (ingrediente['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
-              final nombreIngrediente = ingrediente['producto_nombre'] as String? ?? 'Ingrediente desconocido';
+              final cantidadNecesaria =
+                  ((ingrediente['cantidad_necesaria'] as num?)?.toDouble() ??
+                      0.0) *
+                  item.cantidad;
+              final cantidadDisponible =
+                  (ingrediente['cantidad_disponible'] as num?)?.toDouble() ??
+                  0.0;
+              final nombreIngrediente =
+                  ingrediente['producto_nombre'] as String? ??
+                  'Ingrediente desconocido';
 
               if (idIngrediente == null) continue;
 
@@ -1215,11 +1273,15 @@ class _PreorderScreenState extends State<PreorderScreen> {
             if (stockCache != null) {
               stockActual = stockCache;
               origenStock = 'cache offline';
-              print('🔌 Stock offline desde cache para ${item.nombre}: $stockActual');
+              print(
+                '🔌 Stock offline desde cache para ${item.nombre}: $stockActual',
+              );
             } else {
               stockActual = item.cantidadInicial ?? 0.0;
               origenStock = 'snapshot inicial';
-              print('🔌 Stock offline fallback (cantidadInicial) para ${item.nombre}: $stockActual');
+              print(
+                '🔌 Stock offline fallback (cantidadInicial) para ${item.nombre}: $stockActual',
+              );
             }
           } else {
             var query = supabase
@@ -1227,24 +1289,28 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 .select('cantidad_final')
                 .eq('id_producto', idProducto);
 
-            if (idUbicacion != null) query = query.eq('id_ubicacion', idUbicacion);
+            if (idUbicacion != null)
+              query = query.eq('id_ubicacion', idUbicacion);
             // NOTA: NO filtramos por id_variante. Los items provenientes de la vista de
             // mesa pueden traer id_variante=1 (ID secuencial generado en el cliente, no
             // un id real de DB). En el inventario real `id_variante` es null para estos
             // productos, así que filtrar por ese valor sintético devuelve 0 filas.
-            if (idPresentacion != null) query = query.eq('id_presentacion', idPresentacion);
+            if (idPresentacion != null)
+              query = query.eq('id_presentacion', idPresentacion);
 
             final response = await query.order('id', ascending: false).limit(1);
 
             if (response.isNotEmpty) {
-              stockActual = (response.first['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+              stockActual =
+                  (response.first['cantidad_final'] as num?)?.toDouble() ?? 0.0;
             }
           }
 
           if (stockActual < item.cantidad) {
-            final presentacionInfo = idPresentacion != null
-                ? ' (Presentación ID: $idPresentacion • $origenStock)'
-                : ' ($origenStock)';
+            final presentacionInfo =
+                idPresentacion != null
+                    ? ' (Presentación ID: $idPresentacion • $origenStock)'
+                    : ' ($origenStock)';
             problems.add({
               'nombre': item.nombre,
               'cantidad_pedida': item.cantidad,
@@ -1287,47 +1353,45 @@ class _PreorderScreenState extends State<PreorderScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.orange[50],
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.wifi_off_rounded,
-                color: Colors.orange[700],
-                size: 24,
-              ),
+      builder:
+          (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Sin conexión',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[50],
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.wifi_off_rounded,
+                    color: Colors.orange[700],
+                    size: 24,
+                  ),
                 ),
-              ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Sin conexión',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        content: const Text(
-          'No se pudo verificar el stock disponible porque hay un problema de conexión con el servidor.\n\nRevisa tu conexión a internet e inténtalo de nuevo.',
-          style: TextStyle(fontSize: 14, height: 1.4),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Entendido'),
+            content: const Text(
+              'No se pudo verificar el stock disponible porque hay un problema de conexión con el servidor.\n\nRevisa tu conexión a internet e inténtalo de nuevo.',
+              style: TextStyle(fontSize: 14, height: 1.4),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Entendido'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -1335,109 +1399,119 @@ class _PreorderScreenState extends State<PreorderScreen> {
   void _showStockProblemsDialog(List<Map<String, dynamic>> problems) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.inventory_2_outlined, color: Colors.orange[700], size: 26),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text(
-                'Problema de Inventario',
-                style: TextStyle(fontSize: 17),
-              ),
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Los siguientes productos no tienen suficiente existencia:',
-                style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-              ),
-              const SizedBox(height: 12),
-              ...problems.map((p) {
-                final cantPedida = (p['cantidad_pedida'] as double);
-                final stock = (p['stock_disponible'] as double);
-                final diff = (p['diferencia'] as double);
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.red[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red[200]!),
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(
+                  Icons.inventory_2_outlined,
+                  color: Colors.orange[700],
+                  size: 26,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Problema de Inventario',
+                    style: TextStyle(fontSize: 17),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        p['nombre'] as String,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                        ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Los siguientes productos no tienen suficiente existencia:',
+                    style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                  ),
+                  const SizedBox(height: 12),
+                  ...problems.map((p) {
+                    final cantPedida = (p['cantidad_pedida'] as double);
+                    final stock = (p['stock_disponible'] as double);
+                    final diff = (p['diferencia'] as double);
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.red[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red[200]!),
                       ),
-                      const SizedBox(height: 6),
-                      Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: _buildStockChip(
-                              'Pedido',
-                              cantPedida,
-                              Colors.blue[700]!,
-                              Colors.blue[50]!,
+                          Text(
+                            p['nombre'] as String,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: _buildStockChip(
-                              'En stock',
-                              stock,
-                              Colors.green[700]!,
-                              Colors.green[50]!,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: _buildStockChip(
-                              'Faltante',
-                              diff,
-                              Colors.red[700]!,
-                              Colors.red[100]!,
-                            ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildStockChip(
+                                  'Pedido',
+                                  cantPedida,
+                                  Colors.blue[700]!,
+                                  Colors.blue[50]!,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: _buildStockChip(
+                                  'En stock',
+                                  stock,
+                                  Colors.green[700]!,
+                                  Colors.green[50]!,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: _buildStockChip(
+                                  'Faltante',
+                                  diff,
+                                  Colors.red[700]!,
+                                  Colors.red[100]!,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                );
-              }),
+                    );
+                  }),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Revisar Orden'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange[700],
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Entendido'),
+              ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Revisar Orden'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange[700],
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Entendido'),
-          ),
-        ],
-      ),
     );
   }
 
-  Widget _buildStockChip(String label, double value, Color textColor, Color bgColor) {
+  Widget _buildStockChip(
+    String label,
+    double value,
+    Color textColor,
+    Color bgColor,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
       decoration: BoxDecoration(
@@ -1448,11 +1522,21 @@ class _PreorderScreenState extends State<PreorderScreen> {
         children: [
           Text(
             label,
-            style: TextStyle(fontSize: 11, color: textColor, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              fontSize: 11,
+              color: textColor,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           Text(
-            value % 1 == 0 ? value.toInt().toString() : value.toStringAsFixed(2),
-            style: TextStyle(fontSize: 13, color: textColor, fontWeight: FontWeight.bold),
+            value % 1 == 0
+                ? value.toInt().toString()
+                : value.toStringAsFixed(2),
+            style: TextStyle(
+              fontSize: 13,
+              color: textColor,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),
@@ -1506,12 +1590,12 @@ class _PreorderScreenState extends State<PreorderScreen> {
       if (result['success'] == true) {
         final operationId = result['operationId'];
         final createdOrderId = operationId != null ? 'ORD-$operationId' : null;
-        
+
         // Update the order ID in the cache with the operationId from Supabase
         if (createdOrderId != null) {
           _orderService.updateOrderIdInCache(updatedOrder.id, createdOrderId);
         }
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('¡Orden registrada exitosamente!'),
@@ -2478,6 +2562,5 @@ class _StockCheckNetworkException implements Exception {
   _StockCheckNetworkException(this.itemName, this.original);
 
   @override
-  String toString() =>
-      '_StockCheckNetworkException($itemName): $original';
+  String toString() => '_StockCheckNetworkException($itemName): $original';
 }

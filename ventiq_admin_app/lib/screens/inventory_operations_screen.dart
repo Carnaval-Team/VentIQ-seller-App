@@ -44,7 +44,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     print('  • ScrollController configurado para detectar paginación');
     print('  • Threshold de carga: 200px del final');
     print('  • Items por página: $_itemsPerPage');
-    
+
     _loadOperations();
     _searchController.addListener(_onSearchChanged);
     _scrollController.addListener(_onScroll);
@@ -69,7 +69,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     final maxScrollExtent = _scrollController.position.maxScrollExtent;
     final threshold = 200;
     final distanceFromEnd = maxScrollExtent - currentPixels;
-    
+
     // Log detallado del scroll
     print('📜 Scroll detectado:');
     print('  • Posición actual: ${currentPixels.toStringAsFixed(1)}px');
@@ -79,7 +79,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     print('  • ¿Debe cargar más?: ${distanceFromEnd <= threshold}');
     print('  • ¿Ya está cargando?: $_isLoadingMore');
     print('  • ¿Hay más páginas?: $_hasNextPage');
-    
+
     if (currentPixels >= maxScrollExtent - threshold) {
       print('🎯 Condición cumplida - Intentando cargar más datos...');
       _loadMoreOperations();
@@ -114,33 +114,39 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
       final newOperations = result['operations'] ?? [];
       final newTotalCount = result['total_count'] ?? 0;
-      
+
       print('📊 Resultado de _loadOperations:');
       print('  • isLoadMore: $isLoadMore');
       print('  • Nuevas operaciones recibidas: ${newOperations.length}');
       print('  • Total count del servidor: $newTotalCount');
       print('  • Página actual: $_currentPage');
-      
+
       setState(() {
         if (isLoadMore) {
           // Agregar nuevos datos a la lista existente
           final oldLength = _operations.length;
           _operations.addAll(newOperations);
           print('  • Operaciones agregadas: ${newOperations.length}');
-          print('  • Total antes: $oldLength, Total después: ${_operations.length}');
+          print(
+            '  • Total antes: $oldLength, Total después: ${_operations.length}',
+          );
         } else {
           // Reemplazar toda la lista (primera carga o búsqueda nueva)
           _operations = newOperations;
-          print('  • Lista reemplazada con ${newOperations.length} operaciones');
+          print(
+            '  • Lista reemplazada con ${newOperations.length} operaciones',
+          );
         }
         _totalCount = newTotalCount;
         // Hay más páginas si el total de operaciones mostradas es menor que el total disponible
         _hasNextPage = _operations.length < _totalCount;
         _isLoading = false;
         _isLoadingMore = false;
-        
+
         print('  • _hasNextPage calculado: $_hasNextPage');
-        print('  • Cálculo: ${_operations.length} < $_totalCount = $_hasNextPage');
+        print(
+          '  • Cálculo: ${_operations.length} < $_totalCount = $_hasNextPage',
+        );
         print('  • Operaciones cargadas hasta ahora: ${_operations.length}');
         print('  • Total disponible en servidor: $_totalCount');
       });
@@ -165,7 +171,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     print('  • _currentPage: $_currentPage');
     print('  • Total operaciones actuales: ${_operations.length}');
     print('  • _totalCount: $_totalCount');
-    
+
     // Verificar si ya está cargando más datos o si no hay más páginas
     if (_isLoadingMore || !_hasNextPage) {
       if (_isLoadingMore) {
@@ -177,12 +183,14 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       return;
     }
 
-    print('📄 ✅ Condiciones cumplidas - Cargando página ${_currentPage + 1}...');
+    print(
+      '📄 ✅ Condiciones cumplidas - Cargando página ${_currentPage + 1}...',
+    );
     setState(() => _isLoadingMore = true);
-    
+
     _currentPage++;
     await _loadOperations(isLoadMore: true);
-    
+
     print('✅ Página ${_currentPage} cargada exitosamente');
     print('  • Total operaciones después de cargar: ${_operations.length}');
     print('  • ¿Aún hay más páginas?: $_hasNextPage');
@@ -201,232 +209,278 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        maxChildSize: 0.9,
-        minChildSize: 0.5,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(20),
-            ),
-          ),
-          child: Column(
-            children: [
-              // Handle
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Seleccionar Rango de Fechas',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
-                        ),
-                      ),
+      builder:
+          (context) => DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            maxChildSize: 0.9,
+            minChildSize: 0.5,
+            builder:
+                (context, scrollController) => Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(20),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              // Content
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    // Quick date options
-                    const Text(
-                      'Opciones rápidas:',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    
-                    // Quick date buttons
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _buildQuickDateButton('Hoy', () => _setQuickDateRange(0)),
-                        _buildQuickDateButton('Ayer', () => _setQuickDateRange(1)),
-                        _buildQuickDateButton('Últimos 7 días', () => _setQuickDateRange(7)),
-                        _buildQuickDateButton('Últimos 15 días', () => _setQuickDateRange(15)),
-                        _buildQuickDateButton('Últimos 30 días', () => _setQuickDateRange(30)),
-                        _buildQuickDateButton('Este mes', () => _setCurrentMonth()),
-                        _buildQuickDateButton('Mes anterior', () => _setPreviousMonth()),
-                      ],
-                    ),
-
-                    const SizedBox(height: 24),
-                    const Divider(),
-                    const SizedBox(height: 16),
-
-                    // Custom date range selection
-                    const Text(
-                      'Selección personalizada:',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    
-                    // Calendar button
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _showNativeDateRangePicker,
-                        icon: const Icon(Icons.calendar_month),
-                        label: const Text('Abrir Calendario de Rango'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF4A90E2),
-                          side: const BorderSide(color: Color(0xFF4A90E2)),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Current selection display
-                    if (_fechaDesde != null && _fechaHasta != null) ...[
+                  ),
+                  child: Column(
+                    children: [
+                      // Handle
                       Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        width: 40,
+                        height: 4,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A90E2).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: const Color(0xFF4A90E2).withOpacity(0.3),
-                          ),
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      ),
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.date_range,
-                                  color: const Color(0xFF4A90E2),
-                                  size: 20,
+                            const Expanded(
+                              child: Text(
+                                'Seleccionar Rango de Fechas',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
                                 ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Rango seleccionado:',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.grey[700],
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              '${_formatDateLong(_fechaDesde!)} - ${_formatDateLong(_fechaHasta!)}',
-                              style: const TextStyle(
+                            IconButton(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      // Content
+                      Expanded(
+                        child: ListView(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            // Quick date options
+                            const Text(
+                              'Opciones rápidas:',
+                              style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                                 color: Color(0xFF1F2937),
                               ),
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              '${_fechaHasta!.difference(_fechaDesde!).inDays + 1} día(s)',
+                            const SizedBox(height: 12),
+
+                            // Quick date buttons
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _buildQuickDateButton(
+                                  'Hoy',
+                                  () => _setQuickDateRange(0),
+                                ),
+                                _buildQuickDateButton(
+                                  'Ayer',
+                                  () => _setQuickDateRange(1),
+                                ),
+                                _buildQuickDateButton(
+                                  'Últimos 7 días',
+                                  () => _setQuickDateRange(7),
+                                ),
+                                _buildQuickDateButton(
+                                  'Últimos 15 días',
+                                  () => _setQuickDateRange(15),
+                                ),
+                                _buildQuickDateButton(
+                                  'Últimos 30 días',
+                                  () => _setQuickDateRange(30),
+                                ),
+                                _buildQuickDateButton(
+                                  'Este mes',
+                                  () => _setCurrentMonth(),
+                                ),
+                                _buildQuickDateButton(
+                                  'Mes anterior',
+                                  () => _setPreviousMonth(),
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 24),
+                            const Divider(),
+                            const SizedBox(height: 16),
+
+                            // Custom date range selection
+                            const Text(
+                              'Selección personalizada:',
                               style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
                               ),
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Calendar button
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: _showNativeDateRangePicker,
+                                icon: const Icon(Icons.calendar_month),
+                                label: const Text('Abrir Calendario de Rango'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF4A90E2),
+                                  side: const BorderSide(
+                                    color: Color(0xFF4A90E2),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Current selection display
+                            if (_fechaDesde != null && _fechaHasta != null) ...[
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFF4A90E2,
+                                  ).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: const Color(
+                                      0xFF4A90E2,
+                                    ).withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.date_range,
+                                          color: const Color(0xFF4A90E2),
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Rango seleccionado:',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      '${_formatDateLong(_fechaDesde!)} - ${_formatDateLong(_fechaHasta!)}',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF1F2937),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      '${_fechaHasta!.difference(_fechaDesde!).inDays + 1} día(s)',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+
+                            // Action buttons
+                            Row(
+                              children: [
+                                if (_fechaDesde != null ||
+                                    _fechaHasta != null) ...[
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: () {
+                                        Navigator.pop(context);
+                                        _clearDateFilter();
+                                      },
+                                      icon: const Icon(Icons.clear),
+                                      label: const Text('Limpiar'),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Colors.red,
+                                        side: const BorderSide(
+                                          color: Colors.red,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                ],
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed:
+                                        _fechaDesde != null &&
+                                                _fechaHasta != null
+                                            ? () {
+                                              print(
+                                                '🔄 Aplicando filtro de fechas: $_fechaDesde - $_fechaHasta',
+                                              );
+                                              Navigator.pop(context);
+                                              _currentPage = 1;
+                                              _loadOperations();
+                                            }
+                                            : null,
+                                    icon: const Icon(Icons.check),
+                                    label: const Text('Aplicar Filtro'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor:
+                                          _fechaDesde != null &&
+                                                  _fechaHasta != null
+                                              ? const Color(0xFF4A90E2)
+                                              : Colors.grey,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 16),
                     ],
-
-                    // Action buttons
-                    Row(
-                      children: [
-                        if (_fechaDesde != null || _fechaHasta != null) ...[
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _clearDateFilter();
-                              },
-                              icon: const Icon(Icons.clear),
-                              label: const Text('Limpiar'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.red,
-                                side: const BorderSide(color: Colors.red),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                        ],
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: _fechaDesde != null && _fechaHasta != null
-                                ? () {
-                                    print('🔄 Aplicando filtro de fechas: $_fechaDesde - $_fechaHasta');
-                                    Navigator.pop(context);
-                                    _currentPage = 1;
-                                    _loadOperations();
-                                  }
-                                : null,
-                            icon: const Icon(Icons.check),
-                            label: const Text('Aplicar Filtro'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _fechaDesde != null && _fechaHasta != null 
-                                  ? const Color(0xFF4A90E2)
-                                  : Colors.grey,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
           ),
-        ),
-      ),
     );
   }
 
@@ -437,21 +491,16 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         foregroundColor: const Color(0xFF4A90E2),
         side: const BorderSide(color: Color(0xFF4A90E2)),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 12),
-      ),
+      child: Text(label, style: const TextStyle(fontSize: 12)),
     );
   }
 
   void _setQuickDateRange(int daysAgo) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    
+
     setState(() {
       if (daysAgo == 0) {
         // Hoy
@@ -468,7 +517,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         _fechaHasta = today;
       }
     });
-    
+
     // Auto-aplicar el filtro para opciones rápidas
     Navigator.pop(context);
     _currentPage = 1;
@@ -481,7 +530,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       _fechaDesde = DateTime(now.year, now.month, 1);
       _fechaHasta = DateTime(now.year, now.month + 1, 0); // Último día del mes
     });
-    
+
     // Auto-aplicar el filtro
     Navigator.pop(context);
     _currentPage = 1;
@@ -493,9 +542,13 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     final previousMonth = DateTime(now.year, now.month - 1, 1);
     setState(() {
       _fechaDesde = previousMonth;
-      _fechaHasta = DateTime(previousMonth.year, previousMonth.month + 1, 0); // Último día del mes anterior
+      _fechaHasta = DateTime(
+        previousMonth.year,
+        previousMonth.month + 1,
+        0,
+      ); // Último día del mes anterior
     });
-    
+
     // Auto-aplicar el filtro
     Navigator.pop(context);
     _currentPage = 1;
@@ -508,9 +561,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         context: context,
         firstDate: DateTime(2020),
         lastDate: DateTime.now(),
-        initialDateRange: _fechaDesde != null && _fechaHasta != null
-            ? DateTimeRange(start: _fechaDesde!, end: _fechaHasta!)
-            : null,
+        initialDateRange:
+            _fechaDesde != null && _fechaHasta != null
+                ? DateTimeRange(start: _fechaDesde!, end: _fechaHasta!)
+                : null,
         helpText: 'Seleccionar rango de fechas',
         cancelText: 'Cancelar',
         confirmText: 'Confirmar',
@@ -529,19 +583,27 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
       if (picked != null) {
         print('📅 Rango seleccionado: ${picked.start} - ${picked.end}');
-        
+
         // Cerrar el modal primero
         Navigator.pop(context);
-        
+
         // Luego actualizar el estado para que se vea la actualización
         setState(() {
           // Normalizar las fechas para evitar problemas de zona horaria
-          _fechaDesde = DateTime(picked.start.year, picked.start.month, picked.start.day);
-          _fechaHasta = DateTime(picked.end.year, picked.end.month, picked.end.day);
+          _fechaDesde = DateTime(
+            picked.start.year,
+            picked.start.month,
+            picked.start.day,
+          );
+          _fechaHasta = DateTime(
+            picked.end.year,
+            picked.end.month,
+            picked.end.day,
+          );
         });
-        
+
         print('📅 Fechas guardadas: $_fechaDesde - $_fechaHasta');
-        
+
         // Mostrar el modal actualizado con las fechas seleccionadas
         await Future.delayed(const Duration(milliseconds: 100));
         _showDateRangeDialog();
@@ -593,120 +655,127 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        maxChildSize: 0.8,
-        minChildSize: 0.4,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(20),
-            ),
-          ),
-          child: Column(
-            children: [
-              // Handle
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Filtrar por Tipo de Operación',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
-                        ),
-                      ),
+      builder:
+          (context) => DraggableScrollableSheet(
+            initialChildSize: 0.6,
+            maxChildSize: 0.8,
+            minChildSize: 0.4,
+            builder:
+                (context, scrollController) => Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(20),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              // Content
-              Expanded(
-                child: ListView.builder(
-                  controller: scrollController,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: tiposOperacion.length,
-                  itemBuilder: (context, index) {
-                    final tipo = tiposOperacion[index];
-                    final isSelected = _tipoOperacionId == tipo['id'];
-                    
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: isSelected 
-                              ? const Color(0xFF4A90E2)
-                              : Colors.grey[300]!,
+                  ),
+                  child: Column(
+                    children: [
+                      // Handle
+                      Container(
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                        borderRadius: BorderRadius.circular(8),
-                        color: isSelected 
-                            ? const Color(0xFF4A90E2).withOpacity(0.1)
-                            : Colors.white,
                       ),
-                      child: ListTile(
-                        title: Text(
-                          tipo['nombre'],
-                          style: TextStyle(
-                            fontWeight: isSelected 
-                                ? FontWeight.w600 
-                                : FontWeight.normal,
-                            color: isSelected 
-                                ? const Color(0xFF4A90E2)
-                                : const Color(0xFF1F2937),
-                          ),
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Filtrar por Tipo de Operación',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
                         ),
-                        trailing: isSelected 
-                            ? const Icon(
-                                Icons.check_circle,
-                                color: Color(0xFF4A90E2),
-                              )
-                            : null,
-                        onTap: () {
-                          Navigator.pop(context);
-                          setState(() {
-                            _tipoOperacionId = tipo['id'];
-                          });
-                          _currentPage = 1;
-                          _loadOperations();
-                        },
                       ),
-                    );
-                  },
+                      const Divider(height: 1),
+                      // Content
+                      Expanded(
+                        child: ListView.builder(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          itemCount: tiposOperacion.length,
+                          itemBuilder: (context, index) {
+                            final tipo = tiposOperacion[index];
+                            final isSelected = _tipoOperacionId == tipo['id'];
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color:
+                                      isSelected
+                                          ? const Color(0xFF4A90E2)
+                                          : Colors.grey[300]!,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                                color:
+                                    isSelected
+                                        ? const Color(
+                                          0xFF4A90E2,
+                                        ).withOpacity(0.1)
+                                        : Colors.white,
+                              ),
+                              child: ListTile(
+                                title: Text(
+                                  tipo['nombre'],
+                                  style: TextStyle(
+                                    fontWeight:
+                                        isSelected
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                    color:
+                                        isSelected
+                                            ? const Color(0xFF4A90E2)
+                                            : const Color(0xFF1F2937),
+                                  ),
+                                ),
+                                trailing:
+                                    isSelected
+                                        ? const Icon(
+                                          Icons.check_circle,
+                                          color: Color(0xFF4A90E2),
+                                        )
+                                        : null,
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  setState(() {
+                                    _tipoOperacionId = tipo['id'];
+                                  });
+                                  _currentPage = 1;
+                                  _loadOperations();
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
           ),
-        ),
-      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        children: [_buildFilters(), _buildOperationsList()],
-      ),
+      body: Column(children: [_buildFilters(), _buildOperationsList()]),
     );
   }
 
@@ -780,32 +849,38 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           const SizedBox(width: 12),
           Container(
             decoration: BoxDecoration(
-              color: _tipoOperacionId != null
-                  ? const Color(0xFF4A90E2).withOpacity(0.1)
-                  : Colors.grey.withOpacity(0.1),
+              color:
+                  _tipoOperacionId != null
+                      ? const Color(0xFF4A90E2).withOpacity(0.1)
+                      : Colors.grey.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: _tipoOperacionId != null
-                    ? const Color(0xFF4A90E2)
-                    : Colors.grey.withOpacity(0.3),
+                color:
+                    _tipoOperacionId != null
+                        ? const Color(0xFF4A90E2)
+                        : Colors.grey.withOpacity(0.3),
               ),
             ),
             child: IconButton(
               onPressed: _showOperationTypeDialog,
               icon: Icon(
                 Icons.filter_list,
-                color: _tipoOperacionId != null
-                    ? const Color(0xFF4A90E2)
-                    : Colors.grey[600],
+                color:
+                    _tipoOperacionId != null
+                        ? const Color(0xFF4A90E2)
+                        : Colors.grey[600],
               ),
-              tooltip: _tipoOperacionId != null
-                  ? 'Filtro de tipo aplicado'
-                  : 'Filtrar por tipo de operación',
+              tooltip:
+                  _tipoOperacionId != null
+                      ? 'Filtro de tipo aplicado'
+                      : 'Filtrar por tipo de operación',
             ),
           ),
 
           // Clear filter button
-          if (_fechaDesde != null || _fechaHasta != null || _tipoOperacionId != null) ...[
+          if (_fechaDesde != null ||
+              _fechaHasta != null ||
+              _tipoOperacionId != null) ...[
             const SizedBox(width: 8),
             Container(
               decoration: BoxDecoration(
@@ -897,10 +972,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           const SizedBox(height: 8),
           Text(
             'Cargando más operaciones...',
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 14,
-            ),
+            style: TextStyle(color: Colors.grey[600], fontSize: 14),
           ),
         ],
       ),
@@ -993,19 +1065,30 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       ],
                     ),
                   ),
-                  if (observaciones.toString().contains('Venta desde orden')) ...[
+                  if (observaciones.toString().contains(
+                    'Venta desde orden',
+                  )) ...[
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.purple.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.purple.withOpacity(0.3)),
+                        border: Border.all(
+                          color: Colors.purple.withOpacity(0.3),
+                        ),
                       ),
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.shopping_bag, size: 10, color: Colors.purple),
+                          Icon(
+                            Icons.shopping_bag,
+                            size: 10,
+                            color: Colors.purple,
+                          ),
                           SizedBox(width: 4),
                           Text(
                             'Carnaval App',
@@ -1037,7 +1120,6 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       ),
                     ),
                   ),
-                  
                 ],
               ),
               const SizedBox(height: 12),
@@ -1171,8 +1253,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   /// Detecta si la operación es una venta
   bool _isVentaOperation(Map<String, dynamic> operation) {
-    final tipo = (operation['tipo_operacion_nombre'] ?? '').toString().toLowerCase();
-    final accion = (operation['tipo_operacion_accion'] ?? '').toString().toLowerCase();
+    final tipo =
+        (operation['tipo_operacion_nombre'] ?? '').toString().toLowerCase();
+    final accion =
+        (operation['tipo_operacion_accion'] ?? '').toString().toLowerCase();
     return tipo.contains('venta') || accion.contains('venta');
   }
 
@@ -1248,9 +1332,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     }
 
     // Check if this is an adjustment operation
-    final isAdjustment = tipoOperacion.contains('ajuste') || 
-                        tipoOperacion.contains('adjustment');
-    
+    final isAdjustment =
+        tipoOperacion.contains('ajuste') ||
+        tipoOperacion.contains('adjustment');
+
     if (isAdjustment) {
       _showAdjustmentDetails(operation);
       return;
@@ -1303,19 +1388,30 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                                       color: Color(0xFF1F2937),
                                     ),
                                   ),
-                                  if ((operation['observaciones'] ?? '').toString().contains('Venta desde orden')) ...[
+                                  if ((operation['observaciones'] ?? '')
+                                      .toString()
+                                      .contains('Venta desde orden')) ...[
                                     const SizedBox(width: 12),
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: Colors.purple.withOpacity(0.1),
                                         borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(color: Colors.purple.withOpacity(0.3)),
+                                        border: Border.all(
+                                          color: Colors.purple.withOpacity(0.3),
+                                        ),
                                       ),
                                       child: const Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Icon(Icons.shopping_bag, size: 12, color: Colors.purple),
+                                          Icon(
+                                            Icons.shopping_bag,
+                                            size: 12,
+                                            color: Colors.purple,
+                                          ),
                                           SizedBox(width: 6),
                                           Text(
                                             'Carnaval App',
@@ -1362,23 +1458,31 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                               ),
                             ),
                             // Mostrar almacén para operaciones de recepción y extracción
-                            if (tipoOperacion.toLowerCase().contains('recepci') ||
-                                tipoOperacion.toLowerCase().contains('extrac') ||
+                            if (tipoOperacion.toLowerCase().contains(
+                                  'recepci',
+                                ) ||
+                                tipoOperacion.toLowerCase().contains(
+                                  'extrac',
+                                ) ||
                                 tipoOperacion.toLowerCase() == 'extracción' ||
-                                tipoOperacion.toLowerCase().contains('productos')) ...[
+                                tipoOperacion.toLowerCase().contains(
+                                  'productos',
+                                )) ...[
                               FutureBuilder<String>(
-                                future: InventoryService.getWarehouseFromOperation(
-                                  operation['id'],
-                                  operation['tipo_operacion_nombre'] ?? '',
-                                ),
+                                future:
+                                    InventoryService.getWarehouseFromOperation(
+                                      operation['id'],
+                                      operation['tipo_operacion_nombre'] ?? '',
+                                    ),
                                 builder: (context, snapshot) {
-                                  if (snapshot.connectionState == ConnectionState.waiting) {
+                                  if (snapshot.connectionState ==
+                                      ConnectionState.waiting) {
                                     return _buildModalDetailRow(
                                       'Almacén:',
                                       'Cargando...',
                                     );
                                   }
-                                  
+
                                   final almacen = snapshot.data ?? 'N/A';
                                   return _buildModalDetailRow(
                                     'Almacén:',
@@ -1388,44 +1492,78 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                               ),
                             ],
                             // Mostrar almacenes origen y destino para transferencias
-                            if ((operation['tipo_operacion_accion']?.toString() ?? '') == 'transferencia') ...[
-                              Builder(builder: (context) {
-                                final det = operation['detalles'] as Map<String, dynamic>?;
-                                final esp = det?['detalles_especificos'] as Map<String, dynamic>?;
-                                final idExt = esp?['id_extraccion'];
-                                final idRec = esp?['id_recepcion'];
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    if (idExt != null)
-                                      FutureBuilder<String>(
-                                        future: InventoryService.getWarehouseFromOperation(
-                                          idExt is int ? idExt : int.parse(idExt.toString()),
-                                          'extraccion',
+                            if ((operation['tipo_operacion_accion']
+                                        ?.toString() ??
+                                    '') ==
+                                'transferencia') ...[
+                              Builder(
+                                builder: (context) {
+                                  final det =
+                                      operation['detalles']
+                                          as Map<String, dynamic>?;
+                                  final esp =
+                                      det?['detalles_especificos']
+                                          as Map<String, dynamic>?;
+                                  final idExt = esp?['id_extraccion'];
+                                  final idRec = esp?['id_recepcion'];
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (idExt != null)
+                                        FutureBuilder<String>(
+                                          future:
+                                              InventoryService.getWarehouseFromOperation(
+                                                idExt is int
+                                                    ? idExt
+                                                    : int.parse(
+                                                      idExt.toString(),
+                                                    ),
+                                                'extraccion',
+                                              ),
+                                          builder: (context, snap) {
+                                            if (snap.connectionState ==
+                                                ConnectionState.waiting) {
+                                              return _buildModalDetailRow(
+                                                'Almacén Origen:',
+                                                'Cargando...',
+                                              );
+                                            }
+                                            return _buildModalDetailRow(
+                                              'Almacén Origen:',
+                                              snap.data ?? 'N/A',
+                                            );
+                                          },
                                         ),
-                                        builder: (context, snap) {
-                                          if (snap.connectionState == ConnectionState.waiting) {
-                                            return _buildModalDetailRow('Almacén Origen:', 'Cargando...');
-                                          }
-                                          return _buildModalDetailRow('Almacén Origen:', snap.data ?? 'N/A');
-                                        },
-                                      ),
-                                    if (idRec != null)
-                                      FutureBuilder<String>(
-                                        future: InventoryService.getWarehouseFromOperation(
-                                          idRec is int ? idRec : int.parse(idRec.toString()),
-                                          'recepcion',
+                                      if (idRec != null)
+                                        FutureBuilder<String>(
+                                          future:
+                                              InventoryService.getWarehouseFromOperation(
+                                                idRec is int
+                                                    ? idRec
+                                                    : int.parse(
+                                                      idRec.toString(),
+                                                    ),
+                                                'recepcion',
+                                              ),
+                                          builder: (context, snap) {
+                                            if (snap.connectionState ==
+                                                ConnectionState.waiting) {
+                                              return _buildModalDetailRow(
+                                                'Almacén Destino:',
+                                                'Cargando...',
+                                              );
+                                            }
+                                            return _buildModalDetailRow(
+                                              'Almacén Destino:',
+                                              snap.data ?? 'N/A',
+                                            );
+                                          },
                                         ),
-                                        builder: (context, snap) {
-                                          if (snap.connectionState == ConnectionState.waiting) {
-                                            return _buildModalDetailRow('Almacén Destino:', 'Cargando...');
-                                          }
-                                          return _buildModalDetailRow('Almacén Destino:', snap.data ?? 'N/A');
-                                        },
-                                      ),
-                                  ],
-                                );
-                              }),
+                                    ],
+                                  );
+                                },
+                              ),
                             ],
                             _buildModalDetailRow(
                               'Total:',
@@ -1436,6 +1574,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                               '${_calculateTotalItems(operation)}',
                             ),
                             ..._buildOperationMetaSection(operation),
+                            if (_isVentaOperation(operation) &&
+                                operation['id'] != null)
+                              _buildOperationPhotoDetail(
+                                (operation['id'] as num).toInt(),
+                              ),
 
                             // Show specific details based on operation type
                             if (operation['detalles'] != null) ...[
@@ -1470,7 +1613,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                               const SizedBox(height: 24),
                               _PaymentDetailsSection(
                                 operationId: (operation['id'] as num).toInt(),
-                                totalIsZero: _calculateTotalPrice(operation) == 0,
+                                totalIsZero:
+                                    _calculateTotalPrice(operation) == 0,
                                 getPaymentDetails: _getPaymentDetails,
                                 registerZeroPayment: _registerZeroPayment,
                               ),
@@ -1495,99 +1639,101 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        maxChildSize: 0.9,
-        minChildSize: 0.5,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(20),
-            ),
-          ),
-          child: Column(
-            children: [
-              // Handle
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Ajuste #${operation['id']}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
+      builder:
+          (context) => DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            maxChildSize: 0.9,
+            minChildSize: 0.5,
+            builder:
+                (context, scrollController) => Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      // Handle
+                      Container(
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              // Content
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    // Información general
-                    _buildModalDetailRow(
-                      'Tipo:',
-                      operation['tipo_operacion_nombre'] ?? 'N/A',
-                    ),
-                    _buildModalDetailRow(
-                      'Estado:',
-                      operation['estado_nombre'] ?? 'N/A',
-                    ),
-                    _buildModalDetailRow(
-                      'Fecha:',
-                      _formatDateTime(
-                        DateTime.parse(operation['created_at']),
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Ajuste #${operation['id']}',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    ..._buildOperationMetaSection(operation),
+                      const Divider(height: 1),
+                      // Content
+                      Expanded(
+                        child: ListView(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            // Información general
+                            _buildModalDetailRow(
+                              'Tipo:',
+                              operation['tipo_operacion_nombre'] ?? 'N/A',
+                            ),
+                            _buildModalDetailRow(
+                              'Estado:',
+                              operation['estado_nombre'] ?? 'N/A',
+                            ),
+                            _buildModalDetailRow(
+                              'Fecha:',
+                              _formatDateTime(
+                                DateTime.parse(operation['created_at']),
+                              ),
+                            ),
+                            ..._buildOperationMetaSection(operation),
 
-                    // Detalles del ajuste
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Detalles del Ajuste:',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
+                            // Detalles del ajuste
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Detalles del Ajuste:',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            _buildAdjustmentDetailsSection(operation),
+
+                            // Show print button for all operations
+                            const SizedBox(height: 24),
+                            _buildPrintButton(operation),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    _buildAdjustmentDetailsSection(operation),
-
-                    // Show print button for all operations
-                    const SizedBox(height: 24),
-                    _buildPrintButton(operation),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
           ),
-        ),
-      ),
     );
   }
 
@@ -1620,10 +1766,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     final rawIds = detEsp?['ids_operaciones'];
     List<int>? sessionIds;
     if (rawIds is List && rawIds.isNotEmpty) {
-      sessionIds = rawIds
-          .map((e) => (e is int) ? e : int.tryParse(e.toString()))
-          .whereType<int>()
-          .toList();
+      sessionIds =
+          rawIds
+              .map((e) => (e is int) ? e : int.tryParse(e.toString()))
+              .whereType<int>()
+              .toList();
     }
 
     final Future<Map<String, dynamic>> detailFuture =
@@ -1670,15 +1817,17 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         // Obtener precio unitario si está disponible
         final precioUnitario = detail['precio_unitario'];
         final diferencia = detail['diferencia'] ?? 0;
-        
+
         if (precioUnitario != null) {
-          final precioNum = (precioUnitario is double)
-              ? precioUnitario
-              : double.tryParse(precioUnitario.toString()) ?? 0.0;
-          final diferenciaNum = (diferencia is double)
-              ? diferencia
-              : double.tryParse(diferencia.toString()) ?? 0.0;
-          
+          final precioNum =
+              (precioUnitario is double)
+                  ? precioUnitario
+                  : double.tryParse(precioUnitario.toString()) ?? 0.0;
+          final diferenciaNum =
+              (diferencia is double)
+                  ? diferencia
+                  : double.tryParse(diferencia.toString()) ?? 0.0;
+
           total += (diferenciaNum.abs() * precioNum);
         }
       }
@@ -1691,8 +1840,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     // Ordenar detalles alfabéticamente por nombre de producto
     final sortedDetails = List<dynamic>.from(details);
     sortedDetails.sort((a, b) {
-      final nameA = (a['producto_nombre'] ?? 'Producto').toString().toLowerCase();
-      final nameB = (b['producto_nombre'] ?? 'Producto').toString().toLowerCase();
+      final nameA =
+          (a['producto_nombre'] ?? 'Producto').toString().toLowerCase();
+      final nameB =
+          (b['producto_nombre'] ?? 'Producto').toString().toLowerCase();
       return nameA.compareTo(nameB);
     });
 
@@ -1768,7 +1919,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                
+
                 // Almacén
                 Row(
                   children: [
@@ -1788,7 +1939,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                   ],
                 ),
                 const SizedBox(height: 4),
-                
+
                 // Ubicación
                 Row(
                   children: [
@@ -1797,10 +1948,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                     Expanded(
                       child: Text(
                         ubicacion,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -1918,14 +2066,78 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     );
   }
 
+  Widget _buildOperationPhotoDetail(int operationId) {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future:
+          Supabase.instance.client
+              .from('app_dat_operacion_venta')
+              .select('foto_operacion_url')
+              .eq('id_operacion', operationId)
+              .maybeSingle(),
+      builder: (context, snapshot) {
+        final url = snapshot.data?['foto_operacion_url'] as String?;
+        if (url == null || url.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Foto de la operación',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              InkWell(
+                onTap:
+                    () => showDialog<void>(
+                      context: context,
+                      builder:
+                          (_) => Dialog(
+                            child: InteractiveViewer(child: Image.network(url)),
+                          ),
+                    ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    url,
+                    height: 180,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder:
+                        (_, __, ___) => const ListTile(
+                          leading: Icon(Icons.broken_image_outlined),
+                          title: Text(
+                            'No se pudo cargar la foto de la operación',
+                          ),
+                        ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year.toString().substring(2)}';
   }
 
   String _formatDateLong(DateTime date) {
     const months = [
-      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+      'Enero',
+      'Febrero',
+      'Marzo',
+      'Abril',
+      'Mayo',
+      'Junio',
+      'Julio',
+      'Agosto',
+      'Septiembre',
+      'Octubre',
+      'Noviembre',
+      'Diciembre',
     ];
     return '${date.day} de ${months[date.month - 1]} ${date.year}';
   }
@@ -1966,15 +2178,19 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
     if (detalles is Map<String, dynamic>) {
       final especificos = detalles['detalles_especificos'];
-      final isTransfer = especificos is Map<String, dynamic> &&
-          (especificos.containsKey('extraccion') || especificos.containsKey('recepcion'));
+      final isTransfer =
+          especificos is Map<String, dynamic> &&
+          (especificos.containsKey('extraccion') ||
+              especificos.containsKey('recepcion'));
 
-      final extItems = isTransfer
-          ? (especificos['extraccion']?['items'] as List<dynamic>?)
-          : null;
-      final recItems = isTransfer
-          ? (especificos['recepcion']?['items'] as List<dynamic>?)
-          : null;
+      final extItems =
+          isTransfer
+              ? (especificos['extraccion']?['items'] as List<dynamic>?)
+              : null;
+      final recItems =
+          isTransfer
+              ? (especificos['recepcion']?['items'] as List<dynamic>?)
+              : null;
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2006,7 +2222,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               const SizedBox(height: 8),
               _buildProductsList(recItems),
             ],
-          ] else if (detalles['items'] != null && detalles['items'] is List) ...[
+          ] else if (detalles['items'] != null &&
+              detalles['items'] is List) ...[
             const Text(
               'Productos:',
               style: TextStyle(fontWeight: FontWeight.w600),
@@ -2026,7 +2243,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
     if (especificos is Map<String, dynamic>) {
       final clienteInfo = especificos['cliente_info'];
-      
+
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -2037,37 +2254,52 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ...especificos.entries.where((e) {
-              const hiddenKeys = {
-                'cliente_info', 'extraccion', 'recepcion',
-                'entregado_por', 'recibido_por', 'autorizado_por',
-                'motivo', 'comentario_completado', 'observaciones',
-                'origen', 'destino', 'estado_extraccion', 'estado_recepcion',
-                'id_extraccion', 'id_recepcion', 'ids_operaciones',
-                'tipo_ajuste', 'monto_total',
-              };
-              return !hiddenKeys.contains(e.key);
-            }).map((entry) {
-              String label = _formatFieldLabel(entry.key);
-              String value = _formatFieldValue(entry.value);
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 120,
-                      child: Text(
-                        '$label:',
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
+            ...especificos.entries
+                .where((e) {
+                  const hiddenKeys = {
+                    'cliente_info',
+                    'extraccion',
+                    'recepcion',
+                    'entregado_por',
+                    'recibido_por',
+                    'autorizado_por',
+                    'motivo',
+                    'comentario_completado',
+                    'observaciones',
+                    'origen',
+                    'destino',
+                    'estado_extraccion',
+                    'estado_recepcion',
+                    'id_extraccion',
+                    'id_recepcion',
+                    'ids_operaciones',
+                    'tipo_ajuste',
+                    'monto_total',
+                  };
+                  return !hiddenKeys.contains(e.key);
+                })
+                .map((entry) {
+                  String label = _formatFieldLabel(entry.key);
+                  String value = _formatFieldValue(entry.value);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 120,
+                          child: Text(
+                            '$label:',
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        Expanded(child: Text(value)),
+                      ],
                     ),
-                    Expanded(child: Text(value)),
-                  ],
-                ),
-              );
-            }).toList(),
-            
+                  );
+                })
+                .toList(),
+
             if (clienteInfo != null && clienteInfo is Map<String, dynamic>) ...[
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8.0),
@@ -2079,7 +2311,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                   SizedBox(width: 8),
                   Text(
                     'Información del Cliente:',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF4A90E2)),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF4A90E2),
+                    ),
                   ),
                 ],
               ),
@@ -2098,7 +2333,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildInfoItem('Nombre:', info['nombre_completo'] ?? info['nombre'] ?? 'N/A'),
+        _buildInfoItem(
+          'Nombre:',
+          info['nombre_completo'] ?? info['nombre'] ?? 'N/A',
+        ),
         _buildInfoItem('Código:', info['codigo_cliente'] ?? 'N/A'),
         _buildInfoItem('Teléfono:', info['telefono'] ?? 'N/A'),
         _buildInfoItem('Email:', info['email'] ?? 'N/A'),
@@ -2117,7 +2355,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
             width: 90,
             child: Text(
               label,
-              style: TextStyle(fontSize: 13, color: Colors.grey[600], fontWeight: FontWeight.w500),
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
           Expanded(
@@ -2247,7 +2489,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                                 color: const Color(0xFF4A90E2).withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
-                                  color: const Color(0xFF4A90E2).withOpacity(0.3),
+                                  color: const Color(
+                                    0xFF4A90E2,
+                                  ).withOpacity(0.3),
                                 ),
                               ),
                               child: Text(
@@ -2288,7 +2532,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   }
 
   Map<String, dynamic>? _extractDetallesEspecificos(
-      Map<String, dynamic> operation) {
+    Map<String, dynamic> operation,
+  ) {
     final detalles = operation['detalles'];
     if (detalles is Map<String, dynamic>) {
       final esp = detalles['detalles_especificos'];
@@ -2310,28 +2555,32 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     void addTextBlock(String label, dynamic value) {
       if (!_hasDetailText(value)) return;
       rows.add(const SizedBox(height: 4));
-      rows.add(Text(
-        label,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: Colors.grey[700],
+      rows.add(
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[700],
+          ),
         ),
-      ));
+      );
       rows.add(const SizedBox(height: 4));
-      rows.add(Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.grey[50],
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.grey[300]!),
+      rows.add(
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: Text(
+            value.toString(),
+            style: const TextStyle(fontSize: 13, color: Color(0xFF374151)),
+          ),
         ),
-        child: Text(
-          value.toString(),
-          style: const TextStyle(fontSize: 13, color: Color(0xFF374151)),
-        ),
-      ));
+      );
       rows.add(const SizedBox(height: 8));
     }
 
@@ -2464,43 +2713,47 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       if (operation['detalles'] != null &&
           operation['detalles'] is Map<String, dynamic>) {
         final detalles = operation['detalles'] as Map<String, dynamic>;
-        
+
         // Para operaciones de ajuste, calcular el total basado en los items
         if (detalles['items'] != null && detalles['items'] is List) {
           final items = detalles['items'] as List<dynamic>;
           double totalPrice = 0.0;
-          
+
           for (var item in items) {
             if (item is Map<String, dynamic>) {
               // Intentar obtener el importe (precio total del item)
               final importe = item['importe'];
               if (importe != null) {
-                final importeNum = (importe is double)
-                    ? importe
-                    : double.tryParse(importe.toString()) ?? 0.0;
+                final importeNum =
+                    (importe is double)
+                        ? importe
+                        : double.tryParse(importe.toString()) ?? 0.0;
                 totalPrice += importeNum;
               } else {
                 // Si no hay importe, intentar calcular cantidad * precio_unitario
-                final cantidad = item['cantidad'] ?? item['cantidad_fisica'] ?? 0;
+                final cantidad =
+                    item['cantidad'] ?? item['cantidad_fisica'] ?? 0;
                 final precioUnitario = item['precio_unitario'] ?? 0;
-                
-                final cantidadNum = (cantidad is double)
-                    ? cantidad
-                    : double.tryParse(cantidad.toString()) ?? 0.0;
-                final precioNum = (precioUnitario is double)
-                    ? precioUnitario
-                    : double.tryParse(precioUnitario.toString()) ?? 0.0;
-                
+
+                final cantidadNum =
+                    (cantidad is double)
+                        ? cantidad
+                        : double.tryParse(cantidad.toString()) ?? 0.0;
+                final precioNum =
+                    (precioUnitario is double)
+                        ? precioUnitario
+                        : double.tryParse(precioUnitario.toString()) ?? 0.0;
+
                 totalPrice += (cantidadNum * precioNum);
               }
             }
           }
-          
+
           if (totalPrice > 0) {
             return totalPrice;
           }
         }
-        
+
         // Fallback a detalles_especificos si existen
         if (detalles['detalles_especificos'] != null &&
             detalles['detalles_especificos'] is Map<String, dynamic>) {
@@ -2527,7 +2780,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     final accion = operation['tipo_operacion_accion']?.toString() ?? '';
     String estado = operation['estado_nombre']?.toString().toLowerCase() ?? '';
 
-    print('🔍 Checking completion button - ID: ${operation['id']}, accion: "$accion", tipo: "$tipoOperacion"');
+    print(
+      '🔍 Checking completion button - ID: ${operation['id']}, accion: "$accion", tipo: "$tipoOperacion"',
+    );
 
     bool isReception = tipoOperacion.contains('recepci');
     bool isExtraction = tipoOperacion.contains('extrac');
@@ -2705,10 +2960,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       );
 
       Navigator.pop(context); // Close loading dialog
-      
+
       // La respuesta viene directamente en result
       final response = result;
-      
+
       if (response['success'] == true || response['status'] == 'success') {
         // Close the detail modal
         await Future.delayed(const Duration(milliseconds: 200));
@@ -2730,7 +2985,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       } else {
         await Future.delayed(const Duration(milliseconds: 200));
         Navigator.pop(context);
-        
+
         // Verificar si es un error de consignación
         final errorCode = response['error'] ?? '';
         final errorType = response['error_type'] ?? '';
@@ -2743,7 +2998,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         } else if (errorType == 'insufficient_stock') {
           // Mostrar diálogo detallado de stock insuficiente
           _showInsufficientStockDialog(
-            response['message'] ?? 'Stock insuficiente para completar la operación',
+            response['message'] ??
+                'Stock insuficiente para completar la operación',
           );
         } else {
           // Mostrar SnackBar para otros errores
@@ -2835,7 +3091,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       Navigator.pop(context); // Close dialog
 
       // Check if operation is completed and verify user role
-      String estado = operation['estado_nombre']?.toString().toLowerCase() ?? '';
+      String estado =
+          operation['estado_nombre']?.toString().toLowerCase() ?? '';
       bool isCompleted =
           estado.contains('completada') ||
           estado.contains('completed') ||
@@ -2888,11 +3145,16 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
       // Use the RPC fn_registrar_cambio_estado_operacion with estado 3 (cancelada)
       final supabase = Supabase.instance.client;
-      print(operationId is int ? operationId : int.parse(operationId.toString()));
+      print(
+        operationId is int ? operationId : int.parse(operationId.toString()),
+      );
       final result = await supabase.rpc(
         'fn_registrar_cambio_estado_operacion_mejorado',
         params: {
-          'p_id_operacion': operationId is int ? operationId : int.parse(operationId.toString()),
+          'p_id_operacion':
+              operationId is int
+                  ? operationId
+                  : int.parse(operationId.toString()),
           'p_nuevo_estado': 3, // Estado cancelada
         },
       );
@@ -3294,15 +3556,15 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     try {
       final userPrefs = UserPreferencesService();
       final permissionsService = PermissionsService();
-      
+
       // Obtener tienda actual
       final currentStoreId = await userPrefs.getIdTienda();
       UserRole role;
-      
+
       if (currentStoreId != null) {
         // Obtener rol para la tienda actual
         role = await permissionsService.getUserRoleForStore(currentStoreId);
-        
+
         // Si no se encuentra el rol en la tienda, intentar con el rol principal
         if (role == UserRole.none) {
           role = await permissionsService.getUserRole();
@@ -3311,7 +3573,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         // Fallback al rol principal si no hay tienda seleccionada
         role = await permissionsService.getUserRole();
       }
-      
+
       return permissionsService.getRoleName(role).toLowerCase();
     } catch (e) {
       print('Error getting user role: $e');
@@ -3372,14 +3634,18 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   /// 🖨️ Construir botones de impresión y exportación
   Widget _buildPrintButton(Map<String, dynamic> operation) {
     // Obtener el estado de la operación
-    final estadoNombre = (operation['estado_nombre'] ?? '').toString().toLowerCase().trim();
+    final estadoNombre =
+        (operation['estado_nombre'] ?? '').toString().toLowerCase().trim();
 
     // Validar si la operación está completada
-    final isCompleted = estadoNombre.contains('completada') ||
-                        estadoNombre.contains('completed') ||
-                        estadoNombre.contains('finalizada');
+    final isCompleted =
+        estadoNombre.contains('completada') ||
+        estadoNombre.contains('completed') ||
+        estadoNombre.contains('finalizada');
 
-    print('🖨️ Print & PDF Buttons - Estado: "$estadoNombre", ¿Completada?: $isCompleted');
+    print(
+      '🖨️ Print & PDF Buttons - Estado: "$estadoNombre", ¿Completada?: $isCompleted',
+    );
 
     if (!isCompleted) {
       return SizedBox(
@@ -3455,45 +3721,49 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       // Mostrar diálogo de selección de tipo de impresora
       final printerType = await showDialog<String>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Row(
-            children: [
-              const Icon(Icons.print, color: Color(0xFF4A90E2)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: const Text(
-                  'Seleccionar Impresora',
-                  overflow: TextOverflow.ellipsis,
+        builder:
+            (context) => AlertDialog(
+              title: Row(
+                children: [
+                  const Icon(Icons.print, color: Color(0xFF4A90E2)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: const Text(
+                      'Seleccionar Impresora',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('¿Cómo deseas imprimir la operación?'),
+                  const SizedBox(height: 16),
+                  ListTile(
+                    leading: const Icon(Icons.wifi, color: Color(0xFF10B981)),
+                    title: const Text('Impresora WiFi'),
+                    subtitle: const Text('Imprimir por red WiFi'),
+                    onTap: () => Navigator.pop(context, 'wifi'),
+                  ),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.bluetooth,
+                      color: Color(0xFF4A90E2),
+                    ),
+                    title: const Text('Impresora Bluetooth'),
+                    subtitle: const Text('Imprimir por Bluetooth'),
+                    onTap: () => Navigator.pop(context, 'bluetooth'),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
                 ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('¿Cómo deseas imprimir la operación?'),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(Icons.wifi, color: Color(0xFF10B981)),
-                title: const Text('Impresora WiFi'),
-                subtitle: const Text('Imprimir por red WiFi'),
-                onTap: () => Navigator.pop(context, 'wifi'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.bluetooth, color: Color(0xFF4A90E2)),
-                title: const Text('Impresora Bluetooth'),
-                subtitle: const Text('Imprimir por Bluetooth'),
-                onTap: () => Navigator.pop(context, 'bluetooth'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
+              ],
             ),
-          ],
-        ),
       );
 
       if (printerType == null || !mounted) return;
@@ -3515,38 +3785,50 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   Future<void> _printOperationWiFi(Map<String, dynamic> operation) async {
     try {
       print('📶 Imprimiendo por WiFi...');
-      
+
       if (!mounted) return;
 
       final wifiService = WiFiPrinterService();
 
       // Obtener detalles de la operación desde los datos ya cargados en la vista
       List<Map<String, dynamic>> details = [];
-      
+
       if (operation['detalles'] != null && operation['detalles'] is Map) {
         final detallesMap = operation['detalles'] as Map<String, dynamic>;
         if (detallesMap['items'] != null && detallesMap['items'] is List) {
           // Convertir los items del formato de la vista al formato esperado por el servicio
-          details = (detallesMap['items'] as List).map((item) {
-            return {
-              'cantidad': item['cantidad_contada'] ?? item['cantidad'] ?? 0,
-              'producto_nombre': item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto',
-              'producto': {
-                'denominacion': item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto',
-                'codigo_barras': item['codigo_barras'],
-              },
-              'presentacion': item['presentacion_nombre'] ?? item['presentacion'],
-              'ubicacion': item['ubicacion_nombre'] ?? item['ubicacion'],
-            };
-          }).toList();
-          print('📦 Detalles obtenidos de la vista: ${details.length} productos');
+          details =
+              (detallesMap['items'] as List).map((item) {
+                return {
+                  'cantidad': item['cantidad_contada'] ?? item['cantidad'] ?? 0,
+                  'producto_nombre':
+                      item['producto_nombre'] ??
+                      item['nombre_producto'] ??
+                      'Producto',
+                  'producto': {
+                    'denominacion':
+                        item['producto_nombre'] ??
+                        item['nombre_producto'] ??
+                        'Producto',
+                    'codigo_barras': item['codigo_barras'],
+                  },
+                  'presentacion':
+                      item['presentacion_nombre'] ?? item['presentacion'],
+                  'ubicacion': item['ubicacion_nombre'] ?? item['ubicacion'],
+                };
+              }).toList();
+          print(
+            '📦 Detalles obtenidos de la vista: ${details.length} productos',
+          );
         }
       }
-      
+
       if (!mounted) return;
 
       // Mostrar diálogo de selección de impresora WiFi
-      final selectedPrinter = await wifiService.showPrinterSelectionDialog(context);
+      final selectedPrinter = await wifiService.showPrinterSelectionDialog(
+        context,
+      );
       if (selectedPrinter == null) {
         print('❌ No se seleccionó impresora WiFi');
         return;
@@ -3558,16 +3840,17 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF10B981)),
-              SizedBox(height: 16),
-              Text('Imprimiendo por WiFi...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => const AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF10B981)),
+                  SizedBox(height: 16),
+                  Text('Imprimiendo por WiFi...'),
+                ],
+              ),
+            ),
       );
 
       // Conectar e imprimir
@@ -3579,13 +3862,19 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       if (!connected) {
         if (mounted) {
           Navigator.pop(context);
-          _showPrintError('Error de Conexión', 'No se pudo conectar a la impresora WiFi');
+          _showPrintError(
+            'Error de Conexión',
+            'No se pudo conectar a la impresora WiFi',
+          );
         }
         return;
       }
 
       // Imprimir operación
-      bool printed = await wifiService.printInventoryOperation(operation, details);
+      bool printed = await wifiService.printInventoryOperation(
+        operation,
+        details,
+      );
 
       await wifiService.disconnect();
 
@@ -3593,7 +3882,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       Navigator.pop(context);
 
       if (printed) {
-        _showPrintSuccess('¡Impreso!', 'La operación se imprimió correctamente por WiFi');
+        _showPrintSuccess(
+          '¡Impreso!',
+          'La operación se imprimió correctamente por WiFi',
+        );
       } else {
         _showPrintError('Error', 'No se pudo imprimir la operación');
       }
@@ -3618,28 +3910,33 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       final printerManager = PrinterManager();
 
       // Mostrar diálogo de confirmación
-      bool shouldPrint = await printerManager.showPrintConfirmationDialog(context);
+      bool shouldPrint = await printerManager.showPrintConfirmationDialog(
+        context,
+      );
       if (!shouldPrint || !mounted) return;
 
       // Seleccionar dispositivo Bluetooth
       final bluetoothService = printerManager.bluetoothService;
-      var selectedDevice = await bluetoothService.showDeviceSelectionDialog(context);
+      var selectedDevice = await bluetoothService.showDeviceSelectionDialog(
+        context,
+      );
       if (selectedDevice == null || !mounted) return;
 
       // Mostrar diálogo de progreso - Conectando
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF4A90E2)),
-              SizedBox(height: 16),
-              Text('Conectando a impresora...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => const AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                  SizedBox(height: 16),
+                  Text('Conectando a impresora...'),
+                ],
+              ),
+            ),
       );
 
       // Conectar
@@ -3647,7 +3944,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       if (!connected) {
         if (mounted) {
           Navigator.pop(context);
-          _showPrintError('Conexión Fallida', 'No se pudo conectar a la impresora');
+          _showPrintError(
+            'Conexión Fallida',
+            'No se pudo conectar a la impresora',
+          );
         }
         return;
       }
@@ -3662,16 +3962,17 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF4A90E2)),
-              SizedBox(height: 16),
-              Text('Imprimiendo ticket...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => const AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                  SizedBox(height: 16),
+                  Text('Imprimiendo ticket...'),
+                ],
+              ),
+            ),
       );
 
       // Generar y enviar ticket
@@ -3686,7 +3987,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       Navigator.pop(context);
 
       if (printed) {
-        _showPrintSuccess('¡Ticket Impreso!', 'La operación se imprimió correctamente');
+        _showPrintSuccess(
+          '¡Ticket Impreso!',
+          'La operación se imprimió correctamente',
+        );
       } else {
         _showPrintError('Error de Impresión', 'No se pudo imprimir el ticket');
       }
@@ -3696,7 +4000,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         try {
           Navigator.pop(context);
         } catch (_) {}
-        _showPrintError('Error Bluetooth', 'Error al imprimir por Bluetooth: $e');
+        _showPrintError(
+          'Error Bluetooth',
+          'Error al imprimir por Bluetooth: $e',
+        );
       }
     }
   }
@@ -3705,22 +4012,23 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   Future<void> _exportToPdf(Map<String, dynamic> operation) async {
     try {
       final exportService = ExportService();
-      
+
       // Extraer items de los detalles
       List<Map<String, dynamic>> items = [];
       if (operation['detalles'] != null && operation['detalles'] is Map) {
         final detallesMap = operation['detalles'] as Map<String, dynamic>;
-        
+
         // Intentar obtener de 'items' directo
         if (detallesMap['items'] != null && detallesMap['items'] is List) {
           items = List<Map<String, dynamic>>.from(detallesMap['items']);
         }
-        
+
         // Si no hay items, intentar de 'detalles_especificos'
-        if (items.isEmpty && 
-            detallesMap['detalles_especificos'] != null && 
+        if (items.isEmpty &&
+            detallesMap['detalles_especificos'] != null &&
             detallesMap['detalles_especificos'] is Map) {
-          final especificos = detallesMap['detalles_especificos'] as Map<String, dynamic>;
+          final especificos =
+              detallesMap['detalles_especificos'] as Map<String, dynamic>;
           if (especificos['items'] != null && especificos['items'] is List) {
             items = List<Map<String, dynamic>>.from(especificos['items']);
           }
@@ -3731,9 +4039,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       String almacenNombre = 'N/A';
       final tipoOp = operation['tipo_operacion_nombre'] ?? '';
       final tipoLC = tipoOp.toLowerCase();
-      if (tipoLC.contains('recepción') || tipoLC.contains('recepcion') ||
-          tipoLC.contains('reception') || tipoLC.contains('extracción') ||
-          tipoLC.contains('extraccion') || tipoLC.contains('extraction') ||
+      if (tipoLC.contains('recepción') ||
+          tipoLC.contains('recepcion') ||
+          tipoLC.contains('reception') ||
+          tipoLC.contains('extracción') ||
+          tipoLC.contains('extraccion') ||
+          tipoLC.contains('extraction') ||
           tipoLC.contains('productos')) {
         almacenNombre = await InventoryService.getWarehouseFromOperation(
           operation['id'],
@@ -3747,16 +4058,17 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF4A90E2)),
-              SizedBox(height: 16),
-              Text('Generando PDF...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => const AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                  SizedBox(height: 16),
+                  Text('Generando PDF...'),
+                ],
+              ),
+            ),
       );
 
       await exportService.exportInventoryOperationPdf(
@@ -3775,7 +4087,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         try {
           Navigator.pop(context); // Intentar cerrar diálogo si existe
         } catch (_) {}
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error al exportar a PDF: $e'),
@@ -3787,59 +4099,99 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   }
 
   /// Generar contenido del ticket de operación
-  List<int> _generateOperationTicket(Generator generator, Map<String, dynamic> operation) {
+  List<int> _generateOperationTicket(
+    Generator generator,
+    Map<String, dynamic> operation,
+  ) {
     List<int> bytes = [];
 
     // Header
-    bytes += generator.text('INVENTTIA', styles: PosStyles(align: PosAlign.center, bold: true));
-    bytes += generator.text('OPERACIÓN DE INVENTARIO', styles: PosStyles(align: PosAlign.center, bold: true));
-    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.text(
+      'INVENTTIA',
+      styles: PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.text(
+      'OPERACIÓN DE INVENTARIO',
+      styles: PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.text(
+      '----------------------------',
+      styles: PosStyles(align: PosAlign.center),
+    );
 
     // Información de la operación
-    bytes += generator.text('ID: ${operation['id']}', styles: PosStyles(align: PosAlign.left, bold: true));
-    bytes += generator.text('Tipo: ${operation['tipo_operacion_nombre'] ?? 'N/A'}', 
-                           styles: PosStyles(align: PosAlign.left));
-    bytes += generator.text('Estado: ${operation['estado_nombre'] ?? 'N/A'}', 
-                           styles: PosStyles(align: PosAlign.left));
-    bytes += generator.text('Fecha: ${_formatDateTime(DateTime.parse(operation['created_at']))}', 
-                           styles: PosStyles(align: PosAlign.left));
-    
+    bytes += generator.text(
+      'ID: ${operation['id']}',
+      styles: PosStyles(align: PosAlign.left, bold: true),
+    );
+    bytes += generator.text(
+      'Tipo: ${operation['tipo_operacion_nombre'] ?? 'N/A'}',
+      styles: PosStyles(align: PosAlign.left),
+    );
+    bytes += generator.text(
+      'Estado: ${operation['estado_nombre'] ?? 'N/A'}',
+      styles: PosStyles(align: PosAlign.left),
+    );
+    bytes += generator.text(
+      'Fecha: ${_formatDateTime(DateTime.parse(operation['created_at']))}',
+      styles: PosStyles(align: PosAlign.left),
+    );
+
     // Observaciones
     if (operation['observaciones']?.isNotEmpty == true) {
       String obs = operation['observaciones'].toString();
       if (obs.length > 28) obs = obs.substring(0, 25) + '...';
-      bytes += generator.text('Obs: $obs', styles: PosStyles(align: PosAlign.left));
+      bytes += generator.text(
+        'Obs: $obs',
+        styles: PosStyles(align: PosAlign.left),
+      );
     }
-    
-    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+
+    bytes += generator.text(
+      '----------------------------',
+      styles: PosStyles(align: PosAlign.center),
+    );
 
     // Productos (si existen en los detalles)
     if (operation['detalles'] != null && operation['detalles'] is Map) {
       final detallesMap = operation['detalles'] as Map<String, dynamic>;
       if (detallesMap['items'] != null && detallesMap['items'] is List) {
         final items = detallesMap['items'] as List;
-        
-        bytes += generator.text('PRODUCTOS:', styles: PosStyles(align: PosAlign.left, bold: true));
-        
+
+        bytes += generator.text(
+          'PRODUCTOS:',
+          styles: PosStyles(align: PosAlign.left, bold: true),
+        );
+
         for (var item in items) {
           final cantidad = item['cantidad_contada'] ?? item['cantidad'] ?? 0;
-          String productName = item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto';
-          
+          String productName =
+              item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto';
+
           // Truncar nombre si es muy largo
           if (productName.length > 24) {
             productName = productName.substring(0, 21) + '...';
           }
-          
-          bytes += generator.text('${cantidad}x $productName', styles: PosStyles(align: PosAlign.left));
-          
+
+          bytes += generator.text(
+            '${cantidad}x $productName',
+            styles: PosStyles(align: PosAlign.left),
+          );
+
           // Agregar ubicación si existe
           final ubicacion = item['ubicacion_nombre'] ?? item['ubicacion'];
           if (ubicacion != null && ubicacion.toString().isNotEmpty) {
-            bytes += generator.text('  Ubic: $ubicacion', styles: PosStyles(align: PosAlign.left));
+            bytes += generator.text(
+              '  Ubic: $ubicacion',
+              styles: PosStyles(align: PosAlign.left),
+            );
           }
         }
-        
-        bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+
+        bytes += generator.text(
+          '----------------------------',
+          styles: PosStyles(align: PosAlign.center),
+        );
       }
     }
 
@@ -3847,13 +4199,24 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     final totalPrice = _calculateTotalPrice(operation);
     final totalItems = _calculateTotalItems(operation);
 
-    bytes += generator.text('Total Items: $totalItems', styles: PosStyles(align: PosAlign.left));
-    bytes += generator.text('Total: \$${totalPrice.toStringAsFixed(2)}', 
-                           styles: PosStyles(align: PosAlign.left, bold: true));
+    bytes += generator.text(
+      'Total Items: $totalItems',
+      styles: PosStyles(align: PosAlign.left),
+    );
+    bytes += generator.text(
+      'Total: \$${totalPrice.toStringAsFixed(2)}',
+      styles: PosStyles(align: PosAlign.left, bold: true),
+    );
 
     // Footer
-    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
-    bytes += generator.text('Gracias', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.text(
+      '----------------------------',
+      styles: PosStyles(align: PosAlign.center),
+    );
+    bytes += generator.text(
+      'Gracias',
+      styles: PosStyles(align: PosAlign.center),
+    );
     bytes += generator.emptyLines(2);
     bytes += generator.cut();
 
@@ -3864,22 +4227,23 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   void _showPrintError(String title, String message) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.error, color: Colors.red),
-            const SizedBox(width: 8),
-            Text(title),
-          ],
-        ),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.red),
+                const SizedBox(width: 8),
+                Text(title),
+              ],
+            ),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -3887,26 +4251,27 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   void _showPrintSuccess(String title, String message) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.green),
-            const SizedBox(width: 8),
-            Text(title),
-          ],
-        ),
-        content: Text(message),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.green),
+                const SizedBox(width: 8),
+                Text(title),
+              ],
             ),
-            child: const Text('¡Genial!'),
+            content: Text(message),
+            actions: [
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('¡Genial!'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -3919,7 +4284,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     if (bodyStart != -1) {
       final body = message.substring(bodyStart + 1).trim();
       // Split por patrón "), " para separar cada producto
-      final regex = RegExp(r'([^(]+)\(disponible:\s*([\d.]+),\s*solicitado:\s*([\d.]+)\)');
+      final regex = RegExp(
+        r'([^(]+)\(disponible:\s*([\d.]+),\s*solicitado:\s*([\d.]+)\)',
+      );
       for (final match in regex.allMatches(body)) {
         productos.add({
           'nombre': match.group(1)?.trim() ?? '',
@@ -3935,7 +4302,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           (context) => AlertDialog(
             title: Row(
               children: [
-                const Icon(Icons.inventory_2_outlined, color: Colors.red, size: 28),
+                const Icon(
+                  Icons.inventory_2_outlined,
+                  color: Colors.red,
+                  size: 28,
+                ),
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Text(
@@ -3956,7 +4327,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: Colors.red.shade50,
-                        border: Border.all(color: Colors.red.shade300, width: 2),
+                        border: Border.all(
+                          color: Colors.red.shade300,
+                          width: 2,
+                        ),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Text(
@@ -3968,7 +4342,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       const SizedBox(height: 16),
                       const Text(
                         'Productos con stock insuficiente:',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       ...productos.map(
@@ -4019,10 +4396,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       ),
                     ] else ...[
                       const SizedBox(height: 12),
-                      Text(
-                        message,
-                        style: const TextStyle(fontSize: 12),
-                      ),
+                      Text(message, style: const TextStyle(fontSize: 12)),
                     ],
                   ],
                 ),
@@ -4040,112 +4414,127 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   }
 
   /// Mostrar diálogo informativo para error de consignación
-  void _showConsignmentErrorDialog(String message, dynamic idOperacionExtraccion) {
+  void _showConsignmentErrorDialog(
+    String message,
+    dynamic idOperacionExtraccion,
+  ) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.local_shipping_outlined, color: Colors.deepOrange, size: 28),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Recepción de Consignación',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(
+                  Icons.local_shipping_outlined,
+                  color: Colors.deepOrange,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Recepción de Consignación',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Mensaje principal
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      border: Border.all(
+                        color: Colors.orange.shade300,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '⚠️ Mercancía no recibida',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: Colors.deepOrange,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'No puedes completar la recepción hasta que la mercancía esté físicamente en tu negocio.',
+                          style: TextStyle(fontSize: 13, height: 1.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Instrucciones
+                  const Text(
+                    '📋 Pasos a seguir:',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildInstructionStep(
+                    '1',
+                    'Verifica que la mercancía haya llegado a tu almacén',
+                  ),
+                  _buildInstructionStep(
+                    '2',
+                    'Inspecciona la mercancía (cantidad, estado, etc.)',
+                  ),
+                  _buildInstructionStep(
+                    '4',
+                    'Luego podrás completar la recepción aquí',
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Información técnica
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '🔍 Información técnica:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Operación Extracción: #$idOperacionExtraccion',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Mensaje principal
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  border: Border.all(color: Colors.orange.shade300, width: 2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '⚠️ Mercancía no recibida',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Colors.deepOrange,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'No puedes completar la recepción hasta que la mercancía esté físicamente en tu negocio.',
-                      style: TextStyle(fontSize: 13, height: 1.5),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              
-              // Instrucciones
-              const Text(
-                '📋 Pasos a seguir:',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-              ),
-              const SizedBox(height: 8),
-              _buildInstructionStep(
-                '1',
-                'Verifica que la mercancía haya llegado a tu almacén',
-              ),
-              _buildInstructionStep(
-                '2',
-                'Inspecciona la mercancía (cantidad, estado, etc.)',
-              ),
-              _buildInstructionStep(
-                '4',
-                'Luego podrás completar la recepción aquí',
-              ),
-              const SizedBox(height: 16),
-              
-              // Información técnica
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '🔍 Información técnica:',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Operación Extracción: #$idOperacionExtraccion',
-                      style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
-                    ),
-                  ],
-                ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(foregroundColor: Colors.deepOrange),
+                child: const Text('Entendido'),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.deepOrange,
-            ),
-            child: const Text('Entendido'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -4203,8 +4592,7 @@ class _PaymentDetailsSection extends StatefulWidget {
   });
 
   @override
-  State<_PaymentDetailsSection> createState() =>
-      _PaymentDetailsSectionState();
+  State<_PaymentDetailsSection> createState() => _PaymentDetailsSectionState();
 }
 
 class _PaymentDetailsSectionState extends State<_PaymentDetailsSection> {
@@ -4267,8 +4655,8 @@ class _PaymentDetailsSectionState extends State<_PaymentDetailsSection> {
                 ),
                 const Divider(height: 24),
                 ...payments.map((payment) {
-                  final medio = payment['app_nom_medio_pago']
-                      as Map<String, dynamic>?;
+                  final medio =
+                      payment['app_nom_medio_pago'] as Map<String, dynamic>?;
                   final medioNombre = medio?['denominacion'] ?? 'Desconocido';
                   final monto = (payment['monto'] as num?) ?? 0;
                   final referencia =
@@ -4301,40 +4689,42 @@ class _PaymentDetailsSectionState extends State<_PaymentDetailsSection> {
 
         if (widget.totalIsZero) {
           return ElevatedButton.icon(
-            onPressed: _isRegistering
-                ? null
-                : () async {
-                    setState(() => _isRegistering = true);
-                    final success = await widget.registerZeroPayment(
-                      widget.operationId,
-                    );
-                    if (!mounted) return;
-                    setState(() {
-                      _isRegistering = false;
-                      _futureKey = UniqueKey();
-                    });
+            onPressed:
+                _isRegistering
+                    ? null
+                    : () async {
+                      setState(() => _isRegistering = true);
+                      final success = await widget.registerZeroPayment(
+                        widget.operationId,
+                      );
+                      if (!mounted) return;
+                      setState(() {
+                        _isRegistering = false;
+                        _futureKey = UniqueKey();
+                      });
 
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          success
-                              ? 'Pago registrado correctamente'
-                              : 'Error al registrar el pago',
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            success
+                                ? 'Pago registrado correctamente'
+                                : 'Error al registrar el pago',
+                          ),
+                          backgroundColor: success ? Colors.green : Colors.red,
                         ),
-                        backgroundColor: success ? Colors.green : Colors.red,
+                      );
+                    },
+            icon:
+                _isRegistering
+                    ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
                       ),
-                    );
-                  },
-            icon: _isRegistering
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.payment, color: Colors.white),
+                    )
+                    : const Icon(Icons.payment, color: Colors.white),
             label: Text(
               _isRegistering ? 'Registrando...' : 'Registrar pago (monto 0)',
               style: const TextStyle(color: Colors.white),
@@ -4359,7 +4749,11 @@ class _PaymentDetailsSectionState extends State<_PaymentDetailsSection> {
           ),
           child: Row(
             children: [
-              Icon(Icons.warning_amber, color: Colors.orange.shade700, size: 20),
+              Icon(
+                Icons.warning_amber,
+                color: Colors.orange.shade700,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -4395,10 +4789,7 @@ class _PaymentDetailsSectionState extends State<_PaymentDetailsSection> {
             flex: 3,
             child: Text(
               value,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),
         ],

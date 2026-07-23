@@ -107,7 +107,7 @@ class AdminAiAssistantService {
         knowledge['welcome_messages'] as Map<String, dynamic>? ?? {};
 
     return welcomeMessages[roleKey]?.toString() ??
-        'Hola! Soy tu asistente de VentIQ Admin. En que puedo ayudarte hoy?';
+        'Hola! Soy tu asistente de Inventtia Gestión. En que puedo ayudarte hoy?';
   }
 
   /// Get suggested questions based on user role
@@ -171,7 +171,7 @@ class AdminAiAssistantService {
                 {
                   'role': 'system',
                   'content':
-                      'You are a helpful assistant for VentIQ Admin. Only answer in Spanish.',
+                      'You are a helpful assistant for Inventtia Gestión. Only answer in Spanish.',
                 },
                 {'role': 'user', 'content': prompt},
               ],
@@ -245,7 +245,7 @@ class AdminAiAssistantService {
     final conversationJson =
         const JsonEncoder.withIndent('  ').convert(conversationHistory);
 
-    return '''Eres el asistente de ayuda de VentIQ Admin, una aplicacion de gestion de inventarios y ventas.
+    return '''Eres el asistente de ayuda de Inventtia Gestión, una aplicacion de gestion de inventarios y ventas.
 Tu trabajo es ayudar al usuario a entender como usar la aplicacion y guiarlo paso a paso.
 
 REGLAS IMPORTANTES:

@@ -808,7 +808,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
               pw.Text(
-                'VentIQ - Reporte generado el ${DateFormat('dd/MM/yyyy HH:mm').format(now)}',
+                'Inventtia - Reporte generado el ${DateFormat('dd/MM/yyyy HH:mm').format(now)}',
                 style: pw.TextStyle(
                   font: regularFont,
                   fontSize: 7,

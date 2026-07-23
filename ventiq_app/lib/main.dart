@@ -50,7 +50,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'VentIQ POS',
+      title: 'Inventtia Caja',
       debugShowCheckedModeBanner: false,
       navigatorKey: globalNavigatorKey,
       scaffoldMessengerKey: globalScaffoldMessengerKey,

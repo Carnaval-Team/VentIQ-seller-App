@@ -286,7 +286,7 @@ class _HRDrawerState extends State<HRDrawer> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Inventtia Admin $_appVersion',
+                      'Inventtia Gestión $_appVersion',
                       style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
                   ),

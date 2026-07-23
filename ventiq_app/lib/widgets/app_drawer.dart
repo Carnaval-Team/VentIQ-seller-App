@@ -160,7 +160,7 @@ class _AppDrawerState extends State<AppDrawer> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Text(
-                            'Inventtia®',
+                            'Inventtia® Caja',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 18,
@@ -373,7 +373,7 @@ class _AppDrawerState extends State<AppDrawer> {
                 Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
                 const SizedBox(width: 8),
                 Text(
-                  'Inventtia® $_appVersion',
+                  'Inventtia® Caja $_appVersion',
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
               ],

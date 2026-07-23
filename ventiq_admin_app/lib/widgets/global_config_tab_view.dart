@@ -33,6 +33,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _allowSellerMakeOrderModifications = false;
   bool _precioVentaRegidoPorUsd = false;
   bool _cambiarFechaCreacionOperacionAlCierre = false;
+  bool _solicitarImagenOperacion = false;
   String _metodoRedondeoPrecioVenta = 'NO_REDONDEAR';
   bool _hasMasterPassword = false;
   bool _showMasterPasswordField = false;
@@ -206,6 +207,24 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
     }
   }
 
+  Future<void> _updateSolicitarImagenOperacionSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      await StoreConfigService.updateSolicitarImagenOperacion(_storeId!, value);
+      setState(() => _solicitarImagenOperacion = value);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _updatePrecioVentaRegidoPorUsdSetting(bool value) async {
     if (_storeId == null) return;
 
@@ -354,6 +373,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             config['precio_venta_regido_por_usd'] ?? false;
         _cambiarFechaCreacionOperacionAlCierre =
             config['cambiar_fecha_creacion_operacion_al_cierre'] ?? false;
+        _solicitarImagenOperacion =
+            config['solicitar_imagen_operacion'] ?? false;
         _metodoRedondeoPrecioVenta =
             config['metodo_redondeo_precio_venta'] ?? 'NO_REDONDEAR';
         _hasMasterPassword = hasMasterPassword;
@@ -1166,6 +1187,20 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
           const SizedBox(height: 16),
 
+          _buildConfigCard(
+            icon: Icons.add_a_photo_outlined,
+            iconColor: Colors.blue,
+            title: 'Solicitar imagen en la operación',
+            subtitle:
+                _solicitarImagenOperacion
+                    ? 'Se exige una foto antes de crear cada operación'
+                    : 'No se solicita una foto al crear operaciones',
+            value: _solicitarImagenOperacion,
+            onChanged: _updateSolicitarImagenOperacionSetting,
+          ),
+
+          const SizedBox(height: 16),
+
           // Configuración de Precio Regido por USD
           _buildPrecioRegidoPorUsdCard(),
 
@@ -1204,7 +1239,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Estas configuraciones afectan el comportamiento de la aplicación de vendedores (Inventtia App). Los cambios se aplicarán inmediatamente para todos los usuarios. La configuración de "Mostrar Descripción en Selectores" es una preferencia local que se guarda en este dispositivo.',
+                  'Estas configuraciones afectan el comportamiento de la aplicación de caja (Inventtia Caja). Los cambios se aplicarán inmediatamente para todos los usuarios. La configuración de "Mostrar Descripción en Selectores" es una preferencia local que se guarda en este dispositivo.',
                   style: TextStyle(color: Colors.blue, fontSize: 14),
                 ),
               ],

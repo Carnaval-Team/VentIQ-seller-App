@@ -1,4 +1,8 @@
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/order.dart';
 import '../models/mesa.dart';
 import '../services/order_service.dart';
@@ -10,6 +14,7 @@ import '../services/mesa_cuenta_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/promotion_rules.dart';
 import '../utils/uuid_generator.dart';
+import '../utils/package_image_picker.dart' as web_picker;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
@@ -40,9 +45,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _isProcessing = false;
   bool _configLoading = true;
   bool _noSolicitarCliente = false; // Valor por defecto mientras se carga
-  bool _modoRestaurante = false;     // Si true, pedimos mesa en lugar de cliente
-  Mesa? _mesaSeleccionada;            // Mesa elegida en modo restaurante
-  List<Mesa> _mesasDisponibles = [];  // Cache de mesas activas para el selector
+  bool _modoRestaurante = false; // Si true, pedimos mesa en lugar de cliente
+  bool _solicitarImagenOperacion = false;
+  final ImagePicker _imagePicker = ImagePicker();
+  Uint8List? _fotoOperacionBytes;
+  String? _fotoOperacionNombre;
+  String? _fotoOperacionMime;
+  Mesa? _mesaSeleccionada; // Mesa elegida en modo restaurante
+  List<Mesa> _mesasDisponibles = []; // Cache de mesas activas para el selector
   Map<int, List<Map<String, dynamic>>> _productPromotions =
       {}; // productId -> promotions
   Map<String, dynamic>? _globalPromotionData;
@@ -109,6 +119,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           // Usar configuración del cache
           _noSolicitarCliente = config['no_solicitar_cliente'] ?? false;
           _modoRestaurante = config['modo_restaurante'] ?? false;
+          _solicitarImagenOperacion =
+              config['solicitar_imagen_operacion'] ?? false;
           print(
             '✅ Configuración cargada desde cache - No solicitar cliente: $_noSolicitarCliente, Modo restaurante: $_modoRestaurante',
           );
@@ -121,7 +133,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             storeId,
           );
           _noSolicitarCliente = noSolicitar;
-          _modoRestaurante = await StoreConfigService.getModoRestaurante(storeId);
+          _modoRestaurante = await StoreConfigService.getModoRestaurante(
+            storeId,
+          );
+          _solicitarImagenOperacion =
+              await StoreConfigService.getSolicitarImagenOperacion(storeId);
           print(
             '✅ Configuración cargada desde Supabase - No solicitar cliente: $_noSolicitarCliente, Modo restaurante: $_modoRestaurante',
           );
@@ -295,9 +311,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     // Redondear por exceso al entero más cercano para cantidades fraccionadas
     final rawTotal = precioFinal * item.cantidad;
-    final itemTotal = (item.cantidad != item.cantidad.roundToDouble())
-        ? rawTotal.ceilToDouble()
-        : rawTotal;
+    final itemTotal =
+        (item.cantidad != item.cantidad.roundToDouble())
+            ? rawTotal.ceilToDouble()
+            : rawTotal;
 
     print('  💰 ${item.producto.denominacion}:');
     print(
@@ -374,6 +391,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               // _buildExtraContactsSection(),
               const SizedBox(height: 30),
               _buildFinalTotalSection(),
+              if (_solicitarImagenOperacion) ...[
+                const SizedBox(height: 20),
+                _buildOperationPhotoSection(),
+              ],
               const SizedBox(height: 20),
               _buildCreateOrderButton(),
             ],
@@ -644,9 +665,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: mesa == null
-              ? Colors.orange.shade300
-              : const Color(0xFF4A90E2).withOpacity(0.4),
+          color:
+              mesa == null
+                  ? Colors.orange.shade300
+                  : const Color(0xFF4A90E2).withOpacity(0.4),
           width: mesa == null ? 1.5 : 1,
         ),
       ),
@@ -655,8 +677,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.table_restaurant,
-                  color: Color(0xFFE65100), size: 22),
+              const Icon(
+                Icons.table_restaurant,
+                color: Color(0xFFE65100),
+                size: 22,
+              ),
               const SizedBox(width: 8),
               const Text(
                 'Mesa de la cuenta',
@@ -668,8 +693,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
               const Spacer(),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: const Color(0xFFE65100).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10),
@@ -712,7 +736,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 color: const Color(0xFF4A90E2).withOpacity(0.08),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                    color: const Color(0xFF4A90E2).withOpacity(0.2)),
+                  color: const Color(0xFF4A90E2).withOpacity(0.2),
+                ),
               ),
               child: Row(
                 children: [
@@ -751,23 +776,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         Row(
                           children: [
                             if (mesa.zona != null && mesa.zona!.isNotEmpty) ...[
-                              Icon(Icons.location_on_outlined,
-                                  size: 12, color: Colors.grey[600]),
+                              Icon(
+                                Icons.location_on_outlined,
+                                size: 12,
+                                color: Colors.grey[600],
+                              ),
                               const SizedBox(width: 2),
                               Text(
                                 mesa.zona!,
                                 style: TextStyle(
-                                    fontSize: 12, color: Colors.grey[600]),
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
                               ),
                               const SizedBox(width: 8),
                             ],
-                            Icon(Icons.people_alt_outlined,
-                                size: 12, color: Colors.grey[600]),
+                            Icon(
+                              Icons.people_alt_outlined,
+                              size: 12,
+                              color: Colors.grey[600],
+                            ),
                             const SizedBox(width: 2),
                             Text(
                               'Cap: ${mesa.capacidad}',
                               style: TextStyle(
-                                  fontSize: 12, color: Colors.grey[600]),
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
                             ),
                           ],
                         ),
@@ -1029,6 +1064,119 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
+  Widget _buildOperationPhotoSection() {
+    final hasPhoto = _fotoOperacionBytes != null;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.blue.withOpacity(0.25)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            hasPhoto ? Icons.check_circle_outline : Icons.add_a_photo_outlined,
+            color: hasPhoto ? Colors.green : Colors.blue,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              hasPhoto
+                  ? 'Foto de la operación seleccionada'
+                  : 'Debes adjuntar una foto para crear la operación',
+            ),
+          ),
+          TextButton(
+            onPressed: _pickOperationPhoto,
+            child: Text(hasPhoto ? 'Cambiar' : 'Agregar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickOperationPhoto() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder:
+          (sheetContext) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_camera_outlined),
+                  title: const Text('Tomar foto'),
+                  onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Elegir de la galería'),
+                  onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+                ),
+              ],
+            ),
+          ),
+    );
+    if (source == null) return;
+
+    try {
+      Uint8List bytes;
+      String name;
+      String? mime;
+      if (kIsWeb) {
+        final picked = await web_picker.pickImageWeb(
+          useCamera: source == ImageSource.camera,
+        );
+        if (picked == null) return;
+        bytes = picked.bytes;
+        name = picked.name;
+        mime = picked.mimeType;
+      } else {
+        final picked = await _imagePicker.pickImage(
+          source: source,
+          imageQuality: 80,
+          maxWidth: 1400,
+        );
+        if (picked == null) return;
+        bytes = await picked.readAsBytes();
+        name = picked.name;
+        mime = picked.mimeType;
+      }
+      if (!mounted) return;
+      setState(() {
+        _fotoOperacionBytes = bytes;
+        _fotoOperacionNombre = name;
+        _fotoOperacionMime = mime;
+      });
+    } catch (e) {
+      if (mounted) _showErrorMessage('No se pudo seleccionar la foto: $e');
+    }
+  }
+
+  Future<String?> _uploadOperationPhoto() async {
+    final bytes = _fotoOperacionBytes;
+    if (bytes == null) return null;
+    final filename = (_fotoOperacionNombre ?? 'operacion.jpg').replaceAll(
+      RegExp(r'[^A-Za-z0-9._-]'),
+      '_',
+    );
+    final path =
+        'operaciones/${DateTime.now().millisecondsSinceEpoch}_$filename';
+    await Supabase.instance.client.storage
+        .from('productos')
+        .uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            contentType: _fotoOperacionMime ?? 'image/jpeg',
+          ),
+        );
+    return Supabase.instance.client.storage
+        .from('productos')
+        .getPublicUrl(path);
+  }
+
   Widget _buildCreateOrderButton() {
     return SizedBox(
       width: double.infinity,
@@ -1169,6 +1317,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
+    if (_solicitarImagenOperacion && _fotoOperacionBytes == null) {
+      _showErrorMessage('Debes adjuntar una foto para crear la operación');
+      return;
+    }
+
     // Validate that all products have payment methods assigned
     final breakdown = paymentBreakdown;
     if (breakdown.isEmpty) {
@@ -1185,6 +1338,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       final buyerName = _buyerNameController.text.trim();
       final buyerPhone = _buyerPhoneController.text.trim();
+      final fotoOperacionUrl =
+          _solicitarImagenOperacion ? await _uploadOperationPhoto() : null;
+      if (_solicitarImagenOperacion && fotoOperacionUrl == null) {
+        throw StateError('No se pudo subir la foto de la operación');
+      }
 
       // Detectar si es una orden offline
       if (widget.order.isOfflineOrder) {
@@ -1194,7 +1352,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         await _processOfflineOrder(buyerName, buyerPhone, breakdown);
       } else {
         print('🌐 Procesando orden online - Flujo normal');
-        await _processOnlineOrder(buyerName, buyerPhone, breakdown);
+        await _processOnlineOrder(
+          buyerName,
+          buyerPhone,
+          breakdown,
+          fotoOperacionUrl,
+        );
       }
     } catch (e) {
       _showErrorMessage('Error al crear la orden: $e');
@@ -1430,6 +1593,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     String buyerName,
     String buyerPhone,
     Map<String, double> breakdown,
+    String? fotoOperacionUrl,
   ) async {
     try {
       // 1. Primero registrar el cliente en Supabase si tenemos datos
@@ -1440,7 +1604,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         idCliente = await _registerClientInSupabase(buyerName, buyerPhone);
         print('📝 ID Cliente capturado: $idCliente');
       } else if (_modoRestaurante) {
-        print('🍽️ Modo restaurante: omitiendo registro de cliente (mesa ${_mesaSeleccionada?.numero})');
+        print(
+          '🍽️ Modo restaurante: omitiendo registro de cliente (mesa ${_mesaSeleccionada?.numero})',
+        );
       }
 
       // 2. Create order with all the collected information
@@ -1457,6 +1623,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'idCliente': idCliente, // Agregar ID del cliente al orderData
         'idMesa': _mesaSeleccionada?.id, // ID de mesa en modo restaurante
         'paymentBreakdown': breakdown, // Add payment breakdown
+        'fotoOperacionUrl': fotoOperacionUrl,
       };
 
       // Update the order with final information
@@ -1507,7 +1674,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             arguments: idMesa,
           );
         } else {
-          Navigator.pushNamedAndRemoveUntil(context, '/orders', (route) => false);
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/orders',
+            (route) => false,
+          );
         }
       } else {
         _showErrorMessage('Error al registrar la venta: ${result['error']}');
@@ -1639,8 +1810,10 @@ class _MesaPickerSheetState extends State<_MesaPickerSheet> {
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                 child: Row(
                   children: [
-                    const Icon(Icons.table_restaurant,
-                        color: Color(0xFFE65100)),
+                    const Icon(
+                      Icons.table_restaurant,
+                      color: Color(0xFFE65100),
+                    ),
                     const SizedBox(width: 8),
                     const Expanded(
                       child: Text(
@@ -1683,19 +1856,22 @@ class _MesaPickerSheetState extends State<_MesaPickerSheet> {
                       Padding(
                         padding: const EdgeInsets.only(right: 6, top: 8),
                         child: ChoiceChip(
-                          label: const Text('Todas',
-                              style: TextStyle(fontSize: 12)),
+                          label: const Text(
+                            'Todas',
+                            style: TextStyle(fontSize: 12),
+                          ),
                           selected: _zonaFiltro == null,
-                          onSelected: (_) =>
-                              setState(() => _zonaFiltro = null),
+                          onSelected: (_) => setState(() => _zonaFiltro = null),
                         ),
                       ),
                       for (final z in _zonas)
                         Padding(
                           padding: const EdgeInsets.only(right: 6, top: 8),
                           child: ChoiceChip(
-                            label: Text(z,
-                                style: const TextStyle(fontSize: 12)),
+                            label: Text(
+                              z,
+                              style: const TextStyle(fontSize: 12),
+                            ),
                             selected: _zonaFiltro == z,
                             onSelected: (_) => setState(() => _zonaFiltro = z),
                           ),
@@ -1704,132 +1880,143 @@ class _MesaPickerSheetState extends State<_MesaPickerSheet> {
                   ),
                 ),
               Expanded(
-                child: _filtradas.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.search_off,
-                                  size: 56, color: Colors.grey[400]),
-                              const SizedBox(height: 12),
-                              Text(
-                                widget.mesas.isEmpty
-                                    ? 'No hay mesas activas creadas.\nVe a "Mesas y Comensales" para crear una.'
-                                    : 'No hay mesas que coincidan con los filtros',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.grey[700]),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : GridView.builder(
-                        controller: scrollController,
-                        padding: const EdgeInsets.all(16),
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 150,
-                          mainAxisSpacing: 10,
-                          crossAxisSpacing: 10,
-                          childAspectRatio: 1,
-                        ),
-                        itemCount: _filtradas.length,
-                        itemBuilder: (_, i) {
-                          final m = _filtradas[i];
-                          Color border;
-                          Color bg;
-                          if (m.ordenesAbiertas == 0) {
-                            border = Colors.green.shade300;
-                            bg = Colors.green.shade50;
-                          } else if (m.ordenesAbiertas == 1) {
-                            border = Colors.orange.shade300;
-                            bg = Colors.orange.shade50;
-                          } else {
-                            border = Colors.red.shade300;
-                            bg = Colors.red.shade50;
-                          }
-                          return Material(
-                            color: bg,
-                            borderRadius: BorderRadius.circular(12),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(12),
-                              onTap: () => Navigator.pop(context, m),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: border, width: 1.5),
+                child:
+                    _filtradas.isEmpty
+                        ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.search_off,
+                                  size: 56,
+                                  color: Colors.grey[400],
                                 ),
-                                padding: const EdgeInsets.all(10),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      m.numero,
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF1F2937),
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                const SizedBox(height: 12),
+                                Text(
+                                  widget.mesas.isEmpty
+                                      ? 'No hay mesas activas creadas.\nVe a "Mesas y Comensales" para crear una.'
+                                      : 'No hay mesas que coincidan con los filtros',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: Colors.grey[700]),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                        : GridView.builder(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          gridDelegate:
+                              const SliverGridDelegateWithMaxCrossAxisExtent(
+                                maxCrossAxisExtent: 150,
+                                mainAxisSpacing: 10,
+                                crossAxisSpacing: 10,
+                                childAspectRatio: 1,
+                              ),
+                          itemCount: _filtradas.length,
+                          itemBuilder: (_, i) {
+                            final m = _filtradas[i];
+                            Color border;
+                            Color bg;
+                            if (m.ordenesAbiertas == 0) {
+                              border = Colors.green.shade300;
+                              bg = Colors.green.shade50;
+                            } else if (m.ordenesAbiertas == 1) {
+                              border = Colors.orange.shade300;
+                              bg = Colors.orange.shade50;
+                            } else {
+                              border = Colors.red.shade300;
+                              bg = Colors.red.shade50;
+                            }
+                            return Material(
+                              color: bg,
+                              borderRadius: BorderRadius.circular(12),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () => Navigator.pop(context, m),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: border,
+                                      width: 1.5,
                                     ),
-                                    if (m.zona != null && m.zona!.isNotEmpty)
+                                  ),
+                                  padding: const EdgeInsets.all(10),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
                                       Text(
-                                        m.zona!,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey[700],
-                                          fontStyle: FontStyle.italic,
+                                        m.numero,
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF1F2937),
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
-                                    const Spacer(),
-                                    Row(
-                                      children: [
-                                        Icon(Icons.people_alt_outlined,
-                                            size: 13, color: Colors.grey[700]),
-                                        const SizedBox(width: 3),
+                                      if (m.zona != null && m.zona!.isNotEmpty)
                                         Text(
-                                          '${m.capacidad}',
+                                          m.zona!,
                                           style: TextStyle(
-                                            fontSize: 12,
+                                            fontSize: 11,
+                                            color: Colors.grey[700],
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      const Spacer(),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.people_alt_outlined,
+                                            size: 13,
                                             color: Colors.grey[700],
                                           ),
-                                        ),
-                                        const Spacer(),
-                                        if (m.ordenesAbiertas > 0)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 5,
-                                              vertical: 1,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: border,
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                            child: Text(
-                                              '${m.ordenesAbiertas}',
-                                              style: const TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.white,
-                                              ),
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            '${m.capacidad}',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[700],
                                             ),
                                           ),
-                                      ],
-                                    ),
-                                  ],
+                                          const Spacer(),
+                                          if (m.ordenesAbiertas > 0)
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 5,
+                                                    vertical: 1,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: border,
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: Text(
+                                                '${m.ordenesAbiertas}',
+                                                style: const TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                          );
-                        },
-                      ),
+                            );
+                          },
+                        ),
               ),
             ],
           ),

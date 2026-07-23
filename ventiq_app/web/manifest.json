@@ -1,11 +1,11 @@
 {
-    "name": "ventiq_app",
-    "short_name": "ventiq_app",
+    "name": "Inventtia Caja",
+    "short_name": "Inventtia Caja",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Inventtia Caja - Punto de venta (TPV) para gestionar ventas, caja y turnos.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

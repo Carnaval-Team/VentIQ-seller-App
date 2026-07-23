@@ -77,7 +77,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Inventtia Admin',
+      title: 'Inventtia Gestión',
       debugShowCheckedModeBanner: false,
       // Configuración específica para web deployment
       // useInheritedMediaQuery: true,

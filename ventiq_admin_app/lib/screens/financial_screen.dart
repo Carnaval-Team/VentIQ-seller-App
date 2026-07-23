@@ -304,7 +304,7 @@ class _FinancialScreenState extends State<FinancialScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Sistema Financiero VentIQ',
+                        'Sistema Financiero Inventtia',
                         style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,

@@ -470,7 +470,7 @@ class _SplashScreenState extends State<SplashScreen> {
               const SizedBox(height: 24),
               // Loading text
               const Text(
-                'Iniciando Inventtia...',
+                'Iniciando Inventtia Caja...',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 16,

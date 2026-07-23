@@ -67,6 +67,7 @@ class StoreConfigService {
     bool? allowSellerMakeOrderModifications,
     bool? precioVentaRegidoPorUsd,
     bool? cambiarFechaCreacionOperacionAlCierre,
+    bool? solicitarImagenOperacion,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
@@ -157,6 +158,11 @@ class StoreConfigService {
         print(
           '  - cambiar_fecha_creacion_operacion_al_cierre: $cambiarFechaCreacionOperacionAlCierre',
         );
+      }
+
+      if (solicitarImagenOperacion != null) {
+        updateData['solicitar_imagen_operacion'] = solicitarImagenOperacion;
+        print('  - solicitar_imagen_operacion: $solicitarImagenOperacion');
       }
 
       if (updateData.isEmpty) {
@@ -398,6 +404,13 @@ class StoreConfigService {
       storeId,
       cambiarFechaCreacionOperacionAlCierre: value,
     );
+  }
+
+  static Future<void> updateSolicitarImagenOperacion(
+    int storeId,
+    bool value,
+  ) async {
+    await updateStoreConfig(storeId, solicitarImagenOperacion: value);
   }
 
   /// Obtiene el valor de precio_venta_regido_por_usd

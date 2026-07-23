@@ -20,7 +20,7 @@ import 'web_download_stub.dart'
     as web_download;
 
 class ExportService {
-  static const String _appName = 'Inventtia Admin';
+  static const String _appName = 'Inventtia Gestión';
 
   // Cache para las fuentes
   static pw.Font? _regularFont;

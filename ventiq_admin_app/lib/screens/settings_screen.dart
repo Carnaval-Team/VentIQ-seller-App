@@ -552,7 +552,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Publica tus productos en el catálogo de VentIQ para que otros clientes puedan verlos y comprarlos.',
+                    'Publica tus productos en el catálogo de Inventtia para que otros clientes puedan verlos y comprarlos.',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey.shade600,
@@ -647,7 +647,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName:
-              'VentIQAdmin/1.6.0 (+https://ventiq.com; contact: support@ventiq.com)',
+              'InventtiaGestion/1.0 (+https://inventtia.com; contact: support@inventtia.com)',
           tileSize: 256,
         ),
         RichAttributionWidget(

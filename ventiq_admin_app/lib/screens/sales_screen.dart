@@ -360,7 +360,7 @@ class _SalesScreenState extends State<SalesScreen>
                 .maybeSingle();
       }
 
-      final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+      final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
       final storeAddress = storeData?['direccion'] as String? ?? '';
       final storeLocation = storeData?['ubicacion'] as String? ?? '';
       final storePhone = storeData?['phone'] as String? ?? '';
@@ -625,7 +625,7 @@ class _SalesScreenState extends State<SalesScreen>
                 .maybeSingle();
       }
 
-      final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+      final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
       final storeAddress = storeData?['direccion'] as String? ?? '';
       final storeLocation = storeData?['ubicacion'] as String? ?? '';
       final storePhone = storeData?['phone'] as String? ?? '';
@@ -9077,7 +9077,7 @@ class _SalesScreenState extends State<SalesScreen>
                 .maybeSingle();
       }
 
-      final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+      final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
       final storeAddress = storeData?['direccion'] as String? ?? '';
       final storeLocation = storeData?['ubicacion'] as String? ?? '';
       final storePhone = storeData?['phone'] as String? ?? '';
@@ -9613,7 +9613,7 @@ class _SalesScreenState extends State<SalesScreen>
                 .maybeSingle();
       }
 
-      final storeName = storeData?['denominacion'] as String? ?? 'VentIQ';
+      final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
       final storeAddress = storeData?['direccion'] as String? ?? '';
       final storeLocation = storeData?['ubicacion'] as String? ?? '';
       final storePhone = storeData?['phone'] as String? ?? '';

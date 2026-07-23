@@ -100,8 +100,8 @@ class LocalNotificationService {
       // Configuración de Android
       final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
         'ventiq_admin_notifications', // Canal ID
-        'Notificaciones VentIQ Admin', // Nombre del canal
-        channelDescription: 'Notificaciones de la aplicación VentIQ Admin',
+        'Notificaciones Inventtia Gestión', // Nombre del canal
+        channelDescription: 'Notificaciones de la aplicación Inventtia Gestión',
         importance: importance,
         priority: priority,
         showWhen: true,

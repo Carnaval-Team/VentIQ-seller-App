@@ -319,7 +319,7 @@ class StoreAiAssistantService {
       '  ',
     ).convert(layoutTypes);
 
-    return '''Eres un asistente de configuración para crear una tienda en VentIQ Admin.
+    return '''Eres un asistente de configuración para crear una tienda en Inventtia Gestión.
 Tu objetivo es completar un plan con TODOS los datos necesarios para crear una tienda y su estructura inicial.
 
 RESTRICCIÓN:
