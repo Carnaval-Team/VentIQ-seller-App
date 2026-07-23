@@ -1,11 +1,33 @@
 {
-  "current_version": "2.3.3",
-  "build": 233,
+  "current_version": "2.3.4",
+  "build": 234,
 
   "app_name": "ventiq_admin",
   "changelogs": [
     {
-      "version": "2.3.3",
+      "version": "2.3.4",
+      "date": "2026-07-23",
+      "title": "📷 Control de fotos y ubicaciones más visibles",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Solicita foto al crear una operación",
+          "description": "En Configuración Global puedes decidir si la Caja debe exigir una foto al crear cada operación."
+        },
+        {
+          "type": "feature",
+          "title": "Consulta la foto dentro del detalle de operación",
+          "description": "Las operaciones con foto ahora la muestran directamente en su detalle, con opción de ampliarla."
+        },
+        {
+          "type": "improvement",
+          "title": "Provincia y municipio visibles en órdenes Carnaval",
+          "description": "El listado de órdenes Carnaval ahora muestra la provincia y el municipio obtenidos desde la misma dirección que se consulta en el detalle de cada orden."
+        }
+      ]
+    },
+    {
+      "version": "2.3.3", 
       "date": "2026-07-13",
       "title": "Cambios menores de permisos",
       "changes": [

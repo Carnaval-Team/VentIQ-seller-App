@@ -1,11 +1,28 @@
 {
-  "current_version": "2.3.6",
-  "build": 838,
+  "current_version": "2.3.7",
+  "build": 839,
 
   "app_name": "ventiq_app",
   "changelogs": [
     {
-      "version": "2.3.6",
+      "version": "2.3.7",
+      "date": "2026-07-23",
+      "title": "📷 Fotos de operación con consulta inmediata",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Foto requerida cuando la tienda la configure",
+          "description": "Cuando la administración active la solicitud de imagen, Caja pedirá una foto desde cámara o galería antes de crear la operación."
+        },
+        {
+          "type": "feature",
+          "title": "Foto disponible en el detalle de la orden",
+          "description": "Las fotos se guardan de manera independiente por operación y puedes consultarlas o ampliarlas desde los datos del cliente en el detalle de cada orden."
+        }
+      ]
+    },
+    {
+      "version": "2.3.6", 
       "date": "2026-07-21",
       "title": "📶 Corrección de errores.",
       "changes": [
