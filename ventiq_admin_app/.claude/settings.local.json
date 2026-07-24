@@ -27,7 +27,7 @@
       "Bash(deno --version)"
     ]
   },
-  "disabledMcpjsonServers": [
+   "enabledMcpjsonServers": [
     "supabase"
   ]
 }
