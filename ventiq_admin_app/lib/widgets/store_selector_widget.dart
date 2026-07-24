@@ -148,9 +148,11 @@ class _StoreSelectorWidgetState extends State<StoreSelectorWidget> {
                   ),
                 );
               }).toList(),
-          onChanged: (Store? newStore) {
+          onChanged: (Store? newStore) async {
             if (newStore != null) {
-              storeService.selectStore(newStore);
+              await storeService.selectStore(newStore);
+              // En Web recarga para descartar estado en memoria; móvil no-op.
+              storeService.reloadAfterStoreSwitchIfWeb();
             }
           },
         ),
@@ -266,9 +268,11 @@ class _StoreSelectorWidgetState extends State<StoreSelectorWidget> {
                     ),
                   );
                 }).toList(),
-            onChanged: (Store? newStore) {
+            onChanged: (Store? newStore) async {
               if (newStore != null) {
-                storeService.selectStore(newStore);
+                await storeService.selectStore(newStore);
+                // En Web recarga para descartar estado en memoria; móvil no-op.
+                storeService.reloadAfterStoreSwitchIfWeb();
 
                 // Mostrar confirmación
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -524,6 +528,10 @@ class _AppBarStoreSelectorWidgetState extends State<AppBarStoreSelectorWidget> {
           ),
         );
       }
+
+      // Ya persistimos tienda y rol: en Web recargamos para descartar el
+      // estado en memoria de las pantallas montadas. En móvil es no-op.
+      _storeService.reloadAfterStoreSwitchIfWeb();
     } catch (e) {
       print('❌ Error switching store: $e');
 

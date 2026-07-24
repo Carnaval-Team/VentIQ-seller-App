@@ -6,7 +6,10 @@ import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
 import '../services/auth_service.dart';
 import '../services/subscription_service.dart';
+import '../services/session_cache_manager.dart';
 import '../utils/navigation_guard.dart';
+import '../utils/platform_utils.dart';
+import '../utils/web_reload.dart' as web_reload;
 import '../services/changelog_service.dart';
 import '../services/update_service.dart';
 import '../services/carnaval_service.dart';
@@ -807,6 +810,14 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             if (dialogContext.mounted) {
                               Navigator.of(dialogContext).pop();
                             }
+                            // En Web recargamos la página completa: los
+                            // singletons (servicios con caché) sobreviven a la
+                            // navegación SPA y arrastran datos de la sesión
+                            // anterior. Un reload real los recrea desde cero.
+                            if (PlatformUtils.isWeb) {
+                              web_reload.reloadToRoot();
+                              return;
+                            }
                             // Navegar a splash que detectará que no hay sesión
                             if (context.mounted) {
                               Navigator.of(
@@ -850,6 +861,11 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
       // Usar AuthService.signOut() que limpia TODO correctamente
       await authService.signOut();
+
+      // Invalidar cachés en memoria de todos los singletons. En móvil no hay
+      // reload de página, así que esta limpieza es la que evita arrastrar
+      // datos de la sesión anterior.
+      await SessionCacheManager.clearForLogout();
 
       // Pequeña espera para asegurar que la limpieza se complete
       await Future.delayed(const Duration(milliseconds: 300));

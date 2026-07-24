@@ -4,6 +4,9 @@ import 'dart:convert';
 import '../../config/app_colors.dart';
 import '../../services/user_preferences_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/session_cache_manager.dart';
+import '../../utils/platform_utils.dart';
+import '../../utils/web_reload.dart' as web_reload;
 
 class HRDrawer extends StatefulWidget {
   final bool isFromGerente;
@@ -327,9 +330,16 @@ class _HRDrawerState extends State<HRDrawer> {
                       : () async {
                           setState(() => isLoading = true);
                           await AuthService().signOut();
+                          await SessionCacheManager.clearForLogout();
                           await Future.delayed(const Duration(milliseconds: 300));
                           if (dialogContext.mounted) {
                             Navigator.of(dialogContext).pop();
+                          }
+                          // En Web, reload completo para descartar el estado
+                          // en memoria de los singletons (ver admin_drawer).
+                          if (PlatformUtils.isWeb) {
+                            web_reload.reloadToRoot();
+                            return;
                           }
                           if (context.mounted) {
                             Navigator.of(context, rootNavigator: true)

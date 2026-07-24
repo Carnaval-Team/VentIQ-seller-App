@@ -455,6 +455,10 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         );
       }
+
+      // Ya persistimos tienda y rol: en Web recargamos para descartar el
+      // estado en memoria de las pantallas montadas. En móvil es no-op.
+      _storeSelectorService.reloadAfterStoreSwitchIfWeb();
     } catch (e) {
       print('❌ Error switching store: $e');
 

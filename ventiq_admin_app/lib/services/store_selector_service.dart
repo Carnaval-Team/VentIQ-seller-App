@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
+import 'session_cache_manager.dart';
+import '../utils/platform_utils.dart';
+import '../utils/web_reload.dart' as web_reload;
 
 class Store {
   final int id;
@@ -288,14 +291,36 @@ class StoreSelectorService extends ChangeNotifier {
 
     _selectedStore = store;
 
-    // Guardar en preferencias
+    // Guardar en preferencias ANTES de invalidar cachés / recargar, para que
+    // al re-resolver el rol y (en Web) al recargar la página, la tienda nueva
+    // ya esté persistida.
     await _userPreferencesService.updateSelectedStore(store.id);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_selectedStoreKey, store.id);
 
+    // Invalidar los cachés en memoria que dependen de la tienda (rol,
+    // suscripción, consignaciones). Sin esto, los singletons muestran datos
+    // de la tienda anterior.
+    await SessionCacheManager.clearForStoreSwitch();
+
     print('🏪 Tienda cambiada a: ${store.denominacion} (ID: ${store.id})');
 
     notifyListeners();
+  }
+
+  /// Recarga la página en Web para descartar el estado en memoria de las
+  /// pantallas ya montadas (listas, controllers) que sobreviven al cambio de
+  /// tienda y seguirían mostrando datos de la tienda anterior.
+  ///
+  /// DEBE llamarse al FINAL del flujo de cambio de tienda, después de haber
+  /// persistido todo en preferencias, porque tras esta llamada el navegador
+  /// descarga la página y el código posterior podría no ejecutarse.
+  /// En móvil/desktop es un no-op (allí se confía en notifyListeners + la
+  /// invalidación de cachés).
+  void reloadAfterStoreSwitchIfWeb() {
+    if (PlatformUtils.isWeb) {
+      web_reload.reloadPage();
+    }
   }
 
   /// Obtener ID de la tienda seleccionada (compatibilidad con código existente)
