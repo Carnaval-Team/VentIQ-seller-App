@@ -36,6 +36,37 @@ class PermissionsService {
     clearCache();
   }
 
+  Future<void> initializeSessionPermissions() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      clearAllCache();
+      return;
+    }
+
+    if (_cachedUserId == user.id && _cachedRolesByStore != null) return;
+
+    clearAllCache();
+    _cachedUserId = user.id;
+    final storedUserId = await _userPrefs.getUserId();
+    if (storedUserId == user.id) {
+      final storedRoles = await _userPrefs.getUserRolesByStore();
+      if (storedRoles.isNotEmpty) {
+        _cachedRolesByStore = storedRoles.map(
+          (storeId, roleName) =>
+              MapEntry(storeId, _convertStringToUserRole(roleName)),
+        );
+        final currentStoreId = await _userPrefs.getIdTienda();
+        if (currentStoreId != null) {
+          _cachedRole = _cachedRolesByStore![currentStoreId];
+          _cachedRoleStoreId = currentStoreId;
+        }
+        return;
+      }
+    }
+
+    await getUserRolesByStore();
+  }
+
   /// Obtener el rol del usuario actual
   /// Primero intenta obtener del caché, luego de preferencias guardadas, y finalmente de la BD
   Future<UserRole> getUserRole() async {
@@ -91,9 +122,10 @@ class PermissionsService {
       }
 
       // Si hay tienda actual, usar ese rol; de lo contrario, usar el rol de mayor jerarquía
-      final role = currentStoreId != null && rolesByStore.containsKey(currentStoreId)
-          ? rolesByStore[currentStoreId]!
-          : _getHighestRole(rolesByStore);
+      final role =
+          currentStoreId != null && rolesByStore.containsKey(currentStoreId)
+              ? rolesByStore[currentStoreId]!
+              : _getHighestRole(rolesByStore);
 
       print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: ${getRoleName(role)}');
       _cachedRole = role;
@@ -117,8 +149,9 @@ class PermissionsService {
       UserRole.none: 0,
     };
 
-    return rolesByStore.values.reduce((a, b) =>
-        (priority[a] ?? 0) >= (priority[b] ?? 0) ? a : b);
+    return rolesByStore.values.reduce(
+      (a, b) => (priority[a] ?? 0) >= (priority[b] ?? 0) ? a : b,
+    );
   }
 
   /// Convertir string de rol a UserRole enum
@@ -144,19 +177,31 @@ class PermissionsService {
   /// Obtener todos los roles del usuario para cada tienda
   /// Retorna: Map<idTienda, UserRole>
   Future<Map<int, UserRole>> getUserRolesByStore() async {
-    if (_cachedRolesByStore != null) {
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      print('❌ No hay usuario autenticado');
+      return {};
+    }
+
+    if (_cachedUserId == user.id && _cachedRolesByStore != null) {
       print('💾 Usando roles por tienda en caché: $_cachedRolesByStore');
       return _cachedRolesByStore!;
     }
 
     try {
-      final user = _supabase.auth.currentUser;
-      if (user == null) {
-        print('❌ No hay usuario autenticado');
-        return {};
+      _cachedUserId = user.id;
+      final storedUserId = await _userPrefs.getUserId();
+      if (storedUserId == user.id) {
+        final storedRoles = await _userPrefs.getUserRolesByStore();
+        if (storedRoles.isNotEmpty) {
+          _cachedRolesByStore = storedRoles.map(
+            (storeId, roleName) =>
+                MapEntry(storeId, _convertStringToUserRole(roleName)),
+          );
+          return _cachedRolesByStore!;
+        }
       }
 
-      _cachedUserId = user.id;
       final rolesByStore = <int, UserRole>{};
       print('🔍 Verificando roles por tienda para UUID: ${user.id}');
 
@@ -258,11 +303,8 @@ class PermissionsService {
   /// Si no está pero el usuario tiene un solo rol, retorna ese rol
   /// Si no está y hay múltiples roles, retorna none
   Future<UserRole> getUserRoleForStore(int storeId) async {
-    // Primero intentar con roles guardados en preferencias (más rápido y consistente)
-    final storedRoleName = await _userPrefs.getUserRoleForStore(storeId);
-    if (storedRoleName != null && storedRoleName.isNotEmpty) {
-      return _convertStringToUserRole(storedRoleName);
-    }
+    final cachedRole = _cachedRolesByStore?[storeId];
+    if (cachedRole != null) return cachedRole;
 
     final rolesByStore = await getUserRolesByStore();
 
@@ -748,4 +790,12 @@ class PermissionsService {
 }
 
 /// Enum de roles de usuario
-enum UserRole { gerente, supervisor, auditor, almacenero, vendedor, recursosHumanos, none }
+enum UserRole {
+  gerente,
+  supervisor,
+  auditor,
+  almacenero,
+  vendedor,
+  recursosHumanos,
+  none,
+}
