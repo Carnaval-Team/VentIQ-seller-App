@@ -59,7 +59,9 @@ class _LoginScreenState extends State<LoginScreen> {
       try {
         final role = await _permissionsService.getUserRole();
         if (role == UserRole.recursosHumanos && mounted) {
-          print('✅ Usuario HR detectado en auto-login, navegando a HR dashboard...');
+          print(
+            '✅ Usuario HR detectado en auto-login, navegando a HR dashboard...',
+          );
           Navigator.pushNamedAndRemoveUntil(
             context,
             '/hr-dashboard',
@@ -524,6 +526,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
       await _userPreferencesService.saveUserRolesByStore(rolesForStorage);
+      await _permissionsService.initializeSessionPermissions();
       print('💾 Roles por tienda guardados: $rolesForStorage');
 
       print('✅ Usuario autenticado:');
