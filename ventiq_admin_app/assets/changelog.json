@@ -1,9 +1,26 @@
 {
-  "current_version": "2.3.4",
-  "build": 234,
+  "current_version": "2.3.5",
+  "build": 235,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.3.5",
+      "date": "2026-07-24",
+      "title": "👥 Recursos Humanos ya puede dar de alta trabajadores",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Agrega trabajadores desde Recursos Humanos",
+          "description": "En Configurar Trabajador ahora encontrarás un botón para agregar un nuevo trabajador con su nombre, salario por hora y rol, sin salir del módulo de Recursos Humanos."
+        },
+        {
+          "type": "improvement",
+          "title": "Alta sencilla, sin crear cuenta de acceso",
+          "description": "El trabajador se registra listo para el control de asistencia y salarios. La creación de su usuario para entrar a la app sigue reservada al gerente o supervisor, así cada rol mantiene sus responsabilidades."
+        }
+      ]
+    },
     {
       "version": "2.3.4",
       "date": "2026-07-23",
