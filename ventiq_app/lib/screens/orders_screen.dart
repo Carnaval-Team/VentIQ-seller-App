@@ -6698,7 +6698,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       productPromotions: _productPromotions,
       globalPromotion: _globalPromotion,
       paymentMethodId: paymentId,
-      quantity: _addQuantity.round(),
+      quantity: _addQuantity,
     );
 
     if (promotion == null) {
@@ -8191,10 +8191,7 @@ class _QuantityTextFieldState extends State<_QuantityTextField> {
 
   String _formatQuantity(double value) {
     if (value % 1 == 0) return value.toInt().toString();
-    return value
-        .toStringAsFixed(3)
-        .replaceFirst(RegExp(r'0+$'), '')
-        .replaceFirst(RegExp(r'\.$'), '');
+    return value.toString();
   }
 
   @override

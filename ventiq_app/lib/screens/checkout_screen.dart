@@ -278,7 +278,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       productPromotions: productPromotions,
       globalPromotion: _globalPromotionData,
       paymentMethodId: paymentMethodId,
-      quantity: item.cantidad.round(),
+      quantity: item.cantidad,
     );
 
     // Si no hay promoción aplicable, es un caso de precio base
@@ -309,12 +309,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       promotion: applicablePromotion,
     );
 
-    // Redondear por exceso al entero más cercano para cantidades fraccionadas
-    final rawTotal = precioFinal * item.cantidad;
-    final itemTotal =
-        (item.cantidad != item.cantidad.roundToDouble())
-            ? rawTotal.ceilToDouble()
-            : rawTotal;
+    final itemTotal = precioFinal * item.cantidad;
 
     print('  💰 ${item.producto.denominacion}:');
     print(
@@ -1463,7 +1458,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               // ✅ CORREGIDO: Usar el precio unitario correcto calculado desde el subtotal
               final precioUnitarioCorrect =
                   item.cantidad > 0
-                      ? (itemTotal / item.cantidad).ceilToDouble()
+                      ? itemTotal / item.cantidad
                       : item.precioUnitario;
 
               print(

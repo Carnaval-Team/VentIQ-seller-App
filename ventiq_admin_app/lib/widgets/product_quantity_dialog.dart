@@ -54,13 +54,13 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   @override
   void initState() {
     super.initState();
-    
+
     // Debug: Verificar el producto recibido en el diálogo
     print('🎯 ProductQuantityDialog - Producto recibido:');
     print('  - name: ${widget.product.name}');
     print('  - sku: "${widget.product.sku}"');
     print('  - sku.isEmpty: ${widget.product.sku.isEmpty}');
-    
+
     _finalCurrency = widget.invoiceCurrency;
     _initializeVariantsAndPresentations();
     _loadLastPurchasePrice();
@@ -191,16 +191,19 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
     }
   }
 
-  Future<void> _loadAveragePriceForPresentation(Map<String, dynamic> presentation) async {
+  Future<void> _loadAveragePriceForPresentation(
+    Map<String, dynamic> presentation,
+  ) async {
     if (presentation['id'] == null) return;
-    
+
     setState(() => _isLoadingAveragePrice = true);
     try {
-      final response = await Supabase.instance.client
-          .from('app_dat_producto_presentacion')
-          .select('precio_promedio')
-          .eq('id', presentation['id'])
-          .single();
+      final response =
+          await Supabase.instance.client
+              .from('app_dat_producto_presentacion')
+              .select('precio_promedio')
+              .eq('id', presentation['id'])
+              .single();
 
       if (response != null) {
         final precioPromedio = response['precio_promedio'];
@@ -252,7 +255,11 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
 
   void _submitForm() async {
     if (_formKey.currentState!.validate()) {
-      final cantidad = (!widget.product.esServicio && !widget.product.esElaborado) ? (double.tryParse(_quantityController.text) ?? 0.0) : 1.0;
+      final cantidad =
+          double.tryParse(
+            _quantityController.text.trim().replaceAll(',', '.'),
+          ) ??
+          0.0;
       final precioUnitario =
           double.tryParse(_precioUnitarioController.text) ?? 0;
       final precioConvertido = _finalPriceInUSD ?? precioUnitario;
@@ -264,8 +271,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
           double.tryParse(_descuentoMontoController.text) ?? 0;
       final bonificacionCantidad =
           double.tryParse(_bonificacionCantidadController.text) ?? 0;
-      final monedaGuardar =
-          _finalCurrency ?? _getCurrentInputCurrency();
+      final monedaGuardar = _finalCurrency ?? _getCurrentInputCurrency();
 
       try {
         final baseProductData = {
@@ -360,7 +366,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                             color: AppColors.textPrimary,
                           ),
                         ),
-                       
+
                         // ← NUEVO: Mostrar moneda de factura
                         Container(
                           margin: EdgeInsets.only(top: 4),
@@ -532,10 +538,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                   ),
                 Text(
                   'Stock actual: ${widget.product.stockDisponible}',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: AppColors.primary,
-                  ),
+                  style: TextStyle(fontSize: 16, color: AppColors.primary),
                 ),
               ],
             ),
@@ -648,7 +651,6 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
         ],
 
         // Quantity
-        if(!widget.product.esServicio && !widget.product.esElaborado)
         TextFormField(
           controller: _quantityController,
           decoration: InputDecoration(
@@ -668,8 +670,10 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
           validator: (value) {
             if (value == null || value.isEmpty)
               return 'La cantidad es obligatoria';
-            if (double.tryParse(value) == null || double.parse(value) <= 0)
+            final cantidad = double.tryParse(value.trim().replaceAll(',', '.'));
+            if (cantidad == null || cantidad <= 0) {
               return 'Ingrese una cantidad válida';
+            }
             return null;
           },
         ),

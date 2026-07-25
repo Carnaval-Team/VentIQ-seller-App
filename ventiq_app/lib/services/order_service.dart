@@ -215,7 +215,7 @@ class OrderService {
             final activePromotion = PromotionRules.pickPromotionForDisplay(
               productPromotions: productPromos,
               globalPromotion: globalPromotion,
-              quantity: item.cantidad.round(),
+              quantity: item.cantidad,
             );
 
             if (activePromotion == null) {
