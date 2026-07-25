@@ -1795,21 +1795,25 @@ class CarnavalService {
     }
   }
 
-  /// Obtiene provincia y municipio de una dirección por su texto
+  /// Obtiene provincia y municipio de una dirección por su texto.
+  /// Solo devuelve nombres de ubicación (nunca `id`), para no pisar
+  /// campos de `Orders` al enriquecer la lista.
   static Future<Map<String, dynamic>?> getOrderDireccion(
       String direccionText) async {
     try {
       final dirResponse = await _supabase
           .schema('carnavalapp')
           .from('Direcciones')
-          .select('id, address, provincia, municipio')
+          .select('address, provincia, municipio')
           .eq('address', direccionText)
           .limit(1)
           .maybeSingle();
 
       if (dirResponse == null) return null;
 
-      final result = Map<String, dynamic>.from(dirResponse);
+      final result = <String, dynamic>{
+        'address': dirResponse['address'],
+      };
       final provinciaId = dirResponse['provincia'];
       final municipioId = dirResponse['municipio'];
 

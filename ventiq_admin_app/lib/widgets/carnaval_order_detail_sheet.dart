@@ -41,6 +41,16 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   Future<void> _loadDetails() async {
     setState(() => _isLoading = true);
 
+    // Estado autoritativo: siempre re-leer Orders desde Carnaval
+    // (evita status stale o contaminado por enrich de dirección en la lista).
+    final orderId = _order['id'] as int?;
+    if (orderId != null) {
+      final fresh = await CarnavalService.getOrderById(orderId);
+      if (fresh != null && mounted) {
+        _order = fresh;
+      }
+    }
+
     final detailsFuture = CarnavalService.getOrderDetails(
       _order['id'],
       proveedorFilter: widget.isAdmin ? null : widget.carnavalStoreId,
@@ -49,14 +59,15 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     // Load extra data in parallel
     final userId = _order['user_id'] as int?;
     final direccion = _order['direccion'] as String?;
-    final orderId = _order['id'] as int?;
+    final resolvedOrderId = _order['id'] as int?;
 
     final futures = await Future.wait([
       detailsFuture,
       if (userId != null) CarnavalService.getOrderUserInfo(userId),
       if (direccion != null && direccion.isNotEmpty)
         CarnavalService.getOrderDireccion(direccion),
-      if (orderId != null) CarnavalService.getVentiqOperationId(orderId),
+      if (resolvedOrderId != null)
+        CarnavalService.getVentiqOperationId(resolvedOrderId),
     ]);
 
     int idx = 1;
@@ -70,7 +81,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
         _direccionInfo = futures[idx] as Map<String, dynamic>?;
         idx++;
       }
-      if (orderId != null) {
+      if (resolvedOrderId != null) {
         _ventiqOperationId = futures[idx] as int?;
       }
       _isLoading = false;

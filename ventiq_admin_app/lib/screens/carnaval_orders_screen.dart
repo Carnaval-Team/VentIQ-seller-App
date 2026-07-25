@@ -174,7 +174,14 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
         final direccionInfo = await CarnavalService.getOrderDireccion(
           direccion,
         );
-        if (direccionInfo != null) result.addAll(direccionInfo);
+        // Solo nombres de ubicación. NUNCA addAll: Direcciones.id pisa
+        // Orders.id y hace que el estado parezca de otra orden al cruzar con BD.
+        if (direccionInfo != null) {
+          final provincia = direccionInfo['provincia_nombre'];
+          final municipio = direccionInfo['municipio_nombre'];
+          if (provincia != null) result['provincia_nombre'] = provincia;
+          if (municipio != null) result['municipio_nombre'] = municipio;
+        }
         return result;
       }),
     );
