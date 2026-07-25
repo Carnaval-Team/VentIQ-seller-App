@@ -1274,32 +1274,100 @@ class OrderService {
 
       print('Pagos array: $pagos');
 
-      // Llamar a fn_registrar_pago_venta
-      final response = await Supabase.instance.client.rpc(
-        'fn_registrar_pago_venta',
-        params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
-      );
+      // La venta ya está creada, pero el registro de pagos es una segunda
+      // llamada NO atómica. Un fallo transitorio (red/timeout) dejaba la venta
+      // sin fila en app_dat_pago_venta ("en ocasiones no registra el pago").
+      // Estrategia: reintentar con guarda idempotente + verificación final.
+      //  - Antes de cada intento se comprueba si ya existen pagos para la
+      //    operación; si existen, se considera hecho (evita duplicar cuando un
+      //    intento previo sí insertó pero se perdió la respuesta).
+      //  - fn_registrar_venta ya inserta el pago cuando el total es 0, así que
+      //    la guarda también cubre ese caso sin duplicar.
+      const maxAttempts = 3;
+      Object? lastError;
 
-      print('Respuesta fn_registrar_pago_venta: $response');
+      for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (await _pagosYaRegistrados(operationId)) {
+          print(
+            '♻️ Pagos ya registrados para operación $operationId (idempotente, intento $attempt)',
+          );
+          return {
+            'success': true,
+            'data': true,
+            'paymentsRegistered': pagos.length,
+          };
+        }
 
-      if (response == true) {
+        try {
+          final response = await Supabase.instance.client.rpc(
+            'fn_registrar_pago_venta',
+            params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+          );
+
+          print(
+            'Respuesta fn_registrar_pago_venta (intento $attempt): $response',
+          );
+
+          if (response == true) {
+            return {
+              'success': true,
+              'data': response,
+              'paymentsRegistered': pagos.length,
+            };
+          }
+          lastError = 'La función fn_registrar_pago_venta retornó: $response';
+        } catch (e) {
+          lastError = e;
+          print('⚠️ Intento $attempt de registro de pagos falló: $e');
+        }
+
+        if (attempt < maxAttempts) {
+          await Future.delayed(Duration(milliseconds: 400 * attempt));
+        }
+      }
+
+      // Verificación final: quizá el último intento sí insertó pero la
+      // respuesta no llegó (error de red al confirmar).
+      if (await _pagosYaRegistrados(operationId)) {
+        print(
+          '✅ Verificación final: pagos presentes para operación $operationId',
+        );
         return {
           'success': true,
-          'data': response,
+          'data': true,
           'paymentsRegistered': pagos.length,
         };
-      } else {
-        return {
-          'success': false,
-          'error': 'La función fn_registrar_pago_venta retornó: $response',
-        };
       }
+
+      return {
+        'success': false,
+        'error':
+            'Error al registrar pagos tras $maxAttempts intentos: $lastError',
+      };
     } catch (e) {
       print('Error en _registerPaymentsInSupabase: $e');
       return {
         'success': false,
         'error': 'Error al registrar pagos: ${e.toString()}',
       };
+    }
+  }
+
+  /// Verifica si ya existen pagos en `app_dat_pago_venta` para una operación.
+  /// Usado como guarda idempotente para no duplicar pagos al reintentar.
+  Future<bool> _pagosYaRegistrados(int operationId) async {
+    try {
+      final existing = await Supabase.instance.client
+          .from('app_dat_pago_venta')
+          .select('id')
+          .eq('id_operacion_venta', operationId)
+          .limit(1);
+      return existing is List && existing.isNotEmpty;
+    } catch (e) {
+      // Ante un error de verificación, asumimos que NO hay pagos para permitir
+      // el intento de registro (mejor reintentar que dejar la venta sin pago).
+      print('⚠️ No se pudo verificar pagos existentes de op $operationId: $e');
+      return false;
     }
   }
 

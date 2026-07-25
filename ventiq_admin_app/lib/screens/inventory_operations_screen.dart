@@ -1291,26 +1291,94 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     return payments.isNotEmpty;
   }
 
-  /// Registra un pago con monto 0 para una operación de venta.
-  /// Se inserta directamente en app_dat_pago_venta porque fn_registrar_pago_venta
-  /// valida que el monto sea mayor que cero.
-  Future<bool> _registerZeroPayment(int operationId) async {
-    try {
-      print('💳 Registrando pago con monto 0 para operación $operationId');
+  /// Indica si el usuario actual (gerente/supervisor) puede registrar pagos
+  /// faltantes en operaciones de venta.
+  Future<bool> _canRegisterMissingPayment() async {
+    final role = await _getUserRole();
+    return role == 'gerente' || role == 'supervisor';
+  }
 
+  /// Registra el `app_dat_pago_venta` faltante de una operación de venta.
+  ///
+  /// Campos mínimos requeridos:
+  /// - id_operacion_venta, id_medio_pago, monto, tipo_pago, creado_por
+  ///
+  /// Si monto == 0 se inserta directo (fn_registrar_pago_venta exige monto > 0).
+  /// Si monto > 0 se usa fn_registrar_pago_venta.
+  Future<bool> _registerMissingPayment({
+    required int operationId,
+    required int idMedioPago,
+    required double monto,
+    required int tipoPago,
+    String? referencia,
+  }) async {
+    try {
+      // Idempotencia: si ya hay pago, no duplicar.
+      if (await _checkHasPayment(operationId)) {
+        print('♻️ Operación $operationId ya tiene pago; no se duplica');
+        return true;
+      }
+
+      final ref =
+          (referencia != null && referencia.trim().isNotEmpty)
+              ? referencia.trim()
+              : 'Registro manual Admin - ${DateTime.now().millisecondsSinceEpoch}';
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+
+      print(
+        '💳 Registrando pago faltante: op=$operationId, medio=$idMedioPago, monto=$monto, tipo=$tipoPago',
+      );
+
+      if (monto == 0) {
+        await Supabase.instance.client.from('app_dat_pago_venta').insert({
+          'id_operacion_venta': operationId,
+          'id_medio_pago': idMedioPago,
+          'monto': 0,
+          'tipo_pago': tipoPago,
+          'referencia_pago': ref,
+          'creado_por': userId,
+          'fecha_pago': DateTime.now().toIso8601String(),
+        });
+        print('✅ Pago monto 0 insertado directamente');
+        return true;
+      }
+
+      final response = await Supabase.instance.client.rpc(
+        'fn_registrar_pago_venta',
+        params: {
+          'p_id_operacion_venta': operationId,
+          'p_pagos': [
+            {
+              'id_medio_pago': idMedioPago,
+              'monto': monto,
+              'tipo_pago': tipoPago,
+              'referencia_pago': ref,
+            },
+          ],
+        },
+      );
+
+      if (response == true) {
+        print('✅ Pago registrado vía fn_registrar_pago_venta');
+        return true;
+      }
+
+      // Fallback: si el RPC falla/retorna algo inesperado, insertar directo.
+      print('⚠️ RPC retornó $response; intentando insert directo');
       await Supabase.instance.client.from('app_dat_pago_venta').insert({
         'id_operacion_venta': operationId,
-        'id_medio_pago': 1,
-        'monto': 0,
-        'tipo_pago': 1,
-        'referencia_pago': 'Registro manual monto 0 - Admin',
-        'creado_por': Supabase.instance.client.auth.currentUser?.id,
+        'id_medio_pago': idMedioPago,
+        'monto': monto,
+        'tipo_pago': tipoPago,
+        'referencia_pago': ref,
+        'creado_por': userId,
+        'importe_sin_descuento': monto,
+        'fecha_pago': DateTime.now().toIso8601String(),
       });
-
-      print('✅ Pago con monto 0 registrado directamente');
+      print('✅ Pago insertado directamente (fallback)');
       return true;
     } catch (e) {
-      print('❌ Error registrando pago con monto 0: $e');
+      print('❌ Error registrando pago faltante: $e');
       return false;
     }
   }
@@ -1613,10 +1681,13 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                               const SizedBox(height: 24),
                               _PaymentDetailsSection(
                                 operationId: (operation['id'] as num).toInt(),
-                                totalIsZero:
-                                    _calculateTotalPrice(operation) == 0,
+                                suggestedAmount: _calculateTotalPrice(
+                                  operation,
+                                ),
                                 getPaymentDetails: _getPaymentDetails,
-                                registerZeroPayment: _registerZeroPayment,
+                                canRegisterMissingPayment:
+                                    _canRegisterMissingPayment,
+                                registerMissingPayment: _registerMissingPayment,
                               ),
                             ],
 
@@ -4577,18 +4648,28 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 }
 
 /// Sección que muestra el detalle del pago de una operación de venta.
-/// Si no hay pagos y el total es 0, permite registrar uno manualmente.
+/// Si no hay pagos, gerentes/supervisores pueden crear el `app_dat_pago_venta`
+/// faltante (medio + monto).
 class _PaymentDetailsSection extends StatefulWidget {
   final int operationId;
-  final bool totalIsZero;
+  final double suggestedAmount;
   final Future<List<Map<String, dynamic>>> Function(int) getPaymentDetails;
-  final Future<bool> Function(int) registerZeroPayment;
+  final Future<bool> Function() canRegisterMissingPayment;
+  final Future<bool> Function({
+    required int operationId,
+    required int idMedioPago,
+    required double monto,
+    required int tipoPago,
+    String? referencia,
+  })
+  registerMissingPayment;
 
   const _PaymentDetailsSection({
     required this.operationId,
-    required this.totalIsZero,
+    required this.suggestedAmount,
     required this.getPaymentDetails,
-    required this.registerZeroPayment,
+    required this.canRegisterMissingPayment,
+    required this.registerMissingPayment,
   });
 
   @override
@@ -4604,6 +4685,188 @@ class _PaymentDetailsSectionState extends State<_PaymentDetailsSection> {
     final dt = value is DateTime ? value : DateTime.tryParse(value.toString());
     if (dt == null) return '-';
     return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _openCreatePaymentDialog() async {
+    List<Map<String, dynamic>> medios = [];
+    try {
+      medios = await InventoryService.getMedioPagoOptions();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error cargando medios de pago: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    if (medios.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay medios de pago configurados'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    Map<String, dynamic> selectedMedio = medios.first;
+    // Preferir efectivo si existe.
+    for (final m in medios) {
+      if (m['id'] == 1 || m['es_efectivo'] == true) {
+        selectedMedio = m;
+        break;
+      }
+    }
+
+    final montoController = TextEditingController(
+      text: widget.suggestedAmount.toStringAsFixed(2),
+    );
+    final refController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Registrar pago faltante'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Esta venta no tiene registro en app_dat_pago_venta. '
+                      'Completa los datos para crearlo.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<int>(
+                      value: selectedMedio['id'] as int,
+                      decoration: const InputDecoration(
+                        labelText: 'Medio de pago',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items:
+                          medios.map((m) {
+                            return DropdownMenuItem<int>(
+                              value: m['id'] as int,
+                              child: Text(m['denominacion']?.toString() ?? ''),
+                            );
+                          }).toList(),
+                      onChanged: (id) {
+                        if (id == null) return;
+                        setDialogState(() {
+                          selectedMedio = medios.firstWhere(
+                            (m) => m['id'] == id,
+                          );
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: montoController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Monto',
+                        prefixText: '\$ ',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: refController,
+                      decoration: const InputDecoration(
+                        labelText: 'Referencia (opcional)',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4A90E2),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Registrar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) {
+      montoController.dispose();
+      refController.dispose();
+      return;
+    }
+
+    final monto =
+        double.tryParse(montoController.text.trim().replaceAll(',', '.')) ??
+        -1;
+    montoController.dispose();
+    final referencia = refController.text.trim();
+    refController.dispose();
+
+    if (monto < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Monto inválido'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final esEfectivo = selectedMedio['es_efectivo'] == true;
+    final tipoPago = esEfectivo ? 1 : 2;
+    final idMedio = selectedMedio['id'] as int;
+
+    setState(() => _isRegistering = true);
+    final success = await widget.registerMissingPayment(
+      operationId: widget.operationId,
+      idMedioPago: idMedio,
+      monto: monto,
+      tipoPago: tipoPago,
+      referencia: referencia.isEmpty ? null : referencia,
+    );
+    if (!mounted) return;
+    setState(() {
+      _isRegistering = false;
+      _futureKey = UniqueKey();
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? 'Pago registrado correctamente'
+              : 'Error al registrar el pago',
+        ),
+        backgroundColor: success ? Colors.green : Colors.red,
+      ),
+    );
   }
 
   @override
@@ -4681,88 +4944,87 @@ class _PaymentDetailsSectionState extends State<_PaymentDetailsSection> {
                       ],
                     ),
                   );
-                }).toList(),
+                }),
               ],
             ),
           );
         }
 
-        if (widget.totalIsZero) {
-          return ElevatedButton.icon(
-            onPressed:
-                _isRegistering
-                    ? null
-                    : () async {
-                      setState(() => _isRegistering = true);
-                      final success = await widget.registerZeroPayment(
-                        widget.operationId,
-                      );
-                      if (!mounted) return;
-                      setState(() {
-                        _isRegistering = false;
-                        _futureKey = UniqueKey();
-                      });
+        // Sin pagos: aviso + acción para gerente/supervisor
+        return FutureBuilder<bool>(
+          future: widget.canRegisterMissingPayment(),
+          builder: (context, roleSnapshot) {
+            final canRegister = roleSnapshot.data == true;
 
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            success
-                                ? 'Pago registrado correctamente'
-                                : 'Error al registrar el pago',
-                          ),
-                          backgroundColor: success ? Colors.green : Colors.red,
-                        ),
-                      );
-                    },
-            icon:
-                _isRegistering
-                    ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                    : const Icon(Icons.payment, color: Colors.white),
-            label: Text(
-              _isRegistering ? 'Registrando...' : 'Registrar pago (monto 0)',
-              style: const TextStyle(color: Colors.white),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4A90E2),
-              minimumSize: const Size(double.infinity, 48),
-              shape: RoundedRectangleBorder(
+            return Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
                 borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
               ),
-            ),
-          );
-        }
-
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.orange.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.orange.shade200),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.warning_amber,
-                color: Colors.orange.shade700,
-                size: 20,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.warning_amber,
+                        color: Colors.orange.shade700,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Esta venta no tiene pagos registrados'
+                          '${widget.suggestedAmount > 0 ? ' (total sugerido: \$${widget.suggestedAmount.toStringAsFixed(2)})' : ''}.',
+                          style: TextStyle(color: Colors.orange.shade900),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (canRegister) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed:
+                            _isRegistering ? null : _openCreatePaymentDialog,
+                        icon:
+                            _isRegistering
+                                ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                                : const Icon(
+                                  Icons.payment,
+                                  color: Colors.white,
+                                ),
+                        label: Text(
+                          _isRegistering
+                              ? 'Registrando...'
+                              : 'Registrar pago faltante',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF4A90E2),
+                          minimumSize: const Size(double.infinity, 48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Esta venta no tiene pagos registrados.',
-                  style: TextStyle(color: Colors.orange.shade900),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
