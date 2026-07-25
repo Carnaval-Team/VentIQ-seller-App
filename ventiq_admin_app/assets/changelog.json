@@ -1,9 +1,31 @@
 {
-  "current_version": "2.3.5",
-  "build": 235,
+  "current_version": "2.3.6",
+  "build": 236,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.3.6",
+      "date": "2026-07-25",
+      "title": "💳 Pagos faltantes y órdenes Carnaval más precisas",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Registrar pago faltante en operaciones de venta",
+          "description": "Si una venta quedó sin registro en el desglose de pagos, gerentes y supervisores pueden crearlo desde el detalle de la operación: eligen el medio de pago, confirman el monto y guardan la referencia."
+        },
+        {
+          "type": "fix",
+          "title": "Estado correcto en órdenes Carnaval",
+          "description": "Se corrigió un error al enriquecer la dirección de la orden que podía sobrescribir el ID de la venta y mostrar un estado incorrecto (por ejemplo, Pendiente de Pago en lugar de Cancelado)."
+        },
+        {
+          "type": "improvement",
+          "title": "Identidad Inventtia Gestión",
+          "description": "Actualizamos el nombre visible del producto a Inventtia Gestión en títulos, manifiestos y textos de la aplicación."
+        }
+      ]
+    },
     {
       "version": "2.3.5",
       "date": "2026-07-24",

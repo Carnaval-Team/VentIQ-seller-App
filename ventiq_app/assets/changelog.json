@@ -1,9 +1,26 @@
 {
-  "current_version": "2.3.7",
-  "build": 839,
+  "current_version": "2.3.8",
+  "build": 840,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.3.8",
+      "date": "2026-07-25",
+      "title": "💳 Pagos de venta más confiables",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Registro de pagos al cerrar el checkout",
+          "description": "Al registrar una venta, el desglose de pagos se reintenta de forma segura si hay un fallo de red. Así se evita que la operación quede creada sin su registro de pago."
+        },
+        {
+          "type": "improvement",
+          "title": "Identidad Inventtia Caja",
+          "description": "Actualizamos el nombre visible del producto a Inventtia Caja en la app, recibos, notificaciones y pantalla de carga web."
+        }
+      ]
+    },
     {
       "version": "2.3.7",
       "date": "2026-07-23",
