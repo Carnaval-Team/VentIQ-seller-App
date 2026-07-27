@@ -6162,25 +6162,30 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
         (inv['precio_venta'] as num? ?? product.precio).toDouble();
     final precio = precioFinal ?? baseFromInv;
 
-    // Verificar si ya existe en la lista local
-    final existIdx = _items.indexWhere((i) {
-      final sameProduct = i.producto.id == product.id;
-      final sameVariant =
-          (i.inventoryData?['id_variante'] ?? i.variante?.id) ==
-          (inv['id_variante']);
-      final sameUbicacion =
-          (i.inventoryData?['id_ubicacion']) == (inv['id_ubicacion']);
-      return sameProduct && sameVariant && sameUbicacion;
-    });
-
     setState(() {
-      // Remove ghost placeholder for this product (if any)
+      // Quitar ghost antes de buscar duplicados: los ghosts no tienen
+      // inventoryData y con ids null (servicios) coincidían por error,
+      // dejando un índice stale tras el removeWhere.
       _items.removeWhere((i) => _isGhostItem(i) && i.producto.id == product.id);
+
+      final existIdx = _items.indexWhere((i) {
+        if (_isGhostItem(i)) return false;
+        final sameProduct = i.producto.id == product.id;
+        final sameVariant =
+            (i.inventoryData?['id_variante'] ?? i.variante?.id) ==
+            (inv['id_variante']);
+        final sameUbicacion =
+            (i.inventoryData?['id_ubicacion']) == (inv['id_ubicacion']);
+        return sameProduct && sameVariant && sameUbicacion;
+      });
 
       if (existIdx != -1) {
         // Producto ya existe → sumar cantidad localmente
         final existing = _items[existIdx];
-        final newQty = existing.cantidad + cantidad;
+        final newQty =
+            existing.cantidad > 0
+                ? existing.cantidad + cantidad
+                : cantidad;
         _items[existIdx] = existing.copyWith(cantidad: newQty);
 
         // Actualizar / agregar op
@@ -6626,7 +6631,11 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       _loadingDetail = true;
       _inventoryOptions = [];
       _selectedInventory = null;
-      _addQuantity = initialQuantity ?? 1;
+      // 0 es un valor válido en Dart para `??`, pero no como cantidad a agregar
+      _addQuantity =
+          (initialQuantity != null && initialQuantity > 0)
+              ? initialQuantity
+              : 1;
       _globalPromotion = null;
       _productPromotions = null;
     });
@@ -6726,11 +6735,21 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
     );
   }
 
-  void _confirmAddProduct() {
+  Future<void> _confirmAddProduct() async {
+    // _QuantityTextField solo confirma en blur; forzar commit antes de leer
+    FocusScope.of(context).unfocus();
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+
     if (_selectedProduct == null ||
         _selectedInventory == null ||
-        _selectedPaymentMethod == null)
+        _selectedPaymentMethod == null) {
       return;
+    }
+    if (_addQuantity <= 0) {
+      _setError('La cantidad debe ser mayor que 0');
+      return;
+    }
     final precioBase =
         ((_selectedInventory!['precio_venta'] ?? _selectedProduct!.precio)
                 as num)
@@ -7386,7 +7405,8 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                               await _startAddProduct();
                               await _selectProduct(
                                 product,
-                                initialQuantity: item.cantidad,
+                                initialQuantity:
+                                    item.cantidad > 0 ? item.cantidad : 1,
                               );
                             },
                     icon: const Icon(Icons.add, size: 14),
@@ -8164,8 +8184,9 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
 }
 
 // Campo compacto para capturar cantidades manuales (enteros o decimales).
-// No emite onChanged en cada tecla: eso provocaba setState del padre y
-// impedía escribir el separador decimal (p. ej. "1." / "1,5").
+// Emite onChanged en cuanto el texto es un número completo válido, para que
+// agregar/editar/guardar siempre usen lo escrito. No emite si el texto termina
+// en separador decimal incompleto (p. ej. "1." / "1,").
 class _QuantityTextField extends StatefulWidget {
   final double value;
   final bool enabled;
@@ -8227,19 +8248,30 @@ class _QuantityTextFieldState extends State<_QuantityTextField> {
       );
       return;
     }
-    _commitValue();
+    _commitValue(formatText: true);
   }
 
-  void _commitValue() {
-    final normalized = _controller.text.trim().replaceAll(',', '.');
+  /// Aplica el texto actual al padre si es una cantidad válida.
+  /// Con [formatText] reformatea el campo (blur / submit).
+  void _commitValue({bool formatText = false}) {
+    final raw = _controller.text.trim();
+    if (raw.isEmpty) {
+      if (formatText) _controller.text = _formatQuantity(widget.value);
+      return;
+    }
+
+    // Decimal incompleto: dejar escribir sin notificar ni reformatear
+    if (raw.endsWith('.') || raw.endsWith(',')) return;
+
+    final normalized = raw.replaceAll(',', '.');
     final parsed = double.tryParse(normalized);
     if (parsed == null || parsed <= 0) {
-      _controller.text = _formatQuantity(widget.value);
+      if (formatText) _controller.text = _formatQuantity(widget.value);
       return;
     }
 
     final nextValue = parsed.clamp(0.01, 9999).toDouble();
-    _controller.text = _formatQuantity(nextValue);
+    if (formatText) _controller.text = _formatQuantity(nextValue);
     if (nextValue != widget.value) {
       widget.onChanged(nextValue);
     }
@@ -8260,6 +8292,7 @@ class _QuantityTextFieldState extends State<_QuantityTextField> {
           signed: false,
         ),
         textInputAction: TextInputAction.done,
+        onChanged: (_) => _commitValue(),
         inputFormatters: [
           FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
           TextInputFormatter.withFunction((oldValue, newValue) {
@@ -8296,7 +8329,7 @@ class _QuantityTextFieldState extends State<_QuantityTextField> {
             borderSide: const BorderSide(color: Color(0xFF0EA5E9), width: 1.4),
           ),
         ),
-        onSubmitted: (_) => _commitValue(),
+        onSubmitted: (_) => _commitValue(formatText: true),
       ),
     );
   }
