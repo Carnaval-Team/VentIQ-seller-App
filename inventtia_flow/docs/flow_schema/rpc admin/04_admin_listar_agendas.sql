@@ -51,8 +51,10 @@ as $$
           'nombre',             s.nombre,
           'descripcion',        s.descripcion,
           'foto',               s.foto,
-          'campos_adicionales', s.campos_adicionales
+          'campos_adicionales', s.campos_adicionales,
+          'config_precio',      s.config_precio
         ),
+        'id_turno',            a.id_turno,
         'local', jsonb_build_object(
           'id',               l.id,
           'nombre',           l.nombre,

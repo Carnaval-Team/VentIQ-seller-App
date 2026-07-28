@@ -614,8 +614,8 @@ class BluetoothPrinterService {
   /// Espera a que la impresora consuma el buffer BT antes de cortar el socket.
   /// [totalBytes] es el tamaño aproximado del job ESC/POS enviado.
   Future<void> waitForPrinterBufferDrain(int totalBytes) async {
-    // ~20 ms por cada 100 bytes, mínimo 2s, máximo 20s.
-    final ms = ((totalBytes / 100) * 20).round().clamp(2000, 20000);
+    // ~25 ms por cada 100 bytes, mínimo 2s, máximo 60s (informes largos).
+    final ms = ((totalBytes / 100) * 25).round().clamp(2000, 60000);
     debugPrint(
       '⏳ Waiting ${ms}ms for printer buffer drain ($totalBytes bytes)...',
     );
@@ -775,8 +775,8 @@ class BluetoothPrinterService {
   }
 
   // Chunks pequeños: muchas térmicas BT fallan con ráfagas grandes.
-  static const int _btChunkSize = 512;
-  static const Duration _btChunkDelay = Duration(milliseconds: 60);
+  static const int _btChunkSize = 256;
+  static const Duration _btChunkDelay = Duration(milliseconds: 80);
 
   /// Escribe en trozos con pausa entre ellos para no saturar el buffer SPP.
   Future<bool> _writeBytesChunked(List<int> bytes) async {

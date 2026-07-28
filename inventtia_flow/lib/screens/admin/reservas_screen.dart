@@ -1367,6 +1367,31 @@ class _EditarReservaSheetState extends State<_EditarReservaSheet> {
   Map<String, dynamic> _datosAdicionalesValores = {};
   bool _saving = false;
 
+  Map<String, dynamic> get _datosCompletos {
+    final datos = <String, dynamic>{
+      ...?widget.reserva.datosAdicionales,
+      'ci': _ciCtrl.text.trim(),
+      'nombre': _nombreCtrl.text.trim(),
+      'apellidos': _apellidosCtrl.text.trim(),
+      'telefono': _telefonoCtrl.text.trim(),
+      'email': _emailCtrl.text.trim(),
+      'notas': _notasCtrl.text.trim(),
+      ..._datosAdicionalesValores,
+    };
+    return datos;
+  }
+
+  ResultadoPrecioReserva? get _precioPreview {
+    final cfg = widget.reserva.localServicio?.servicio?.configPrecio;
+    if (cfg == null || !cfg.tienePrecio) return null;
+    return PrecioReserva.calcular(
+      config: cfg,
+      datosAdicionales: _datosCompletos,
+      moneda: widget.reserva.moneda,
+      cantidad: widget.reserva.cantidad,
+    );
+  }
+
   String _dato(String clave) {
     final v = widget.reserva.datosAdicionales?[clave];
     if (v != null && v.toString().trim().isNotEmpty) return v.toString().trim();
@@ -1418,31 +1443,38 @@ class _EditarReservaSheetState extends State<_EditarReservaSheet> {
 
     setState(() => _saving = true);
     try {
-      final datos = <String, dynamic>{
-        ...?widget.reserva.datosAdicionales,
-        'ci': _ciCtrl.text.trim(),
-        'nombre': _nombreCtrl.text.trim(),
-        'apellidos': _apellidosCtrl.text.trim(),
-        'telefono': _telefonoCtrl.text.trim(),
-        'email': _emailCtrl.text.trim(),
-        'notas': _notasCtrl.text.trim(),
-      };
+      final datos = _datosCompletos;
       if (widget.camposAdicionales.isNotEmpty &&
           _datosAdicionalesKey.currentState != null) {
         datos.addAll(_datosAdicionalesKey.currentState!.valores);
       }
 
-      await AgendaAdminService.actualizarDatosReserva(
+      final result = await AgendaAdminService.actualizarDatosReserva(
         idAgenda: widget.reserva.id,
         datosAdicionales: datos,
+        idServicio: widget.reserva.localServicio?.idServicio,
+        idTurno: widget.reserva.idTurno,
+        cantidad: widget.reserva.cantidad,
+        moneda: widget.reserva.moneda,
       );
 
       if (mounted) {
         Navigator.pop(context);
         widget.onSaved();
+        final nuevoPrecio = (result['precio_total'] as num?)?.toDouble();
+        final nuevaMoneda = result['moneda'] as String? ?? 'USD';
+        final precioAnterior = widget.reserva.precioTotal;
+        final precioCambio =
+            nuevoPrecio != null &&
+            (precioAnterior == null ||
+                (nuevoPrecio - precioAnterior).abs() > 0.001);
+        final msg =
+            precioCambio
+                ? 'Datos actualizados · Precio: ${PrecioReserva.formatear(nuevoPrecio!, nuevaMoneda)}'
+                : 'Datos actualizados';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Datos actualizados'),
+          SnackBar(
+            content: Text(msg),
             backgroundColor: AppTheme.success,
           ),
         );
@@ -1594,6 +1626,61 @@ class _EditarReservaSheetState extends State<_EditarReservaSheet> {
                         initialValues: _datosAdicionalesValores,
                         onChanged: (v) =>
                             setState(() => _datosAdicionalesValores = v),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (_precioPreview != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppTheme.primary.withOpacity(0.25),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.payments_outlined, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Precio recalculado',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                            Text(
+                              PrecioReserva.formatear(
+                                _precioPreview!.total,
+                                _precioPreview!.moneda,
+                              ),
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            if (widget.reserva.precioTotal != null &&
+                                (widget.reserva.precioTotal! -
+                                            _precioPreview!.total)
+                                        .abs() >
+                                    0.001)
+                              Text(
+                                'Anterior: ${PrecioReserva.formatear(widget.reserva.precioTotal!, widget.reserva.moneda ?? _precioPreview!.moneda)}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ],
                   ),

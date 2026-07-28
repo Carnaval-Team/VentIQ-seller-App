@@ -1648,7 +1648,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
       // Margen extra tras el drain interno, luego desconectar
       if (printed) {
-        await Future.delayed(const Duration(milliseconds: 800));
+        await Future.delayed(const Duration(milliseconds: 1500));
       }
       await _printerService.disconnect();
     } catch (e) {
@@ -1799,7 +1799,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       );
       bytes += generator.emptyLines(1);
 
-      // Detalle de productos
+      // Detalle de productos (solo nombre + cantidad vendida)
       bytes += generator.text(
         'DETALLE POR PRODUCTO:',
         styles: PosStyles(align: PosAlign.left, bold: true),
@@ -1809,63 +1809,31 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         styles: PosStyles(align: PosAlign.center),
       );
 
-      // Agrupar productos
-      final productosAgrupados = <String, Map<String, dynamic>>{};
+      // Agrupar productos por nombre
+      final productosAgrupados = <String, double>{};
       for (final item in _productosVendidos) {
-        final key = item.nombre;
-        if (productosAgrupados.containsKey(key)) {
-          productosAgrupados[key]!['cantidad'] += item.cantidad;
-          productosAgrupados[key]!['subtotal'] += item.subtotal;
-          productosAgrupados[key]!['costo'] +=
-              (item.precioUnitario * 0.6) * item.cantidad;
-          productosAgrupados[key]!['descuento'] +=
-              (item.precioUnitario * 0.1) * item.cantidad;
-        } else {
-          productosAgrupados[key] = {
-            'item': item,
-            'cantidad': item.cantidad,
-            'subtotal': item.subtotal,
-            'costo': (item.precioUnitario * 0.6) * item.cantidad,
-            'descuento': (item.precioUnitario * 0.1) * item.cantidad,
-          };
-        }
+        productosAgrupados.update(
+          item.nombre,
+          (qty) => qty + item.cantidad,
+          ifAbsent: () => item.cantidad,
+        );
       }
 
-      // Imprimir cada producto
-      for (final producto in productosAgrupados.values) {
-        final item = producto['item'] as OrderItem;
-        final cantidad = (producto['cantidad'] as num).toDouble();
-        final subtotal = producto['subtotal'] as double;
-        final costo = producto['costo'] as double;
-        final descuento = producto['descuento'] as double;
-
+      // Una línea compacta por producto para no saturar la impresora
+      final nombres = productosAgrupados.keys.toList()..sort();
+      for (final nombre in nombres) {
+        final cantidad = productosAgrupados[nombre]!;
+        final qtyStr = PriceUtils.formatQuantity(cantidad);
+        final maxNameLen = (28 - qtyStr.length).clamp(8, 27);
+        final displayName =
+            nombre.length > maxNameLen
+                ? '${nombre.substring(0, maxNameLen - 1)}.'
+                : nombre;
+        final spaces = 28 - displayName.length - qtyStr.length;
+        final pad = spaces > 0 ? ' ' * spaces : ' ';
         bytes += generator.text(
-          item.nombre,
-          styles: PosStyles(align: PosAlign.left, bold: true),
-        );
-        bytes += generator.text(
-          'Cantidad: ${PriceUtils.formatQuantity(cantidad)}',
+          '$displayName$pad$qtyStr',
           styles: PosStyles(align: PosAlign.left),
-        );
-        bytes += generator.text(
-          'Precio Unit: \$${item.precioUnitario.toStringAsFixed(0)}',
-          styles: PosStyles(align: PosAlign.left),
-        );
-        bytes += generator.text(
-          'Costo: \$${costo.toStringAsFixed(0)}',
-          styles: PosStyles(align: PosAlign.left),
-        );
-        bytes += generator.text(
-          'Descuento: \$${descuento.toStringAsFixed(0)}',
-          styles: PosStyles(align: PosAlign.left),
-        );
-        bytes += generator.text(
-          'Total: \$${subtotal.toStringAsFixed(0)}',
-          styles: PosStyles(align: PosAlign.left, bold: true),
-        );
-        bytes += generator.text(
-          '- - - - - - - - - - - - - - - -',
-          styles: PosStyles(align: PosAlign.center),
         );
       }
 

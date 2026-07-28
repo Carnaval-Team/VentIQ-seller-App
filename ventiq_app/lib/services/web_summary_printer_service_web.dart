@@ -75,49 +75,27 @@ class WebSummaryPrinterServiceImpl {
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
-    // Agrupar productos por nombre para mostrar cantidades totales
-    final productosAgrupados = <String, Map<String, dynamic>>{};
+    // Agrupar productos por nombre (solo cantidad vendida)
+    final productosAgrupados = <String, double>{};
 
     for (final item in productosVendidos) {
-      final key = item.nombre;
-      if (productosAgrupados.containsKey(key)) {
-        productosAgrupados[key]!['cantidad'] += item.cantidad;
-        productosAgrupados[key]!['subtotal'] += item.subtotal;
-        productosAgrupados[key]!['costo'] +=
-            (item.precioUnitario * 0.6) * item.cantidad;
-        productosAgrupados[key]!['descuento'] +=
-            (item.precioUnitario * 0.1) * item.cantidad;
-      } else {
-        productosAgrupados[key] = {
-          'item': item,
-          'cantidad': item.cantidad,
-          'subtotal': item.subtotal,
-          'costo': (item.precioUnitario * 0.6) * item.cantidad,
-          'descuento': (item.precioUnitario * 0.1) * item.cantidad,
-        };
-      }
+      productosAgrupados.update(
+        item.nombre,
+        (qty) => qty + item.cantidad,
+        ifAbsent: () => item.cantidad,
+      );
     }
 
-    // Generar filas de productos detalladas
-    final productRows = productosAgrupados.values
-        .map((producto) {
-          final item = producto['item'] as OrderItem;
-          final cantidad = (producto['cantidad'] as num).toDouble();
-          final subtotal = producto['subtotal'] as double;
-          final costo = producto['costo'] as double;
-          final descuento = producto['descuento'] as double;
-
+    final nombres = productosAgrupados.keys.toList()..sort();
+    final productRows = nombres
+        .map((nombre) {
+          final cantidad = productosAgrupados[nombre]!;
           return '''
         <div class="product-item">
-          <div class="product-name">${item.nombre}</div>
-          <div class="product-details">
-            <div class="detail-line">Cantidad: ${PriceUtils.formatQuantity(cantidad)}</div>
-            <div class="detail-line">Precio Unit: \$${item.precioUnitario.toStringAsFixed(0)}</div>
-            <div class="detail-line">Costo: \$${costo.toStringAsFixed(0)}</div>
-            <div class="detail-line">Descuento: \$${descuento.toStringAsFixed(0)}</div>
-            <div class="detail-line total-line">Total: \$${subtotal.toStringAsFixed(0)}</div>
+          <div class="product-line">
+            <span class="product-name">${nombre}</span>
+            <span class="product-qty">${PriceUtils.formatQuantity(cantidad)}</span>
           </div>
-          <div class="separator">- - - - - - - - - - - - - - - -</div>
         </div>
       ''';
         })
@@ -179,22 +157,22 @@ class WebSummaryPrinterServiceImpl {
         }
         .product-item {
             text-align: left;
-            margin: 10px 0;
+            margin: 4px 0;
+        }
+        .product-line {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
         }
         .product-name {
             font-weight: bold;
-            margin-bottom: 3px;
+            text-align: left;
+            flex: 1;
+            word-break: break-word;
         }
-        .product-details {
-            margin-left: 10px;
-        }
-        .detail-line {
-            margin: 2px 0;
-            font-size: 13px;
-        }
-        .total-line {
+        .product-qty {
             font-weight: bold;
-            margin-top: 3px;
+            white-space: nowrap;
         }
         .final-total {
             font-size: 18px;

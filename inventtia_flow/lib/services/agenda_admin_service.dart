@@ -160,15 +160,110 @@ class AgendaAdminService {
     }
   }
 
-  static Future<void> actualizarDatosReserva({
+  /// Actualiza datos_adicionales y recalcula precio_total/moneda según
+  /// las reglas del servicio (o precio fijo del turno si aplica).
+  /// Devuelve el resultado (`precio_total`, `moneda`, etc.).
+  static Future<Map<String, dynamic>> actualizarDatosReserva({
     required int idAgenda,
     required Map<String, dynamic> datosAdicionales,
+    int? idServicio,
+    int? idTurno,
+    int cantidad = 1,
+    String? moneda,
   }) async {
-    await _supabase
-        .schema(_schema)
-        .from('agenda')
-        .update({'datos_adicionales': datosAdicionales})
-        .eq('id', idAgenda);
+    try {
+      final res = await _supabase.schema(_schema).rpc(
+        'admin_actualizar_datos_reserva',
+        params: {
+          'p_id_agenda': idAgenda,
+          'p_datos_adicionales': datosAdicionales,
+        },
+      );
+      final json = Map<String, dynamic>.from(res as Map);
+      if (json['ok'] != true) {
+        throw Exception(json['error'] ?? 'No se pudo actualizar la reserva');
+      }
+      return json;
+    } catch (e) {
+      // Fallback si el RPC aún no está desplegado: calc + update directo.
+      final msg = e.toString();
+      final missingRpc =
+          msg.contains('admin_actualizar_datos_reserva') ||
+          msg.contains('Could not find the function') ||
+          msg.contains('PGRST202');
+      if (!missingRpc || idServicio == null) {
+        if (e is Exception) rethrow;
+        throw Exception(e.toString());
+      }
+      return _actualizarDatosReservaFallback(
+        idAgenda: idAgenda,
+        datosAdicionales: datosAdicionales,
+        idServicio: idServicio,
+        idTurno: idTurno,
+        cantidad: cantidad,
+        moneda: moneda,
+      );
+    }
+  }
+
+  static Future<Map<String, dynamic>> _actualizarDatosReservaFallback({
+    required int idAgenda,
+    required Map<String, dynamic> datosAdicionales,
+    required int idServicio,
+    int? idTurno,
+    int cantidad = 1,
+    String? moneda,
+  }) async {
+    final cant = cantidad < 1 ? 1 : cantidad;
+    dynamic calcRes;
+    if (idTurno != null) {
+      calcRes = await _supabase.schema(_schema).rpc(
+        'calcular_precio_turno',
+        params: {
+          'p_id_servicio': idServicio,
+          'p_id_turno': idTurno,
+          'p_datos': datosAdicionales,
+          'p_moneda': moneda,
+          'p_cantidad': cant,
+        },
+      );
+    } else {
+      calcRes = await _supabase.schema(_schema).rpc(
+        'calcular_precio_reserva',
+        params: {
+          'p_id_servicio': idServicio,
+          'p_datos': datosAdicionales,
+          'p_moneda': moneda,
+          'p_cantidad': cant,
+        },
+      );
+    }
+
+    Map<String, dynamic> precioRow;
+    if (calcRes is List && calcRes.isNotEmpty) {
+      precioRow = Map<String, dynamic>.from(calcRes.first as Map);
+    } else if (calcRes is Map) {
+      precioRow = Map<String, dynamic>.from(calcRes);
+    } else {
+      precioRow = {'precio_total': 0, 'moneda': moneda ?? 'USD'};
+    }
+
+    final precioTotal = (precioRow['precio_total'] as num?)?.toDouble() ?? 0;
+    final monedaCalc = precioRow['moneda']?.toString() ?? moneda ?? 'USD';
+
+    await _supabase.schema(_schema).from('agenda').update({
+      'datos_adicionales': datosAdicionales,
+      'precio_total': precioTotal,
+      'moneda': monedaCalc,
+    }).eq('id', idAgenda);
+
+    return {
+      'ok': true,
+      'id': idAgenda,
+      'precio_total': precioTotal,
+      'moneda': monedaCalc,
+      'datos_adicionales': datosAdicionales,
+    };
   }
 
   /// Marca una agenda como Completado (id 3) o Cancelado (id 2) desde el
