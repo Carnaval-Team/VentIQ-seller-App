@@ -1,9 +1,31 @@
 {
-  "current_version": "2.3.8",
-  "build": 840,
+  "current_version": "2.3.9",
+  "build": 841,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.3.9",
+      "date": "2026-07-28",
+      "title": "🖨️ Resumen de ventas más claro y cantidades al editar",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Impresión del resumen solo con cantidades",
+          "description": "El ticket de resumen mantiene los totales generales y, en el detalle por producto, imprime únicamente el nombre y la cantidad vendida."
+        },
+        {
+          "type": "fix",
+          "title": "Informes largos que terminan de imprimir",
+          "description": "Se reduce el tamaño del ticket y se refuerza el envío Bluetooth para que los resúmenes con muchos productos no se corten a medias."
+        },
+        {
+          "type": "fix",
+          "title": "Cantidad correcta al agregar productos por defecto",
+          "description": "Al editar una orden pendiente, la cantidad que escribes al agregar un producto o servicio por defecto se aplica de forma fiable al confirmar."
+        }
+      ]
+    },
     {
       "version": "2.3.8",
       "date": "2026-07-25",

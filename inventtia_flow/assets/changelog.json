@@ -1,8 +1,25 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.4.4",
-  "build": 12,
+  "current_version": "1.4.5",
+  "build": 13,
   "changelogs": [
+    {
+      "version": "1.4.5",
+      "date": "2026-07-28",
+      "title": "💰 Precio actualizado al editar una reserva",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Recálculo de precio al editar desde administración",
+          "description": "Si al editar una reserva cambian datos que afectan el precio (reglas del servicio o precio del turno), el sistema recalcula y guarda el nuevo importe automáticamente."
+        },
+        {
+          "type": "improvement",
+          "title": "Vista previa del precio en el editor",
+          "description": "Al modificar la información adicional de la reserva puedes ver el precio recalculado antes de guardar, y el aviso confirma el nuevo total si cambió."
+        }
+      ]
+    },
     {
       "version": "1.4.4",
       "date": "2026-07-22",
