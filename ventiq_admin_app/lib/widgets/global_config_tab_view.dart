@@ -1725,32 +1725,38 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SwitchListTile(
-            secondary: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
+          Material(
+            color: Colors.transparent,
+            type: MaterialType.transparency,
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            child: SwitchListTile(
+              secondary: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.attach_money,
+                  color: Colors.green,
+                  size: 22,
+                ),
               ),
-              child: const Icon(
-                Icons.attach_money,
-                color: Colors.green,
-                size: 22,
+              title: const Text(
+                'Precio de Venta Regido por USD',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
               ),
+              subtitle: Text(
+                _precioVentaRegidoPorUsd
+                    ? '✅ Los precios CUP se recalculan automáticamente al cambiar la tasa USD'
+                    : '🔒 Los precios CUP no se modifican al cambiar la tasa USD',
+                style: const TextStyle(fontSize: 13),
+              ),
+              value: _precioVentaRegidoPorUsd,
+              activeColor: Colors.green,
+              onChanged: _updatePrecioVentaRegidoPorUsdSetting,
             ),
-            title: const Text(
-              'Precio de Venta Regido por USD',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-            ),
-            subtitle: Text(
-              _precioVentaRegidoPorUsd
-                  ? '✅ Los precios CUP se recalculan automáticamente al cambiar la tasa USD'
-                  : '🔒 Los precios CUP no se modifican al cambiar la tasa USD',
-              style: const TextStyle(fontSize: 13),
-            ),
-            value: _precioVentaRegidoPorUsd,
-            activeColor: Colors.green,
-            onChanged: _updatePrecioVentaRegidoPorUsdSetting,
           ),
           if (_precioVentaRegidoPorUsd) ...[
             const Divider(height: 1),

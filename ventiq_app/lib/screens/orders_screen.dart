@@ -3106,10 +3106,21 @@ class _OrdersScreenState extends State<OrdersScreen> {
       Navigator.pop(context);
 
       if (result['success'] == true) {
+        // Recargar órdenes desde Supabase para reflejar el nuevo created_at
+        // cuando la tienda tiene cambiar_fecha_creacion_operacion_al_cierre activo.
+        try {
+          await _loadOrdersFromSupabase();
+        } catch (e) {
+          print('⚠️ No se pudo recargar órdenes tras cambio de estado: $e');
+        }
+
         // Actualizar la UI solo si fue exitoso
         setState(() {
-          _filterOrders(); // Actualizar la lista filtrada
+          _filterOrders(); // Actualizar y re-ordenar la lista filtrada
         });
+
+        // Buscar la orden actualizada para usar la nueva fechaCreacion
+        final updatedOrder = _orderService.getOrderById(order.id) ?? order;
 
         String statusMessage = '';
         switch (newStatus) {
@@ -3123,7 +3134,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           case OrderStatus.pagoConfirmado:
             statusMessage = 'Pago confirmado exitosamente';
             // Verificar si la impresión está habilitada antes de mostrar el diálogo
-            _checkAndShowPrintDialog(order);
+            _checkAndShowPrintDialog(updatedOrder);
             break;
           default:
             statusMessage = 'Estado actualizado correctamente';
