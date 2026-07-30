@@ -1,11 +1,11 @@
 {
-  "current_version": "2.3.7",
-  "build": 237,
+  "current_version": "2.3.8",
+  "build": 238,
 
   "app_name": "ventiq_admin",
   "changelogs": [
     {
-      "version": "2.3.7",
+      "version": "2.3.8",
       "date": "2026-07-25",
       "title": "💳 Pagos faltantes y órdenes Carnaval más precisas",
       "changes": [

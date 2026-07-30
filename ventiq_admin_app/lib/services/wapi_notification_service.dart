@@ -378,4 +378,40 @@ class WapiNotificationService {
         .map((e) => WapiEnvioLog.fromJson(e as Map<String, dynamic>))
         .toList();
   }
+
+  /// Mapa `chat_id → etiqueta` de los destinatarios de la tienda, para mostrar
+  /// nombres de grupo en el historial en vez de ids `1203…@g.us`.
+  Future<Map<String, String>> getEtiquetasDestinatarios(int idTienda) async {
+    final rows = await _sb
+        .from('app_wapi_destinatario')
+        .select('chat_id, etiqueta')
+        .eq('id_tienda', idTienda);
+    final map = <String, String>{};
+    for (final r in (rows as List)) {
+      final chat = r['chat_id'] as String?;
+      final etq = r['etiqueta'] as String?;
+      if (chat != null && etq != null && etq.isNotEmpty) map[chat] = etq;
+    }
+    return map;
+  }
+
+  /// Denominaciones de productos por id. Se consulta sólo para los ids que
+  /// aparecen en el historial visible.
+  Future<Map<int, String>> getDenominacionesProductos(
+    Iterable<int> idsProducto,
+  ) async {
+    final ids = idsProducto.toSet().toList();
+    if (ids.isEmpty) return {};
+    final rows = await _sb
+        .from('app_dat_producto')
+        .select('id, denominacion')
+        .inFilter('id', ids);
+    final map = <int, String>{};
+    for (final r in (rows as List)) {
+      final id = (r['id'] as num?)?.toInt();
+      final den = r['denominacion'] as String?;
+      if (id != null && den != null) map[id] = den;
+    }
+    return map;
+  }
 }

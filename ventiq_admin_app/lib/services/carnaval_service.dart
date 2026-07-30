@@ -1440,13 +1440,21 @@ class CarnavalService {
     }
   }
 
-  /// Reasigna un repartidor a una orden sin cambiar el estado
-  static Future<bool> reassignDelivery(int orderId, int repartidorId) async {
+  /// Reasigna un repartidor a una orden.
+  /// Por defecto no cambia el estado. Si [resetToAsignado] es true, devuelve la
+  /// orden al estado 'Asignado' (usado al reasignar una orden en 'Entregando').
+  static Future<bool> reassignDelivery(
+    int orderId,
+    int repartidorId, {
+    bool resetToAsignado = false,
+  }) async {
     try {
+      final updates = <String, dynamic>{'repartidor': repartidorId};
+      if (resetToAsignado) updates['status'] = 'Asignado';
       await _supabase
           .schema('carnavalapp')
           .from('Orders')
-          .update({'repartidor': repartidorId})
+          .update(updates)
           .eq('id', orderId);
       return true;
     } catch (e) {

@@ -402,10 +402,37 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   }
 
   Future<void> _reassignDelivery() async {
+    // Si la orden ya va en camino, reasignar la devuelve a 'Asignado'
+    final isEntregando = _status == 'Entregando';
+
+    if (isEntregando) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Reasignar Repartidor'),
+          content: const Text(
+              'Esta orden ya está en entrega. Al reasignarla, volverá al '
+              'estado "Asignado" con el nuevo repartidor.\n\n¿Continuar?'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('No')),
+            TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Sí, reasignar')),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
     final selected = await _showRepartidorPicker();
     if (selected != null) {
-      await _doAction(() =>
-          CarnavalService.reassignDelivery(_order['id'], selected));
+      await _doAction(() => CarnavalService.reassignDelivery(
+            _order['id'],
+            selected,
+            resetToAsignado: isEntregando,
+          ));
     }
   }
 
@@ -1167,6 +1194,15 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
           Icons.cancel_outlined,
           Colors.red,
           _cancelOrder,
+        ));
+        break;
+      case 'Entregando':
+        actions.add(_actionButton(
+          'Reasignar Repartidor',
+          'La orden volverá al estado "Asignado" con el nuevo repartidor',
+          Icons.swap_horiz,
+          Colors.purple,
+          _reassignDelivery,
         ));
         break;
     }
