@@ -713,20 +713,31 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
       );
     }
     if (isWeb) {
-      return GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: _sesiones.length,
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 420,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          mainAxisExtent: 140,
-        ),
-        itemBuilder: (_, i) => WapiSessionCard(
-          session: _sesiones[i],
-          onAction: (a) => _onSessionAction(_sesiones[i], a),
-        ),
+      // Wrap en vez de GridView: los cards crecen a su contenido, así no se
+      // recortan cuando el nombre/session-id ocupan más de una línea.
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          const spacing = 12.0;
+          const minCardWidth = 440.0;
+          final maxW = constraints.maxWidth;
+          var cols = ((maxW + spacing) / (minCardWidth + spacing)).floor();
+          if (cols < 1) cols = 1;
+          if (cols > _sesiones.length) cols = _sesiones.length;
+          final cardWidth = (maxW - spacing * (cols - 1)) / cols;
+          return Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            children: _sesiones
+                .map((s) => SizedBox(
+                      width: cardWidth,
+                      child: WapiSessionCard(
+                        session: s,
+                        onAction: (a) => _onSessionAction(s, a),
+                      ),
+                    ))
+                .toList(),
+          );
+        },
       );
     }
     return Column(

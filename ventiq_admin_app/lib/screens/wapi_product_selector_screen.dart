@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_colors.dart';
 import '../services/marketplace_product_service.dart';
@@ -34,6 +35,7 @@ class WapiProductSelectorScreen extends StatefulWidget {
 
 class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
   static const int _pageSize = 20;
+  static const String _prefsPrefix = 'wapi_product_selection';
 
   final Set<int> _selected = {};
   final TextEditingController _searchCtrl = TextEditingController();
@@ -46,13 +48,56 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
   String? _error;
   String _query = '';
   Timer? _debounce;
+  /// Filtro local (no toca el RPC): oculta del listado los productos
+  /// sin stock. No altera la selección ya hecha.
+  bool _hideSinStock = false;
 
   @override
   void initState() {
     super.initState();
     _selected.addAll(widget.initialSelected);
     _scrollCtrl.addListener(_onScroll);
+    // Si el padre no pasó selección previa, recuperamos la última guardada
+    // en cache para esta tienda/modo.
+    if (widget.initialSelected.isEmpty) _restoreCachedSelection();
     _reload();
+  }
+
+  /// Clave de cache: separada por tienda y por modo (manual vs programado),
+  /// así "enviar ahora" y los programados no se pisan entre sí.
+  String get _prefsKey =>
+      '${_prefsPrefix}_${widget.idTienda}_${widget.mode.name}';
+
+  Future<void> _restoreCachedSelection() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getStringList(_prefsKey);
+      if (raw == null || raw.isEmpty || !mounted) return;
+      final ids = raw
+          .map((e) => int.tryParse(e))
+          .whereType<int>()
+          .toSet();
+      if (ids.isEmpty) return;
+      setState(() => _selected.addAll(ids));
+    } catch (_) {
+      // cache es best-effort: si falla, se abre sin preselección
+    }
+  }
+
+  Future<void> _persistSelection() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_selected.isEmpty) {
+        await prefs.remove(_prefsKey);
+      } else {
+        await prefs.setStringList(
+          _prefsKey,
+          _selected.map((e) => e.toString()).toList(),
+        );
+      }
+    } catch (_) {
+      // ignorar
+    }
   }
 
   @override
@@ -82,7 +127,7 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
     try {
       final page = await MarketplaceProductService.getProductos(
         idTienda: widget.idTienda,
-        limit: _pageSize,
+        limit: 999,
         offset: 0,
         search: _query,
         soloDisponibles: false,
@@ -108,7 +153,7 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
     try {
       final page = await MarketplaceProductService.getProductos(
         idTienda: widget.idTienda,
-        limit: _pageSize,
+        limit: 999,
         offset: _items.length,
         search: _query,
         soloDisponibles: false,
@@ -143,8 +188,16 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
       p.denominacion.isNotEmpty &&
       p.precioVenta > 0;
 
-  List<MarketplaceProduct> get _visibleItems =>
-      _items.where(_canSend).toList();
+  /// Productos publicables ya cargados en memoria, aplicando el filtro
+  /// local de "ocultar no disponibles". Es puramente visual: NO recarga
+  /// del RPC, sólo filtra `_items`.
+  List<MarketplaceProduct> get _visibleItems => _items
+      .where(_canSend)
+      .where((p) => !_hideSinStock || _tieneStock(p))
+      .toList();
+
+  bool _tieneStock(MarketplaceProduct p) =>
+      p.tieneStock && p.stockDisponible > 0;
 
   @override
   Widget build(BuildContext context) {
@@ -165,7 +218,12 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
                     _buildHeader(_visibleItems),
                     Expanded(
                       child: _visibleItems.isEmpty
-                          ? const _EmptyView()
+                          ? _EmptyView(
+                              message: _hideSinStock
+                                  ? 'Ningún producto con stock disponible.\n'
+                                      'Usa "Mostrar no disponibles" para ver el resto.'
+                                  : null,
+                            )
                           : RefreshIndicator(
                               onRefresh: _reload,
                               child: isWeb
@@ -179,9 +237,52 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
     );
   }
 
+  /// Todos los publicables cargados, ignorando el filtro visual. Las acciones
+  /// de selección masiva operan sobre esto para que "ocultar no disponibles"
+  /// no deje productos sin stock marcados fuera de la vista.
+  List<MarketplaceProduct> get _publicables =>
+      _items.where(_canSend).toList();
+
   Widget _buildHeader(List<MarketplaceProduct> filtered) {
+    final todos = _publicables;
     final allSelectedVisible = filtered.isNotEmpty &&
         filtered.every((p) => _selected.contains(p.idProducto));
+    final disponibles = todos.where(_tieneStock).toList();
+    final sinStockCount = todos.length - disponibles.length;
+    final narrow = MediaQuery.of(context).size.width < 700;
+
+    void onSoloDisponibles() {
+      setState(() {
+        // Marca únicamente los que tienen stock > 0 y desmarca los sin
+        // stock que estuvieran marcados (incluso si están ocultos).
+        for (final p in todos) {
+          if (_tieneStock(p)) {
+            _selected.add(p.idProducto);
+          } else {
+            _selected.remove(p.idProducto);
+          }
+        }
+      });
+      _persistSelection();
+    }
+
+    void onToggleTodos() {
+      setState(() {
+        for (final p in filtered) {
+          if (allSelectedVisible) {
+            _selected.remove(p.idProducto);
+          } else {
+            _selected.add(p.idProducto);
+          }
+        }
+      });
+      _persistSelection();
+    }
+
+    // Sólo filtra en memoria — no se vuelve a llamar al RPC.
+    void onToggleHide() =>
+        setState(() => _hideSinStock = !_hideSinStock);
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       color: Colors.white,
@@ -210,35 +311,45 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
           const SizedBox(height: 6),
           Row(
             children: [
-              Text(
-                '${filtered.length} mostrado(s)'
-                '${_hasMore ? ' • más al hacer scroll' : ''}',
-                style: const TextStyle(
-                    fontSize: 12, color: AppColors.textSecondary),
+              Expanded(
+                child: Text(
+                  '${filtered.length} mostrado(s) • '
+                  '${disponibles.length} con stock'
+                  '${_hideSinStock && sinStockCount > 0 ? ' • $sinStockCount oculto(s)' : ''}',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 12, color: AppColors.textSecondary),
+                ),
               ),
-              const Spacer(),
-              TextButton.icon(
-                icon: Icon(allSelectedVisible
-                    ? Icons.deselect
-                    : Icons.select_all),
-                label: Text(allSelectedVisible
-                    ? 'Deseleccionar visibles'
-                    : 'Seleccionar visibles'),
-                onPressed: filtered.isEmpty
-                    ? null
-                    : () {
-                        setState(() {
-                          if (allSelectedVisible) {
-                            for (final p in filtered) {
-                              _selected.remove(p.idProducto);
-                            }
-                          } else {
-                            for (final p in filtered) {
-                              _selected.add(p.idProducto);
-                            }
-                          }
-                        });
-                      },
+              _HeaderAction(
+                icon: _hideSinStock
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+                label: _hideSinStock
+                    ? 'Mostrar no disponibles'
+                    : 'Ocultar no disponibles',
+                color: _hideSinStock
+                    ? AppColors.warning
+                    : AppColors.textSecondary,
+                iconOnly: narrow,
+                onPressed: sinStockCount == 0 ? null : onToggleHide,
+              ),
+              const SizedBox(width: 2),
+              _HeaderAction(
+                icon: Icons.inventory_2_outlined,
+                label: 'Solo disponibles',
+                color: AppColors.success,
+                iconOnly: narrow,
+                onPressed: disponibles.isEmpty ? null : onSoloDisponibles,
+              ),
+              const SizedBox(width: 2),
+              _HeaderAction(
+                icon: allSelectedVisible ? Icons.deselect : Icons.select_all,
+                label: allSelectedVisible
+                    ? 'Deseleccionar todo'
+                    : 'Seleccionar todo',
+                iconOnly: narrow,
+                onPressed: filtered.isEmpty ? null : onToggleTodos,
               ),
             ],
           ),
@@ -304,6 +415,7 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
         _selected.add(p.idProducto);
       }
     });
+    _persistSelection();
   }
 
   /// Si entre los seleccionados hay productos sin stock, pedir confirmación
@@ -311,6 +423,8 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
   /// en el picker para ajustar; "Continuar" envía igual (el backend filtrará
   /// nada por stock — el caption del mensaje sí refleja la disponibilidad).
   Future<void> _confirmAndPop() async {
+    await _persistSelection();
+    if (!mounted) return;
     final sinStock = _items
         .where((p) =>
             _selected.contains(p.idProducto) &&
@@ -450,6 +564,54 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Botón compacto de la barra de acciones del header. En pantallas
+/// estrechas colapsa a sólo icono (con tooltip) para no desbordar.
+class _HeaderAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color? color;
+  final bool iconOnly;
+  final VoidCallback? onPressed;
+
+  const _HeaderAction({
+    required this.icon,
+    required this.label,
+    required this.iconOnly,
+    required this.onPressed,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (iconOnly) {
+      return IconButton(
+        icon: Icon(icon, size: 20),
+        color: color,
+        tooltip: label,
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 34),
+        padding: EdgeInsets.zero,
+        onPressed: onPressed,
+      );
+    }
+    return Tooltip(
+      message: label,
+      child: TextButton.icon(
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+        style: TextButton.styleFrom(
+          foregroundColor: color,
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          minimumSize: const Size(0, 34),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onPressed: onPressed,
       ),
     );
   }
@@ -659,22 +821,25 @@ class _ProductTile extends StatelessWidget {
 }
 
 class _EmptyView extends StatelessWidget {
-  const _EmptyView();
+  final String? message;
+  const _EmptyView({this.message});
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Padding(
-        padding: EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.inventory_2_outlined,
+            const Icon(Icons.inventory_2_outlined,
                 size: 64, color: AppColors.textLight),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             Text(
-              'No hay productos publicables.\nAsegúrate de que tienen foto y precio.',
+              message ??
+                  'No hay productos publicables.\n'
+                      'Asegúrate de que tienen foto y precio.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary),
+              style: const TextStyle(color: AppColors.textSecondary),
             ),
           ],
         ),

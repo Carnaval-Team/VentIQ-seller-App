@@ -70,6 +70,7 @@ class WapiSessionCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       session.phoneNumber ?? 'Sin número asociado',
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.textSecondary,
@@ -154,18 +155,19 @@ class WapiSessionCard extends StatelessWidget {
           ),
           if (!compact) ...[
             const SizedBox(height: 10),
-            Row(
+            // Wrap: si no caben en una línea bajan a la siguiente en vez de
+            // recortarse (el session-id puede ser largo).
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
               children: [
                 _ChipMini(
                   icon: Icons.fingerprint,
                   label: session.wapiSessionId,
                 ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: _ChipMini(
-                    icon: Icons.schedule,
-                    label: 'Actualizado ${_relative(session.lastStatusAt)}',
-                  ),
+                _ChipMini(
+                  icon: Icons.schedule,
+                  label: 'Actualizado ${_relative(session.lastStatusAt)}',
                 ),
               ],
             ),
@@ -216,6 +218,9 @@ class _ChipMini extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      // maxWidth acotado: el chip vive dentro de un Wrap (ancho no acotado),
+      // así el Flexible interno tiene un límite contra el que hacer ellipsis.
+      constraints: const BoxConstraints(maxWidth: 260),
       decoration: BoxDecoration(
         color: AppColors.surfaceVariant,
         borderRadius: BorderRadius.circular(8),
