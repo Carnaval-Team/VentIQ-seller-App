@@ -848,6 +848,41 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
     return DateFormat('dd/MM/yyyy HH:mm').format(local);
   }
 
+  /// Reanuda una tanda que quedó a medias: manda al backend sólo los ids de
+  /// log sin entregar. El backend reutiliza esas filas, así que la tanda se
+  /// completa en el historial en vez de duplicarse.
+  Future<void> _reanudarTanda(WapiEnvioTanda tanda) async {
+    if (!_ensureActive()) return;
+    final idSesion = tanda.idSesion;
+    final pendientes = tanda.logIdsSinEnviar;
+    if (idSesion == null || pendientes.isEmpty) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final res = await _service.resumeTanda(
+        idSesion: idSesion,
+        logIds: pendientes,
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text(
+          (res['message'] as String?) ??
+              'Reanudando ${pendientes.length} mensaje(s)…',
+        ),
+        backgroundColor: AppColors.success,
+      ));
+      // El backend ya devolvió los logs a `pendiente`; refrescamos para que la
+      // tanda vuelva a "en curso" y arranque el auto-refresh.
+      await _refrescarLogs();
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text('No se pudo reanudar: $e'),
+        backgroundColor: Colors.red,
+      ));
+    }
+  }
+
   Widget _buildLogsList() {
     if (_tandas.isEmpty) {
       return _EmptyCard(
@@ -877,6 +912,7 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
             destacada: t.estadoPara(ahora) == WapiTandaEstado.enCurso,
             etiquetas: _etiquetasChat,
             productos: _nombresProducto,
+            onReanudar: _reanudarTanda,
           ),
       ],
     );

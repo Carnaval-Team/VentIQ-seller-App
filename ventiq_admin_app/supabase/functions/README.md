@@ -32,11 +32,17 @@ programación (tabla `app_wapi_programacion`).
 ## Secrets a configurar
 
 ```bash
-supabase secrets set \
-  WAPI_BASE_URL=http://3.238.37.3:2786 \
+npx supabase secrets set \
+  WAPI_BASE_URL=<http://IP:PUERTO_DEL_SERVIDOR_WAPI> \
   WAPI_API_KEY=<API_KEY> \
   WAPI_WEBHOOK_SECRET=<secret_compartido_con_la_api>
 ```
+
+> Nunca escribas estos valores en el código ni los commitees: viven sólo como
+> secrets del proyecto. Si el servidor WAPI cambia de IP/puerto o rotas la
+> API key, basta con volver a lanzar `secrets set` y **redesplegar** las
+> funciones que llaman a WAPI (`wapi-*`) — el módulo `_shared/wapi_client.ts`
+> lee las env vars al cargar.
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` ya están
 inyectados automáticamente por la plataforma.
@@ -55,12 +61,12 @@ SELECT pg_reload_conf();
 
 ```bash
 cd ventiq_admin_app
-supabase functions deploy wapi-session-create
-supabase functions deploy wapi-session-status
-supabase functions deploy wapi-session-action
-supabase functions deploy wapi-list-sessions
-supabase functions deploy wapi-list-groups
-supabase functions deploy wapi-send-products
-supabase functions deploy wapi-cron-dispatch
-supabase functions deploy wapi-webhook
+npx supabase functions deploy wapi-session-create
+npx supabase functions deploy wapi-session-status
+npx supabase functions deploy wapi-session-action
+npx supabase functions deploy wapi-list-sessions
+npx supabase functions deploy wapi-list-groups
+npx supabase functions deploy wapi-send-products
+npx supabase functions deploy wapi-cron-dispatch
+npx supabase functions deploy wapi-webhook
 ```

@@ -46,6 +46,36 @@ interface SendBody {
   delay_max_seconds?: number;
   tipo_envio?: "manual" | "programado";
   id_programacion?: number; // solo si tipo_envio = programado
+
+  // MODO REANUDAR: ids de `app_wapi_envio_log` que quedaron `pendiente` o
+  // `fallido` en una tanda anterior. Cuando viene, NO se insertan filas
+  // nuevas: se re-despachan exactamente esos mensajes reutilizando su fila
+  // de log (así el historial no se duplica y la tanda se "completa" en vez
+  // de aparecer dos veces). `product_ids` y `destinations` se ignoran: los
+  // pares (producto, chat) salen de los propios logs.
+  resume_log_ids?: number[];
+}
+
+// ───────────────────────────────────────────────────────────────────────
+//  Reintentos
+//  Los fallos observados en producción son casi todos transitorios
+//  (NETWORK_ERROR: la sesión WAPI rechaza la conexión cuando está saturada
+//  con varios envíos en paralelo). Antes un único fallo marcaba el mensaje
+//  como `fallido` para siempre; ahora se reintenta con backoff.
+// ───────────────────────────────────────────────────────────────────────
+const RETRY_MAX_ATTEMPTS = 3;
+const RETRY_BASE_MS = 4_000;
+
+/** ¿El error merece reintento? Los 4xx de validación no (fallarían igual). */
+function esReintentable(code: string | undefined): boolean {
+  if (!code) return true;
+  if (code === "NETWORK_ERROR" || code === "SEND_ERROR") return true;
+  const m = /^HTTP_(\d{3})$/.exec(code);
+  if (m) {
+    const status = Number(m[1]);
+    return status === 408 || status === 429 || status >= 500;
+  }
+  return false;
 }
 
 // Trunca caption (WhatsApp permite máx 1024 chars en captions de imagen)
@@ -210,13 +240,74 @@ export async function dispatchProducts(args: {
   delayMax: number;
   tipoEnvio: "manual" | "programado";
   idProgramacion?: number;
+  /** Ver `SendBody.resume_log_ids`. Cuando viene, se reusan esas filas de log. */
+  resumeLogIds?: number[];
 }) {
   const {
     admin, idSesion, idTienda, wapiSessionId, productIds,
     destinations, template, delayMin, delayMax, tipoEnvio, idProgramacion,
+    resumeLogIds,
   } = args;
 
-  if (productIds.length === 0 || destinations.length === 0) {
+  // ── MODO REANUDAR ───────────────────────────────────────────────────
+  // Reconstruimos productos y destinos a partir de las filas de log que
+  // quedaron sin enviar, y guardamos el mapa (producto, chat) → logId para
+  // reutilizar esas filas en vez de insertar duplicados.
+  const esReanudacion = Array.isArray(resumeLogIds) && resumeLogIds.length > 0;
+  const logIdPorPar = new Map<string, number>();
+  let effProductIds = productIds;
+  let effDestinations = destinations;
+
+  if (esReanudacion) {
+    const { data: pend, error: pendErr } = await admin
+      .from("app_wapi_envio_log")
+      .select("id, id_producto, chat_id, estado")
+      .in("id", resumeLogIds!)
+      .eq("id_tienda", idTienda)
+      .neq("estado", "enviado")
+      .order("id", { ascending: true });
+    if (pendErr) {
+      throw new Error(`Error cargando logs a reanudar: ${pendErr.message}`);
+    }
+
+    const ordenProd: number[] = [];
+    const vistosProd = new Set<number>();
+    const chats = new Map<string, Destino>();
+    // Los destinos originales traen `etiqueta`/`tipo`; los reaprovechamos.
+    const metaPorChat = new Map(destinations.map((d) => [d.chat_id, d]));
+
+    for (const row of pend ?? []) {
+      const idProd = Number((row as any).id_producto);
+      const chatId = String((row as any).chat_id ?? "");
+      if (!Number.isFinite(idProd) || !chatId) continue;
+      const key = `${idProd}|${chatId}`;
+      // Si el mismo par apareciera dos veces nos quedamos con el primer log.
+      if (!logIdPorPar.has(key)) logIdPorPar.set(key, Number((row as any).id));
+      if (!vistosProd.has(idProd)) {
+        vistosProd.add(idProd);
+        ordenProd.push(idProd);
+      }
+      if (!chats.has(chatId)) {
+        chats.set(
+          chatId,
+          metaPorChat.get(chatId) ?? {
+            tipo: chatId.endsWith("@g.us") ? "grupo" : "numero",
+            chat_id: chatId,
+          },
+        );
+      }
+    }
+
+    effProductIds = ordenProd;
+    effDestinations = Array.from(chats.values());
+    console.log(
+      `[wapi-send-products] REANUDAR: ${logIdPorPar.size} mensaje(s) ` +
+        `sin enviar → ${effProductIds.length} producto(s), ` +
+        `${effDestinations.length} destino(s)`,
+    );
+  }
+
+  if (effProductIds.length === 0 || effDestinations.length === 0) {
     return { enviados: 0, fallidos: 0, batch_id: null, skipped: true };
   }
 
@@ -244,17 +335,18 @@ export async function dispatchProducts(args: {
   // 400s para el fan-out del último producto del chunk y la re-invocación.
   const TIME_BUDGET_MS = 250_000;
   const avgDelayMs = (minMs + maxMs) / 2;
-  const fanoutBatches = Math.ceil(destinations.length / MAX_PARALLEL_FANOUT);
+  const fanoutBatches = Math.ceil(effDestinations.length / MAX_PARALLEL_FANOUT);
   // Estimado de wall-time por producto: delay entre productos + fan-out
-  // (cada sub-lote ~4s: envío de imagen + pausa de 1s entre sub-lotes).
-  const perProductMs = avgDelayMs + fanoutBatches * 4_000;
+  // (cada sub-lote ~4s por intento; con reintentos el peor caso crece, así
+  // que reservamos margen para un reintento medio por sub-lote).
+  const perProductMs = avgDelayMs + fanoutBatches * 8_000;
   const maxProductsThisChunk = Math.max(
     1,
     Math.floor(TIME_BUDGET_MS / perProductMs),
   );
 
-  const chunkIds = productIds.slice(0, maxProductsThisChunk);
-  const remainingIds = productIds.slice(maxProductsThisChunk);
+  const chunkIds = effProductIds.slice(0, maxProductsThisChunk);
+  const remainingIds = effProductIds.slice(maxProductsThisChunk);
 
   // Re-invoca wapi-send-products con los productos que NO caben en este chunk.
   // Fire-and-forget: el endpoint responde de inmediato (queued) y procesa el
@@ -268,10 +360,21 @@ export async function dispatchProducts(args: {
     if (remainingIds.length === 0 || reinvoked) return;
     reinvoked = true;
 
+    // En modo reanudar, la continuación también debe reanudar: si mandara
+    // sólo product_ids insertaría filas de log nuevas y duplicaría la tanda.
+    // Filtramos los logIds que corresponden a los productos que faltan.
+    const remainingSet = new Set(remainingIds);
+    const remainingLogIds = esReanudacion
+      ? Array.from(logIdPorPar.entries())
+          .filter(([k]) => remainingSet.has(Number(k.split("|")[0])))
+          .map(([, v]) => v)
+      : [];
+
     const payload = {
       id_sesion: idSesion,
       product_ids: remainingIds,
-      destinations,
+      destinations: effDestinations,
+      ...(esReanudacion ? { resume_log_ids: remainingLogIds } : {}),
       ...(template ? { message_template: template } : {}),
       delay_min_seconds: delayMin,
       delay_max_seconds: delayMax,
@@ -489,7 +592,7 @@ export async function dispatchProducts(args: {
         ? "image/gif"
         : "image/jpeg";
 
-    for (const d of destinations) {
+    for (const d of effDestinations) {
       if (!d.chat_id || typeof d.chat_id !== "string") continue;
       // chatId debe acabar en @c.us (números) o @g.us (grupos)
       if (!/@(c|g)\.us$/.test(d.chat_id)) {
@@ -499,6 +602,9 @@ export async function dispatchProducts(args: {
         });
         continue;
       }
+      // Al reanudar sólo re-despachamos los pares que realmente quedaron
+      // sin enviar; el resto del producto ya llegó y no debe repetirse.
+      if (esReanudacion && !logIdPorPar.has(`${p.id}|${d.chat_id}`)) continue;
       messages.push({
         chatId: d.chat_id,
         type: "image",
@@ -514,6 +620,43 @@ export async function dispatchProducts(args: {
     );
   }
 
+  // En modo reanudar, los productos descartados (sin imagen válida) tienen
+  // filas de log que nadie va a tocar. Si las dejáramos en `pendiente` la
+  // tanda se quedaría eternamente "interrumpida" y el botón de reanudar
+  // reaparecería sin poder avanzar nunca. Las marcamos como fallido con la
+  // razón real para que el estado sea honesto y la tanda pueda cerrarse.
+  if (esReanudacion) {
+    const idsDescartados = new Set(
+      skipped
+        .filter((s) => chunkIds.includes(s.id_producto))
+        .map((s) => s.id_producto),
+    );
+    const logsDescartados: number[] = [];
+    let razon = "Producto sin imagen pública válida";
+    for (const [key, logId] of logIdPorPar.entries()) {
+      const idProd = Number(key.split("|")[0]);
+      if (idsDescartados.has(idProd)) {
+        logsDescartados.push(logId);
+        const s = skipped.find((x) => x.id_producto === idProd);
+        if (s) razon = s.reason;
+      }
+    }
+    if (logsDescartados.length > 0) {
+      await admin
+        .from("app_wapi_envio_log")
+        .update({
+          estado: "fallido",
+          error_code: "SKIPPED",
+          error_message: `No se puede enviar: ${razon}`,
+        })
+        .in("id", logsDescartados);
+      console.warn(
+        `[wapi-send-products] REANUDAR: ${logsDescartados.length} log(s) ` +
+          `marcados como fallido por producto descartado`,
+      );
+    }
+  }
+
   if (messages.length === 0) {
     // Ningún producto de este chunk produjo mensajes válidos (todos sin
     // imagen / chat_id inválido). Aún así debemos continuar con los
@@ -522,27 +665,48 @@ export async function dispatchProducts(args: {
     return { enviados: 0, fallidos: 0, batch_id: null, skipped: true };
   }
 
-  // Insertar log "pendiente" para todos los mensajes (audit trail)
-  const logRows = messages.map((m) => ({
-    id_tienda: idTienda,
-    id_sesion: idSesion,
-    id_programacion: idProgramacion ?? null,
-    id_producto: m._meta.id_producto,
-    chat_id: m._meta.chat_id,
-    tipo_envio: tipoEnvio,
-    estado: "pendiente",
-  }));
-  const { data: insertedLogs } = await admin
-    .from("app_wapi_envio_log")
-    .insert(logRows)
-    .select("id");
+  // Log del envío. En modo reanudar NO insertamos: reutilizamos las filas
+  // existentes (así la tanda original se completa en vez de duplicarse) y
+  // las devolvemos a `pendiente` para que la UI muestre el progreso vivo.
+  let logIdsOrdenados: Array<number | null>;
+  if (esReanudacion) {
+    logIdsOrdenados = messages.map(
+      (m) => logIdPorPar.get(`${m._meta.id_producto}|${m._meta.chat_id}`) ?? null,
+    );
+    const aReiniciar = logIdsOrdenados.filter((v): v is number => v != null);
+    if (aReiniciar.length > 0) {
+      await admin
+        .from("app_wapi_envio_log")
+        .update({
+          estado: "pendiente",
+          error_code: null,
+          error_message: null,
+        })
+        .in("id", aReiniciar);
+    }
+  } else {
+    const logRows = messages.map((m) => ({
+      id_tienda: idTienda,
+      id_sesion: idSesion,
+      id_programacion: idProgramacion ?? null,
+      id_producto: m._meta.id_producto,
+      chat_id: m._meta.chat_id,
+      tipo_envio: tipoEnvio,
+      estado: "pendiente",
+    }));
+    const { data: insertedLogs } = await admin
+      .from("app_wapi_envio_log")
+      .insert(logRows)
+      .select("id");
+    logIdsOrdenados = messages.map((_, i) => (insertedLogs ?? [])[i]?.id ?? null);
+  }
 
   // minMs / maxMs / MAX_PARALLEL_FANOUT se declararon arriba (necesarios
   // para estimar el presupuesto de tiempo del chunk). Aquí sólo los usamos.
 
   // Generamos un batchId único para correlación interna (no se envía al WAPI)
   const batchId = `b_${idTienda}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
-  const logIds = (insertedLogs ?? []).map((l: any) => l.id);
+  const logIds = logIdsOrdenados;
 
   // Reagrupar mensajes por id_producto. Conservar el índice global para
   // mapear correctamente al logId correspondiente.
@@ -570,37 +734,75 @@ export async function dispatchProducts(args: {
   let fallidos = 0;
 
   // Helper: dispara UN mensaje y actualiza su log row. Devuelve success bool.
+  //
+  // Reintenta hasta RETRY_MAX_ATTEMPTS con backoff exponencial + jitter
+  // mientras el error sea transitorio. El backoff también funciona como
+  // anti-ban: si la sesión WAPI está rechazando conexiones, insistir de
+  // inmediato sólo empeora las cosas.
   const dispatchOne = async (it: Indexed): Promise<boolean> => {
     const m = it.msg;
-    const single = await wapi.sendImage(
-      wapiSessionId,
-      m.chatId,
-      m.content.image.url,
-      m.content.caption,
-      m.content.image.mimetype,
-    );
-    if (single.success) {
-      if (it.logId) {
-        await admin.from("app_wapi_envio_log")
-          .update({
-            estado: "enviado",
-            sent_at: new Date().toISOString(),
-            mensaje_id: single.data?.messageId ?? null,
-          })
-          .eq("id", it.logId);
+    let ultimoCode = "SEND_ERROR";
+    let ultimoMsg = "Error desconocido";
+
+    for (let intento = 1; intento <= RETRY_MAX_ATTEMPTS; intento++) {
+      const single = await wapi.sendImage(
+        wapiSessionId,
+        m.chatId,
+        m.content.image.url,
+        m.content.caption,
+        m.content.image.mimetype,
+      );
+
+      if (single.success) {
+        if (it.logId) {
+          await admin.from("app_wapi_envio_log")
+            .update({
+              estado: "enviado",
+              sent_at: new Date().toISOString(),
+              mensaje_id: single.data?.messageId ?? null,
+              // Limpiamos rastros de intentos previos: si acabó enviándose,
+              // el error anterior ya no describe el estado de la fila.
+              error_code: null,
+              error_message: intento > 1
+                ? `Enviado tras ${intento} intentos`
+                : null,
+            })
+            .eq("id", it.logId);
+        }
+        if (intento > 1) {
+          console.log(
+            `[wapi-send-products] recuperado idx=${it.idx} chat=${m.chatId} ` +
+              `en el intento ${intento}`,
+          );
+        }
+        return true;
       }
-      return true;
+
+      ultimoCode = single.error?.code ?? "SEND_ERROR";
+      ultimoMsg = single.error?.message ?? "Error desconocido";
+
+      const puedeReintentar = intento < RETRY_MAX_ATTEMPTS &&
+        esReintentable(ultimoCode);
+      console.error(
+        `[wapi-send-products] fallido idx=${it.idx} chat=${m.chatId} ` +
+          `intento ${intento}/${RETRY_MAX_ATTEMPTS} (${ultimoCode}): ${ultimoMsg}` +
+          (puedeReintentar ? " — reintentando" : ""),
+      );
+      if (!puedeReintentar) break;
+
+      // Backoff exponencial (4s, 8s…) con jitter ±25% para no sincronizar
+      // los reintentos de todo un sub-lote contra el mismo instante.
+      const base = RETRY_BASE_MS * Math.pow(2, intento - 1);
+      const espera = Math.round(base * (0.75 + Math.random() * 0.5));
+      await new Promise((res) => setTimeout(res, espera));
     }
-    console.error(
-      `[wapi-send-products] fallido idx=${it.idx} chat=${m.chatId} ` +
-        `(${single.error?.code}): ${single.error?.message}`,
-    );
+
     if (it.logId) {
       await admin.from("app_wapi_envio_log")
         .update({
           estado: "fallido",
-          error_code: single.error?.code ?? "SEND_ERROR",
-          error_message: single.error?.message ?? "Error desconocido",
+          error_code: ultimoCode,
+          error_message: `${ultimoMsg} (tras ${RETRY_MAX_ATTEMPTS} intentos)`,
         })
         .eq("id", it.logId);
     }
@@ -675,7 +877,17 @@ export async function handleSendProducts(req: Request): Promise<Response> {
     ? body.product_ids.map(Number).filter((n) => Number.isFinite(n))
     : [];
   const destinations = Array.isArray(body.destinations) ? body.destinations : [];
-  if (!Number.isFinite(idSesion) || productIds.length === 0 || destinations.length === 0) {
+  const resumeLogIds = Array.isArray(body.resume_log_ids)
+    ? body.resume_log_ids.map(Number).filter((n) => Number.isFinite(n))
+    : [];
+  const esReanudacion = resumeLogIds.length > 0;
+
+  // Al reanudar, product_ids/destinations se derivan de los propios logs, así
+  // que sólo exigimos id_sesion + la lista de logs a reintentar.
+  if (!Number.isFinite(idSesion)) {
+    return errorResponse("id_sesion es obligatorio", 400);
+  }
+  if (!esReanudacion && (productIds.length === 0 || destinations.length === 0)) {
     return errorResponse(
       "id_sesion, product_ids[] y destinations[] son obligatorios",
       400,
@@ -702,12 +914,17 @@ export async function handleSendProducts(req: Request): Promise<Response> {
   // entre mensajes). Respondemos inmediatamente al cliente y procesamos el
   // batch en segundo plano vía EdgeRuntime.waitUntil(). El usuario podrá
   // seguir trabajando en la app y revisar el progreso en el historial.
-  const totalMensajes = productIds.length * destinations.length;
+  const totalMensajes = esReanudacion
+    ? resumeLogIds.length
+    : productIds.length * destinations.length;
   // Con fan-out paralelo por producto, el tiempo de pared depende del
   // número de productos (no del total de mensajes): un delay aleatorio
   // se aplica ENTRE productos. Sub-lotes paralelos añaden ~1s extra.
+  const productosEstimados = esReanudacion
+    ? Math.max(1, Math.ceil(resumeLogIds.length / Math.max(1, destinations.length)))
+    : productIds.length;
   const estimadoSeg = Math.round(
-    Math.max(0, productIds.length - 1) * ((delayMin + delayMax) / 2),
+    Math.max(0, productosEstimados - 1) * ((delayMin + delayMax) / 2),
   );
 
   const job = dispatchProducts({
@@ -722,6 +939,7 @@ export async function handleSendProducts(req: Request): Promise<Response> {
     delayMax,
     tipoEnvio: body.tipo_envio ?? "manual",
     idProgramacion: body.id_programacion,
+    ...(esReanudacion ? { resumeLogIds } : {}),
   }).catch((err) => {
     console.error(
       `[wapi-send-products] background dispatch falló: ${(err as Error).message ?? err}`,
@@ -741,13 +959,17 @@ export async function handleSendProducts(req: Request): Promise<Response> {
 
   return okResponse({
     queued: true,
+    resumed: esReanudacion,
     total_mensajes_estimados: totalMensajes,
     tiempo_estimado_segundos: estimadoSeg,
     delay_segundos: { min: delayMin, max: delayMax },
-    message:
-      `Envío iniciado en segundo plano. ${totalMensajes} mensajes en cola. ` +
-      `Tiempo estimado: ~${Math.ceil(estimadoSeg / 60)} min. ` +
-      `Puedes seguir usando la app — revisa el historial para ver el progreso.`,
+    message: esReanudacion
+      ? `Reanudando envío: ${totalMensajes} mensaje(s) pendientes. ` +
+        `Tiempo estimado: ~${Math.max(1, Math.ceil(estimadoSeg / 60))} min. ` +
+        `Revisa el historial para ver el progreso.`
+      : `Envío iniciado en segundo plano. ${totalMensajes} mensajes en cola. ` +
+        `Tiempo estimado: ~${Math.ceil(estimadoSeg / 60)} min. ` +
+        `Puedes seguir usando la app — revisa el historial para ver el progreso.`,
   });
 }
 
