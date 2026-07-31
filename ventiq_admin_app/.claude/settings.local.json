@@ -47,7 +47,8 @@
       "PowerShell($j = Get-Content assets/changelog.json -Raw | ConvertFrom-Json; \"OK version=$\\($j.current_version\\) build=$\\($j.build\\) entries=$\\($j.changelogs.Count\\)\"; $j.changelogs[0].changes.Count)",
       "PowerShell(git add *)",
       "Bash(git commit *)",
-      "PowerShell(git push *)"
+      "PowerShell(git push *)",
+      "mcp__supabase__list_tables"
     ]
   },
   "enabledMcpjsonServers": [

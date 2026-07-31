@@ -3,6 +3,7 @@ import '../config/app_colors.dart';
 import '../widgets/tpv_managements/tpv.dart';
 import '../widgets/tpv_managements/vendor.dart';
 import '../widgets/tpv_managements/price_alterations.dart';
+import '../widgets/tpv_managements/caja_turnos.dart';
 import '../widgets/tpv_managements/asignate_vendor.dart';
 import '../services/tpv_service.dart';
 import '../utils/navigation_guard.dart';
@@ -28,7 +29,7 @@ class _TpvManagementScreenState extends State<TpvManagementScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_handleTabChange);
     _loadPermissions();
   }
@@ -74,6 +75,7 @@ class _TpvManagementScreenState extends State<TpvManagementScreen>
             Tab(icon: Icon(Icons.point_of_sale), text: 'TPVs'),
             Tab(icon: Icon(Icons.people), text: 'Vendedores'),
             Tab(icon: Icon(Icons.price_change), text: 'Cambios'),
+            Tab(icon: Icon(Icons.receipt_long), text: 'Turnos Tpv'),
           ],
         ),
       ),
@@ -99,6 +101,11 @@ class _TpvManagementScreenState extends State<TpvManagementScreen>
                   searchQuery: _searchQuery,
                   onRefresh: _refreshData,
                 ),
+                CajaTurnosTabView(
+                  key: ValueKey('caja_turnos_$_refreshKey'),
+                  searchQuery: _searchQuery,
+                  onRefresh: _refreshData,
+                ),
               ],
             ),
           ),
@@ -121,7 +128,9 @@ class _TpvManagementScreenState extends State<TpvManagementScreen>
             ? 'Buscar TPVs...'
             : _tabController.index == 1
             ? 'Buscar vendedores...'
-            : 'Buscar cambios de precio...';
+            : _tabController.index == 2
+            ? 'Buscar cambios de precio...'
+            : 'Buscar turnos (TPV, vendedor, observaciones)...';
 
     return Container(
       padding: const EdgeInsets.all(16),
