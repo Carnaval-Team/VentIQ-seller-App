@@ -35,6 +35,10 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   bool _isAdmin = false;
   List<Map<String, dynamic>> _orders = [];
   Map<int, int> _ventiqOps = {}; // carnaval order id -> ventiq operation id
+  // id repartidor -> {nombre, telefono}. Se carga una sola vez (son pocos)
+  // para no consultar Supabase fila a fila al pintar las órdenes.
+  Map<int, Map<String, dynamic>> _repartidores = {};
+  bool _repartidoresRefetched = false;
   String? _selectedStatus;
   DateTime? _dateFrom;
   DateTime? _dateTo;
@@ -80,6 +84,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       }
       _carnavalStoreId = carnavalId;
       _isAdmin = _adminIds.contains(carnavalId);
+      _repartidores = await CarnavalService.getRepartidoresMap();
       await _loadOrders();
     } catch (e) {
       print('❌ Error init carnaval orders: $e');
@@ -116,6 +121,22 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     }
   }
 
+  /// Si alguna orden trae un `repartidor` que no está en el mapa (p.ej. dado
+  /// de alta después de abrir la pantalla), refresca el mapa una sola vez.
+  Future<void> _ensureRepartidores(List<Map<String, dynamic>> orders) async {
+    if (_repartidoresRefetched) return;
+    final missing = orders.any((o) {
+      final raw = o['repartidor'];
+      if (raw == null) return false;
+      final id = raw is int ? raw : int.tryParse(raw.toString());
+      return id != null && !_repartidores.containsKey(id);
+    });
+    if (!missing) return;
+    _repartidoresRefetched = true;
+    final fresh = await CarnavalService.getRepartidoresMap(forceRefresh: true);
+    if (mounted) setState(() => _repartidores = fresh);
+  }
+
   Future<void> _loadOrders() async {
     setState(() => _isLoading = true);
     _currentPage = 0;
@@ -137,6 +158,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       _isLoading = false;
     });
     _loadVentiqOps(orders);
+    _ensureRepartidores(orders);
   }
 
   Future<void> _loadMore() async {
@@ -160,6 +182,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       _isLoadingMore = false;
     });
     _loadVentiqOps(orders);
+    _ensureRepartidores(orders);
   }
 
   Future<List<Map<String, dynamic>>> _enrichOrdersWithDireccion(
@@ -592,6 +615,19 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     final metodoPago = order['metodo_pago'] as String? ?? '-';
     final proveedorId = order['proveedor_id'];
     final repartidor = order['repartidor'];
+    final repartidorId = repartidor is int
+        ? repartidor
+        : int.tryParse(repartidor?.toString() ?? '');
+    final repartidorInfo =
+        repartidorId != null ? _repartidores[repartidorId] : null;
+    final repartidorNombre = (repartidorInfo?['nombre'] as String?)?.trim();
+    final repartidorTel = CarnavalService.formatRepartidorTelefono(
+      repartidorInfo?['telefono'],
+    );
+    final repartidorLabel = (repartidorNombre != null &&
+            repartidorNombre.isNotEmpty)
+        ? (repartidorTel != null ? '$repartidorNombre · $repartidorTel' : repartidorNombre)
+        : 'Repartidor #$repartidor';
     final usuario = order['Usuarios'] as Map<String, dynamic>?;
     final clienteName = usuario?['name'] as String? ?? '';
     final clientePhone = usuario?['telefono'] as String? ?? '';
@@ -955,18 +991,36 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (repartidor != null) ...[
-                    Icon(
-                      Icons.delivery_dining,
-                      size: 14,
-                      color: Colors.purple[400],
+                  if (repartidor != null)
+                    // Icono + texto dentro del mismo Expanded con
+                    // mainAxisAlignment.end: así el bloque completo se pega al
+                    // borde derecho y el icono queda junto al texto. flex 2 para
+                    // que "Nombre · Teléfono" quepa sin recortarse.
+                    Expanded(
+                      flex: 2,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Icon(
+                            Icons.delivery_dining,
+                            size: 15,
+                            color: Colors.purple[400],
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              repartidorLabel,
+                              textAlign: TextAlign.end,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.purple[400],
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Repartidor #$repartidor',
-                      style: TextStyle(fontSize: 12, color: Colors.purple[400]),
-                    ),
-                  ],
                 ],
               ),
             ],

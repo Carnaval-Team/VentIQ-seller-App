@@ -30,6 +30,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   Map<String, dynamic>? _userInfo;
   Map<String, dynamic>? _direccionInfo;
   int? _ventiqOperationId;
+  Map<int, Map<String, dynamic>> _repartidores = {};
 
   @override
   void initState() {
@@ -56,6 +57,10 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
       proveedorFilter: widget.isAdmin ? null : widget.carnavalStoreId,
     );
 
+    // Mapa completo de repartidores (cacheado en el service): resuelve
+    // nombre/teléfono sin una query por orden.
+    final repartidoresFuture = CarnavalService.getRepartidoresMap();
+
     // Load extra data in parallel
     final userId = _order['user_id'] as int?;
     final direccion = _order['direccion'] as String?;
@@ -71,8 +76,11 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     ]);
 
     int idx = 1;
+    // Ya estaba en vuelo junto a `futures`, así que no añade latencia.
+    final repartidores = await repartidoresFuture;
     setState(() {
       _details = futures[0] as List<Map<String, dynamic>>;
+      _repartidores = repartidores;
       if (userId != null) {
         _userInfo = futures[idx] as Map<String, dynamic>?;
         idx++;
@@ -575,10 +583,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
                     const SizedBox(height: 12),
                     // Repartidor
                     if (_order['repartidor'] != null)
-                      _buildSection('Repartidor', Text(
-                        'Repartidor #${_order['repartidor']}',
-                        style: const TextStyle(fontSize: 14),
-                      )),
+                      _buildSection('Repartidor', _buildRepartidorInfo()),
                     const SizedBox(height: 16),
                     // Acciones admin
                     if (widget.isAdmin) _buildAdminActions(),
@@ -912,6 +917,28 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
         _buildInfoRow('Costo envío',
             '\$${(_order['costo_envio'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
         _buildInfoRow('Fecha entrega', _order['fecha_entrega'] ?? '-'),
+      ],
+    );
+  }
+
+  Widget _buildRepartidorInfo() {
+    final raw = _order['repartidor'];
+    final id = raw is int ? raw : int.tryParse(raw?.toString() ?? '');
+    final info = id != null ? _repartidores[id] : null;
+    final nombre = (info?['nombre'] as String?)?.trim();
+    final telefono = CarnavalService.formatRepartidorTelefono(
+      info?['telefono'],
+    );
+
+    if (nombre == null || nombre.isEmpty) {
+      // Sin match en la tabla (repartidor borrado): mostramos el id crudo.
+      return Text('Repartidor #$raw', style: const TextStyle(fontSize: 14));
+    }
+
+    return Column(
+      children: [
+        _buildInfoRow('Nombre', nombre),
+        _buildInfoRow('Teléfono', telefono ?? '-'),
       ],
     );
   }

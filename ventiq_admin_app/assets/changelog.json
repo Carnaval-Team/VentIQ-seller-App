@@ -1,12 +1,34 @@
 {
-  "current_version": "2.3.8",
-  "build": 238,
+  "current_version": "2.4.0",
+  "build": 240,
 
   "app_name": "ventiq_admin",
   "changelogs": [
     {
-      "version": "2.3.8",
-      "date": "2026-07-25",
+      "version": "2.4.0",
+      "date": "2026-07-31",
+      "title": "🛵 Repartidores con nombre y teléfono en las órdenes",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Ya no verás solo un número de repartidor",
+          "description": "En el listado de órdenes Carnaval cada orden asignada muestra el nombre del repartidor y su teléfono, en lugar del código interno. Así sabes de un vistazo a quién llamar si necesitas ubicar un pedido."
+        },
+        {
+          "type": "improvement",
+          "title": "Datos del repartidor en el detalle de la orden",
+          "description": "Al abrir una orden verás una sección de Repartidor con su nombre y teléfono listos para contactarlo, incluso en órdenes antiguas de repartidores que ya no están activos."
+        },
+        {
+          "type": "improvement",
+          "title": "Listado más rápido y mejor presentado",
+          "description": "Los datos de los repartidores se cargan una sola vez al entrar a la pantalla, por lo que el listado abre sin demoras. Además el nombre y el teléfono se muestran alineados a la derecha, junto a su ícono y con una letra más legible."
+        }
+      ]
+    },
+    {
+      "version": "2.3.9",
+      "date": "2026-07-30",
       "title": "💳 Pagos faltantes y órdenes Carnaval más precisas",
       "changes": [
         {
