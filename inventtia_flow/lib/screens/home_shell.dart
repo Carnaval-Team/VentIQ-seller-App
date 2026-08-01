@@ -24,6 +24,7 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _currentIndex = 0;
   bool _isInitialLoading = true;
+  bool _redirectingToLogin = false;
 
   // GlobalKeys para poder llamar reload() en las pantallas con IndexedStack
   final GlobalKey<CatalogoScreenState> _catalogoKey =
@@ -79,15 +80,26 @@ class _HomeShellState extends State<HomeShell> {
 
   Future<void> _loadInitialData() async {
     final uuid = AuthService.currentUserId;
-    if (uuid != null) {
-      await context.read<EntidadProvider>().cargarMisEntidades(uuid);
+    if (uuid == null) {
+      if (!mounted) return;
+      context.read<EntidadProvider>().limpiar();
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
+      return;
     }
+    await context.read<EntidadProvider>().cargarMisEntidades(uuid);
     if (mounted) {
       setState(() {
         _isInitialLoading = false;
       });
     }
     _checkForUpdatesAfterNavigation();
+  }
+
+  void _redirectToLoginIfSignedOut() {
+    if (!mounted || _redirectingToLogin) return;
+    _redirectingToLogin = true;
+    context.read<EntidadProvider>().limpiar();
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
   }
 
   static const String _lastUpdateDialogKey = 'flow_last_update_dialog';
@@ -304,9 +316,23 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
     final entidadProvider = context.watch<EntidadProvider>();
     final isAdmin = entidadProvider.isAdmin;
     final isVendedor = entidadProvider.isVendedor;
+
+    // Tras actualizar la web / expirar sesión, AuthProvider limpia el user
+    // pero nadie navegaba a login → home en blanco o spinner eterno.
+    if (!auth.isLoggedIn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _redirectToLoginIfSignedOut();
+      });
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
 
     // Show loading indicator during initial data loading
     if (_isInitialLoading || entidadProvider.isLoading) {
@@ -339,6 +365,14 @@ class _HomeShellState extends State<HomeShell> {
         backgroundColor: Colors.white,
         indicatorColor: AppTheme.primary.withOpacity(0.12),
         destinations: [
+          // Admin+Vendedor: Reservas primero (misma orden que _screensVendedorAdmin)
+          if (isAdmin && isVendedor)
+            const NavigationDestination(
+              icon: Icon(Icons.confirmation_number_outlined),
+              selectedIcon:
+                  Icon(Icons.confirmation_number, color: AppTheme.primary),
+              label: 'Reservas',
+            ),
           if (isAdmin)
             const NavigationDestination(
               icon: Icon(Icons.business_outlined),

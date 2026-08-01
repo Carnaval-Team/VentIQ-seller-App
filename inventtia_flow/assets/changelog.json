@@ -1,8 +1,40 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.4.5",
-  "build": 13,
+  "current_version": "1.4.6",
+  "build": 14,
   "changelogs": [
+    {
+      "version": "1.4.6",
+      "date": "2026-08-01",
+      "title": "📋 Reservas más claras y sesión estable en la web",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Totales por turno en el resumen",
+          "description": "En administración y trabajador, las cantidades por recurso y turno aparecen dentro del panel de Totales, junto al resumen del día."
+        },
+        {
+          "type": "improvement",
+          "title": "Botón Hoy más a mano",
+          "description": "En la barra de fechas, Hoy queda a la izquierda de la flecha derecha para volver al día actual con un toque."
+        },
+        {
+          "type": "improvement",
+          "title": "Canceladas y completadas más visibles",
+          "description": "Las canceladas muestran el sello de cancelado, borde rojo y no se pueden marcar como consumidas ni editar. Las completadas se destacan con fondo verde suave y tampoco se editan."
+        },
+        {
+          "type": "feature",
+          "title": "Exportar el día o todas desde hoy",
+          "description": "Al exportar a PDF o Excel puedes elegir solo el día que estás viendo, o todas las reservas del estado filtrado desde hoy en adelante."
+        },
+        {
+          "type": "fix",
+          "title": "Navegación admin + trabajador",
+          "description": "Corregida la barra inferior cuando el usuario es administrador y trabajador a la vez, para que las pestañas coincidan con las pantallas."
+        }
+      ]
+    },
     {
       "version": "1.4.5",
       "date": "2026-07-28",
