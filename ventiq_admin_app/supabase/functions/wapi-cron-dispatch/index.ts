@@ -98,8 +98,13 @@ Deno.serve(async (req) => {
   }
 
   const totalMensajes = productIds.length * destinations.length;
+  // Nota: los paréntesis importan. Antes era
+  // `(prog.delay_min_seconds ?? 5 + prog.delay_max_seconds ?? 10)`, que por
+  // precedencia se evalúa como `min ?? (5 + max) ?? 10` — el estimado salía mal.
+  const delayMinSeg = prog.delay_min_seconds ?? 5;
+  const delayMaxSeg = prog.delay_max_seconds ?? 10;
   const estimadoSeg = Math.round(
-    Math.max(0, productIds.length - 1) * ((prog.delay_min_seconds ?? 5 + prog.delay_max_seconds ?? 10) / 2),
+    Math.max(0, productIds.length - 1) * ((delayMinSeg + delayMaxSeg) / 2),
   );
 
   // last_run_at ya se actualizó desde fn_wapi_dispatch_diario; el trigger

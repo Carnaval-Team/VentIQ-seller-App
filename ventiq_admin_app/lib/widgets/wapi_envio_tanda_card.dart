@@ -20,12 +20,17 @@ class WapiEnvioTandaCard extends StatefulWidget {
   /// Denominación por id de producto.
   final Map<int, String> productos;
 
+  /// Reanuda los mensajes que quedaron sin despachar. Si es null no se
+  /// muestra el botón de reanudar.
+  final Future<void> Function(WapiEnvioTanda tanda)? onReanudar;
+
   const WapiEnvioTandaCard({
     super.key,
     required this.tanda,
     required this.destacada,
     this.etiquetas = const {},
     this.productos = const {},
+    this.onReanudar,
   });
 
   @override
@@ -33,9 +38,15 @@ class WapiEnvioTandaCard extends StatefulWidget {
 }
 
 class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _pulse;
+
+  /// Parpadeo del botón "reanudar". Corre sólo cuando hay algo que reanudar,
+  /// y es deliberadamente más rápido que [_pulse] para que llame la atención.
+  late final AnimationController _blink;
+
   bool _expandida = false;
+  bool _reanudando = false;
 
   @override
   void initState() {
@@ -43,6 +54,10 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
     _pulse = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
+    );
+    _blink = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 750),
     );
     _expandida = widget.destacada;
     _sincronizarPulso();
@@ -53,6 +68,12 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
     super.didUpdateWidget(old);
     _sincronizarPulso();
   }
+
+  /// ¿Mostramos el botón de reanudar? Requiere callback, mensajes sin
+  /// entregar y que no haya un reanudar en vuelo.
+  bool get _puedeReanudar =>
+      widget.onReanudar != null &&
+      widget.tanda.puedeReanudarse(DateTime.now());
 
   /// El pulso solo corre mientras la tanda está activa — una animación infinita
   /// en tarjetas terminadas gasta frames sin aportar nada.
@@ -65,11 +86,36 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
       _pulse.stop();
       _pulse.value = 0;
     }
+
+    // Mismo criterio para el parpadeo: sólo mientras haya algo que reanudar.
+    final parpadea = _puedeReanudar && !_reanudando;
+    if (parpadea && !_blink.isAnimating) {
+      _blink.repeat(reverse: true);
+    } else if (!parpadea && _blink.isAnimating) {
+      _blink.stop();
+      _blink.value = 0;
+    }
+  }
+
+  Future<void> _reanudar() async {
+    final cb = widget.onReanudar;
+    if (cb == null || _reanudando) return;
+    setState(() => _reanudando = true);
+    _sincronizarPulso();
+    try {
+      await cb(widget.tanda);
+    } finally {
+      if (mounted) {
+        setState(() => _reanudando = false);
+        _sincronizarPulso();
+      }
+    }
   }
 
   @override
   void dispose() {
     _pulse.dispose();
+    _blink.dispose();
     super.dispose();
   }
 
@@ -266,6 +312,18 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
             ],
           ),
         ),
+        // Botón de reanudar: va JUNTO al rótulo de estado ("Interrumpido")
+        // para que se lea como "esto se paró → dale play".
+        if (_puedeReanudar || _reanudando) ...[
+          const SizedBox(width: 6),
+          _BotonReanudar(
+            blink: _blink,
+            cargando: _reanudando,
+            pendientes: widget.tanda.logIdsSinEnviar.length,
+            onTap: _reanudar,
+          ),
+          const SizedBox(width: 2),
+        ],
         AnimatedRotation(
           turns: _expandida ? 0.5 : 0,
           duration: const Duration(milliseconds: 240),
@@ -404,7 +462,16 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
               icono: Icons.warning_amber_rounded,
               texto:
                   'El envío se detuvo con ${t.pendientes} mensaje(s) sin despachar. '
-                  'Vuelve a lanzarlo para completar los que faltan.',
+                  'Pulsa ▶ Reanudar para completar sólo los que faltan.',
+            ),
+            const SizedBox(height: 12),
+          ] else if (_puedeReanudar && t.fallidos > 0) ...[
+            _Aviso(
+              color: AppColors.warning,
+              icono: Icons.replay_rounded,
+              texto:
+                  '${t.fallidos} mensaje(s) fallaron. Pulsa ▶ Reanudar para '
+                  'reintentar sólo esos.',
             ),
             const SizedBox(height: 12),
           ],
@@ -478,6 +545,90 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
             );
           }),
         ],
+      ),
+    );
+  }
+}
+
+/// Botón "play" que parpadea para que el usuario note que puede reanudar los
+/// mensajes que faltan. El parpadeo va sobre el halo y el color de fondo, no
+/// sobre la opacidad del icono, para que siga siendo legible en todo momento.
+class _BotonReanudar extends StatelessWidget {
+  final Animation<double> blink;
+  final bool cargando;
+  final int pendientes;
+  final VoidCallback onTap;
+
+  const _BotonReanudar({
+    required this.blink,
+    required this.cargando,
+    required this.pendientes,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const c = AppColors.warning;
+    return Tooltip(
+      message: cargando
+          ? 'Reanudando…'
+          : 'Reanudar: enviar los $pendientes mensaje(s) que faltan',
+      child: AnimatedBuilder(
+        animation: blink,
+        builder: (_, __) {
+          final b = cargando ? 0.0 : blink.value;
+          return Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: cargando ? null : onTap,
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: c.withOpacity(0.12 + 0.20 * b),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: c.withOpacity(0.45 + 0.55 * b),
+                    width: 1 + b,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: c.withOpacity(0.45 * b),
+                      blurRadius: 14 * b,
+                      spreadRadius: 1.5 * b,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (cargando)
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(c),
+                        ),
+                      )
+                    else
+                      const Icon(Icons.play_arrow_rounded, size: 18, color: c),
+                    const SizedBox(width: 4),
+                    Text(
+                      cargando ? 'Reanudando' : 'Reanudar',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        color: c,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

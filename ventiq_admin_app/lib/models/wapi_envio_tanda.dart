@@ -109,6 +109,31 @@ class WapiEnvioTanda {
     return null;
   }
 
+  /// Ids de log que todavía no llegaron a destino (pendientes + fallidos).
+  /// Es exactamente lo que se manda al backend al pulsar "reanudar".
+  List<int> get logIdsSinEnviar => logs
+      .where((l) => l.estado != WapiEnvioEstado.enviado)
+      .map((l) => l.id)
+      .toList();
+
+  /// Sesión con la que se despachó la tanda; necesaria para reanudarla.
+  int? get idSesion {
+    for (final l in logs) {
+      if (l.idSesion != null) return l.idSesion;
+    }
+    return null;
+  }
+
+  /// ¿Se puede reanudar? Sólo tiene sentido si quedó algo sin entregar y
+  /// sabemos por qué sesión mandarlo.
+  bool puedeReanudarse(DateTime ahora) {
+    final e = estadoPara(ahora);
+    final reanudable = e == WapiTandaEstado.interrumpida ||
+        e == WapiTandaEstado.conFallos ||
+        e == WapiTandaEstado.fallida;
+    return reanudable && idSesion != null && logIdsSinEnviar.isNotEmpty;
+  }
+
   /// Error más frecuente de la tanda, para resumir los fallos sin llenar la UI.
   String? get errorPredominante {
     final conteo = <String, int>{};

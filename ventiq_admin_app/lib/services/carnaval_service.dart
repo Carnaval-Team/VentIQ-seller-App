@@ -1478,6 +1478,60 @@ class CarnavalService {
     }
   }
 
+  /// Mapa `id -> {nombre, telefono}` de TODOS los repartidores (incluidos los
+  /// inactivos, para poder resolver el nombre en órdenes históricas).
+  /// Se consulta una sola vez y se cachea en memoria: son pocos registros y
+  /// evita una query por fila al pintar la lista de órdenes.
+  static Map<int, Map<String, dynamic>>? _repartidoresCache;
+
+  static Future<Map<int, Map<String, dynamic>>> getRepartidoresMap({
+    bool forceRefresh = false,
+  }) async {
+    if (!forceRefresh && _repartidoresCache != null) {
+      return _repartidoresCache!;
+    }
+    try {
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('repartidores')
+          .select('id, nombre, telefono');
+      final map = <int, Map<String, dynamic>>{};
+      for (final row in List<Map<String, dynamic>>.from(response)) {
+        final id = row['id'];
+        if (id is int) {
+          map[id] = row;
+        } else if (id != null) {
+          final parsed = int.tryParse(id.toString());
+          if (parsed != null) map[parsed] = row;
+        }
+      }
+      _repartidoresCache = map;
+      return map;
+    } catch (e) {
+      print('❌ Error al obtener mapa de repartidores: $e');
+      return _repartidoresCache ?? {};
+    }
+  }
+
+  /// Formatea el teléfono (columna `numeric`) quitando el `.0` que añade Dart
+  /// al convertir números sin decimales.
+  static String? formatRepartidorTelefono(dynamic telefono) {
+    if (telefono == null) return null;
+    if (telefono is num) {
+      if (telefono == telefono.truncate()) {
+        return telefono.toInt().toString();
+      }
+      return telefono.toString();
+    }
+    final text = telefono.toString().trim();
+    if (text.isEmpty) return null;
+    final asNum = num.tryParse(text);
+    if (asNum != null && asNum == asNum.truncate()) {
+      return asNum.toInt().toString();
+    }
+    return text;
+  }
+
   /// Crea un nuevo repartidor: registra usuario en Supabase Auth (para que pueda
   /// loguearse en la app de repartidor) y luego inserta el registro en
   /// `carnavalapp.repartidores` con su UUID. Si el email ya existe, intenta
@@ -1589,6 +1643,9 @@ class CarnavalService {
       } catch (uErr) {
         print('⚠️ No se pudo sincronizar Usuarios: $uErr');
       }
+
+      // El nuevo repartidor debe aparecer en el mapa cacheado.
+      _repartidoresCache = null;
 
       return {
         'repartidor': Map<String, dynamic>.from(response),

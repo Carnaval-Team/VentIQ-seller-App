@@ -198,6 +198,33 @@ class WapiNotificationService {
     });
   }
 
+  /// Reanuda una tanda interrumpida: re-despacha SÓLO los mensajes que
+  /// quedaron `pendiente` o `fallido`.
+  ///
+  /// El backend reutiliza esas mismas filas de `app_wapi_envio_log` (no
+  /// inserta nuevas), así que la tanda original se completa en el historial
+  /// en lugar de duplicarse.
+  Future<Map<String, dynamic>> resumeTanda({
+    required int idSesion,
+    required List<int> logIds,
+    int delayMinSeconds = 5,
+    int delayMaxSeconds = 10,
+  }) async {
+    if (logIds.isEmpty) {
+      throw Exception('No hay mensajes pendientes que reanudar.');
+    }
+    return _invoke('wapi-send-products', {
+      'id_sesion': idSesion,
+      'resume_log_ids': logIds,
+      // El backend los deriva de los logs; van vacíos para satisfacer el
+      // contrato del endpoint.
+      'product_ids': <int>[],
+      'destinations': <Map<String, dynamic>>[],
+      'delay_min_seconds': delayMinSeconds,
+      'delay_max_seconds': delayMaxSeconds,
+    });
+  }
+
   // =========================================================================
   // Programación (Plan Avanzado)
   // =========================================================================
