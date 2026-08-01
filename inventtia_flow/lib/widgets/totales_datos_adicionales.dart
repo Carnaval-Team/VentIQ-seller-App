@@ -5,6 +5,7 @@ import '../models/agenda.dart';
 import '../models/campo_adicional.dart';
 import '../utils/precio_reserva.dart';
 import '../utils/reserva_listado.dart';
+import 'totales_recurso_turno.dart';
 
 /// Total calculado para un campo adicional marcado como "contabilizar".
 ///
@@ -35,9 +36,18 @@ bool _asBool(Object? v) {
   return s == 'true' || s == 'sí' || s == 'si' || s == '1';
 }
 
-/// True si la reserva cuenta para los totales: solo las Completadas.
+/// True si la reserva cuenta para campos adicionales: solo Completadas.
 bool _cuentaParaTotales(Agenda r) =>
     r.estado?.esCompletado == true || r.idEstado == 3;
+
+/// True si la reserva cuenta para el monto: Reservado o Completado.
+bool _cuentaParaMonto(Agenda r) {
+  if (r.estado?.esCancelado == true || r.idEstado == 2) return false;
+  return r.estado?.esReservado == true ||
+      r.estado?.esCompletado == true ||
+      r.idEstado == 1 ||
+      r.idEstado == 3;
+}
 
 /// Calcula los totales de los campos contabilizables presentes en [reservas].
 /// Solo se contabilizan las reservas **Completadas**. Ida+vuelta mismo día
@@ -93,28 +103,38 @@ List<TotalCampo> calcularTotales(List<Agenda> reservasTodas) {
   return orden.map((k) => totales[k]!).toList();
 }
 
-/// Panel con totales: conteo agrupado, importes y campos adicionales.
+/// Panel con totales: conteo agrupado, importes, turnos y campos adicionales.
 class TotalesPanel extends StatelessWidget {
   final List<Agenda> reservas;
   const TotalesPanel({super.key, required this.reservas});
+
+  static const _estiloCantidad = TextStyle(
+    fontSize: 22,
+    fontWeight: FontWeight.bold,
+    color: AppTheme.textPrimary,
+  );
 
   static final _fmtDia = DateFormat('dd/MM/yyyy');
 
   @override
   Widget build(BuildContext context) {
+    final paraMonto = reservas.where(_cuentaParaMonto).toList();
     final completadas = reservas.where(_cuentaParaTotales).toList();
     final totales = calcularTotales(completadas);
-    final importes = sumarPreciosReservas(reservas);
+    final importes = sumarPreciosReservas(paraMonto);
+    final porTurno = calcularTotalesRecursoTurno(paraMonto);
     final nReservas =
         contarReservasAgrupadas(reservas, excluirCanceladas: false);
     final nActivas = contarReservasAgrupadas(reservas);
 
-    if (totales.isEmpty && importes.isEmpty) {
+    if (totales.isEmpty &&
+        importes.isEmpty &&
+        porTurno.recursos.isEmpty) {
       return const SizedBox.shrink();
     }
 
     final porDia = <DateTime, List<Agenda>>{};
-    for (final r in completadas) {
+    for (final r in paraMonto) {
       final f = r.fechaHoraReserva;
       final dia = DateTime(f.year, f.month, f.day);
       porDia.putIfAbsent(dia, () => []).add(r);
@@ -136,21 +156,25 @@ class TotalesPanel extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.functions, size: 16, color: AppTheme.primary),
+                const Icon(Icons.functions, size: 20, color: AppTheme.primary),
                 const SizedBox(width: 6),
                 const Text('Totales',
                     style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 13,
+                        fontSize: 17,
                         color: AppTheme.primary)),
                 const Spacer(),
                 Text(
                   '$nActivas activas · $nReservas total',
                   style: const TextStyle(
-                      fontSize: 11, color: AppTheme.textSecondary),
+                      fontSize: 15, color: AppTheme.textSecondary),
                 ),
               ],
             ),
+            if (porTurno.recursos.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              ..._buildPorTurno(porTurno),
+            ],
             if (importes.isNotEmpty) ...[
               const SizedBox(height: 8),
               for (final e in importes.entries)
@@ -163,7 +187,8 @@ class TotalesPanel extends StatelessWidget {
               const SizedBox(height: 8),
               ..._buildTotales(totales),
             ],
-            if (dias.length > 1 && (totales.isNotEmpty || importes.isNotEmpty)) ...[
+            if (dias.length > 1 &&
+                (totales.isNotEmpty || importes.isNotEmpty)) ...[
               const SizedBox(height: 4),
               Theme(
                 data: Theme.of(context)
@@ -173,7 +198,7 @@ class TotalesPanel extends StatelessWidget {
                   childrenPadding: const EdgeInsets.only(bottom: 8),
                   title: const Text('Ver por día',
                       style: TextStyle(
-                          fontSize: 12.5,
+                          fontSize: 16.5,
                           fontWeight: FontWeight.w600,
                           color: AppTheme.primary)),
                   children: [
@@ -182,7 +207,7 @@ class TotalesPanel extends StatelessWidget {
                         padding: const EdgeInsets.only(top: 6, bottom: 2),
                         child: Text(_fmtDia.format(dia),
                             style: const TextStyle(
-                                fontSize: 12,
+                                fontSize: 16,
                                 fontWeight: FontWeight.bold,
                                 color: AppTheme.textPrimary)),
                       ),
@@ -202,6 +227,74 @@ class TotalesPanel extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  List<Widget> _buildPorTurno(TotalesRecursoTurno porTurno) {
+    final out = <Widget>[];
+    for (final rec in porTurno.recursos) {
+      final unSoloTurno = rec.turnos.length == 1;
+      out.add(Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!unSoloTurno)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Row(
+                  children: [
+                    const Icon(Icons.directions_bus_outlined,
+                        size: 20, color: AppTheme.primary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        rec.recurso,
+                        style: _estiloCantidad.copyWith(
+                          fontSize: 18,
+                          color: AppTheme.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            for (final t in rec.turnos)
+              Padding(
+                padding: EdgeInsets.only(
+                  left: unSoloTurno ? 0 : 22,
+                  top: unSoloTurno ? 0 : 4,
+                ),
+                child: Row(
+                  children: [
+                    if (unSoloTurno) ...[
+                      const Icon(Icons.directions_bus_outlined,
+                          size: 20, color: AppTheme.primary),
+                      const SizedBox(width: 6),
+                    ],
+                    Expanded(
+                      child: Text(
+                        unSoloTurno ? '${rec.recurso} · ${t.key}' : t.key,
+                        style: unSoloTurno
+                            ? _estiloCantidad.copyWith(
+                                fontSize: 18,
+                                color: AppTheme.primary,
+                              )
+                            : _estiloCantidad.copyWith(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textSecondary,
+                              ),
+                      ),
+                    ),
+                    Text('${t.value.cantidad}', style: _estiloCantidad),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ));
+    }
+    return out;
   }
 
   List<Widget> _buildTotales(List<TotalCampo> totales) {
@@ -228,7 +321,7 @@ class TotalesPanel extends StatelessWidget {
                 children: [
                   Text(t.etiqueta,
                       style: const TextStyle(
-                          fontSize: 11.5,
+                          fontSize: 15.5,
                           fontWeight: FontWeight.w700,
                           color: AppTheme.textSecondary)),
                   const SizedBox(height: 2),
@@ -239,12 +332,12 @@ class TotalesPanel extends StatelessWidget {
                             Expanded(
                               child: Text(e.key,
                                   style: const TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 16,
                                       color: AppTheme.textPrimary)),
                             ),
                             Text('${e.value}',
                                 style: const TextStyle(
-                                    fontSize: 12,
+                                    fontSize: 16,
                                     fontWeight: FontWeight.w700,
                                     color: AppTheme.primary)),
                           ],
@@ -268,13 +361,13 @@ class TotalesPanel extends StatelessWidget {
             Expanded(
               child: Text(label,
                   style: const TextStyle(
-                      fontSize: 12,
+                      fontSize: 16,
                       fontWeight: FontWeight.w600,
                       color: AppTheme.textSecondary)),
             ),
             Text(value,
                 style: const TextStyle(
-                    fontSize: 13,
+                    fontSize: 17,
                     fontWeight: FontWeight.w800,
                     color: AppTheme.primary)),
           ],

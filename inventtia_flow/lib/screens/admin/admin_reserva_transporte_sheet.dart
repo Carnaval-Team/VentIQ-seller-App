@@ -189,9 +189,9 @@ class _AdminReservaTransporteSheetState
 
   Future<void> _prefillFechaInicial() async {
     if (_requiereIda && _fechaIda == null) {
-      await _cargarTrayecto('ida', _diaInicialNormalizado);
+      await _cargarTrayecto('ida', _diaInicialNormalizado, silent: true);
     } else if (_requiereVuelta && _fechaVuelta == null) {
-      await _cargarTrayecto('vuelta', _diaInicialNormalizado);
+      await _cargarTrayecto('vuelta', _diaInicialNormalizado, silent: true);
     }
   }
 
@@ -371,7 +371,11 @@ class _AdminReservaTransporteSheetState
     }
   }
 
-  Future<void> _cargarTrayecto(String trayecto, DateTime fecha) async {
+  Future<void> _cargarTrayecto(
+    String trayecto,
+    DateTime fecha, {
+    bool silent = false,
+  }) async {
     setState(() {
       if (trayecto == 'ida') {
         _loadingIda = true;
@@ -409,7 +413,9 @@ class _AdminReservaTransporteSheetState
         _reasignarTurnosSiAmbos();
       });
       final elegido = trayecto == 'ida' ? _turnoIda : _turnoVuelta;
-      if (elegido == null) {
+      // Prefill automático: no mostrar snackbar (el sheet ya está abierto y
+      // el admin puede cambiar la fecha). Solo avisar en selección manual.
+      if (elegido == null && !silent) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -420,7 +426,7 @@ class _AdminReservaTransporteSheetState
         );
       }
     } catch (error) {
-      if (mounted) {
+      if (mounted && !silent) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$error'), backgroundColor: AppTheme.error),
         );
@@ -464,9 +470,9 @@ class _AdminReservaTransporteSheetState
       _reasignarTurnosSiAmbos();
     });
     if (_requiereIda && _fechaIda == null) {
-      await _cargarTrayecto('ida', _diaInicialNormalizado);
+      await _cargarTrayecto('ida', _diaInicialNormalizado, silent: true);
     } else if (_requiereVuelta && _fechaVuelta == null) {
-      await _cargarTrayecto('vuelta', _diaInicialNormalizado);
+      await _cargarTrayecto('vuelta', _diaInicialNormalizado, silent: true);
     }
   }
 
@@ -513,12 +519,6 @@ class _AdminReservaTransporteSheetState
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Reserva creada exitosamente'),
-          backgroundColor: AppTheme.success,
-        ),
-      );
       Navigator.pop(context);
       widget.onCreated();
     } catch (error) {
@@ -534,21 +534,26 @@ class _AdminReservaTransporteSheetState
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          16,
-          20,
-          MediaQuery.of(context).viewInsets.bottom + 20,
-        ),
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+    // ScaffoldMessenger propio: las SnackBars salen encima del bottom sheet.
+    return ScaffoldMessenger(
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        resizeToAvoidBottomInset: true,
+        body: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              16,
+              20,
+              MediaQuery.of(context).viewInsets.bottom + 20,
+            ),
+            child: Form(
+              key: _formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
                 Row(
                   children: [
                     const Expanded(
@@ -757,6 +762,8 @@ class _AdminReservaTransporteSheetState
           ),
         ),
       ),
+        ),
+      ),
     );
   }
 }
@@ -802,6 +809,14 @@ class _FechaTrayectoCard extends StatelessWidget {
             child: Text(
               '${turno!.recurso} · ${turno!.disponibles} plazas',
               style: const TextStyle(color: AppTheme.textSecondary),
+            ),
+          ),
+        if (fecha != null && !loading && turno == null)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              'Sin plazas disponibles en esta fecha. Elige otra.',
+              style: TextStyle(color: AppTheme.error, fontSize: 13),
             ),
           ),
       ],

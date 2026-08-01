@@ -1,5 +1,3 @@
-import 'dart:io';
-import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -119,7 +117,7 @@ class ReferralPdfService {
             width: 120,
             child: pw.Text(
               label,
-              style: const pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
             ),
           ),
           pw.Text(value),
@@ -318,7 +316,7 @@ class ReferralPdfService {
       children: [
         pw.Text(
           currency,
-          style: const pw.TextStyle(
+          style: pw.TextStyle(
             color: PdfColors.white,
             fontSize: 12,
             fontWeight: pw.FontWeight.bold,
@@ -326,7 +324,7 @@ class ReferralPdfService {
         ),
         pw.Text(
           amount,
-          style: const pw.TextStyle(
+          style: pw.TextStyle(
             color: PdfColors.white,
             fontSize: 18,
             fontWeight: pw.FontWeight.bold,

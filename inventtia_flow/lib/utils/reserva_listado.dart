@@ -66,10 +66,12 @@ class ReservaListItem {
 
 /// Suma de precios por moneda usando el listado agrupado (ida+vuelta mismo
 /// día cuenta una sola vez, sumando ambos tramos si el precio está partido).
+/// Solo cuenta reservas **Reservado** y **Completado** (excluye canceladas).
 Map<String, double> sumarPreciosReservas(List<Agenda> reservas) {
   final out = <String, double>{};
   for (final item in agruparReservasParaListado(reservas)) {
     if (item.esCancelada) continue;
+    if (!(item.esActiva || item.esCompletada)) continue;
     final monto = item.precioTotal;
     if (monto == null || monto <= 0) continue;
     final mon = item.moneda ?? 'USD';

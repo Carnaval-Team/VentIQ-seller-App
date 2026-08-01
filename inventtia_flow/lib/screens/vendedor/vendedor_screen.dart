@@ -25,8 +25,6 @@ import '../../utils/precio_reserva.dart';
 import '../../utils/reserva_listado.dart';
 import '../../utils/telefono_contacto.dart';
 import '../../widgets/totales_datos_adicionales.dart';
-import '../../widgets/totales_recurso_turno.dart';
-import '../../widgets/cancelado_ribbon.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class VendedorScreen extends StatefulWidget {
@@ -68,18 +66,11 @@ class _VendedorScreenState extends State<VendedorScreen> {
         _fecha.day == now.day;
   }
 
-  /// Se puede completar si está activa (Reservado) o si está cancelada pero su
-  /// fecha es de hoy o anterior (recuperación de una reserva cancelada).
+  /// Solo las reservas activas (Reservado) se pueden confirmar como consumidas.
+  /// Las canceladas no se pueden completar.
   bool _puedeCompletar(ReservaListItem item) {
-    if (item.esCompletada) return false;
-    if (!item.esCancelada) return true;
-    final now = DateTime.now();
-    final hoy = DateTime(now.year, now.month, now.day);
-    return item.agendas.any((r) {
-      final f = r.fechaHoraReserva;
-      final diaReserva = DateTime(f.year, f.month, f.day);
-      return !diaReserva.isAfter(hoy);
-    });
+    if (item.esCompletada || item.esCancelada) return false;
+    return item.esActiva;
   }
 
   /// Se puede descancelar (reactivar a Reservado) si está cancelada y su fecha
@@ -343,23 +334,55 @@ class _VendedorScreenState extends State<VendedorScreen> {
 
   // ── Export helpers ────────────────────────────────────────────
 
-  Map<String, List<Agenda>> _agruparPorLocal() {
+  Map<String, List<Agenda>> _agruparPorLocal([List<Agenda>? lista]) {
     final map = <String, List<Agenda>>{};
-    for (final r in _reservas) {
+    for (final r in _ordenarAgendasParaListado(lista ?? _reservas)) {
       final key = r.localServicio?.local?.nombre ?? 'Sin local';
       map.putIfAbsent(key, () => []).add(r);
     }
-    return map;
+    final keys = map.keys.toList()..sort((a, b) => a.compareTo(b));
+    return {for (final k in keys) k: map[k]!};
+  }
+
+  List<Agenda> _ordenarAgendasParaListado(List<Agenda> lista) {
+    final out = List<Agenda>.from(lista);
+    out.sort((a, b) {
+      final fa = a.fechaHoraReserva;
+      final fb = b.fechaHoraReserva;
+      final porFecha = DateTime(fa.year, fa.month, fa.day)
+          .compareTo(DateTime(fb.year, fb.month, fb.day));
+      if (porFecha != 0) return porFecha;
+      final sa = a.localServicio?.servicio?.nombre ?? '';
+      final sb = b.localServicio?.servicio?.nombre ?? '';
+      final porServicio = sa.toLowerCase().compareTo(sb.toLowerCase());
+      if (porServicio != 0) return porServicio;
+      return fa.compareTo(fb);
+    });
+    return out;
   }
 
   Map<String, List<ReservaListItem>> _agruparItemsPorLocal() {
     final map = <String, List<ReservaListItem>>{};
-    for (final item in agruparReservasParaListado(_reservas)) {
+    final items = agruparReservasParaListado(_reservas);
+    items.sort((a, b) {
+      final fa = a.principal.fechaHoraReserva;
+      final fb = b.principal.fechaHoraReserva;
+      final porFecha = DateTime(fa.year, fa.month, fa.day)
+          .compareTo(DateTime(fb.year, fb.month, fb.day));
+      if (porFecha != 0) return porFecha;
+      final sa = a.principal.localServicio?.servicio?.nombre ?? '';
+      final sb = b.principal.localServicio?.servicio?.nombre ?? '';
+      final porServicio = sa.toLowerCase().compareTo(sb.toLowerCase());
+      if (porServicio != 0) return porServicio;
+      return fa.compareTo(fb);
+    });
+    for (final item in items) {
       final key =
           item.principal.localServicio?.local?.nombre ?? 'Sin local';
       map.putIfAbsent(key, () => []).add(item);
     }
-    return map;
+    final keys = map.keys.toList()..sort((a, b) => a.compareTo(b));
+    return {for (final k in keys) k: map[k]!};
   }
 
   List<ReservaListItem> get _itemsListado =>
@@ -374,24 +397,35 @@ class _VendedorScreenState extends State<VendedorScreen> {
       'tipo_viaje',
     };
     final etiquetas = <String, String>{};
-    final orden = <String>[];
+    final ordenConfig = <String>[];
+    final extras = <String>{};
+
     for (final r in lista) {
       for (final c in r.localServicio?.servicio?.camposAdicionales ??
           const <CampoAdicional>[]) {
-        if (!clavesFijas.contains(c.clave)) {
-          etiquetas[c.clave] = c.etiqueta;
-        }
+        if (clavesFijas.contains(c.clave)) continue;
+        etiquetas[c.clave] = c.etiqueta;
+        if (!ordenConfig.contains(c.clave)) ordenConfig.add(c.clave);
       }
       final datos = r.datosAdicionales;
-      if (datos != null) {
-        for (final k in datos.keys) {
-          if (clavesFijas.contains(k)) continue;
-          if (!orden.contains(k)) orden.add(k);
-          etiquetas.putIfAbsent(k, () => k);
-        }
+      if (datos == null) continue;
+      for (final k in datos.keys) {
+        if (clavesFijas.contains(k)) continue;
+        etiquetas.putIfAbsent(k, () => k);
+        if (!ordenConfig.contains(k)) extras.add(k);
       }
     }
-    return orden.map((k) => (clave: k, etiqueta: etiquetas[k] ?? k)).toList();
+
+    final extrasOrdenados = extras.toList()
+      ..sort((a, b) =>
+          (etiquetas[a] ?? a).toLowerCase().compareTo(
+                (etiquetas[b] ?? b).toLowerCase(),
+              ));
+
+    return [
+      ...ordenConfig.map((k) => (clave: k, etiqueta: etiquetas[k] ?? k)),
+      ...extrasOrdenados.map((k) => (clave: k, etiqueta: etiquetas[k] ?? k)),
+    ];
   }
 
   bool _hayTerceros(List<Agenda> lista) =>
@@ -413,13 +447,186 @@ class _VendedorScreenState extends State<VendedorScreen> {
   String _buildFiltroDesc() {
     final parts = <String>[];
     if (_localFiltro != null) parts.add('Local: ${_localFiltro!.nombre}');
-    if (_lsFiltro != null)
+    if (_lsFiltro != null) {
       parts.add('Servicio: ${_lsFiltro!.servicio?.nombre ?? ''}');
+    }
     parts.add('Fecha: ${_fmt.format(_fecha)}');
     return parts.join('  ·  ');
   }
 
-  Future<void> _exportPdf() async {
+  String get _nombreEstadoFiltro {
+    if (_idEstadoFiltro == null) return 'Todos';
+    return _estados
+        .firstWhere(
+          (e) => e.id == _idEstadoFiltro,
+          orElse: () => EstadoAgenda(id: 0, nombre: 'Estado'),
+        )
+        .nombre;
+  }
+
+  Future<_AlcanceExportacionVendedor?> _elegirAlcanceExportacion() {
+    return showModalBottomSheet<_AlcanceExportacionVendedor>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                '¿Qué deseas exportar?',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading:
+                    const Icon(Icons.today_outlined, color: AppTheme.primary),
+                title: Text('Día actual (${_fmt.format(_fecha)})'),
+                subtitle: Text(
+                  '${_itemsListado.length} reserva(s) visibles',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                onTap: () =>
+                    Navigator.pop(ctx, _AlcanceExportacionVendedor.dia),
+              ),
+              ListTile(
+                leading:
+                    const Icon(Icons.filter_list, color: AppTheme.primary),
+                title: Text('Todas · estado $_nombreEstadoFiltro'),
+                subtitle: const Text(
+                  'Desde hoy en adelante (mantiene local/servicio)',
+                  style: TextStyle(fontSize: 12),
+                ),
+                onTap: () =>
+                    Navigator.pop(ctx, _AlcanceExportacionVendedor.estado),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<List<Agenda>?> _obtenerReservasParaExportar(
+    _AlcanceExportacionVendedor alcance,
+  ) async {
+    if (alcance == _AlcanceExportacionVendedor.dia) {
+      if (_reservas.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No hay reservas para exportar en este día'),
+              backgroundColor: AppTheme.warning,
+            ),
+          );
+        }
+        return null;
+      }
+      return _reservas;
+    }
+
+    final entidad = _entidad;
+    if (entidad == null) return null;
+
+    setState(() => _loading = true);
+    try {
+      final uuid = await AuthService.getCurrentUserId();
+      if (uuid == null) {
+        throw Exception('No se pudo obtener el usuario autenticado');
+      }
+      final data = await AgendaAdminService.listarAgendasVendedorPorEstado(
+        uuidUsuario: uuid,
+        idEntidad: entidad.id,
+        idLocal: _localFiltro?.id,
+        idLocalServicio: _lsFiltro?.id,
+        idEstado: _idEstadoFiltro,
+      );
+      if (data.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'No hay reservas con estado $_nombreEstadoFiltro para exportar',
+              ),
+              backgroundColor: AppTheme.warning,
+            ),
+          );
+        }
+        return null;
+      }
+      return data;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cargar reservas: $e'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+      return null;
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _buildFiltroDescExport({
+    required List<Agenda> lista,
+    required _AlcanceExportacionVendedor alcance,
+  }) {
+    final parts = <String>[];
+    if (_localFiltro != null) parts.add('Local: ${_localFiltro!.nombre}');
+    if (_lsFiltro != null) {
+      parts.add('Servicio: ${_lsFiltro!.servicio?.nombre ?? ''}');
+    }
+    parts.add('Estado: $_nombreEstadoFiltro');
+    if (alcance == _AlcanceExportacionVendedor.dia) {
+      parts.add('Fecha: ${_fmt.format(_fecha)}');
+    } else {
+      parts.add(
+        'Desde ${_fmt.format(DateTime.now())} (${lista.length} reservas)',
+      );
+    }
+    return parts.join('  ·  ');
+  }
+
+  Future<void> _iniciarExportPdf() async {
+    if (_loading) return;
+    final alcance = await _elegirAlcanceExportacion();
+    if (alcance == null || !mounted) return;
+    final lista = await _obtenerReservasParaExportar(alcance);
+    if (lista == null || !mounted) return;
+    await _exportPdf(lista, alcance);
+  }
+
+  Future<void> _iniciarExportExcel() async {
+    if (_loading) return;
+    final alcance = await _elegirAlcanceExportacion();
+    if (alcance == null || !mounted) return;
+    final lista = await _obtenerReservasParaExportar(alcance);
+    if (lista == null || !mounted) return;
+    await _exportExcel(lista, alcance);
+  }
+
+  Future<void> _exportPdf(
+    List<Agenda> reservas,
+    _AlcanceExportacionVendedor alcance,
+  ) async {
     final entidad = _entidad;
     if (entidad == null) return;
     final fontRegular = await PdfGoogleFonts.robotoRegular();
@@ -427,8 +634,10 @@ class _VendedorScreenState extends State<VendedorScreen> {
     final doc = pw.Document(
       theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
     );
-    final filtroDesc = _buildFiltroDesc();
-    final grupos = _agruparPorLocal();
+    final filtroDesc =
+        _buildFiltroDescExport(lista: reservas, alcance: alcance);
+    final cols = _columnasDatos(reservas);
+    final grupos = _agruparPorLocal(reservas);
 
     doc.addPage(
       pw.MultiPage(
@@ -451,8 +660,6 @@ class _VendedorScreenState extends State<VendedorScreen> {
         build: (_) {
           final widgets = <pw.Widget>[];
           grupos.forEach((localNombre, lista) {
-            final cols = _columnasDatos(lista);
-            final conTerceros = _hayTerceros(lista);
             widgets.add(pw.Text(localNombre,
                 style: pw.TextStyle(
                     font: fontBold,
@@ -468,9 +675,15 @@ class _VendedorScreenState extends State<VendedorScreen> {
                 cellStyle: pw.TextStyle(font: fontRegular, fontSize: 9),
                 cellHeight: 22,
                 headers: [
-                  'Servicio', 'Fecha reserva',
-                  'Nombre', 'Apellidos', 'CI', 'Telefono', 'Cant.', 'Precio',
-                  if (conTerceros) 'Tercero',
+                  'Servicio',
+                  'Fecha reserva',
+                  'Nombre',
+                  'Apellidos',
+                  'CI',
+                  'Telefono',
+                  'Cant.',
+                  'Precio',
+                  'Tercero',
                   ...cols.map((c) => c.etiqueta),
                 ],
                 data: lista.map((r) {
@@ -481,13 +694,13 @@ class _VendedorScreenState extends State<VendedorScreen> {
                   return [
                     r.localServicio?.servicio?.nombre ?? '-',
                     _fmtHora.format(r.fechaHoraReserva),
-                    cli?.nombre ?? '-',
-                    cli?.apellidos ?? '-',
-                    cli?.ci ?? '-',
-                    cli?.telefono ?? '-',
+                    cli?.nombre ?? _valorDato(r, 'nombre'),
+                    cli?.apellidos ?? _valorDato(r, 'apellidos'),
+                    cli?.ci ?? _valorDato(r, 'ci'),
+                    cli?.telefono ?? _valorDato(r, 'telefono'),
                     '${r.cantidad}',
                     _precioExport(r),
-                    if (conTerceros) (esTercero ? 'Sí' : 'No'),
+                    esTercero ? 'Sí' : 'No',
                     ...cols.map((c) => _valorDato(r, c.clave)),
                   ];
                 }).toList(),
@@ -501,22 +714,33 @@ class _VendedorScreenState extends State<VendedorScreen> {
     );
 
     final bytes = await doc.save();
+    final sufijo = alcance == _AlcanceExportacionVendedor.dia
+        ? DateFormat('yyyyMMdd').format(_fecha)
+        : '${_nombreEstadoFiltro.toLowerCase()}_${DateFormat('yyyyMMdd').format(DateTime.now())}';
     await Printing.sharePdf(
         bytes: Uint8List.fromList(bytes),
-        filename:
-            'reservas_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf');
+        filename: 'reservas_$sufijo.pdf');
   }
 
-  Future<void> _exportExcel() async {
+  Future<void> _exportExcel(
+    List<Agenda> reservas,
+    _AlcanceExportacionVendedor alcance,
+  ) async {
     final excel = xl.Excel.createExcel();
     final sheet = excel['Reservas'];
-    final cols = _columnasDatos(_reservas);
-    final conTerceros = _hayTerceros(_reservas);
+    final cols = _columnasDatos(reservas);
 
     final headers = [
-      'Local', 'Servicio', 'Fecha reserva',
-      'Nombre', 'Apellidos', 'CI', 'Telefono', 'Cantidad', 'Precio',
-      if (conTerceros) 'Para tercero',
+      'Local',
+      'Servicio',
+      'Fecha reserva',
+      'Nombre',
+      'Apellidos',
+      'CI',
+      'Telefono',
+      'Cantidad',
+      'Precio',
+      'Para tercero',
       ...cols.map((c) => c.etiqueta),
     ];
     for (var i = 0; i < headers.length; i++) {
@@ -526,7 +750,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
       cell.cellStyle = xl.CellStyle(bold: true);
     }
 
-    final grupos = _agruparPorLocal();
+    final grupos = _agruparPorLocal(reservas);
     int rowIdx = 1;
     grupos.forEach((localNombre, lista) {
       for (final ag in lista) {
@@ -544,7 +768,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
           cli?.telefono ?? '',
           '${ag.cantidad}',
           _precioExport(ag),
-          if (conTerceros) (esTercero ? 'Sí' : 'No'),
+          esTercero ? 'Sí' : 'No',
           ...cols.map((c) => _valorDato(ag, c.clave)),
         ];
         for (var c = 0; c < row.length; c++) {
@@ -560,8 +784,10 @@ class _VendedorScreenState extends State<VendedorScreen> {
     final bytes = excel.encode();
     if (bytes == null) return;
     final dir = await getTemporaryDirectory();
-    final file = File(
-        '${dir.path}/reservas_${DateFormat('yyyyMMdd').format(DateTime.now())}.xlsx');
+    final sufijo = alcance == _AlcanceExportacionVendedor.dia
+        ? DateFormat('yyyyMMdd').format(_fecha)
+        : '${_nombreEstadoFiltro.toLowerCase()}_${DateFormat('yyyyMMdd').format(DateTime.now())}';
+    final file = File('${dir.path}/reservas_$sufijo.xlsx');
     await file.writeAsBytes(bytes);
     await Share.shareXFiles(
       [XFile(file.path)],
@@ -642,12 +868,12 @@ class _VendedorScreenState extends State<VendedorScreen> {
             IconButton(
               icon: const Icon(Icons.picture_as_pdf_outlined),
               tooltip: 'Exportar PDF',
-              onPressed: _reservas.isEmpty || _loading ? null : _exportPdf,
+              onPressed: _loading ? null : _iniciarExportPdf,
             ),
             IconButton(
               icon: const Icon(Icons.table_chart_outlined),
               tooltip: 'Exportar Excel',
-              onPressed: _reservas.isEmpty || _loading ? null : _exportExcel,
+              onPressed: _loading ? null : _iniciarExportExcel,
             ),
             IconButton(
               icon: const Icon(Icons.refresh),
@@ -759,12 +985,6 @@ class _VendedorScreenState extends State<VendedorScreen> {
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right),
-            tooltip: 'Día siguiente',
-            onPressed: _loading ? null : () => _irDia(1),
-            color: AppTheme.primary,
-          ),
           if (!_esHoy)
             TextButton(
               onPressed: _loading ? null : _irHoy,
@@ -773,6 +993,12 @@ class _VendedorScreenState extends State<VendedorScreen> {
               child: const Text('Hoy',
                   style: TextStyle(fontSize: 12, color: AppTheme.primary)),
             ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            tooltip: 'Día siguiente',
+            onPressed: _loading ? null : () => _irDia(1),
+            color: AppTheme.primary,
+          ),
         ],
       ),
     );
@@ -830,15 +1056,12 @@ class _VendedorScreenState extends State<VendedorScreen> {
                       ),
                     ),
                   ),
-                  if (_reservas.isNotEmpty) ...[
-                    TotalesRecursoTurnoBadge(reservas: _reservas),
-                    const SizedBox(width: 8),
+                  if (_reservas.isNotEmpty)
                     Text(
                       '${_itemsListado.length} reserva${_itemsListado.length == 1 ? '' : 's'}',
                       style: const TextStyle(
                           fontSize: 11, color: AppTheme.textSecondary),
                     ),
-                  ],
                   const SizedBox(width: 6),
                   if (hayFiltrosActivos)
                     GestureDetector(
@@ -1015,13 +1238,18 @@ class _VendedorScreenState extends State<VendedorScreen> {
     final card = Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 8),
+      color: esCompletada
+          ? const Color(0xFFADEBB3).withValues(alpha: 0.10)
+          : null,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
         side: BorderSide(
           color: esCompletada
-              ? AppTheme.primary.withValues(alpha: 0.55)
-              : Colors.grey.shade200,
-          width: esCompletada ? 1.2 : 1,
+              ? const Color(0xFFADEBB3).withValues(alpha: 0.30)
+              : esCancelada
+                  ? AppTheme.error.withValues(alpha: 0.60)
+                  : Colors.grey.shade200,
+          width: (esCompletada || esCancelada) ? 1.2 : 1,
         ),
       ),
       child: Padding(
@@ -1182,7 +1410,29 @@ class _VendedorScreenState extends State<VendedorScreen> {
     );
 
     if (esCancelada) {
-      return CanceladoRibbon(child: card);
+      return Stack(
+        children: [
+          card,
+          Positioned(
+            right: 10,
+            top: 0,
+            bottom: 8,
+            child: IgnorePointer(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Transform.rotate(
+                  angle: -0.22,
+                  child: Image.asset(
+                    'assets/images/cancelled.png',
+                    height: 32,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
     }
     return card;
   }
@@ -1299,3 +1549,5 @@ class _EstadoChip extends StatelessWidget {
     );
   }
 }
+
+enum _AlcanceExportacionVendedor { dia, estado }
