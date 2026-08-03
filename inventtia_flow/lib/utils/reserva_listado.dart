@@ -19,20 +19,20 @@ class ReservaListItem {
       ];
 
   /// Etiqueta de tipo para la tarjeta.
-  /// - Par mismo día → "Ida y vuelta"
-  /// - Pierna suelta (fechas distintas u otras) → "Ida" / "Vuelta"
+  /// - Par mismo día → "Ida y Regreso"
+  /// - Pierna suelta → "Ida" / "Regreso"
   String get etiquetaTipo {
-    if (esIdaVueltaMismoDia) return 'Ida y vuelta';
+    if (esIdaVueltaMismoDia) return 'Ida y Regreso';
 
     final trayecto = principal.tipoTrayecto?.toLowerCase();
     if (trayecto == 'ida') return 'Ida';
-    if (trayecto == 'vuelta') return 'Vuelta';
+    if (trayecto == 'vuelta') return 'Regreso';
 
     final viaje = principal.datosAdicionales?['tipo_viaje']?.toString().toLowerCase();
     if (viaje == 'ida') return 'Ida';
-    if (viaje == 'vuelta') return 'Vuelta';
+    if (viaje == 'vuelta') return 'Regreso';
     if (viaje == 'ida_vuelta') {
-      // Sin tipo_trayecto aún: no inventar "Ida y vuelta" en una sola fila.
+      // Sin tipo_trayecto aún: no inventar "Ida y Regreso" en una sola fila.
       return 'Pasaje';
     }
     return '';
@@ -173,5 +173,43 @@ List<ReservaListItem> agruparReservasParaListado(List<Agenda> reservas) {
   }
 
   return result;
+}
+
+/// Normaliza un tipo de trayecto / nombre de turno a etiqueta de UI.
+/// "vuelta" → "Regreso"; "ida y vuelta" → "Ida y Regreso".
+String etiquetaTrayectoUi(String? raw) {
+  final s = (raw ?? '').trim();
+  if (s.isEmpty) return '';
+  final low = s.toLowerCase();
+  if (low == 'vuelta' || low == 'regreso' || low == 'solo vuelta') {
+    return 'Regreso';
+  }
+  if (low == 'ida' || low == 'solo ida') return 'Ida';
+  if (low.contains('ida') &&
+      (low.contains('vuelta') || low.contains('regreso'))) {
+    return 'Ida y Regreso';
+  }
+  if (low.contains('vuelta') || low.contains('regreso')) return 'Regreso';
+  if (low.contains('ida')) return 'Ida';
+  return s[0].toUpperCase() + s.substring(1);
+}
+
+/// Clave de tramo para totales: solo Ida o Regreso (nunca el paquete).
+String? claveTramoParaTotales(Agenda r) {
+  final trayecto = r.tipoTrayecto?.toLowerCase().trim();
+  if (trayecto == 'ida') return 'Ida';
+  if (trayecto == 'vuelta') return 'Regreso';
+
+  final nombre = (r.turnoNombre ?? '').toLowerCase();
+  if (nombre.contains('ida') &&
+      !(nombre.contains('vuelta') || nombre.contains('regreso'))) {
+    return 'Ida';
+  }
+  if ((nombre.contains('vuelta') || nombre.contains('regreso')) &&
+      !nombre.contains('ida')) {
+    return 'Regreso';
+  }
+  // Turno combinado sin tipo_trayecto: no atribuir a un solo tramo aquí.
+  return null;
 }
 

@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../services/carnaval_service.dart';
+import '../services/printer_manager.dart';
+import '../services/wifi_printer_service.dart';
+import '../services/export_service.dart';
 
 class CarnavalOrderDetailSheet extends StatefulWidget {
   final Map<String, dynamic> order;
@@ -635,6 +640,12 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
             ),
           ),
         ),
+        const SizedBox(width: 4),
+        IconButton(
+          onPressed: _isLoading ? null : _printOrder,
+          icon: const Icon(Icons.print, color: Color(0xFF4A90E2)),
+          tooltip: 'Imprimir orden',
+        ),
       ],
     );
   }
@@ -1046,6 +1057,8 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
         final price = (d['price'] as num?)?.toDouble() ?? 0;
         final subtotal = price * qty;
 
+        final canEdit = widget.isAdmin && _canEditProducts;
+
         return Container(
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.all(10),
@@ -1054,98 +1067,594 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: Colors.grey[200]!),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Image
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: image != null && image.isNotEmpty
-                    ? Image.network(image,
-                        width: 48, height: 48, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                              width: 48,
-                              height: 48,
-                              color: Colors.grey[200],
-                              child: const Icon(Icons.image, color: Colors.grey),
-                            ))
-                    : Container(
-                        width: 48,
-                        height: 48,
-                        color: Colors.grey[200],
-                        child: const Icon(Icons.image, color: Colors.grey),
-                      ),
-              ),
-              const SizedBox(width: 10),
-              // Info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name,
-                        style: const TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w600),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 2),
-                    Text(
-                        '$qtyLabel x \$${price.toStringAsFixed(2)} = \$${subtotal.toStringAsFixed(2)}',
-                        style:
-                            TextStyle(fontSize: 12, color: Colors.grey[600])),
-                  ],
-                ),
-              ),
-              if (proveedorName != null)
-                Container(
-                  margin: const EdgeInsets.only(left: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.deepPurple.withValues(alpha: 0.1),
+              // Fila superior: imagen + nombre + proveedor
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
                     borderRadius: BorderRadius.circular(6),
+                    child: image != null && image.isNotEmpty
+                        ? Image.network(image,
+                            width: 44, height: 44, fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                                  width: 44,
+                                  height: 44,
+                                  color: Colors.grey[200],
+                                  child: const Icon(Icons.image,
+                                      color: Colors.grey),
+                                ))
+                        : Container(
+                            width: 44,
+                            height: 44,
+                            color: Colors.grey[200],
+                            child:
+                                const Icon(Icons.image, color: Colors.grey),
+                          ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.storefront, size: 12, color: Colors.deepPurple),
-                      const SizedBox(width: 4),
-                      Text(proveedorName,
-                          style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.deepPurple)),
-                    ],
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name,
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis),
+                        if (proveedorName != null) ...[
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.deepPurple.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.storefront,
+                                    size: 12, color: Colors.deepPurple),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(proveedorName,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.deepPurple)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                ),
-              // Admin actions
-              if (widget.isAdmin && _canEditProducts) ...[
-                IconButton(
-                  icon: const Icon(Icons.remove_circle_outline, size: 20),
-                  onPressed: () => _updateQuantity(d, -1),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(qtyLabel,
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add_circle_outline, size: 20),
-                  onPressed: () => _updateQuantity(d, 1),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-                IconButton(
-                  icon: Icon(Icons.delete_outline,
-                      size: 20, color: Colors.red[400]),
-                  onPressed: () => _deleteDetail(d),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ],
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Fila inferior: cantidad/precio + acciones (envuelve en pantallas chicas)
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                      '$qtyLabel x \$${price.toStringAsFixed(2)} = \$${subtotal.toStringAsFixed(2)}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                  if (canEdit)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon:
+                              const Icon(Icons.remove_circle_outline, size: 20),
+                          onPressed: () => _updateQuantity(d, -1),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Text(qtyLabel,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline, size: 20),
+                          onPressed: () => _updateQuantity(d, 1),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.delete_outline,
+                              size: 20, color: Colors.red[400]),
+                          onPressed: () => _deleteDetail(d),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
             ],
           ),
         );
       }).toList(),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // IMPRESIÓN DE LA ORDEN (mismo formato que las operaciones de inventario)
+  // ══════════════════════════════════════════════════════════════════════
+
+  Map<String, dynamic> _buildOperationForPrint() {
+    return {
+      'id': _ventiqOperationId ?? _order['id'],
+      'tipo_operacion_nombre': 'Venta Carnaval App',
+      'estado_nombre': _status.isEmpty ? 'Desconocido' : _status,
+      'created_at': _order['created_at'],
+      'observaciones': 'Venta desde orden Carnaval #${_order['id']}',
+      'total': _order['total'],
+    };
+  }
+
+  List<Map<String, dynamic>> _buildDetailsForPrint() {
+    return _details.map((d) {
+      final producto = d['Productos'] as Map<String, dynamic>?;
+      final name = producto?['name']?.toString() ?? 'Producto';
+      final qtyInt = (d['quantity'] as num?)?.toInt() ?? 0;
+      final extra = (d['extra'] as num?)?.toDouble() ?? 0.0;
+      final qty = qtyInt + extra;
+      final qtyLabel = extra > 0
+          ? qty.toStringAsFixed(qty.truncateToDouble() == qty ? 0 : 2)
+          : qtyInt.toString();
+      return {
+        'cantidad': qtyLabel,
+        'cantidad_contada': qtyLabel,
+        'producto_nombre': name,
+      };
+    }).toList();
+  }
+
+  String _formatDateForTicket(DateTime dt) {
+    return '${dt.day.toString().padLeft(2, '0')}/'
+        '${dt.month.toString().padLeft(2, '0')}/${dt.year} '
+        '${dt.hour.toString().padLeft(2, '0')}:'
+        '${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// 🖨️ Imprimir orden - Seleccionar método
+  Future<void> _printOrder() async {
+    try {
+      if (!mounted) return;
+
+      final printerType = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: const [
+              Icon(Icons.print, color: Color(0xFF4A90E2)),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('Imprimir Orden', overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('¿Cómo deseas imprimir la orden?'),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.wifi, color: Color(0xFF10B981)),
+                title: const Text('Impresora WiFi'),
+                subtitle: const Text('Imprimir por red WiFi'),
+                onTap: () => Navigator.pop(context, 'wifi'),
+              ),
+              ListTile(
+                leading:
+                    const Icon(Icons.bluetooth, color: Color(0xFF4A90E2)),
+                title: const Text('Impresora Bluetooth'),
+                subtitle: const Text('Imprimir por Bluetooth'),
+                onTap: () => Navigator.pop(context, 'bluetooth'),
+              ),
+              ListTile(
+                leading:
+                    const Icon(Icons.picture_as_pdf, color: Color(0xFFE53935)),
+                title: const Text('Exportar PDF'),
+                subtitle: const Text('Generar y compartir un PDF'),
+                onTap: () => Navigator.pop(context, 'pdf'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        ),
+      );
+
+      if (printerType == null || !mounted) return;
+
+      if (printerType == 'wifi') {
+        await _printOrderWiFi();
+      } else if (printerType == 'bluetooth') {
+        await _printOrderBluetooth();
+      } else if (printerType == 'pdf') {
+        await _exportOrderToPdf();
+      }
+    } catch (e) {
+      if (mounted) {
+        _showPrintError('Error', 'Ocurrió un error al imprimir: $e');
+      }
+    }
+  }
+
+  /// 🖨️ Imprimir orden usando WiFi
+  Future<void> _printOrderWiFi() async {
+    try {
+      if (!mounted) return;
+
+      final wifiService = WiFiPrinterService();
+      final operation = _buildOperationForPrint();
+      final details = _buildDetailsForPrint();
+
+      final selectedPrinter =
+          await wifiService.showPrinterSelectionDialog(context);
+      if (selectedPrinter == null || !mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF10B981)),
+              SizedBox(height: 16),
+              Text('Imprimiendo por WiFi...'),
+            ],
+          ),
+        ),
+      );
+
+      bool connected = await wifiService.connectToPrinter(
+        selectedPrinter['ip'],
+        port: selectedPrinter['port'] ?? 9100,
+      );
+
+      if (!connected) {
+        if (mounted) {
+          Navigator.pop(context);
+          _showPrintError(
+            'Error de Conexión',
+            'No se pudo conectar a la impresora WiFi',
+          );
+        }
+        return;
+      }
+
+      bool printed =
+          await wifiService.printInventoryOperation(operation, details);
+
+      await wifiService.disconnect();
+
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      if (printed) {
+        _showPrintSuccess(
+          '¡Impreso!',
+          'La orden se imprimió correctamente por WiFi',
+        );
+      } else {
+        _showPrintError('Error', 'No se pudo imprimir la orden');
+      }
+    } catch (e) {
+      if (mounted) {
+        try {
+          Navigator.pop(context);
+        } catch (_) {}
+        _showPrintError('Error WiFi', 'Error al imprimir por WiFi: $e');
+      }
+    }
+  }
+
+  /// 🖨️ Imprimir orden usando Bluetooth
+  Future<void> _printOrderBluetooth() async {
+    try {
+      if (!mounted) return;
+
+      final printerManager = PrinterManager();
+
+      bool shouldPrint =
+          await printerManager.showPrintConfirmationDialog(context);
+      if (!shouldPrint || !mounted) return;
+
+      final bluetoothService = printerManager.bluetoothService;
+      var selectedDevice =
+          await bluetoothService.showDeviceSelectionDialog(context);
+      if (selectedDevice == null || !mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Conectando a impresora...'),
+            ],
+          ),
+        ),
+      );
+
+      bool connected = await bluetoothService.connectToDevice(selectedDevice);
+      if (!connected) {
+        if (mounted) {
+          Navigator.pop(context);
+          _showPrintError(
+            'Conexión Fallida',
+            'No se pudo conectar a la impresora',
+          );
+        }
+        return;
+      }
+
+      if (!mounted) {
+        await bluetoothService.disconnect();
+        return;
+      }
+
+      Navigator.pop(context);
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Imprimiendo ticket...'),
+            ],
+          ),
+        ),
+      );
+
+      final profile = await CapabilityProfile.load();
+      final generator = Generator(PaperSize.mm58, profile);
+      List<int> bytes = _generateOrderTicket(generator);
+
+      bool printed = await PrintBluetoothThermal.writeBytes(bytes);
+      await bluetoothService.disconnect();
+
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      if (printed) {
+        _showPrintSuccess(
+          '¡Ticket Impreso!',
+          'La orden se imprimió correctamente',
+        );
+      } else {
+        _showPrintError('Error de Impresión', 'No se pudo imprimir el ticket');
+      }
+    } catch (e) {
+      if (mounted) {
+        try {
+          Navigator.pop(context);
+        } catch (_) {}
+        _showPrintError(
+          'Error Bluetooth',
+          'Error al imprimir por Bluetooth: $e',
+        );
+      }
+    }
+  }
+
+  /// 📄 Exportar orden a PDF
+  Future<void> _exportOrderToPdf() async {
+    try {
+      final exportService = ExportService();
+      final operation = _buildOperationForPrint();
+      final items = _buildDetailsForPrint();
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Generando PDF...'),
+            ],
+          ),
+        ),
+      );
+
+      await exportService.exportInventoryOperationPdf(
+        context: context,
+        operation: operation,
+        items: items,
+      );
+
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        try {
+          Navigator.pop(context);
+        } catch (_) {}
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al exportar a PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Generar contenido del ticket de la orden
+  List<int> _generateOrderTicket(Generator generator) {
+    List<int> bytes = [];
+
+    bytes += generator.text(
+      'INVENTTIA',
+      styles: PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.text(
+      'ORDEN CARNAVAL APP',
+      styles: PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.text(
+      '----------------------------',
+      styles: PosStyles(align: PosAlign.center),
+    );
+
+    bytes += generator.text(
+      'ID: ${_order['id']}',
+      styles: PosStyles(align: PosAlign.left, bold: true),
+    );
+    if (_ventiqOperationId != null) {
+      bytes += generator.text(
+        'Operación: #$_ventiqOperationId',
+        styles: PosStyles(align: PosAlign.left),
+      );
+    }
+    bytes += generator.text(
+      'Estado: ${_status.isEmpty ? 'N/A' : _status}',
+      styles: PosStyles(align: PosAlign.left),
+    );
+    final createdAt = _order['created_at'] as String?;
+    if (createdAt != null) {
+      final dt = DateTime.tryParse(createdAt);
+      if (dt != null) {
+        bytes += generator.text(
+          'Fecha: ${_formatDateForTicket(dt)}',
+          styles: PosStyles(align: PosAlign.left),
+        );
+      }
+    }
+
+    bytes += generator.text(
+      '----------------------------',
+      styles: PosStyles(align: PosAlign.center),
+    );
+
+    bytes += generator.text(
+      'PRODUCTOS:',
+      styles: PosStyles(align: PosAlign.left, bold: true),
+    );
+
+    for (final d in _details) {
+      final producto = d['Productos'] as Map<String, dynamic>?;
+      String name = producto?['name']?.toString() ?? 'Producto';
+      final qtyInt = (d['quantity'] as num?)?.toInt() ?? 0;
+      final extra = (d['extra'] as num?)?.toDouble() ?? 0.0;
+      final qty = qtyInt + extra;
+      final qtyLabel = extra > 0
+          ? qty.toStringAsFixed(qty.truncateToDouble() == qty ? 0 : 2)
+          : qtyInt.toString();
+
+      if (name.length > 24) {
+        name = name.substring(0, 21) + '...';
+      }
+
+      bytes += generator.text(
+        '${qtyLabel}x $name',
+        styles: PosStyles(align: PosAlign.left),
+      );
+    }
+
+    bytes += generator.text(
+      '----------------------------',
+      styles: PosStyles(align: PosAlign.center),
+    );
+
+    final total = (_order['total'] as num?)?.toDouble() ?? 0;
+    bytes += generator.text(
+      'Total Items: ${_details.length}',
+      styles: PosStyles(align: PosAlign.left),
+    );
+    bytes += generator.text(
+      'Total: \$${total.toStringAsFixed(2)}',
+      styles: PosStyles(align: PosAlign.left, bold: true),
+    );
+
+    bytes += generator.text(
+      '----------------------------',
+      styles: PosStyles(align: PosAlign.center),
+    );
+    bytes += generator.text(
+      'Gracias',
+      styles: PosStyles(align: PosAlign.center),
+    );
+    bytes += generator.emptyLines(2);
+    bytes += generator.cut();
+
+    return bytes;
+  }
+
+  void _showPrintError(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.error, color: Colors.red),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPrintSuccess(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.green),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('¡Genial!'),
+          ),
+        ],
+      ),
     );
   }
 

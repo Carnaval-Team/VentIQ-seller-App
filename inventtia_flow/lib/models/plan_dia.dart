@@ -2,8 +2,8 @@
 /// flow.admin_get_plan_dias. Unifica servicios con y sin recursos:
 ///   • Sin recursos: [recursos] vacío; [cantidad]/[agendados] vienen de
 ///     plan_servicios.
-///   • Con recursos: [recursos] trae el detalle por recurso; los totales son
-///     la suma de sus tramos.
+///   • Con recursos: [recursos] trae el detalle por recurso; [agendados] es el
+///     conteo real de agendas (Reservado/Completado), no el MAX de tramos.
 class PlanDia {
   final DateTime fecha;
   final int cantidad;
@@ -38,21 +38,40 @@ class RecursoDia {
   final int idRecurso;
   final String recurso;
   final int cantidad;
+
+  /// Reservas reales (agenda) del recurso ese día.
   final int agendados;
+
+  /// Pico de ocupación en un tramo (piso al bajar la capacidad planificada).
+  final int ocupacionMax;
+
+  /// Plazas libres sumadas sobre los tramos del recurso.
+  final int disponibles;
 
   RecursoDia({
     required this.idRecurso,
     required this.recurso,
     required this.cantidad,
     required this.agendados,
-  });
+    int? ocupacionMax,
+    int? disponibles,
+  })  : ocupacionMax = ocupacionMax ?? agendados,
+        disponibles = disponibles ?? (cantidad - agendados);
 
-  int get disponibles => cantidad - agendados;
+  /// Mínimo de capacidad que se puede configurar sin romper cupos de tramo.
+  int get minimoCapacidad => ocupacionMax;
 
-  factory RecursoDia.fromJson(Map<String, dynamic> json) => RecursoDia(
-        idRecurso: (json['id_recurso'] as num).toInt(),
-        recurso: json['recurso'] as String? ?? '',
-        cantidad: (json['cantidad'] as num?)?.toInt() ?? 0,
-        agendados: (json['agendados'] as num?)?.toInt() ?? 0,
-      );
+  factory RecursoDia.fromJson(Map<String, dynamic> json) {
+    final agendados = (json['agendados'] as num?)?.toInt() ?? 0;
+    final cantidad = (json['cantidad'] as num?)?.toInt() ?? 0;
+    return RecursoDia(
+      idRecurso: (json['id_recurso'] as num).toInt(),
+      recurso: json['recurso'] as String? ?? '',
+      cantidad: cantidad,
+      agendados: agendados,
+      ocupacionMax: (json['ocupacion_max'] as num?)?.toInt() ?? agendados,
+      disponibles: (json['disponibles'] as num?)?.toInt() ??
+          (cantidad - agendados),
+    );
+  }
 }

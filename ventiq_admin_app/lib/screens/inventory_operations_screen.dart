@@ -28,6 +28,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   DateTime? _fechaDesde;
   DateTime? _fechaHasta;
   int? _tipoOperacionId;
+  List<Map<String, dynamic>> _tiposOperacion = [];
+  bool _isLoadingTipos = false;
 
   // Pagination
   int _currentPage = 1;
@@ -37,6 +39,21 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   bool _isLoadingMore = false;
   final ScrollController _scrollController = ScrollController();
 
+  /// Tipos que realmente lista fn_listar_operaciones_inventario_new.
+  /// IDs alineados con app_nom_tipo_operacion (no hardcodear nombres viejos).
+  static const List<int> _tiposInventarioIds = [
+    1, // Recepcion
+    2, // Venta
+    3, // Ajuste Positivo
+    4, // Ajuste Negativo
+    7, // Transferencia Salida (operación padre de transferencia)
+    8, // Transferencia
+    16, // Apertura de Caja
+    17, // Cierre de Caja
+    18, // Extracción
+    19, // Transferencia de productos
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +62,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     print('  • Threshold de carga: 200px del final');
     print('  • Items por página: $_itemsPerPage');
 
+    _loadTiposOperacion();
     _loadOperations();
     _searchController.addListener(_onSearchChanged);
     _scrollController.addListener(_onScroll);
@@ -638,18 +656,81 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     _loadOperations();
   }
 
+  Future<void> _loadTiposOperacion() async {
+    if (_isLoadingTipos) return;
+    setState(() => _isLoadingTipos = true);
+    try {
+      final response = await Supabase.instance.client
+          .from('app_nom_tipo_operacion')
+          .select('id, denominacion, accion')
+          .inFilter('id', _tiposInventarioIds)
+          .order('denominacion');
+
+      final tipos = List<Map<String, dynamic>>.from(response);
+      if (!mounted) return;
+      setState(() {
+        _tiposOperacion = tipos;
+        _isLoadingTipos = false;
+      });
+    } catch (e) {
+      print('❌ Error cargando tipos de operación: $e');
+      if (!mounted) return;
+      setState(() {
+        // Fallback con IDs reales de app_nom_tipo_operacion
+        _tiposOperacion = [
+          {'id': 1, 'denominacion': 'Recepcion', 'accion': 'entrada'},
+          {'id': 2, 'denominacion': 'Venta', 'accion': 'salida'},
+          {'id': 3, 'denominacion': 'Ajuste Positivo', 'accion': 'entrada'},
+          {'id': 4, 'denominacion': 'Ajuste Negativo', 'accion': 'salida'},
+          {
+            'id': 7,
+            'denominacion': 'Transferencia Salida',
+            'accion': 'salida',
+          },
+          {'id': 8, 'denominacion': 'Transferencia', 'accion': 'entrada'},
+          {
+            'id': 16,
+            'denominacion': 'Apertura de Caja',
+            'accion': 'apertura_caja',
+          },
+          {
+            'id': 17,
+            'denominacion': 'Cierre de Caja',
+            'accion': 'cierre_caja',
+          },
+          {'id': 18, 'denominacion': 'Extracción', 'accion': 'salida'},
+          {
+            'id': 19,
+            'denominacion': 'Transferencia de productos',
+            'accion': 'transferencia',
+          },
+        ];
+        _isLoadingTipos = false;
+      });
+    }
+  }
+
+  String? get _tipoOperacionNombreSeleccionado {
+    if (_tipoOperacionId == null) return null;
+    for (final t in _tiposOperacion) {
+      if (t['id'] == _tipoOperacionId) {
+        return t['denominacion']?.toString();
+      }
+    }
+    return 'Tipo #$_tipoOperacionId';
+  }
+
   Future<void> _showOperationTypeDialog() async {
-    // Lista de tipos de operación comunes
+    if (_tiposOperacion.isEmpty && !_isLoadingTipos) {
+      await _loadTiposOperacion();
+    }
+
     final List<Map<String, dynamic>> tiposOperacion = [
-      {'id': null, 'nombre': 'Todos los tipos'},
-      {'id': 1, 'nombre': 'Recepción de Productos'},
-      {'id': 2, 'nombre': 'Extracción de Productos'},
-      {'id': 3, 'nombre': 'Ajuste de Inventario'},
-      {'id': 4, 'nombre': 'Venta'},
-      {'id': 5, 'nombre': 'Apertura de Caja'},
-      {'id': 6, 'nombre': 'Cierre de Caja'},
-      {'id': 7, 'nombre': 'Transferencia'},
+      {'id': null, 'denominacion': 'Todos los tipos'},
+      ..._tiposOperacion,
     ];
+
+    if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
@@ -658,7 +739,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       builder:
           (context) => DraggableScrollableSheet(
             initialChildSize: 0.6,
-            maxChildSize: 0.8,
+            maxChildSize: 0.85,
             minChildSize: 0.4,
             builder:
                 (context, scrollController) => Container(
@@ -670,7 +751,6 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                   ),
                   child: Column(
                     children: [
-                      // Handle
                       Container(
                         margin: const EdgeInsets.symmetric(vertical: 8),
                         width: 40,
@@ -680,7 +760,6 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                      // Header
                       Padding(
                         padding: const EdgeInsets.all(16),
                         child: Row(
@@ -704,66 +783,66 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                         ),
                       ),
                       const Divider(height: 1),
-                      // Content
                       Expanded(
-                        child: ListView.builder(
-                          controller: scrollController,
-                          padding: const EdgeInsets.all(16),
-                          itemCount: tiposOperacion.length,
-                          itemBuilder: (context, index) {
-                            final tipo = tiposOperacion[index];
-                            final isSelected = _tipoOperacionId == tipo['id'];
+                        child: _isLoadingTipos && _tiposOperacion.isEmpty
+                            ? const Center(child: CircularProgressIndicator())
+                            : ListView.builder(
+                                controller: scrollController,
+                                padding: const EdgeInsets.all(16),
+                                itemCount: tiposOperacion.length,
+                                itemBuilder: (context, index) {
+                                  final tipo = tiposOperacion[index];
+                                  final tipoId = tipo['id'] as int?;
+                                  final isSelected =
+                                      _tipoOperacionId == tipoId;
+                                  final nombre =
+                                      tipo['denominacion']?.toString() ??
+                                      'Sin nombre';
 
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color:
-                                      isSelected
-                                          ? const Color(0xFF4A90E2)
-                                          : Colors.grey[300]!,
-                                ),
-                                borderRadius: BorderRadius.circular(8),
-                                color:
-                                    isSelected
-                                        ? const Color(
-                                          0xFF4A90E2,
-                                        ).withOpacity(0.1)
-                                        : Colors.white,
-                              ),
-                              child: ListTile(
-                                title: Text(
-                                  tipo['nombre'],
-                                  style: TextStyle(
-                                    fontWeight:
-                                        isSelected
-                                            ? FontWeight.w600
-                                            : FontWeight.normal,
-                                    color:
-                                        isSelected
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: isSelected
                                             ? const Color(0xFF4A90E2)
-                                            : const Color(0xFF1F2937),
-                                  ),
-                                ),
-                                trailing:
-                                    isSelected
-                                        ? const Icon(
-                                          Icons.check_circle,
-                                          color: Color(0xFF4A90E2),
-                                        )
-                                        : null,
-                                onTap: () {
-                                  Navigator.pop(context);
-                                  setState(() {
-                                    _tipoOperacionId = tipo['id'];
-                                  });
-                                  _currentPage = 1;
-                                  _loadOperations();
+                                            : Colors.grey[300]!,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                      color: isSelected
+                                          ? const Color(0xFF4A90E2)
+                                              .withOpacity(0.1)
+                                          : Colors.white,
+                                    ),
+                                    child: ListTile(
+                                      title: Text(
+                                        nombre,
+                                        style: TextStyle(
+                                          fontWeight: isSelected
+                                              ? FontWeight.w600
+                                              : FontWeight.normal,
+                                          color: isSelected
+                                              ? const Color(0xFF4A90E2)
+                                              : const Color(0xFF1F2937),
+                                        ),
+                                      ),
+                                      trailing: isSelected
+                                          ? const Icon(
+                                              Icons.check_circle,
+                                              color: Color(0xFF4A90E2),
+                                            )
+                                          : null,
+                                      onTap: () {
+                                        Navigator.pop(context);
+                                        setState(() {
+                                          _tipoOperacionId = tipoId;
+                                        });
+                                        _currentPage = 1;
+                                        _loadOperations();
+                                      },
+                                    ),
+                                  );
                                 },
                               ),
-                            );
-                          },
-                        ),
                       ),
                     ],
                   ),
@@ -872,7 +951,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               ),
               tooltip:
                   _tipoOperacionId != null
-                      ? 'Filtro de tipo aplicado'
+                      ? 'Tipo: ${_tipoOperacionNombreSeleccionado ?? _tipoOperacionId}'
                       : 'Filtrar por tipo de operación',
             ),
           ),
@@ -1390,11 +1469,16 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       print('   $key: $value');
     });
 
-    // Check if this is a cash register opening operation
+    // Check if this is a cash register opening/closing operation
     final tipoOperacion =
         operation['tipo_operacion_nombre']?.toString().toLowerCase() ?? '';
-    if (tipoOperacion.contains('cierre de caja') ||
-        tipoOperacion.contains('cierre')) {
+    final accion =
+        operation['tipo_operacion_accion']?.toString().toLowerCase() ?? '';
+    final isCashRegister = accion == 'apertura_caja' ||
+        accion == 'cierre_caja' ||
+        tipoOperacion.contains('apertura de caja') ||
+        tipoOperacion.contains('cierre de caja');
+    if (isCashRegister) {
       _showCashRegisterOpeningDialog(operation);
       return;
     }
@@ -2333,6 +2417,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                     'recepcion',
                     'entregado_por',
                     'recibido_por',
+                    'transportado_por',
                     'autorizado_por',
                     'motivo',
                     'comentario_completado',
@@ -2657,6 +2742,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
     addRow('Operador:', operation['usuario_nombre']);
     addRow('Entregado por:', esp?['entregado_por']);
+    addRow('Transportado por:', esp?['transportado_por']);
     addRow('Recibido por:', esp?['recibido_por']);
     addRow('Autorizado por:', esp?['autorizado_por']);
     addRow('Motivo:', esp?['motivo']);
@@ -2712,6 +2798,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         return 'Motivo';
       case 'recibido_por':
         return 'Recibido por';
+      case 'transportado_por':
+        return 'Transportado por';
       case 'autorizado_por':
         return 'Autorizado por';
       case 'entregado_por':
@@ -3353,7 +3441,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    'Detalles de Apertura de Caja',
+                    'Detalles de Apertura / Cierre de Caja',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
@@ -3388,19 +3476,35 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                     Icons.schedule,
                   ),
                   _buildOpeningDetailRow(
+                    'Tipo:',
+                    operation['tipo_operacion_nombre'] ?? 'N/A',
+                    Icons.category_outlined,
+                  ),
+                  _buildOpeningDetailRow(
                     'Vendedor:',
-                    operation['usuario_email'] ?? 'N/A',
+                    operation['usuario_nombre'] ??
+                        operation['usuario_email'] ??
+                        'N/A',
                     Icons.person,
                   ),
+                  if ((operation['tpv_nombre'] ?? '').toString().isNotEmpty)
+                    _buildOpeningDetailRow(
+                      'TPV:',
+                      operation['tpv_nombre'].toString(),
+                      Icons.point_of_sale,
+                    ),
 
                   const SizedBox(height: 16),
                   const Divider(),
                   const SizedBox(height: 16),
 
                   // Cash Register Details
-                  const Text(
-                    'Información de la Apertura',
-                    style: TextStyle(
+                  Text(
+                    (operation['tipo_operacion_accion']?.toString() ==
+                            'cierre_caja')
+                        ? 'Información del Cierre'
+                        : 'Información de la Apertura',
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF1F2937),
@@ -3501,12 +3605,18 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   Widget _buildCashRegisterDetails(dynamic detalles) {
     if (detalles == null) {
-      return const Text('Sin detalles de apertura');
+      return const Text('Sin detalles de apertura/cierre');
     }
 
     if (detalles is Map<String, dynamic>) {
       final especificos =
           detalles['detalles_especificos'] as Map<String, dynamic>?;
+
+      String money(dynamic v) {
+        if (v == null) return '-';
+        final n = (v is num) ? v.toDouble() : double.tryParse(v.toString());
+        return n == null ? v.toString() : '\$${n.toStringAsFixed(2)}';
+      }
 
       return Container(
         padding: const EdgeInsets.all(16),
@@ -3518,7 +3628,6 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Cash amount
             if (especificos?['efectivo_inicial'] != null) ...[
               Row(
                 children: [
@@ -3547,7 +3656,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                         ),
                       ),
                       Text(
-                        '\$${especificos!['efectivo_inicial'].toStringAsFixed(2)}',
+                        money(especificos!['efectivo_inicial']),
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -3560,24 +3669,54 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               ),
               const SizedBox(height: 12),
             ],
-
-            // TPV and User info
-            if (especificos?['id_tpv'] != null) ...[
+            if (especificos?['efectivo_esperado'] != null)
+              _buildCashDetailItem(
+                'Efectivo esperado:',
+                money(especificos!['efectivo_esperado']),
+                Icons.savings_outlined,
+              ),
+            if (especificos?['efectivo_real'] != null)
+              _buildCashDetailItem(
+                'Efectivo real:',
+                money(especificos!['efectivo_real']),
+                Icons.payments_outlined,
+              ),
+            if (especificos?['diferencia'] != null)
+              _buildCashDetailItem(
+                'Diferencia:',
+                money(especificos!['diferencia']),
+                Icons.compare_arrows,
+              ),
+            if (especificos?['tpv_nombre'] != null)
+              _buildCashDetailItem(
+                'TPV:',
+                especificos!['tpv_nombre'].toString(),
+                Icons.point_of_sale,
+              )
+            else if (especificos?['id_tpv'] != null)
               _buildCashDetailItem(
                 'TPV ID:',
                 especificos!['id_tpv'].toString(),
                 Icons.point_of_sale,
               ),
-            ],
-            if (especificos?['usuario'] != null) ...[
+            if (especificos?['almacen'] != null)
+              _buildCashDetailItem(
+                'Almacén:',
+                especificos!['almacen'].toString(),
+                Icons.warehouse_outlined,
+              ),
+            if (especificos?['maneja_inventario'] != null)
+              _buildCashDetailItem(
+                'Maneja inventario:',
+                especificos!['maneja_inventario'] == true ? 'Sí' : 'No',
+                Icons.inventory_2_outlined,
+              ),
+            if (especificos?['usuario'] != null)
               _buildCashDetailItem(
                 'Usuario:',
                 especificos!['usuario'].toString(),
                 Icons.person,
               ),
-            ],
-
-            // Product count if available
             if (detalles['items'] != null && detalles['items'] is List) ...[
               const SizedBox(height: 8),
               _buildCashDetailItem(
@@ -3714,11 +3853,17 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         estadoNombre.contains('completed') ||
         estadoNombre.contains('finalizada');
 
+    // Las operaciones provenientes de una orden de Carnaval siempre se pueden
+    // imprimir/exportar, sin importar su estado (pendiente, completada, etc.)
+    final isCarnavalOrder = (operation['observaciones'] ?? '')
+        .toString()
+        .contains('Venta desde orden');
+
     print(
-      '🖨️ Print & PDF Buttons - Estado: "$estadoNombre", ¿Completada?: $isCompleted',
+      '🖨️ Print & PDF Buttons - Estado: "$estadoNombre", ¿Completada?: $isCompleted, ¿Carnaval?: $isCarnavalOrder',
     );
 
-    if (!isCompleted) {
+    if (!isCompleted && !isCarnavalOrder) {
       return SizedBox(
         width: double.infinity,
         child: ElevatedButton.icon(

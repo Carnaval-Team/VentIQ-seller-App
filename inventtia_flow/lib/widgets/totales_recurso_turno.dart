@@ -4,11 +4,77 @@ import '../models/agenda.dart';
 import '../utils/precio_reserva.dart';
 import '../utils/reserva_listado.dart';
 
+/// Totalización de reservas por **tramo** (Ida / Regreso) para el resumen UI.
+///
+/// No agrupa por recurso (p. ej. "La recogida" / "Destino"): solo cantidades
+/// por tramo. Un pasaje ida+regreso suma [cantidad] en **cada** tramo.
+class TotalTramo {
+  final String tramo;
+  int cantidad = 0;
+  TotalTramo(this.tramo);
+}
+
+/// Resultado: tramos ordenados (Ida, Regreso) + total de pasajes (paquetes = 1).
+class TotalesPorTramo {
+  final List<TotalTramo> tramos;
+  final int totalPasajes;
+  const TotalesPorTramo(this.tramos, this.totalPasajes);
+  bool get isEmpty => tramos.every((t) => t.cantidad == 0);
+}
+
+TotalesPorTramo calcularTotalesPorTramo(List<Agenda> reservas) {
+  final mapa = <String, TotalTramo>{
+    'Ida': TotalTramo('Ida'),
+    'Regreso': TotalTramo('Regreso'),
+  };
+  var totalPasajes = 0;
+
+  void add(String tramo, int peso) {
+    mapa.putIfAbsent(tramo, () => TotalTramo(tramo)).cantidad += peso;
+  }
+
+  for (final item in agruparReservasParaListado(reservas)) {
+    if (item.esCancelada) continue;
+    if (!(item.esActiva || item.esCompletada)) continue;
+    final peso = item.pasajeros;
+    totalPasajes += peso;
+
+    if (item.esIdaVueltaMismoDia) {
+      // Ida + Regreso: un cupo en cada tramo.
+      add('Ida', peso);
+      add('Regreso', peso);
+      continue;
+    }
+
+    final clave = claveTramoParaTotales(item.principal);
+    if (clave != null) {
+      add(clave, peso);
+    } else {
+      // Turno combinado suelto: suma en ambos tramos.
+      final label = etiquetaTrayectoUi(item.principal.turnoNombre);
+      if (label == 'Ida y Regreso') {
+        add('Ida', peso);
+        add('Regreso', peso);
+      } else if (label == 'Ida' || label == 'Regreso') {
+        add(label, peso);
+      }
+    }
+  }
+
+  final orden = ['Ida', 'Regreso']
+      .where((k) => (mapa[k]?.cantidad ?? 0) > 0)
+      .map((k) => mapa[k]!)
+      .toList();
+  return TotalesPorTramo(orden, totalPasajes);
+}
+
 /// Totalización de reservas por recurso → turno para la fecha filtrada.
 ///
 /// Cuenta las reservas **activas + completadas** (no las canceladas) que tienen
 /// un turno asignado (`idTurno != null`). Cada reserva pesa por su `cantidad`.
-/// Ida+vuelta el mismo día con el mismo turno combinado cuenta **una sola vez**.
+/// Ida+regreso el mismo día:
+/// - Si ambas piernas caen en el mismo recurso/turno (paquete), cuenta **una** vez.
+/// - Si son turnos distintos, suma un cupo en cada pierna.
 /// Los servicios sin recursos (turno null) no aparecen aquí.
 
 /// Total acumulado de un turno concreto dentro de un recurso.
@@ -91,10 +157,10 @@ String _claveRecurso(Agenda r) {
 
 String _claveTurno(Agenda r) {
   final nombre = (r.turnoNombre ?? '').trim();
-  if (nombre.isNotEmpty) return nombre;
+  if (nombre.isNotEmpty) return etiquetaTrayectoUi(nombre);
   final trayecto = r.tipoTrayecto?.trim();
   if (trayecto != null && trayecto.isNotEmpty) {
-    return trayecto[0].toUpperCase() + trayecto.substring(1);
+    return etiquetaTrayectoUi(trayecto);
   }
   return 'Sin turno';
 }
@@ -120,24 +186,30 @@ TotalesRecursoTurno calcularTotalesRecursoTurno(List<Agenda> reservas) {
       final ida = item.principal;
       final vuelta = item.pareja!;
       final peso = item.pasajeros;
-      if (ida.idTurno != null && ida.idTurno == vuelta.idTurno) {
-        // Paquete mismo día: un solo cupo en el turno combinado.
-        totalPasajeros += peso;
-        _acumular(recursos, orden, ida, peso, precioItem > 0 ? precioItem : null);
+      final pIda = ida.precioTotal ?? 0;
+      final pVuelta = vuelta.precioTotal ?? 0;
+      final mismaClave = ida.idTurno != null &&
+          vuelta.idTurno != null &&
+          _claveRecurso(ida) == _claveRecurso(vuelta) &&
+          _claveTurno(ida) == _claveTurno(vuelta);
+
+      totalPasajeros += peso;
+
+      if (mismaClave) {
+        // Paquete ida+regreso en el mismo turno: no duplicar cantidad.
+        _acumular(
+          recursos,
+          orden,
+          ida,
+          peso,
+          precioItem > 0 ? precioItem : null,
+        );
       } else {
-        // Turnos distintos el mismo día: capacidad en cada tramo.
-        final pIda = ida.precioTotal ?? 0;
-        final pVuelta = vuelta.precioTotal ?? 0;
         if (ida.idTurno != null) {
-          totalPasajeros += peso;
           _acumular(recursos, orden, ida, peso, pIda > 0 ? pIda : null);
         }
         if (vuelta.idTurno != null) {
-          totalPasajeros += peso;
           _acumular(recursos, orden, vuelta, peso, pVuelta > 0 ? pVuelta : null);
-        }
-        if (ida.idTurno == null && vuelta.idTurno == null) {
-          totalPasajeros += peso;
         }
       }
     } else {

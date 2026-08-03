@@ -206,13 +206,29 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     }
   }
 
+  int? _asInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
+  }
+
   void _applyFilters() {
-    // Optimización: Filtrado eficiente con validaciones tempranas
+    // Red de seguridad en cliente: el RPC ya filtra, pero normalizamos IDs
+    // (bigint/json) y almacén para evitar filas inconsistentes en la UI.
     _filteredMovements = _movements.where((movement) {
-      // Filtro por tipo de operación (validación más rápida)
-      if (_selectedOperationTypeId != null && 
-          movement['tipo_operacion_id'] != _selectedOperationTypeId) {
+      if (_selectedOperationTypeId != null &&
+          _asInt(movement['tipo_operacion_id']) != _selectedOperationTypeId) {
         return false;
+      }
+
+      if (_selectedWarehouseId != null) {
+        final movWarehouseId = _asInt(
+          movement['almacen_id'] ?? movement['id_almacen'],
+        );
+        if (movWarehouseId != _selectedWarehouseId) {
+          return false;
+        }
       }
 
       // Filtro por fecha (solo si hay filtros de fecha)
@@ -221,18 +237,33 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         if (fechaStr == null || fechaStr.isEmpty) {
           return false;
         }
-        
+
         final movementDate = DateTime.tryParse(fechaStr);
         if (movementDate == null) {
           return false;
         }
 
-        // Comparación optimizada de fechas
-        if (_dateFrom != null && movementDate.isBefore(_dateFrom!)) {
-          return false;
+        // Comparar por día local para no desalinear por timezone UTC del RPC
+        final movementDay = DateTime(
+          movementDate.year,
+          movementDate.month,
+          movementDate.day,
+        );
+        if (_dateFrom != null) {
+          final fromDay = DateTime(
+            _dateFrom!.year,
+            _dateFrom!.month,
+            _dateFrom!.day,
+          );
+          if (movementDay.isBefore(fromDay)) return false;
         }
-        if (_dateTo != null && movementDate.isAfter(_dateTo!)) {
-          return false;
+        if (_dateTo != null) {
+          final toDay = DateTime(
+            _dateTo!.year,
+            _dateTo!.month,
+            _dateTo!.day,
+          );
+          if (movementDay.isAfter(toDay)) return false;
         }
       }
 
@@ -408,7 +439,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
             IconButton(
               icon: const Icon(Icons.picture_as_pdf_outlined),
               tooltip: 'Exportar PDF',
-              onPressed: _filteredMovements.isEmpty ? null : _exportMovementsPdf,
+              onPressed: _isLoading ? null : _exportMovementsPdf,
             ),
         ],
       ),
@@ -582,9 +613,50 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     );
   }
 
+  /// Aplica los mismos filtros de UI a una lista ya obtenida del RPC
+  /// (tipo de movimiento local + orden por id).
+  List<Map<String, dynamic>> _prepareMovementsForExport(
+    List<Map<String, dynamic>> source,
+  ) {
+    var list = List<Map<String, dynamic>>.from(source);
+    if (_selectedTipoMovimiento != null) {
+      list = list
+          .where((m) => m['tipo_movimiento'] == _selectedTipoMovimiento)
+          .toList();
+    }
+    list.sort((a, b) {
+      final idA = (a['id'] as num?)?.toInt() ?? 0;
+      final idB = (b['id'] as num?)?.toInt() ?? 0;
+      return idA.compareTo(idB);
+    });
+    return list;
+  }
+
   Future<void> _exportMovementsPdf() async {
     setState(() => _isExportingPdf = true);
     try {
+      // Traer todas las operaciones del filtro (no solo la página en memoria).
+      final allMovements =
+          await ProductMovementsService.getAllProductMovements(
+        productId: int.parse(_product.id),
+        dateFrom: _dateFrom,
+        dateTo: _dateTo,
+        operationTypeId: _selectedOperationTypeId,
+        warehouseId: _selectedWarehouseId,
+      );
+      final movimientosExport = _prepareMovementsForExport(allMovements);
+
+      if (movimientosExport.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No hay movimientos para exportar con los filtros actuales'),
+            ),
+          );
+        }
+        return;
+      }
+
       final now = DateTime.now();
       final dateStr = DateFormat('yyyyMMdd_HHmmss').format(now);
       final productName = _product.denominacion.replaceAll(' ', '_');
@@ -621,9 +693,6 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
               )['denominacion'] as String? ??
               'Desconocido')
           : 'Todos';
-
-      // Movimientos a exportar (respetando filtro de tipo movimiento)
-      final movimientosExport = _displayMovements;
 
       // Totales calculados sobre los datos a exportar
       // Reajuste y Ajuste con cantidad positiva son entradas, con negativa son salidas
@@ -1233,8 +1302,8 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
               ],
               onChanged: (value) {
                 setState(() {
-                  _selectedWarehouse = value!;
-                  if (value == 'Todos') {
+                  _selectedWarehouse = value ?? 'Todos';
+                  if (value == null || value == 'Todos') {
                     _selectedWarehouseId = null;
                   } else {
                     _selectedWarehouseId = int.tryParse(value);
@@ -1674,11 +1743,17 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
               if (movement['id_operacion'] != null)
                 _buildDetailRow('Operación #', '${movement['id_operacion']}'),
               if (movement['cantidad'] != null)
-                _buildDetailRow('Cantidad Movida', '${movement['cantidad']}'),
+                _buildDetailRow(
+                  tipoMovimiento == 'Control'
+                      ? 'Cantidad Contada'
+                      : 'Cantidad Movida',
+                  '${movement['cantidad']}',
+                ),
               if (movement['cantidad_inicial'] != null)
                 _buildDetailRow(
                     'Cantidad Inicial', '${movement['cantidad_inicial']}'),
-              if (movement['cantidad_final'] != null)
+              if (movement['cantidad_final'] != null &&
+                  tipoMovimiento != 'Control')
                 _buildDetailRow(
                     'Cantidad Final', '${movement['cantidad_final']}'),
               if (movement['precio_unitario'] != null)

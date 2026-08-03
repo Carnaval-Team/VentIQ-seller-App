@@ -674,7 +674,7 @@ class _WorkersScreenState extends State<WorkersScreen>
       case 'auditor':
         return 'Auditor';
       case 'vendedor':
-        return 'Vendedor';
+        return 'Dependiente';
       case 'almacenero':
         return 'Almacenero';
       case 'recursos_humanos':
@@ -693,11 +693,21 @@ class _WorkersScreenState extends State<WorkersScreen>
   // 🆕 NUEVO: Convertir nombre de rol a ID
   int? _getRoleIdFromName(String? roleName) {
     if (roleName == null) return null;
-    
-    // Buscar en _roles por denominación
+
+    // Buscar en _roles por denominación (soporta "Vendedor" histórico y "Dependiente")
     try {
+      final display = _getRoleDisplayName(roleName).toLowerCase();
+      final key = roleName.toLowerCase();
       final role = _roles.firstWhere(
-        (r) => r.denominacion.toLowerCase() == _getRoleDisplayName(roleName).toLowerCase(),
+        (r) {
+          final d = r.denominacion.toLowerCase();
+          if (d == display || d == key) return true;
+          if (key == 'vendedor' &&
+              (d.contains('vendedor') || d.contains('dependiente'))) {
+            return true;
+          }
+          return false;
+        },
         orElse: () => WorkerRole(
           id: 0,
           denominacion: '',
@@ -734,7 +744,10 @@ class _WorkersScreenState extends State<WorkersScreen>
       if (denominacion.contains('gerente')) return 'gerente';
       if (denominacion.contains('supervisor')) return 'supervisor';
       if (denominacion.contains('auditor')) return 'auditor';
-      if (denominacion.contains('vendedor')) return 'vendedor';
+      if (denominacion.contains('vendedor') ||
+          denominacion.contains('dependiente')) {
+        return 'vendedor';
+      }
       if (denominacion.contains('almacenero')) return 'almacenero';
       if (denominacion.contains('recursos humanos') || denominacion.contains('recursos_humanos')) return 'recursos_humanos';
 
@@ -801,7 +814,7 @@ class _WorkersScreenState extends State<WorkersScreen>
         };
       case 'vendedor':
         return {
-          'label': 'Vendedor',
+          'label': 'Dependiente',
           'icon': Icons.point_of_sale,
           'color': AppColors.primary,
         };
@@ -1373,7 +1386,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                                         ),
                                       ),
                                       Text(
-                                        'Vendedor o Almacenero con configuración',
+                                        'Dependiente o Almacenero con configuración',
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: Colors.grey.shade700,
@@ -2283,7 +2296,11 @@ class _WorkersScreenState extends State<WorkersScreen>
               userUuid: _userUuid!,
               tpvs: _tpvs,
               almacenes: _almacenes,
+              canDelete: _canDeleteWorkers,
               onSaved: () {
+                _loadWorkersData();
+              },
+              onDeleted: () {
                 _loadWorkersData();
               },
             ),
@@ -2348,7 +2365,10 @@ class _WorkersScreenState extends State<WorkersScreen>
           (context) => AlertDialog(
             title: const Text('Eliminar Trabajador'),
             content: Text(
-              '¿Estás seguro de que deseas eliminar a ${worker.nombreCompleto}?\n\nEsta acción no se puede deshacer.',
+              '¿Estás seguro de que deseas eliminar a ${worker.nombreCompleto}?\n\n'
+              'Se eliminarán todos sus roles en el sistema (gerente, supervisor, '
+              'dependiente, almacenero, recursos humanos, auditor).\n\n'
+              'Esta acción no se puede deshacer.',
             ),
             actions: [
               TextButton(

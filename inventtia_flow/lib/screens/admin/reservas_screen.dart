@@ -96,16 +96,10 @@ class _ReservasScreenState extends State<ReservasScreen> {
     ]);
     if (!mounted) return;
     final estados = results[1] as List<EstadoAgenda>;
-    final reservado = estados.firstWhere(
-      (e) => e.nombre.toLowerCase() == 'reservado',
-      orElse: () => estados.isNotEmpty
-          ? estados.first
-          : EstadoAgenda(id: 1, nombre: 'reservado'),
-    );
     setState(() {
       _locales = results[0] as List<Local>;
       _estados = estados;
-      _idEstadoFiltro = reservado.id;
+      _idEstadoFiltro = null; // Todos
     });
     await _load();
   }
@@ -179,17 +173,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
 
   void _resetFiltros() {
     if (_loading) return;
-    final reservado = _estados.firstWhere(
-      (e) => e.nombre.toLowerCase() == 'reservado',
-      orElse: () => _estados.isNotEmpty
-          ? _estados.first
-          : EstadoAgenda(id: 1, nombre: 'reservado'),
-    );
     setState(() {
       _localFiltro = null;
       _lsFiltro = null;
       _localServicios = [];
-      _idEstadoFiltro = reservado.id;
+      _idEstadoFiltro = null; // Todos
       _filtrosExpanded = false;
     });
     _load();
@@ -203,7 +191,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
         title: const Text('Cancelar reserva'),
         content: Text(
           item.esIdaVueltaMismoDia
-              ? '¿Cancelar el viaje de ida y vuelta de '
+              ? '¿Cancelar el viaje de ida y regreso de '
                   '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
                   '(se cancelan ambos tramos)?'
               : '¿Estás seguro de cancelar la reserva de '
@@ -238,7 +226,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
           '¿Reactivar la reserva de '
           '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
           'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?'
-          '${item.esIdaVueltaMismoDia ? '\n\nSe reactivarán ambos tramos (ida y vuelta).' : ''}'
+          '${item.esIdaVueltaMismoDia ? '\n\nSe reactivarán ambos tramos (ida y regreso).' : ''}'
           '\n\nVolverá a estado Reservado y ocupará capacidad de nuevo.',
         ),
         actions: [
@@ -572,9 +560,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
     );
     final filtroDesc =
         _buildFiltroDescExport(lista: reservas, alcance: alcance);
-    final cols = _columnasDatos(reservas);
-    final conTerceros = _hayTerceros(reservas);
-    final grupos = _agruparPorLocal(reservas);
+    final esOmnibus = _listaEsOmnibus(reservas);
 
     doc.addPage(
       pw.MultiPage(
@@ -594,58 +580,39 @@ class _ReservasScreenState extends State<ReservasScreen> {
             pw.Divider(),
           ],
         ),
+        footer: (context) => pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 8),
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.end,
+            children: [
+              pw.Text(
+                'Página ${context.pageNumber} de ${context.pagesCount}',
+                style: pw.TextStyle(font: fontRegular, fontSize: 9),
+              ),
+            ],
+          ),
+        ),
         build: (_) {
           final widgets = <pw.Widget>[];
-          grupos.forEach((localNombre, lista) {
-            widgets.add(
-              pw.Text(localNombre,
-                  style: pw.TextStyle(
-                      font: fontBold,
-                      fontSize: 11,
-                      fontWeight: pw.FontWeight.bold)),
-            );
-            widgets.add(pw.SizedBox(height: 4));
-            widgets.add(
-              pw.TableHelper.fromTextArray(
-                headerStyle: pw.TextStyle(
-                    font: fontBold, fontWeight: pw.FontWeight.bold),
-                headerDecoration:
-                    const pw.BoxDecoration(color: PdfColors.grey300),
-                cellStyle: pw.TextStyle(font: fontRegular, fontSize: 9),
-                cellHeight: 22,
-                headers: [
-                  'Servicio',
-                  'Fecha reserva',
-                  'Nombre',
-                  'Apellidos',
-                  'CI',
-                  'Telefono',
-                  'Cant.',
-                  'Precio',
-                  'Tercero',
-                  ...cols.map((c) => c.etiqueta),
-                ],
-                data: lista.map((r) {
-                  final esTercero = r.reservadoPor != null &&
-                      r.uuidUsuario != null &&
-                      r.reservadoPor != r.uuidUsuario;
-                  return [
-                    r.localServicio?.servicio?.nombre ?? '-',
-                    _fmtHora.format(r.fechaHoraReserva),
-                    _datoCliente(r, 'nombre'),
-                    _datoCliente(r, 'apellidos'),
-                    _datoCliente(r, 'ci'),
-                    _datoCliente(r, 'telefono'),
-                    '${r.cantidad}',
-                    _precioExport(r),
-                    esTercero ? 'Sí' : 'No',
-                    ...cols.map((c) => _valorDato(r, c.clave)),
-                  ];
-                }).toList(),
-              ),
-            );
-            widgets.add(pw.SizedBox(height: 14));
-          });
+
+          if (esOmnibus) {
+            widgets.addAll(_pdfTablaOmnibus(
+              reservas,
+              fontBold: fontBold,
+              fontRegular: fontRegular,
+            ));
+          } else {
+            widgets.addAll(_pdfTablaGeneral(
+              reservas,
+              fontBold: fontBold,
+              fontRegular: fontRegular,
+            ));
+          }
+          widgets.addAll(_pdfFilaTotalCobrar(
+            reservas,
+            fontBold: fontBold,
+            fontRegular: fontRegular,
+          ));
           return widgets;
         },
       ),
@@ -658,6 +625,224 @@ class _ReservasScreenState extends State<ReservasScreen> {
     await Printing.sharePdf(
         bytes: Uint8List.fromList(bytes),
         filename: 'reservas_$sufijo.pdf');
+  }
+
+  bool _listaEsOmnibus(List<Agenda> lista) {
+    if (_lsFiltro?.esTransporteOmnibus == true) return true;
+    if (lista.any((r) => r.localServicio?.esTransporteOmnibus == true)) {
+      return true;
+    }
+    // Heurística: reservas con trayecto ida/regreso (aunque falte tipo_actividad).
+    return lista.any((r) {
+      final t = r.tipoTrayecto?.toLowerCase();
+      final v =
+          r.datosAdicionales?['tipo_viaje']?.toString().toLowerCase();
+      return t == 'ida' ||
+          t == 'vuelta' ||
+          v == 'ida' ||
+          v == 'vuelta' ||
+          v == 'ida_vuelta';
+    });
+  }
+
+  List<({String clave, String etiqueta})> _columnasDatosPdf(
+      List<Agenda> lista) {
+    const excluir = {
+      'email',
+      'correo',
+      'correo_electronico',
+      'e-mail',
+      'notas',
+      'recogida',
+      'destino',
+    };
+    return _columnasDatos(lista)
+        .where((c) => !excluir.contains(c.clave.toLowerCase()))
+        .toList();
+  }
+
+  /// Fila de total debajo del detalle: suma de precios a cobrar (sin canceladas).
+  List<pw.Widget> _pdfFilaTotalCobrar(
+    List<Agenda> reservas, {
+    required pw.Font fontBold,
+    required pw.Font fontRegular,
+  }) {
+    final importes = sumarPreciosReservas(reservas);
+    if (importes.isEmpty) return const [];
+
+    final texto = importes.entries
+        .map((e) => PrecioReserva.formatear(e.value, e.key))
+        .join('  ·  ');
+
+    return [
+      pw.SizedBox(height: 12),
+      pw.Container(
+        width: double.infinity,
+        padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: const pw.BoxDecoration(
+          color: PdfColors.grey200,
+          border: pw.Border(
+            top: pw.BorderSide(color: PdfColors.grey500, width: 1),
+          ),
+        ),
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.end,
+          children: [
+            pw.Text('Total a cobrar: ',
+                style: pw.TextStyle(font: fontRegular, fontSize: 11)),
+            pw.Text(texto,
+                style: pw.TextStyle(
+                    font: fontBold,
+                    fontSize: 11,
+                    fontWeight: pw.FontWeight.bold)),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  String _nombreCompletoPdf(Agenda r) {
+    final n = _datoCliente(r, 'nombre');
+    final a = _datoCliente(r, 'apellidos');
+    final full = '$n $a'.trim();
+    return full.isEmpty || full == '-' ? '-' : full;
+  }
+
+  String _recogidaPdf(ReservaListItem item) {
+    final v = item.principal.datosAdicionales?['recogida']?.toString().trim();
+    if (v != null && v.isNotEmpty) return v;
+    final vPareja = item.pareja?.datosAdicionales?['recogida']?.toString().trim();
+    if (vPareja != null && vPareja.isNotEmpty) return vPareja;
+    return '-';
+  }
+
+  String _destinoPdf(ReservaListItem item) {
+    final v = item.principal.datosAdicionales?['destino']?.toString().trim();
+    if (v != null && v.isNotEmpty) return v;
+    final vPareja = item.pareja?.datosAdicionales?['destino']?.toString().trim();
+    if (vPareja != null && vPareja.isNotEmpty) return vPareja;
+    return '-';
+  }
+
+  String _tipoViajePdf(ReservaListItem item) {
+    if (item.etiquetaTipo.isNotEmpty) return item.etiquetaTipo;
+    final raw = etiquetaTrayectoUi(
+        item.principal.tipoTrayecto ?? item.principal.turnoNombre);
+    return raw.isEmpty ? '-' : raw;
+  }
+
+  List<pw.Widget> _pdfTablaOmnibus(
+    List<Agenda> reservas, {
+    required pw.Font fontBold,
+    required pw.Font fontRegular,
+  }) {
+    final items = agruparReservasParaListado(reservas)
+        .where((i) => !i.esCancelada)
+        .toList()
+      ..sort((a, b) => a.principal.fechaHoraReserva
+          .compareTo(b.principal.fechaHoraReserva));
+
+    return [
+      pw.Text('Detalle',
+          style: pw.TextStyle(
+              font: fontBold, fontSize: 12, fontWeight: pw.FontWeight.bold)),
+      pw.SizedBox(height: 8),
+      pw.TableHelper.fromTextArray(
+        headerStyle: pw.TextStyle(
+            font: fontBold, fontSize: 9, fontWeight: pw.FontWeight.bold),
+        headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+        cellStyle: pw.TextStyle(font: fontRegular, fontSize: 8),
+        cellAlignment: pw.Alignment.centerLeft,
+        cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        cellHeight: 22,
+        headers: const [
+          'Nombre',
+          'CI',
+          'Teléfono',
+          'Tipo de viaje',
+          'Recogida',
+          'Destino',
+          'Notas',
+          'Precio a cobrar',
+        ],
+        data: items.map((item) {
+          final r = item.principal;
+          final notas = r.datosAdicionales?['notas']?.toString().trim();
+          final precio = item.precioTotal;
+          return [
+            _nombreCompletoPdf(r),
+            _datoCliente(r, 'ci'),
+            _datoCliente(r, 'telefono'),
+            _tipoViajePdf(item),
+            _recogidaPdf(item),
+            _destinoPdf(item),
+            (notas == null || notas.isEmpty) ? '-' : notas,
+            precio != null && precio > 0
+                ? PrecioReserva.formatear(precio, item.moneda ?? 'USD')
+                : '-',
+          ];
+        }).toList(),
+      ),
+    ];
+  }
+
+  List<pw.Widget> _pdfTablaGeneral(
+    List<Agenda> reservas, {
+    required pw.Font fontBold,
+    required pw.Font fontRegular,
+  }) {
+    final cols = _columnasDatosPdf(reservas);
+    final items = agruparReservasParaListado(reservas)
+        .where((i) => !i.esCancelada)
+        .toList()
+      ..sort((a, b) => a.principal.fechaHoraReserva
+          .compareTo(b.principal.fechaHoraReserva));
+
+    return [
+      pw.Text('Detalle',
+          style: pw.TextStyle(
+              font: fontBold, fontSize: 12, fontWeight: pw.FontWeight.bold)),
+      pw.SizedBox(height: 8),
+      pw.TableHelper.fromTextArray(
+        headerStyle: pw.TextStyle(
+            font: fontBold, fontSize: 9, fontWeight: pw.FontWeight.bold),
+        headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+        cellStyle: pw.TextStyle(font: fontRegular, fontSize: 8),
+        cellAlignment: pw.Alignment.centerLeft,
+        cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        cellHeight: 22,
+        headers: [
+          'Servicio',
+          'Tipo',
+          'Fecha',
+          'Nombre',
+          'Apellidos',
+          'CI',
+          'Teléfono',
+          'Cant.',
+          'Precio',
+          ...cols.map((c) => c.etiqueta),
+        ],
+        data: items.map((item) {
+          final r = item.principal;
+          final precio = item.precioTotal;
+          return [
+            r.localServicio?.servicio?.nombre ?? '-',
+            _tipoViajePdf(item),
+            _fmtHora.format(r.fechaHoraReserva),
+            _datoCliente(r, 'nombre'),
+            _datoCliente(r, 'apellidos'),
+            _datoCliente(r, 'ci'),
+            _datoCliente(r, 'telefono'),
+            '${item.pasajeros}',
+            precio != null && precio > 0
+                ? PrecioReserva.formatear(precio, item.moneda ?? 'USD')
+                : '-',
+            ...cols.map((c) => _valorDato(r, c.clave)),
+          ];
+        }).toList(),
+      ),
+    ];
   }
 
   // ──────────────────────────────────────────────────────────────────
@@ -675,6 +860,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
     final headers = [
       'Local',
       'Servicio',
+      'Tipo',
+      'Recurso',
+      'Turno',
       'Fecha reserva',
       'Nombre',
       'Apellidos',
@@ -699,9 +887,17 @@ class _ReservasScreenState extends State<ReservasScreen> {
         final esTercero = ag.reservadoPor != null &&
             ag.uuidUsuario != null &&
             ag.reservadoPor != ag.uuidUsuario;
+        final tipo = etiquetaTrayectoUi(
+              ag.tipoTrayecto ?? ag.turnoNombre,
+            ).isNotEmpty
+            ? etiquetaTrayectoUi(ag.tipoTrayecto ?? ag.turnoNombre)
+            : (ag.turnoNombre ?? '');
         final row = [
           localNombre,
           ag.localServicio?.servicio?.nombre ?? '',
+          tipo,
+          ag.recursoNombre ?? '',
+          ag.turnoNombre ?? '',
           _fmtHora.format(ag.fechaHoraReserva),
           _datoCliente(ag, 'nombre'),
           _datoCliente(ag, 'apellidos'),
@@ -1193,33 +1389,35 @@ class _ReservasScreenState extends State<ReservasScreen> {
   }
 
   Widget _buildTabla() {
-    final grupos = _agruparItemsPorLocal();
+    final items = _itemsListadoOrdenados();
     final cols = _columnasDatos(_reservas);
 
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
         TotalesPanel(reservas: _reservas),
-        for (final entry in grupos.entries) ...[
-          if (grupos.length > 1)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(0, 8, 0, 6),
-              child: Row(
-                children: [
-                  const Icon(Icons.store_outlined, size: 14, color: AppTheme.primary),
-                  const SizedBox(width: 6),
-                  Text(entry.key,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: AppTheme.primary)),
-                ],
-              ),
-            ),
-          ...entry.value.map((item) => _buildReservaCard(item, cols)),
-        ],
+        ...items.map((item) => _buildReservaCard(item, cols)),
       ],
     );
+  }
+
+  /// Listado plano (sin encabezados de local/recogida/destino).
+  /// Esos puntos van detallados en el PDF/Excel.
+  List<ReservaListItem> _itemsListadoOrdenados() {
+    final items = agruparReservasParaListado(_reservas);
+    items.sort((a, b) {
+      final fa = a.principal.fechaHoraReserva;
+      final fb = b.principal.fechaHoraReserva;
+      final porFecha = DateTime(fa.year, fa.month, fa.day)
+          .compareTo(DateTime(fb.year, fb.month, fb.day));
+      if (porFecha != 0) return porFecha;
+      final sa = a.principal.localServicio?.servicio?.nombre ?? '';
+      final sb = b.principal.localServicio?.servicio?.nombre ?? '';
+      final porServicio = sa.toLowerCase().compareTo(sb.toLowerCase());
+      if (porServicio != 0) return porServicio;
+      return fa.compareTo(fb);
+    });
+    return items;
   }
 
   Widget _buildReservaCard(
@@ -1322,24 +1520,14 @@ class _ReservasScreenState extends State<ReservasScreen> {
               _infoRow('Teléfono', '-'),
             if (item.esIdaVueltaMismoDia) ...[
               if (r.turnoNombre != null)
-                _infoRow(
-                  'Ida',
-                  r.recursoNombre != null
-                      ? '${r.recursoNombre} · ${r.turnoNombre}'
-                      : r.turnoNombre!,
-                ),
+                _infoRow('Ida', r.turnoNombre!),
               if (item.pareja?.turnoNombre != null)
-                _infoRow(
-                  'Vuelta',
-                  item.pareja!.recursoNombre != null
-                      ? '${item.pareja!.recursoNombre} · ${item.pareja!.turnoNombre}'
-                      : item.pareja!.turnoNombre!,
-                ),
+                _infoRow('Regreso', item.pareja!.turnoNombre!),
             ] else if (r.turnoNombre != null)
               _infoRow(
                 'Turno',
-                r.recursoNombre != null
-                    ? '${r.recursoNombre} · ${r.turnoNombre}'
+                etiquetaTrayectoUi(r.turnoNombre).isNotEmpty
+                    ? etiquetaTrayectoUi(r.turnoNombre)
                     : r.turnoNombre!,
               ),
             if (r.cantidad > 1) _infoRow('Cantidad', '${r.cantidad}'),

@@ -529,7 +529,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
 
-                // Trabajadores (solo Gerente y Supervisor)
+                // Trabajadores (Gerente, Supervisor, Auditor, RRHH)
                 FutureBuilder<bool>(
                   future: NavigationGuard.canNavigate(
                     '/workers',

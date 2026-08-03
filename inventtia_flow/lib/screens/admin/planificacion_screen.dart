@@ -746,6 +746,15 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
 }
 
 // ── Calendario con marcadores ─────────────────────────────────
+bool _planCasiLleno(PlanDia plan) {
+  if (plan.recursos.isNotEmpty) {
+    // Con recursos: "casi lleno" si algún tramo pico ≥ 80% de la capacidad.
+    return plan.recursos.any((r) =>
+        r.cantidad > 0 && r.ocupacionMax >= (r.cantidad * 0.8).ceil());
+  }
+  return plan.disponibles < (plan.cantidad * 0.2).ceil();
+}
+
 class _CalendarioConPlanes extends StatelessWidget {
   final DateTime focusedDay;
   final List<PlanDia> Function(DateTime) planesDelDia;
@@ -793,7 +802,7 @@ class _CalendarioConPlanes extends StatelessWidget {
               if (plan.cantidad <= 0) return null;
               final color = plan.estaLleno
                   ? AppTheme.error
-                  : plan.disponibles < (plan.cantidad * 0.2).ceil()
+                  : _planCasiLleno(plan)
                       ? AppTheme.warning
                       : AppTheme.success;
               return Positioned(
@@ -887,8 +896,9 @@ class _PlanificarDiaSheetState extends State<_PlanificarDiaSheet> {
   late final TextEditingController _cantidadCtrl;
   // Modo CON recursos: un controlador por recurso.
   final Map<int, TextEditingController> _recCtrls = {};
-  // Agendados actuales por recurso (mínimo permitido al bajar la capacidad).
+  // Agendados reales (display) y ocupación máxima de tramo (piso al bajar capacidad).
   final Map<int, int> _recAgendados = {};
+  final Map<int, int> _recOcupacionMax = {};
   int _agendadosSimple = 0;
   bool _saving = false;
 
@@ -907,6 +917,7 @@ class _PlanificarDiaSheetState extends State<_PlanificarDiaSheet> {
         _recCtrls[r.id] = TextEditingController(
             text: actual != null ? actual.cantidad.toString() : '');
         _recAgendados[r.id] = actual?.agendados ?? 0;
+        _recOcupacionMax[r.id] = actual?.minimoCapacidad ?? 0;
       }
     } else {
       final actual = widget.planActual;
@@ -943,9 +954,9 @@ class _PlanificarDiaSheetState extends State<_PlanificarDiaSheet> {
           _err('Capacidad inválida en "${r.nombre}" (usa un número ≥ 0)');
           return;
         }
-        final min = _recAgendados[r.id] ?? 0;
+        final min = _recOcupacionMax[r.id] ?? 0;
         if (v > 0 && v < min) {
-          _err('"${r.nombre}": no puedes bajar de $min ya reservado(s)');
+          _err('"${r.nombre}": no puedes bajar de $min ya ocupado(s) en un tramo');
           return;
         }
         caps[r.id] = v;

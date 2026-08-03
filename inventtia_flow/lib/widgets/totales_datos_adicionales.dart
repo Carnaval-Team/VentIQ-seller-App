@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../config/app_theme.dart';
 import '../models/agenda.dart';
 import '../models/campo_adicional.dart';
-import '../utils/precio_reserva.dart';
 import '../utils/reserva_listado.dart';
 import 'totales_recurso_turno.dart';
 
@@ -103,7 +101,8 @@ List<TotalCampo> calcularTotales(List<Agenda> reservasTodas) {
   return orden.map((k) => totales[k]!).toList();
 }
 
-/// Panel con totales: conteo agrupado, importes, turnos y campos adicionales.
+/// Panel con totales de la vista: solo cantidades por tramo (Ida / Regreso).
+/// Importes, locales (recogida/destino) y detalle fino van en el PDF/Excel.
 class TotalesPanel extends StatelessWidget {
   final List<Agenda> reservas;
   const TotalesPanel({super.key, required this.reservas});
@@ -114,32 +113,17 @@ class TotalesPanel extends StatelessWidget {
     color: AppTheme.textPrimary,
   );
 
-  static final _fmtDia = DateFormat('dd/MM/yyyy');
-
   @override
   Widget build(BuildContext context) {
     final paraMonto = reservas.where(_cuentaParaMonto).toList();
-    final completadas = reservas.where(_cuentaParaTotales).toList();
-    final totales = calcularTotales(completadas);
-    final importes = sumarPreciosReservas(paraMonto);
-    final porTurno = calcularTotalesRecursoTurno(paraMonto);
+    final porTramo = calcularTotalesPorTramo(paraMonto);
     final nReservas =
         contarReservasAgrupadas(reservas, excluirCanceladas: false);
     final nActivas = contarReservasAgrupadas(reservas);
 
-    if (totales.isEmpty &&
-        importes.isEmpty &&
-        porTurno.recursos.isEmpty) {
+    if (porTramo.tramos.isEmpty && nReservas == 0) {
       return const SizedBox.shrink();
     }
-
-    final porDia = <DateTime, List<Agenda>>{};
-    for (final r in paraMonto) {
-      final f = r.fechaHoraReserva;
-      final dia = DateTime(f.year, f.month, f.day);
-      porDia.putIfAbsent(dia, () => []).add(r);
-    }
-    final dias = porDia.keys.toList()..sort();
 
     return Card(
       elevation: 0,
@@ -171,57 +155,9 @@ class TotalesPanel extends StatelessWidget {
                 ),
               ],
             ),
-            if (porTurno.recursos.isNotEmpty) ...[
+            if (porTramo.tramos.isNotEmpty) ...[
               const SizedBox(height: 10),
-              ..._buildPorTurno(porTurno),
-            ],
-            if (importes.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              for (final e in importes.entries)
-                _fila(
-                  'Importe (${e.key})',
-                  PrecioReserva.formatear(e.value, e.key),
-                ),
-            ],
-            if (totales.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              ..._buildTotales(totales),
-            ],
-            if (dias.length > 1 &&
-                (totales.isNotEmpty || importes.isNotEmpty)) ...[
-              const SizedBox(height: 4),
-              Theme(
-                data: Theme.of(context)
-                    .copyWith(dividerColor: Colors.transparent),
-                child: ExpansionTile(
-                  tilePadding: EdgeInsets.zero,
-                  childrenPadding: const EdgeInsets.only(bottom: 8),
-                  title: const Text('Ver por día',
-                      style: TextStyle(
-                          fontSize: 16.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.primary)),
-                  children: [
-                    for (final dia in dias) ...[
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6, bottom: 2),
-                        child: Text(_fmtDia.format(dia),
-                            style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.textPrimary)),
-                      ),
-                      for (final e
-                          in sumarPreciosReservas(porDia[dia]!).entries)
-                        _fila(
-                          'Importe (${e.key})',
-                          PrecioReserva.formatear(e.value, e.key),
-                        ),
-                      ..._buildTotales(calcularTotales(porDia[dia]!)),
-                    ],
-                  ],
-                ),
-              ),
+              ..._buildPorTramo(porTramo),
             ],
           ],
         ),
@@ -229,153 +165,30 @@ class TotalesPanel extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildPorTurno(TotalesRecursoTurno porTurno) {
+  List<Widget> _buildPorTramo(TotalesPorTramo porTramo) {
     final out = <Widget>[];
-    for (final rec in porTurno.recursos) {
-      final unSoloTurno = rec.turnos.length == 1;
+    for (final t in porTramo.tramos) {
       out.add(Padding(
         padding: const EdgeInsets.only(bottom: 6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            if (!unSoloTurno)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Row(
-                  children: [
-                    const Icon(Icons.directions_bus_outlined,
-                        size: 20, color: AppTheme.primary),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        rec.recurso,
-                        style: _estiloCantidad.copyWith(
-                          fontSize: 18,
-                          color: AppTheme.primary,
-                        ),
-                      ),
-                    ),
-                  ],
+            const Icon(Icons.route_outlined,
+                size: 20, color: AppTheme.primary),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                t.tramo,
+                style: _estiloCantidad.copyWith(
+                  fontSize: 18,
+                  color: AppTheme.primary,
                 ),
               ),
-            for (final t in rec.turnos)
-              Padding(
-                padding: EdgeInsets.only(
-                  left: unSoloTurno ? 0 : 22,
-                  top: unSoloTurno ? 0 : 4,
-                ),
-                child: Row(
-                  children: [
-                    if (unSoloTurno) ...[
-                      const Icon(Icons.directions_bus_outlined,
-                          size: 20, color: AppTheme.primary),
-                      const SizedBox(width: 6),
-                    ],
-                    Expanded(
-                      child: Text(
-                        unSoloTurno ? '${rec.recurso} · ${t.key}' : t.key,
-                        style: unSoloTurno
-                            ? _estiloCantidad.copyWith(
-                                fontSize: 18,
-                                color: AppTheme.primary,
-                              )
-                            : _estiloCantidad.copyWith(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.textSecondary,
-                              ),
-                      ),
-                    ),
-                    Text('${t.value.cantidad}', style: _estiloCantidad),
-                  ],
-                ),
-              ),
+            ),
+            Text('${t.cantidad}', style: _estiloCantidad),
           ],
         ),
       ));
     }
     return out;
-  }
-
-  List<Widget> _buildTotales(List<TotalCampo> totales) {
-    final out = <Widget>[];
-    for (final t in totales) {
-      switch (t.tipo) {
-        case TipoCampo.numero:
-          out.add(_fila(t.etiqueta, _fmtNum(t.suma)));
-          break;
-        case TipoCampo.booleano:
-          out.add(_fila(t.etiqueta, '${t.conteoSi} Sí'));
-          break;
-        case TipoCampo.select:
-        case TipoCampo.texto:
-          if (t.porOpcion.isEmpty) {
-            out.add(_fila(t.etiqueta, '-'));
-          } else {
-            final entries = t.porOpcion.entries.toList()
-              ..sort((a, b) => b.value.compareTo(a.value));
-            out.add(Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(t.etiqueta,
-                      style: const TextStyle(
-                          fontSize: 15.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.textSecondary)),
-                  const SizedBox(height: 2),
-                  ...entries.map((e) => Padding(
-                        padding: const EdgeInsets.only(left: 8, top: 1),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(e.key,
-                                  style: const TextStyle(
-                                      fontSize: 16,
-                                      color: AppTheme.textPrimary)),
-                            ),
-                            Text('${e.value}',
-                                style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppTheme.primary)),
-                          ],
-                        ),
-                      )),
-                ],
-              ),
-            ));
-          }
-          break;
-      }
-    }
-    return out;
-  }
-
-  Widget _fila(String label, String value) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textSecondary)),
-            ),
-            Text(value,
-                style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.primary)),
-          ],
-        ),
-      );
-
-  static String _fmtNum(double n) {
-    if (n == n.roundToDouble()) return n.toInt().toString();
-    return n.toStringAsFixed(2);
   }
 }
