@@ -5,6 +5,7 @@ import '../services/carnaval_service.dart';
 import '../services/printer_manager.dart';
 import '../services/wifi_printer_service.dart';
 import '../services/export_service.dart';
+import '../utils/ticket_text_utils.dart';
 
 class CarnavalOrderDetailSheet extends StatefulWidget {
   final Map<String, dynamic> order;
@@ -1563,7 +1564,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
 
     for (final d in _details) {
       final producto = d['Productos'] as Map<String, dynamic>?;
-      String name = producto?['name']?.toString() ?? 'Producto';
+      final name = producto?['name']?.toString() ?? 'Producto';
       final qtyInt = (d['quantity'] as num?)?.toInt() ?? 0;
       final extra = (d['extra'] as num?)?.toDouble() ?? 0.0;
       final qty = qtyInt + extra;
@@ -1571,14 +1572,12 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
           ? qty.toStringAsFixed(qty.truncateToDouble() == qty ? 0 : 2)
           : qtyInt.toString();
 
-      if (name.length > 24) {
-        name = name.substring(0, 21) + '...';
+      for (final line in formatTicketProductLines(qtyLabel, name)) {
+        bytes += generator.text(
+          line,
+          styles: PosStyles(align: PosAlign.left),
+        );
       }
-
-      bytes += generator.text(
-        '${qtyLabel}x $name',
-        styles: PosStyles(align: PosAlign.left),
-      );
     }
 
     bytes += generator.text(

@@ -953,13 +953,23 @@ class ExportService {
   }
 
   /// Construye una celda de datos para la tabla PDF
-  pw.Widget _buildTableCell(String text, {pw.Font? font, pw.TextAlign align = pw.TextAlign.center}) {
+  pw.Widget _buildTableCell(
+    String text, {
+    pw.Font? font,
+    pw.TextAlign align = pw.TextAlign.center,
+  }) {
     return pw.Container(
-      padding: const pw.EdgeInsets.all(6),
+      padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+      alignment: align == pw.TextAlign.left
+          ? pw.Alignment.centerLeft
+          : align == pw.TextAlign.right
+              ? pw.Alignment.centerRight
+              : pw.Alignment.center,
       child: pw.Text(
         text,
         style: pw.TextStyle(fontSize: 9, font: font),
         textAlign: align,
+        softWrap: true,
       ),
     );
   }
@@ -2393,10 +2403,18 @@ class ExportService {
     // Construir filas de la tabla (sin encabezado)
     final tableRows = items.map((item) {
       final cantidad = item['cantidad_contada'] ?? item['cantidad'] ?? 0;
-      final productName = item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto';
+      final productName = (item['producto_nombre'] ??
+              item['nombre_producto'] ??
+              'Producto')
+          .toString();
       return pw.TableRow(
+        verticalAlignment: pw.TableCellVerticalAlignment.top,
         children: [
-          _buildTableCell(productName, font: regularFont),
+          _buildTableCell(
+            productName,
+            font: regularFont,
+            align: pw.TextAlign.left,
+          ),
           _buildTableCell(cantidad.toString(), font: regularFont),
         ],
       );
@@ -2499,6 +2517,7 @@ class ExportService {
           // Tabla de productos (paginada automáticamente)
           pw.Table(
             border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+            defaultVerticalAlignment: pw.TableCellVerticalAlignment.top,
             columnWidths: {
               0: const pw.FlexColumnWidth(4),
               1: const pw.FlexColumnWidth(1),

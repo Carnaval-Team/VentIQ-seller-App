@@ -171,7 +171,8 @@ BEGIN
                       WHERE ep.id_operacion = ot.id_extraccion), 0),
             jsonb_build_object(
                 'autorizado_por', ot.autorizado_por,
-                'entregado_por',  orec_hijo.entregado_por,
+                'entregado_por',  COALESCE(oe_ext.entregado_por, orec_hijo.entregado_por),
+                'transportado_por', COALESCE(oe_ext.recibido_por, orec_hijo.entregado_por),
                 'recibido_por',   orec_hijo.recibido_por,
                 'comentario_completado', NULLIF(TRIM(ue.comentario), ''),
                 'id_extraccion',  ot.id_extraccion,
@@ -240,6 +241,7 @@ BEGIN
         JOIN app_nom_tipo_operacion          top ON o.id_tipo_operacion = top.id
         JOIN app_dat_tienda                  t   ON o.id_tienda        = t.id
         LEFT JOIN app_dat_operacion_recepcion orec_hijo ON orec_hijo.id_operacion = ot.id_recepcion
+        LEFT JOIN app_dat_operacion_extraccion oe_ext ON oe_ext.id_operacion = ot.id_extraccion
         LEFT JOIN ultimo_estado              ue     ON o.id              = ue.id_operacion
         LEFT JOIN app_nom_estado_operacion   neo    ON ue.estado         = neo.id
         -- Estados de las operaciones hijo
@@ -287,6 +289,8 @@ BEGIN
                 'motivo',         nme.denominacion,
                 'observaciones',  oe.observaciones,
                 'autorizado_por', oe.autorizado_por,
+                'entregado_por',  oe.entregado_por,
+                'recibido_por',   oe.recibido_por,
                 'comentario_completado', NULLIF(TRIM(ue.comentario), '')
             ),
             (SELECT jsonb_agg(jsonb_build_object(
@@ -458,6 +462,109 @@ BEGIN
             t.denominacion,
             top.denominacion,
             top.accion
+
+        UNION ALL
+
+        -- ── 6. APERTURA / CIERRE DE CAJA (tipos 16 y 17) ─────────────────────
+        -- Productos solo en app_dat_control_productos (no generan inventario).
+        SELECT
+            o.id                                                AS op_id,
+            top.denominacion                                    AS tipo_nombre,
+            top.accion                                          AS tipo_accion,
+            o.id_tienda,
+            t.denominacion                                      AS tienda_nom,
+            ct.id_tpv                                           AS tpv_id,
+            tpv.denominacion                                    AS tpv_nom,
+            o.uuid,
+            ue.estado,
+            neo.denominacion                                    AS estado_nom,
+            o.created_at,
+            o.observaciones,
+            COALESCE(
+                ct.efectivo_real,
+                ct.efectivo_esperado,
+                ct.efectivo_inicial,
+                0
+            )::NUMERIC                                          AS total_op,
+            COALESCE((
+                SELECT COUNT(*)::INTEGER
+                FROM app_dat_control_productos cp_cnt
+                WHERE cp_cnt.id_operacion = o.id
+            ), 0)                                               AS items_count,
+            jsonb_build_object(
+                'id_tpv',               ct.id_tpv,
+                'tpv_nombre',           tpv.denominacion,
+                'id_turno',             ct.id,
+                'efectivo_inicial',     ct.efectivo_inicial,
+                'efectivo_esperado',    ct.efectivo_esperado,
+                'efectivo_real',        ct.efectivo_real,
+                'diferencia',           ct.diferencia,
+                'maneja_inventario',    ct.maneja_inventario,
+                'fecha_apertura',       ct.fecha_apertura,
+                'fecha_cierre',         ct.fecha_cierre,
+                'turno_observaciones',  ct.observaciones,
+                'usuario',              NULL,
+                'almacen', (
+                    SELECT alm.denominacion
+                    FROM app_dat_control_productos cp0
+                    JOIN app_dat_layout_almacen la ON la.id = cp0.id_ubicacion
+                    JOIN app_dat_almacen alm ON alm.id = la.id_almacen
+                    WHERE cp0.id_operacion = o.id
+                    LIMIT 1
+                ),
+                'comentario_completado', NULLIF(TRIM(ue.comentario), '')
+            )                                                   AS det_esp,
+            (
+                SELECT jsonb_agg(
+                    jsonb_build_object(
+                        'id_producto',     cp.id_producto,
+                        'producto_nombre', COALESCE(p.denominacion, 'Producto no encontrado'),
+                        'sku_producto',    p.sku,
+                        'cantidad',        cp.cantidad,
+                        'ubicacion',       COALESCE(la.denominacion, ''),
+                        'almacen',         COALESCE(alm.denominacion, '')
+                    )
+                )
+                FROM (
+                    SELECT cp2.*
+                    FROM app_dat_control_productos cp2
+                    WHERE cp2.id_operacion = o.id
+                    ORDER BY cp2.id
+                    LIMIT 300
+                ) cp
+                LEFT JOIN app_dat_producto p ON p.id = cp.id_producto
+                LEFT JOIN app_dat_layout_almacen la ON la.id = cp.id_ubicacion
+                LEFT JOIN app_dat_almacen alm ON alm.id = la.id_almacen
+            )                                                   AS det_items
+        FROM app_dat_operaciones o
+        JOIN app_nom_tipo_operacion top ON o.id_tipo_operacion = top.id
+        JOIN app_dat_tienda t ON o.id_tienda = t.id
+        LEFT JOIN LATERAL (
+            SELECT ct2.*
+            FROM app_dat_caja_turno ct2
+            WHERE ct2.id_operacion_apertura = o.id
+               OR ct2.id_operacion_cierre = o.id
+            ORDER BY ct2.id DESC
+            LIMIT 1
+        ) ct ON TRUE
+        LEFT JOIN app_dat_tpv tpv ON tpv.id = ct.id_tpv
+        LEFT JOIN ultimo_estado ue ON o.id = ue.id_operacion
+        LEFT JOIN app_nom_estado_operacion neo ON ue.estado = neo.id
+        WHERE o.id_tipo_operacion IN (16, 17)
+          AND (p_id_tienda IS NULL OR o.id_tienda = p_id_tienda)
+          AND (p_id_tpv IS NULL OR ct.id_tpv = p_id_tpv)
+          AND (p_id_tipo_operacion IS NULL OR o.id_tipo_operacion = p_id_tipo_operacion)
+          AND (p_estados IS NULL OR ue.estado = ANY(p_estados))
+          AND (p_fecha_desde IS NULL OR o.created_at::DATE >= p_fecha_desde)
+          AND (p_fecha_hasta IS NULL OR o.created_at::DATE <= p_fecha_hasta)
+          AND (p_uuid_usuario_operador IS NULL OR o.uuid = p_uuid_usuario_operador)
+          AND (p_busqueda IS NULL
+               OR o.id::TEXT ILIKE '%' || p_busqueda || '%'
+               OR top.denominacion ILIKE '%' || p_busqueda || '%'
+               OR t.denominacion ILIKE '%' || p_busqueda || '%'
+               OR COALESCE(tpv.denominacion, '') ILIKE '%' || p_busqueda || '%'
+               OR COALESCE(o.observaciones, '') ILIKE '%' || p_busqueda || '%')
+          AND o.id_tienda IN (SELECT ac.id_tienda FROM accesos ac)
     )
     -- ── Proyección final con nombre de usuario y paginación ───────────────────
     SELECT

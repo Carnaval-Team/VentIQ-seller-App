@@ -10,6 +10,7 @@ import '../services/permissions_service.dart';
 import '../services/printer_manager.dart';
 import '../services/wifi_printer_service.dart';
 import '../services/export_service.dart';
+import '../utils/ticket_text_utils.dart';
 
 class InventoryOperationsScreen extends StatefulWidget {
   const InventoryOperationsScreen({super.key});
@@ -575,14 +576,27 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   Future<void> _showNativeDateRangePicker() async {
     try {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
       final DateTimeRange? picked = await showDateRangePicker(
         context: context,
         firstDate: DateTime(2020),
-        lastDate: DateTime.now(),
+        lastDate: today,
         initialDateRange:
             _fechaDesde != null && _fechaHasta != null
-                ? DateTimeRange(start: _fechaDesde!, end: _fechaHasta!)
-                : null,
+                ? DateTimeRange(
+                    start: DateTime(
+                      _fechaDesde!.year,
+                      _fechaDesde!.month,
+                      _fechaDesde!.day,
+                    ),
+                    end: DateTime(
+                      _fechaHasta!.year,
+                      _fechaHasta!.month,
+                      _fechaHasta!.day,
+                    ),
+                  )
+                : DateTimeRange(start: today, end: today),
         helpText: 'Seleccionar rango de fechas',
         cancelText: 'Cancelar',
         confirmText: 'Confirmar',
@@ -602,38 +616,42 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       if (picked != null) {
         print('📅 Rango seleccionado: ${picked.start} - ${picked.end}');
 
-        // Cerrar el modal primero
-        Navigator.pop(context);
+        // Normalizar a fecha local (sin hora) para no correr el día.
+        final desde = DateTime(
+          picked.start.year,
+          picked.start.month,
+          picked.start.day,
+        );
+        final hasta = DateTime(
+          picked.end.year,
+          picked.end.month,
+          picked.end.day,
+        );
 
-        // Luego actualizar el estado para que se vea la actualización
         setState(() {
-          // Normalizar las fechas para evitar problemas de zona horaria
-          _fechaDesde = DateTime(
-            picked.start.year,
-            picked.start.month,
-            picked.start.day,
-          );
-          _fechaHasta = DateTime(
-            picked.end.year,
-            picked.end.month,
-            picked.end.day,
-          );
+          _fechaDesde = desde;
+          _fechaHasta = hasta;
         });
 
         print('📅 Fechas guardadas: $_fechaDesde - $_fechaHasta');
 
-        // Mostrar el modal actualizado con las fechas seleccionadas
-        await Future.delayed(const Duration(milliseconds: 100));
-        _showDateRangeDialog();
+        // Igual que opciones rápidas: cerrar y aplicar de inmediato.
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+        _currentPage = 1;
+        await _loadOperations();
       }
     } catch (e) {
       print('❌ Error al abrir selector de fechas: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al abrir el calendario: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al abrir el calendario: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -3543,6 +3561,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                     ),
                   ],
 
+                  ..._buildCashRegisterObservationBlocks(operation),
+
                   // Show product list if available
                   if (operation['detalles'] != null &&
                       operation['detalles']['items'] != null &&
@@ -3562,6 +3582,64 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
             ],
           ),
     );
+  }
+
+  List<Widget> _buildCashRegisterObservationBlocks(
+    Map<String, dynamic> operation,
+  ) {
+    final esp = _extractDetallesEspecificos(operation);
+    final opObs = operation['observaciones']?.toString().trim() ?? '';
+    final turnoObs = esp?['turno_observaciones']?.toString().trim() ?? '';
+    final comentario = esp?['comentario_completado']?.toString().trim() ?? '';
+
+    final blocks = <Widget>[];
+
+    void addBlock(String label, String value) {
+      if (value.isEmpty) return;
+      blocks.add(const SizedBox(height: 16));
+      blocks.add(
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1F2937),
+          ),
+        ),
+      );
+      blocks.add(const SizedBox(height: 8));
+      blocks.add(
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontSize: 13,
+              color: Color(0xFF374151),
+              height: 1.35,
+            ),
+          ),
+        ),
+      );
+    }
+
+    addBlock('Observaciones:', opObs);
+    if (turnoObs.isNotEmpty && turnoObs != opObs) {
+      addBlock('Observaciones del turno:', turnoObs);
+    }
+    if (comentario.isNotEmpty &&
+        comentario != opObs &&
+        comentario != turnoObs) {
+      addBlock('Comentario al completar:', comentario);
+    }
+
+    return blocks;
   }
 
   Widget _buildOpeningDetailRow(
@@ -4381,26 +4459,22 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
         for (var item in items) {
           final cantidad = item['cantidad_contada'] ?? item['cantidad'] ?? 0;
-          String productName =
-              item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto';
+          final productName =
+              (item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto')
+                  .toString();
 
-          // Truncar nombre si es muy largo
-          if (productName.length > 24) {
-            productName = productName.substring(0, 21) + '...';
+          for (final line in formatTicketProductLines(cantidad, productName)) {
+            bytes +=
+                generator.text(line, styles: PosStyles(align: PosAlign.left));
           }
-
-          bytes += generator.text(
-            '${cantidad}x $productName',
-            styles: PosStyles(align: PosAlign.left),
-          );
 
           // Agregar ubicación si existe
           final ubicacion = item['ubicacion_nombre'] ?? item['ubicacion'];
           if (ubicacion != null && ubicacion.toString().isNotEmpty) {
-            bytes += generator.text(
-              '  Ubic: $ubicacion',
-              styles: PosStyles(align: PosAlign.left),
-            );
+            for (final line in wrapTicketText('  Ubic: $ubicacion')) {
+              bytes +=
+                  generator.text(line, styles: PosStyles(align: PosAlign.left));
+            }
           }
         }
 
